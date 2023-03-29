@@ -1,0 +1,12 @@
+persistence:
+  path: "../../rawdata"
+  masterDb:
+    url: "http://localhost:4001/?level=none"
+
+jwt:
+  pubKeyFile: "./zertifikat-pub.pem"
+
+mqtt:
+  host: "tcp://localhost:1883"
+  id: "edash-backend-1"
+  qos: 1
