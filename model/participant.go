@@ -54,14 +54,14 @@ const (
 
 type MeteringPoint struct {
 	MeteringPoint string        `json:"meteringPoint" db:"metering_point_id"`
-	Transformer   string        `json:"transformer,omitempty"`
+	Transformer   null.String   `json:"transformer,omitempty"`
 	Direction     DirectionType `json:"direction,omitempty"`
 	Status        StatusType    `json:"status,omitempty"`
-	TariffId      uuid.UUID     `json:"tariffId" db:"tariff_id"`
-	EquipmentName string        `json:"equipmentName,omitempty" db:"equipmentName"`
-	InverterId    string        `json:"inverterId,omitempty" db:"inverterId"`
-	Street        string        `json:"street,omitempty"`
-	StreetNumber  string        `json:"streetNumber,omitempty" db:"street_number"`
-	City          string        `json:"city,omitempty"`
-	Zip           string        `json:"zip,omitempty"`
+	TariffId      null.String   `json:"tariffId" db:"tariff_id"`
+	EquipmentName null.String   `json:"equipmentName,omitempty" db:"equipmentname"`
+	InverterId    null.String   `json:"inverterId,omitempty" db:"inverterid"`
+	Street        null.String   `json:"street,omitempty"`
+	StreetNumber  null.String   `json:"streetNumber,omitempty" db:"street_number"`
+	City          null.String   `json:"city,omitempty"`
+	Zip           null.String   `json:"zip,omitempty"`
 }

@@ -5,6 +5,7 @@ import (
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
 	"encoding/json"
+	"github.com/golang/glog"
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
 	"net/http"
@@ -27,6 +28,7 @@ func InitEegRouter(r *mux.Router, jwtWrapper middleware.JWTWrapperFunc, mqttSend
 
 func getEEG() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
+		log.Infof("Query EEG with TENANT: %s", tenant)
 		eeg, err := database.GetEeg(tenant)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -143,5 +145,36 @@ func syncMeterpointEda(mqttSendCh chan model.EbmsMessage) middleware.JWTHandlerF
 		mqttSendCh <- ebmsMessage
 
 		respondWithStatus(w, http.StatusNoContent)
+	}
+}
+
+func uploadMasterData() middleware.JWTHandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
+		// Parse our multipart form, 10 << 20 specifies a maximum
+		// upload of 10 MB files.
+		var err error = r.ParseMultipartForm(10 << 20)
+		if err != nil {
+			respondWithError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		sheet := r.FormValue("sheet")
+
+		file, handler, err := r.FormFile("masterdatafile")
+		if err != nil {
+			glog.Error(err)
+			respondWithError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		defer file.Close()
+		glog.Infof("--- Upload File: %s, %s, %s\n", sheet, handler.Filename, tenant)
+
+		if err = database.ImportMasterdataFromExcel(file, handler.Filename, sheet, tenant); err != nil {
+			glog.Error(err)
+			respondWithError(w, http.StatusBadRequest, err.Error())
+		} else {
+			glog.Infof("Import File %s successful", handler.Filename)
+			w.WriteHeader(http.StatusOK)
+		}
 	}
 }

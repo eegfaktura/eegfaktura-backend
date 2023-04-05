@@ -8,27 +8,22 @@ import (
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	"github.com/pborman/uuid"
-)
-
-const (
-	host     = "localhost"
-	port     = 6432
-	user     = "postgresUser"
-	password = "postgresPW"
-	dbname   = "postgresDB"
+	"github.com/spf13/viper"
 )
 
 func GetDBConnection() (*sql.DB, error) {
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=disable",
-		host, port, user, password, dbname)
+		viper.GetString("database.host"), viper.GetInt("database.port"), viper.GetString("database.user"),
+		viper.GetString("database.password"), viper.GetString("database.dbname"))
 	return sql.Open("postgres", psqlInfo)
 }
 
 func GetDBXConnection() (*sqlx.DB, error) {
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=disable",
-		host, port, user, password, dbname)
+		viper.GetString("database.host"), viper.GetInt("database.port"), viper.GetString("database.user"),
+		viper.GetString("database.password"), viper.GetString("database.dbname"))
 	return sqlx.Open("postgres", psqlInfo)
 }
 

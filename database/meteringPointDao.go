@@ -46,7 +46,7 @@ func RegisterMeteringPoint(tenant, participantId string, point *model.MeteringPo
 	return err
 }
 
-func UpdateMeteringPoint(tenant, participantId, meterId string, meteringPoint map[string]interface{}) error {
+func UpdateMeteringPoint(tenant, participantId, meterId string, meteringPoint *model.MeteringPoint) error {
 	db, err := GetDBXConnection()
 	if err != nil {
 		return err
@@ -58,7 +58,7 @@ func UpdateMeteringPoint(tenant, participantId, meterId string, meteringPoint ma
 		Where(goqu.Ex{
 			"tenant":            goqu.Op{"eq": tenant},
 			"metering_point_id": goqu.Op{"eq": meterId},
-			"id":                goqu.Op{"eq": participantId},
+			"participant_id":    goqu.Op{"eq": participantId},
 		}).
 		ToSQL()
 	_, err = db.Exec(statement)

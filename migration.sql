@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS base.EEG
     description        TEXT,
     periods            JSON             DEFAULT ('[]'),
     rcNumber           TEXT    NOT NULL,
-    area               TEXT NOT NULL, /* Ortsgebiet (LOCAL | REGIONAL) */
+    area               TEXT    NOT NULL, /* Ortsgebiet (LOCAL | REGIONAL) */
     legal              TEXT    NOT NULL, /* Unternehmensform*/
     gridoperator_code  TEXT    NOT NULL,
     gridoperator_name  TEXT    NOT NULL,
@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS base.tariff
     discount           INTEGER,
     status             TEXT    NOT NULL DEFAULT 'ACTIVE', /* ACTIVE | INACTIVE */
     inactiveSince      DATE,
-    CONSTRAINT TariffPK PRIMARY KEY (id, version)
+    CONSTRAINT TariffPK PRIMARY KEY (id)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tariff ON base.tariff (id, tenant, name, type, version);
 
@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS base.participant
     lastModifiedBy        VARCHAR NOT NULL,
     lastModifiedDate      DATE             DEFAULT now(),
     version               INTEGER          DEFAULT 1,
+    tariffid              uuid,
     CONSTRAINT ParticipantPK PRIMARY KEY (id)
 );
 
@@ -128,8 +129,8 @@ CREATE TABLE IF NOT EXISTS base.meteringpoint
     direction         TEXT NOT NULL DEFAULT 'CONSUMPTION', /* 'GENERATOR' | 'CONSUMPTION' */
     status            TEXT NOT NULL DEFAULT 'NEW', /* "NEW" | "PENDING" | "ACTIVE" | "INACTIVE" */
     tariff_id         UUID,
-    inverterId        TEXT,
-    equipmentName     TEXT,
+    inverterid        TEXT,
+    equipmentname     TEXT,
     street            TEXT,
     street_number     TEXT,
     city              TEXT,
@@ -150,6 +151,23 @@ CREATE TABLE IF NOT EXISTS base.notification
 );
 
 CREATE VIEW base.activeTariff AS
-    SELECT id, name, tenant, billingperiod, usevat, vatinpercent, accountnetamount, accountgrossamount, participantfee, basefee, businessnr, version, type, centperKWH, discount, freeKwh
-        FROM base.tariff, (SELECT id as tid, MAX(version) as tversion FROM base.tariff GROUP BY id) as x
-            WHERE id = x.tid AND version = x.tversion;
+SELECT id,
+       name,
+       tenant,
+       billingperiod,
+       usevat,
+       vatinpercent,
+       accountnetamount,
+       accountgrossamount,
+       participantfee,
+       basefee,
+       businessnr,
+       version,
+       type,
+       centperKWH,
+       discount,
+       freeKwh
+FROM base.tariff,
+     (SELECT id as tid, MAX(version) as tversion FROM base.tariff GROUP BY id) as x
+WHERE id = x.tid
+  AND version = x.tversion;

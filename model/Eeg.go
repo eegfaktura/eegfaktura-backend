@@ -1,19 +1,21 @@
 package model
 
+import "gopkg.in/guregu/null.v4"
+
 type Eeg struct {
-	Id                 string `json:"id"`
-	Name               string `json:"name,omitempty"`
-	Description        string `json:"description,omitempty"`
-	BusinessNr         int64  `json:"businessNr,omitempty"`
-	Area               string `json:"area"` /* LOCAL | REGIONAL*/
-	Legal              string `json:"legal,omitempty"`
-	OperatorName       string `json:"operatorName,omitempty"`
-	CommunityId        string `json:"communityId,omitempty"`
-	GridOperator       string `json:"gridOperator,omitempty"`
-	RcNumber           string `json:"rcNumber,omitempty"`
-	AllocationMode     string `json:"allocationMode,omitempty"`
-	SettlementInterval string `json:"settlementInterval,omitempty"`
-	ProviderBusinessNr int64  `json:"providerBusinessNr,omitempty"`
+	Id                 string   `json:"id"`
+	Name               string   `json:"name,omitempty"`
+	Description        string   `json:"description,omitempty"`
+	BusinessNr         int64    `json:"businessNr,omitempty"`
+	Area               string   `json:"area"` /* LOCAL | REGIONAL*/
+	Legal              string   `json:"legal,omitempty"`
+	OperatorName       string   `json:"operatorName,omitempty"`
+	CommunityId        string   `json:"communityId,omitempty"`
+	GridOperator       string   `json:"gridOperator,omitempty"`
+	RcNumber           string   `json:"rcNumber"`
+	AllocationMode     string   `json:"allocationMode,omitempty"`
+	SettlementInterval string   `json:"settlementInterval,omitempty"`
+	ProviderBusinessNr null.Int `json:"providerBusinessNr,omitempty"`
 	Address            `json:"address,omitempty"`
 	AccountInfo        AccountInfo `json:"accountInfo,omitempty"`
 	Contact            Contact     `json:"contact,omitempty"`
@@ -37,8 +39,8 @@ type Address struct {
 }
 
 type Contact struct {
-	Phone string `json:"phone,omitempty"`
-	Email string `json:"email,omitempty"`
+	Phone null.String `json:"phone,omitempty"`
+	Email null.String `json:"email,omitempty"`
 }
 
 type AccountInfo struct {
@@ -48,5 +50,5 @@ type AccountInfo struct {
 }
 
 type Optionals struct {
-	Website string `json:"website,omitempty"`
+	Website null.String `json:"website,omitempty"`
 }

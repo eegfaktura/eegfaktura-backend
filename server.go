@@ -9,6 +9,7 @@ import (
 	"at.ourproject/vfeeg-backend/model"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
 	"flag"
+	"fmt"
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
@@ -24,7 +25,7 @@ func InitRouters(mqttSendCh chan model.EbmsMessage) *mux.Router {
 
 	//r := mux.NewRouter().PathPrefix("/api").Subrouter()
 	r := mux.NewRouter()
-	s := r.PathPrefix("/api").Subrouter()
+	s := r.PathPrefix("/").Subrouter()
 	s = api.InitEegRouter(s, jwtWrapper, mqttSendCh)
 	s = api.InitParticipantRouter(s, jwtWrapper)
 	s = api.InitMeteringRouter(s, jwtWrapper)
@@ -58,7 +59,6 @@ func main() {
 			"Accept",
 			"Accept-Encoding",
 			"Accept-Language",
-			"access_token",
 			"Host",
 			"authorization",
 			"Content-Type",
@@ -71,19 +71,27 @@ func main() {
 			"Sec-Fetch-Dest",
 			"Sec-Fetch-Mode",
 			"Sec-Fetch-Site",
-			"Cache-Control"})
+			"Cache-Control",
+			"tenant"})
 	//allowedHeaders := handlers.AllowedHeaders(
 	//	[]string{"authorization", "content-type"})
 	allowedMethods := handlers.AllowedMethods([]string{"GET", "HEAD", "POST", "PUT", "OPTIONS", "DELETE"})
 	allowedCredentials := handlers.AllowCredentials()
 
+	log.Infof("VFEEG BACKEND Config:  host: %s  port: %d  database:%s  user:%s",
+		viper.GetString("database.host"),
+		viper.GetInt("database.port"),
+		viper.GetString("database.dbname"),
+		viper.GetString("database.user"))
+
+	log.Infof("VFEEG BACKEND is going to listen on %s", fmt.Sprintf("127.0.0.1:%d", viper.GetInt("port")))
+
 	srv := &http.Server{
 		Handler: handlers.CORS(allowedOrigins, allowedHeaders, allowedMethods, allowedCredentials)(r),
-		Addr:    "127.0.0.1:9080",
+		Addr:    fmt.Sprintf("0.0.0.0:%d", viper.GetInt("port")),
 		// Good practice: enforce timeouts for servers you create!
 		WriteTimeout: 180 * time.Second,
 		ReadTimeout:  180 * time.Second,
 	}
-
 	log.Fatal(srv.ListenAndServe())
 }

@@ -46,20 +46,20 @@ func updateMeteringPoint() middleware.JWTHandlerFunc {
 		participantId := vars["pid"]
 		meterId := vars["mid"]
 
-		var t map[string]interface{}
-		err := json.NewDecoder(r.Body).Decode(&t)
+		m := model.MeteringPoint{}
+		err := json.NewDecoder(r.Body).Decode(&m)
 		if err != nil {
 			log.WithField("error", err).Error("Decode UpdateMessage Json")
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		err = database.UpdateMeteringPoint(tenant, participantId, meterId, t)
+		err = database.UpdateMeteringPoint(tenant, participantId, meterId, &m)
 		if err != nil {
 			log.WithField("error", err).Error("Update Meteringpoint")
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		respondWithStatus(w, http.StatusAccepted)
+		respondWithJSON(w, http.StatusAccepted, m)
 	}
 }

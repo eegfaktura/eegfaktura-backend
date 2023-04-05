@@ -5,10 +5,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/doug-martin/goqu/v9"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"strings"
 	"testing"
 )
+
+func init() {
+	viper.Set("database.host", "localhost")
+	viper.Set("database.port", 15432)
+	viper.Set("database.user", "vfeeg")
+	viper.Set("database.password", "admin.2022-basicdata")
+	viper.Set("database.dbname", "basicdata")
+}
 
 func TestUpdateParticipant(t *testing.T) {
 	var tests = []struct {
@@ -53,7 +62,7 @@ func TestRegisterParticipant(t *testing.T) {
 }
 
 func TestGetParticipant(t *testing.T) {
-	participants, err := GetParticipant("RC100130")
+	participants, err := GetParticipant("RC100181")
 	assert.NoError(t, err)
 
 	assert.NotEmpty(t, participants)

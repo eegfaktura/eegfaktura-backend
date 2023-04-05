@@ -4,13 +4,14 @@ package graph
 // will be copied through when generating and any unknown code will be moved to the end.
 
 import (
+	"context"
+	"fmt"
+
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/graph/generated"
 	"at.ourproject/vfeeg-backend/graph/gmodel"
 	"at.ourproject/vfeeg-backend/model"
-	"context"
-	"fmt"
 	log "github.com/sirupsen/logrus"
 )
 

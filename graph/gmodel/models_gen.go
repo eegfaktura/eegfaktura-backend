@@ -3,9 +3,9 @@
 package gmodel
 
 type EegModel struct {
-	Tenant             *string `json:"tenant" mapstructure:",omitempty"`
-	SettlementInterval *string `json:"settlementInterval" mapstructure:",omitempty"`
-	SepaActiv          *bool   `json:"sepaActiv" mapstructure:",omitempty"`
+	Tenant             *string `json:"tenant"`
+	SettlementInterval *string `json:"settlementInterval"`
+	SepaActiv          *bool   `json:"sepaActiv"`
 }
 
 type Link struct {

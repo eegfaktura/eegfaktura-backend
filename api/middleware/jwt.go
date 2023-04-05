@@ -64,6 +64,7 @@ func JWTMiddleware(publicKeyPath string /*jwtUtil *AccessTokenGenJWT*/) func(JWT
 				w.WriteHeader(http.StatusForbidden)
 				return
 			}
+
 			handler(w, r, claims, strings.ToUpper(tenant))
 		}
 	}

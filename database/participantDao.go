@@ -2,25 +2,26 @@ package database
 
 import (
 	"at.ourproject/vfeeg-backend/model"
+	dbsql "database/sql"
 	"github.com/doug-martin/goqu/v9"
 )
 
 func GetParticipant(tenant string) ([]model.EegParticipant, error) {
-	var participants []model.EegParticipant
+	var participants []model.EegParticipant = []model.EegParticipant{}
 	db, err := GetDBXConnection()
 	if err != nil {
-		return participants, err
+		return []model.EegParticipant{}, err
 	}
 	defer db.Close()
 
 	sql, _, err := pgDialect.From("base.participant").Select(&participants).Where(goqu.C("tenant").Eq(tenant)).ToSQL()
 	if err != nil {
-		return participants, err
+		return []model.EegParticipant{}, err
 	}
 
 	err = db.Select(&participants, sql)
 	if err != nil {
-		return participants, err
+		return []model.EegParticipant{}, err
 	}
 
 	for i, p := range participants {
@@ -29,7 +30,7 @@ func GetParticipant(tenant string) ([]model.EegParticipant, error) {
 			return []model.EegParticipant{}, err
 		}
 		err = db.Get(&(participants[i].Contact), sql)
-		if err != nil {
+		if err != nil && err != dbsql.ErrNoRows {
 			return []model.EegParticipant{}, err
 		}
 
@@ -38,7 +39,7 @@ func GetParticipant(tenant string) ([]model.EegParticipant, error) {
 			return []model.EegParticipant{}, err
 		}
 		err = db.Get(&(participants[i].BankAccount), sql)
-		if err != nil {
+		if err != nil && err != dbsql.ErrNoRows {
 			return []model.EegParticipant{}, err
 		}
 
@@ -48,7 +49,7 @@ func GetParticipant(tenant string) ([]model.EegParticipant, error) {
 			return []model.EegParticipant{}, err
 		}
 		err = db.Get(&(participants[i].BillingAddress), sql)
-		if err != nil {
+		if err != nil && err != dbsql.ErrNoRows {
 			return []model.EegParticipant{}, err
 		}
 
@@ -59,7 +60,7 @@ func GetParticipant(tenant string) ([]model.EegParticipant, error) {
 		}
 		//fmt.Printf("SQL: %+v\n", sql)
 		err = db.Get(&(participants[i].ResidentAddress), sql)
-		if err != nil {
+		if err != nil && err != dbsql.ErrNoRows {
 			return []model.EegParticipant{}, err
 		}
 		//fmt.Printf("ADDRESS: %+v\n", p.ResidentAddress)
@@ -70,7 +71,7 @@ func GetParticipant(tenant string) ([]model.EegParticipant, error) {
 			return []model.EegParticipant{}, err
 		}
 		err = db.Select(&(participants[i].MeteringPoint), sql)
-		if err != nil {
+		if err != nil && err != dbsql.ErrNoRows {
 			return []model.EegParticipant{}, err
 		}
 	}
@@ -170,6 +171,10 @@ func RegisterParticipant(tenant, username string, participant *model.EegParticip
 	}
 	return tx.Commit()
 }
+
+//func SelectParticipant(tenant, participantId string) (*model.EegParticipant, error) {
+//
+//}
 
 func SaveNotification(tenant string, notification string, msgType, role string) error {
 	db, err := GetDBXConnection()

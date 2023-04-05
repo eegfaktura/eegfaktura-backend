@@ -1,7 +1,10 @@
-persistence:
-  path: "../../rawdata"
-  masterDb:
-    url: "http://localhost:4001/?level=none"
+port: 9080
+database:
+  host: "localhost"
+  port: 6432
+  user: "postgresUser"
+  password: "postgresPW"
+  dbname: "postgresDB"
 
 jwt:
   pubKeyFile: "./zertifikat-pub.pem"
@@ -10,3 +13,4 @@ mqtt:
   host: "tcp://localhost:1883"
   id: "edash-backend-1"
   qos: 1
+
