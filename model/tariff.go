@@ -24,7 +24,7 @@ const (
 
 type Tariff struct {
 	Id                 uuid.UUID       `json:"id"`
-	Version            int             `json:"version"`
+	Version            int             `json:"version" db:"version"`
 	Type               TariffModelType `json:"type"`
 	Name               string          `json:"name"`
 	BillingPeriod      BillingPeriod   `json:"billingPeriod"`

@@ -39,7 +39,7 @@ func GetTariff(tenant string) ([]model.Tariff, error) {
 
 	tariff := []model.Tariff{}
 	err = db.Select(&tariff, "SELECT id, name, billingperiod, usevat, vatinpercent, accountnetamount, accountgrossamount, participantfee, basefee, businessnr, version, type, centperKWH, discount, freeKwh "+
-		"FROM base.tariff WHERE tenant = $1", tenant)
+		"FROM base.activetariff WHERE tenant = $1", tenant)
 	if err == sql.ErrNoRows {
 		return []model.Tariff{}, nil
 	}
@@ -65,18 +65,19 @@ func AddTariff(tenant string, tariff *model.Tariff) error {
 	}
 	defer db.Close()
 
-	if len(tariff.Id.NodeID()) == 0 {
+	if len(tariff.Id.String()) == 0 {
 		tariff.Id = uuid.NewUUID()
 	} else {
 		tariff.Version = tariff.Version + 1
 	}
 
 	type updateType struct {
-		Tenant string
+		Tenant string `json:"tenant" db:"tenant"`
 		model.Tariff
 	}
 
 	update := updateType{tenant, *tariff}
+	fmt.Printf("Insert new Tariff %+v\n", update)
 
 	fmt.Printf("Tarrif: %+v\n", update)
 	_, err = db.NamedExec(
