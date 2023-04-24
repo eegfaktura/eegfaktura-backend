@@ -27,13 +27,13 @@ type EegParticipant struct {
 }
 
 type ContactInfo struct {
-	Phone string `json:"phone" db:"phone"`
-	Email string `json:"email" db:"email"`
+	Phone null.String `json:"phone" db:"phone"`
+	Email null.String `json:"email" db:"email"`
 }
 
 type BankInfo struct {
-	Iban  string `json:"iban"`
-	Owner string `json:"owner"`
+	Iban  null.String `json:"iban"`
+	Owner null.String `json:"owner"`
 }
 
 type DirectionType string
@@ -41,6 +41,7 @@ type DirectionType string
 const (
 	CONSUMPTION = "CONSUMPTION"
 	GENERATOR   = "GENERATOR"
+	UNKNOWN     = "UNKNOWN"
 )
 
 type StatusType string

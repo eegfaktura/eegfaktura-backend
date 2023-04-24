@@ -9,18 +9,30 @@ import (
 
 const TABLE_METERINGPOINT = "base.meteringpoint"
 
+type meteringEntryType struct {
+	model.MeteringPoint
+	Participant_id string
+	Tenant         string
+}
+
 func RegisterMeteringPoints(tx *sql.Tx, tenant, participantId string, point []model.MeteringPoint) error {
-	type meteringEntryType struct {
-		model.MeteringPoint
-		Participant_id string
-		Tenant         string
-	}
 	meteringEntry := []meteringEntryType{}
 	for _, p := range point {
 		p.Status = model.PENDING
 		meteringEntry = append(meteringEntry, meteringEntryType{p, participantId, tenant})
 	}
+	return saveMeteringPoint(tx, meteringEntry)
+}
 
+func ImportMeteringPoints(tx *sql.Tx, tenant, participantId string, point []model.MeteringPoint) error {
+	meteringEntry := []meteringEntryType{}
+	for _, p := range point {
+		meteringEntry = append(meteringEntry, meteringEntryType{p, participantId, tenant})
+	}
+	return saveMeteringPoint(tx, meteringEntry)
+}
+
+func saveMeteringPoint(tx *sql.Tx, meteringEntry []meteringEntryType) error {
 	statement, _, _ := pgDialect.Insert(TABLE_METERINGPOINT).Rows(meteringEntry).ToSQL()
 	log.Printf("Register Meterings: %+v", statement)
 	_, err := tx.Exec(statement)

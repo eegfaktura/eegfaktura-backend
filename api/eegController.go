@@ -22,6 +22,7 @@ func InitEegRouter(r *mux.Router, jwtWrapper middleware.JWTWrapperFunc, mqttSend
 	s.HandleFunc("/tariff", jwtWrapper(addTariff())).Methods("POST")
 	s.HandleFunc("/sync/participants", jwtWrapper(syncParticipantsEda(mqttSendCh))).Methods("POST")
 	s.HandleFunc("/sync/meterpoint", jwtWrapper(syncMeterpointEda(mqttSendCh))).Methods("POST")
+	s.HandleFunc("/import/masterdata", jwtWrapper(uploadMasterData())).Methods("POST")
 
 	return r
 }

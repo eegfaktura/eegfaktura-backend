@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS base.participant
     vatId                 VARCHAR,
     taxId                 VARCHAR,
     companyRegisterNumber VARCHAR,
-    status                VARCHAR NOT NULL DEFAULT 'NEW', /* 'NEW' | 'PENDING' | 'ACTIVE' | 'INACTIVE' */
+    status                VARCHAR NOT NULL DEFAULT 'NEW', /* 'NEW' | 'PENDING' | 'ACCEPTED' | 'ACTIVE' | 'INACTIVE' */
     createdBy             VARCHAR NOT NULL,
     createdDate           DATE             DEFAULT now(),
     lastModifiedBy        VARCHAR NOT NULL,
@@ -127,7 +127,7 @@ CREATE TABLE IF NOT EXISTS base.meteringpoint
     tenant            TEXT NOT NULL,
     transformer       TEXT,
     direction         TEXT NOT NULL DEFAULT 'CONSUMPTION', /* 'GENERATOR' | 'CONSUMPTION' */
-    status            TEXT NOT NULL DEFAULT 'NEW', /* "NEW" | "PENDING" | "ACTIVE" | "INACTIVE" */
+    status            TEXT NOT NULL DEFAULT 'NEW', /* "NEW" | "PENDING" | "ACCEPTED" | "ACTIVE" | "INACTIVE" */
     tariff_id         UUID,
     inverterid        TEXT,
     equipmentname     TEXT,

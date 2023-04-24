@@ -4,6 +4,8 @@ import (
 	"at.ourproject/vfeeg-backend/model"
 	dbsql "database/sql"
 	"github.com/doug-martin/goqu/v9"
+	"github.com/jmoiron/sqlx"
+	"github.com/pborman/uuid"
 )
 
 func GetParticipant(tenant string) ([]model.EegParticipant, error) {
@@ -79,6 +81,84 @@ func GetParticipant(tenant string) ([]model.EegParticipant, error) {
 	return participants, nil
 }
 
+func QueryParticipant(participantId string) (*model.EegParticipant, error) {
+	var participant model.EegParticipant = model.EegParticipant{}
+	db, err := GetDBXConnection()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	sql, _, err := pgDialect.From("base.participant").Select(&participant).Where(goqu.C("id").Eq(participantId)).ToSQL()
+	if err != nil {
+		return nil, err
+	}
+	err = db.Get(&participant, sql)
+	if err != nil {
+		return nil, err
+	}
+
+	err = CompleteParticipant(db, &participant)
+	if err != nil {
+		return nil, err
+	}
+
+	return &participant, nil
+}
+
+func CompleteParticipant(db *sqlx.DB, p *model.EegParticipant) error {
+	sql, _, err := pgDialect.From("base.contactdetail").Select(&p.Contact).Where(goqu.C("participant_id").Eq(p.Id.String())).ToSQL()
+	if err != nil {
+		return err
+	}
+	err = db.Get(&(p.Contact), sql)
+	if err != nil && err != dbsql.ErrNoRows {
+		return err
+	}
+
+	sql, _, err = pgDialect.From("base.bankaccount").Select(&p.BankAccount).Where(goqu.C("participant_id").Eq(p.Id.String())).ToSQL()
+	if err != nil {
+		return err
+	}
+	err = db.Get(&(p.BankAccount), sql)
+	if err != nil && err != dbsql.ErrNoRows {
+		return err
+	}
+
+	sql, _, err = pgDialect.From("base.address").Select(&p.BillingAddress).
+		Where(goqu.C("participant_id").Eq(p.Id.String()), goqu.C("type").Eq("BILLING")).ToSQL()
+	if err != nil {
+		return err
+	}
+	err = db.Get(&(p.BillingAddress), sql)
+	if err != nil && err != dbsql.ErrNoRows {
+		return err
+	}
+
+	sql, _, err = pgDialect.From("base.address").Select(&p.ResidentAddress).
+		Where(goqu.C("participant_id").Eq(p.Id.String()), goqu.C("type").Eq("RESIDENCE")).ToSQL()
+	if err != nil {
+		return err
+	}
+	//fmt.Printf("SQL: %+v\n", sql)
+	err = db.Get(&(p.ResidentAddress), sql)
+	if err != nil && err != dbsql.ErrNoRows {
+		return err
+	}
+	//fmt.Printf("ADDRESS: %+v\n", p.ResidentAddress)
+
+	sql, _, err = pgDialect.From("base.meteringpoint").Select(&p.MeteringPoint).
+		Where(goqu.C("participant_id").Eq(p.Id.String())).ToSQL()
+	if err != nil {
+		return err
+	}
+	err = db.Select(&(p.MeteringPoint), sql)
+	if err != nil && err != dbsql.ErrNoRows {
+		return err
+	}
+	return nil
+}
+
 func UpdateParticipant(tenant, participantId string, participant map[string]interface{}) error {
 	db, err := GetDBXConnection()
 	if err != nil {
@@ -106,13 +186,34 @@ type ParticipantWithMeta struct {
 }
 
 func RegisterParticipant(tenant, username string, participant *model.EegParticipant) error {
+	participant.Status = model.PENDING
+	return saveParticipant(tenant, username, participant, RegisterMeteringPoints)
+}
+
+func ImportParticipant(tenant, username string, participant *model.EegParticipant) error {
+	participant.Id = uuid.NewUUID()
+	return saveParticipant(tenant, username, participant, ImportMeteringPoints)
+}
+
+func ConfirmParticipant(tenant, username, participantId string) error {
 	db, err := GetDBXConnection()
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 
-	participant.Status = model.PENDING
+	_, err = db.Exec("UPDATE base.participant SET status = 'APPROVED', lastmodifieddate = 'now()', lastmodifiedby = $1 WHERE id = $2", username, participantId)
+
+	return err
+}
+
+func saveParticipant(tenant, username string, participant *model.EegParticipant,
+	registerMeteringPointsFunc func(*dbsql.Tx, string, string, []model.MeteringPoint) error) error {
+	db, err := GetDBXConnection()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
 
 	registeredParticipant := ParticipantWithMeta{
 		participant, tenant, username, username,
@@ -165,7 +266,7 @@ func RegisterParticipant(tenant, username string, participant *model.EegParticip
 		return err
 	}
 
-	err = RegisterMeteringPoints(tx, tenant, participantId, participant.MeteringPoint)
+	err = registerMeteringPointsFunc(tx, tenant, participantId, participant.MeteringPoint)
 	if err != nil {
 		return err
 	}

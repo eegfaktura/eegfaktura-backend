@@ -1,11 +1,17 @@
 package database
 
 import (
+	"at.ourproject/vfeeg-backend/model"
 	"fmt"
 	"github.com/golang/glog"
+	log "github.com/sirupsen/logrus"
 	"github.com/xuri/excelize/v2"
+	"gopkg.in/guregu/null.v4"
 	"io"
 	"regexp"
+	"strconv"
+	"strings"
+	"time"
 )
 
 var netOperatorMatch = regexp.MustCompile(`^[A-Z]{2}[0-9]*$`)
@@ -37,9 +43,10 @@ func ImportMasterdataFromExcel(r io.Reader, filename, sheet, tenant string) erro
 	}
 	fmt.Printf("Rows: %+v\n", rows)
 	colMap := map[string]int{}
+	participants := []*model.EegParticipant{}
 
 	for rows.Next() {
-		if cols, err := rows.Columns(); err == nil && len(cols) > 0 {
+		if cols, err := rows.Columns(excelize.Options{RawCellValue: true}); err == nil && len(cols) > 0 {
 			switch cols[0] {
 			case "[### Leerzeile für Importer ###]":
 				continue
@@ -53,35 +60,129 @@ func ImportMasterdataFromExcel(r io.Reader, filename, sheet, tenant string) erro
 				case netOperatorMatch.MatchString(cols[0]):
 					var firstname string
 					var lastname string
-					if _, err := fmt.Sscanf(cols[colMap["Name 1"]], "%s %s", &firstname, &lastname); err != nil {
-						fmt.Printf("Error Name extracting: %s (%s)\n", err, cols[colMap["Name 1"]])
-						continue
+
+					excelName1 := getColumValue(cols, colMap, "Name 1", "Name1")
+					excelName2 := getColumValue(cols, colMap, "Name 2", "Name2")
+
+					if len(excelName2) == 0 || len(excelName2) < 2 {
+						if _, err := fmt.Sscanf(getColumValue(cols, colMap, "Name 1", "Name1"), "%s %s", &lastname, &firstname); err != nil {
+							fmt.Printf("Error Name extracting: %s (%s)\n", err, getColumValue(cols, colMap, "Name 1", "Name1"))
+							continue
+						}
+					} else {
+						firstname = excelName1
+						lastname = excelName2
 					}
 
-					role := "UNKNOWN"
-					switch cols[colMap["Energierichtung"]] {
+					role := model.UNKNOWN
+					switch getColumValue(cols, colMap, "Energierichtung", "Energy Direction") {
 					case "GENERATION":
-						role = "GENERATOR"
+						role = model.GENERATOR
 					case "CONSUMPTION":
-						role = "CONSUMER"
+						role = model.CONSUMPTION
 					}
 
-					participantData := map[string]string{}
-					participantData["firstname"] = firstname
-					participantData["lastname"] = lastname
-					participantData["city"] = cols[colMap["Ort"]]
-					participantData["street"] = fmt.Sprintf("%s %s", cols[colMap["Straße"]], cols[colMap["Hausnummer"]])
-					participantData["zip"] = cols[colMap["PLZ"]]
-					participantData["role"] = role
-					participantData["counter_point"] = cols[colMap["Zählpunkt-ID"]]
-					participantData["communityId"] = cols[colMap["Anlagen-ID"]]
-					participantData["region"] = cols[colMap["Ortsgebiet"]]
-					participantData["cp_state"] = cols[colMap["Zählpunktstatus"]]
+					streetNumber, _ := strconv.Atoi(getColumValue(cols, colMap, "Hausnummer", "Street Number"))
+					var participantSince time.Time
+					docSignedAt := getColumValue(cols, colMap, "Dokument unterschrieben", "Document Signature Date")
+					if len(docSignedAt) > 0 {
+						participantSince = parseExcelDate(docSignedAt)
+					} else {
+						participantSince = time.Now()
+					}
 
-					fmt.Printf("Import Masterdata: %+v\n", participantData)
+					cpStatus := getColumValue(cols, colMap, "Zählpunktstatus", "Metering Point State")
+					if cpStatus == "ACTIVATED" || cpStatus == "REGISTERED" || len(cpStatus) == 0 {
+						var participant *model.EegParticipant
+						if p, ok := findParticipant(participants, firstname, lastname); ok {
+							participant = p
+						} else {
+							participant = &model.EegParticipant{
+								FirstName: firstname, LastName: lastname,
+								ResidentAddress: model.Address{
+									Type:         model.RESIDENCE,
+									Street:       getColumValue(cols, colMap, "Straße", "Street"),
+									StreetNumber: streetNumber,
+									Zip:          getColumValue(cols, colMap, "PLZ", "ZIP"),
+									City:         getColumValue(cols, colMap, "Ort", "City"),
+								},
+								Status:           model.StatusType(model.ACTIVE),
+								ParticipantSince: participantSince,
+								MeteringPoint:    []model.MeteringPoint{},
+							}
+							participants = append(participants, participant)
+						}
+						participant.MeteringPoint = append(participant.MeteringPoint, model.MeteringPoint{
+							MeteringPoint: getColumValue(cols, colMap, "Zählpunkt", "MeteringPoint Id"),
+							Transformer:   null.String{},
+							Direction:     model.DirectionType(role),
+							Status:        model.StatusType(model.ACTIVE),
+							TariffId:      null.String{},
+							EquipmentName: null.String{},
+							InverterId:    null.String{},
+							Street:        null.StringFrom(getColumValue(cols, colMap, "Straße", "Street")),
+							StreetNumber:  null.StringFrom(getColumValue(cols, colMap, "Hausnummer", "Street Number")),
+							City:          null.StringFrom(getColumValue(cols, colMap, "Ort", "City")),
+							Zip:           null.StringFrom(getColumValue(cols, colMap, "PLZ", "ZIP")),
+						})
+					}
 				}
 			}
 		}
 	}
+	fmt.Printf("LEN _ Import participants: %+v\n", len(participants))
+	for _, p := range participants {
+		//fmt.Printf("Import participants: %+v\n", p)
+		err = ImportParticipant(strings.ToUpper(tenant), "petero", p)
+		if err != nil {
+			log.Errorf("Error Import Participant from Excel: %s", err.Error())
+		}
+	}
+
 	return nil
+}
+
+func findParticipant(participants []*model.EegParticipant, firstname, lastname string) (*model.EegParticipant, bool) {
+	for _, p := range participants {
+		if p.FirstName == firstname && p.LastName == lastname {
+			return p, true
+		}
+	}
+	return nil, false
+}
+
+func getColumValue(cols []string, values map[string]int, deName, enName string) string {
+	idx := -1
+	if _, ok := values[deName]; ok {
+		idx = values[deName]
+	} else if _, ok := values[enName]; ok {
+		idx = values[enName]
+	}
+
+	if idx < 0 {
+		return ""
+	}
+	if idx > len(cols) {
+		return ""
+	}
+	return cols[idx]
+}
+
+var numberPattern = regexp.MustCompile(`^[0-9\\.,]+$`)
+
+func isDate(cell string) bool {
+	if len(cell) > 0 && numberPattern.MatchString(cell) {
+		return true
+	}
+	println(cell)
+	return false
+}
+
+func parseExcelDate(cell string) time.Time {
+	if isDate(cell) {
+		var excelEpoch = time.Date(1899, time.December, 30, 0, 0, 0, 0, time.UTC)
+		var days, _ = strconv.ParseFloat(cell, 64)
+		return excelEpoch.Add(time.Second * time.Duration(days*86400))
+	}
+	return time.Now()
 }

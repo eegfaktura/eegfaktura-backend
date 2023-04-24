@@ -2,6 +2,7 @@
 #
 
 scalar Eeg
+scalar Upload
 
 type Link {
   id: ID!
@@ -23,4 +24,5 @@ type Query {
 
 type Mutation {
   updateEegModel(tenant: String!, eegModel: EegModel): Eeg
+  masterDataUpload(tenant: String!, sheet: String!, file: Upload!): Boolean!
 }

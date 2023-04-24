@@ -32,4 +32,4 @@ push: docker
 	$(DOCKER) push ghcr.io/vfeeg-development/vfeeg-backend:latest
 
 protoc:
-	protoc --proto_path=. --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative ./protoc/*.proto
+	protoc --experimental_allow_proto3_optional=true --proto_path=. --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative ./proto/*.proto

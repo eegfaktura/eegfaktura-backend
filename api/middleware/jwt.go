@@ -7,11 +7,13 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"github.com/golang-jwt/jwt"
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
 	"io/ioutil"
 	"net/http"
 	"strings"
+	"time"
 )
 
 type JwtValidateMiddleware struct {
@@ -26,6 +28,12 @@ const (
 func NewJWTMiddleware(jwtUtil *AccessTokenGenJWT) *JwtValidateMiddleware {
 	return &JwtValidateMiddleware{
 		jwtUtil: jwtUtil,
+	}
+}
+
+func init() {
+	jwt.TimeFunc = func() time.Time {
+		return time.Now().UTC().Add(time.Second * 5)
 	}
 }
 

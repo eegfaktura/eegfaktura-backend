@@ -12,6 +12,7 @@ import (
 	"at.ourproject/vfeeg-backend/graph/generated"
 	"at.ourproject/vfeeg-backend/graph/gmodel"
 	"at.ourproject/vfeeg-backend/model"
+	"github.com/99designs/gqlgen/graphql"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -30,6 +31,16 @@ func (r *mutationResolver) UpdateEegModel(ctx context.Context, tenant string, ee
 	}
 
 	return eeg, nil
+}
+
+// MasterDataUpload is the resolver for the masterDataUpload field.
+func (r *mutationResolver) MasterDataUpload(ctx context.Context, tenant string, sheet string, file graphql.Upload) (bool, error) {
+
+	if err := database.ImportMasterdataFromExcel(file.File, file.Filename, sheet, tenant); err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 // Eeg is the resolver for the eeg field.

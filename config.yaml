@@ -12,5 +12,11 @@ jwt:
 mqtt:
   host: "tcp://localhost:1883"
   id: "edash-backend-1"
-  qos: 1
+  qos: 0
 
+file-content:
+  basedir: "../../file-content/"
+  templates: "./public"
+
+services:
+  mail-server: "localhost:9090"

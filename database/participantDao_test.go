@@ -12,11 +12,16 @@ import (
 )
 
 func init() {
+	//viper.Set("database.host", "localhost")
+	//viper.Set("database.port", 15432)
+	//viper.Set("database.user", "vfeeg")
+	//viper.Set("database.password", "admin.2022-basicdata")
+	//viper.Set("database.dbname", "basicdata")
 	viper.Set("database.host", "localhost")
-	viper.Set("database.port", 15432)
-	viper.Set("database.user", "vfeeg")
-	viper.Set("database.password", "admin.2022-basicdata")
-	viper.Set("database.dbname", "basicdata")
+	viper.Set("database.port", 6432)
+	viper.Set("database.user", "postgresUser")
+	viper.Set("database.password", "postgresPW")
+	viper.Set("database.dbname", "postgresDB")
 }
 
 func TestUpdateParticipant(t *testing.T) {
@@ -62,7 +67,7 @@ func TestRegisterParticipant(t *testing.T) {
 }
 
 func TestGetParticipant(t *testing.T) {
-	participants, err := GetParticipant("RC100181")
+	participants, err := GetParticipant("RC100298")
 	assert.NoError(t, err)
 
 	assert.NotEmpty(t, participants)
