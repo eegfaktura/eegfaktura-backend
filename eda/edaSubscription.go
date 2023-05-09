@@ -1,0 +1,114 @@
+package eda
+
+import (
+	"at.ourproject/vfeeg-backend/database"
+	"at.ourproject/vfeeg-backend/model"
+	mqttclient "at.ourproject/vfeeg-backend/mqtt"
+	"encoding/json"
+	"fmt"
+	"github.com/sirupsen/logrus"
+)
+
+var ECON_RESPONSE_CODES = map[int16]string{
+	99:  "Meldung erhalten",
+	182: "Noch kein fernauslesbarer Zähler eingebaut",
+	183: "Summe der gemeldeten Aufteilungsschlüssel übersteigt 100%",
+
+	175: "Zustimmung erteilt",
+
+	56:  "Zählpunkt nicht gefunden",
+	184: "Kunde hat optiert",
+	177: "Keine Datenfreigabe vorhanden",
+	160: "Verteilmodell entspricht nicht der Vereinbarung",
+	159: "Zu Prozessdatum ZP inaktiv bzw. noch kein Gerät eingebaut",
+	158: "ZP ist nicht teilnahmeberechtigt",
+	157: "ZP bereits einem Betreiber zugeordnet",
+	156: "ZP bereits zugeordnet",
+	86:  "konkurrierende Prozesse",
+	181: "Gemeinschafts-ID nicht vorhanden",
+	178: "Consent existiert bereits",
+	174: "Angefragte Daten nicht lieferbar",
+	173: "Kunde hat auf Datenfreigabe nicht reagiert (Timeout)",
+	172: "Kunde hat Datenfreigabe abgelehnt",
+	76:  "Ungültige Anforderungsdaten",
+	57:  "Zählpunkt nicht versorgt",
+	185: "Zählpunkt befindet sich nicht im Bereich der Energiegemeinschaft",
+}
+
+func InitEdaSubscription() {
+	mqttclient.Subscribe(getSubsriptions()...)
+}
+
+func getSubsriptions() []model.Subscriptions {
+	return []model.Subscriptions{
+		{
+			MessageCode: model.EBMS_ONLINE_REG_ANSWER,
+			Handler:     regAnswerHandler,
+		},
+		{
+			MessageCode: model.EBMS_ONLINE_REG_REJECTION,
+			Handler:     regAnswerHandler,
+		},
+		{
+			MessageCode: model.EBMS_ONLINE_REG_APPROVAL,
+			Handler:     regAnswerHandler,
+		},
+		{
+			MessageCode: model.EBMS_ONLINE_REG_COMPLETION,
+			Handler:     regCompletionHandler,
+		},
+	}
+}
+
+func regAnswerHandler(msg model.SubscribeMessage) {
+
+	responseCode, meter, err := extractResponseCodeAndMeteringPoint(&msg.Payload)
+	if err != nil {
+		return
+	}
+	resp, ok := ECON_RESPONSE_CODES[responseCode]
+	if !ok {
+		resp = fmt.Sprintf("%d", responseCode)
+	}
+	notificationValue := map[string]interface{}{
+		"type":          msg.MessageCode,
+		"meteringPoint": meter,
+		"responseCode":  resp}
+
+	var msgBytes []byte
+	if msgBytes, err = json.Marshal(notificationValue); err == nil {
+		if err = database.SaveNotification(msg.Tenant, string(msgBytes), "NOTIFICATION", "ADMIN"); err != nil {
+			logrus.Error(err)
+		}
+		return
+	}
+	logrus.Errorf("Parse object to json: %v", err)
+}
+
+func regCompletionHandler(msg model.SubscribeMessage) {
+	meterIds := []string{}
+	for _, m := range msg.Payload.MeterList {
+		meterIds = append(meterIds, m.MeteringPoint)
+	}
+
+	if len(meterIds) > 0 {
+		if err := database.ActivateMeteringPoints(msg.Tenant, meterIds); err != nil {
+			logrus.WithField("error", err.Error()).Errorf("can not activate metering points %+v", meterIds)
+			return
+		}
+	}
+
+	notificationValue := map[string]interface{}{
+		"type":           msg.MessageCode,
+		"meteringPoints": meterIds}
+
+	var err error
+	var msgBytes []byte
+	if msgBytes, err = json.Marshal(notificationValue); err == nil {
+		if err = database.SaveNotification(msg.Tenant, string(msgBytes), "NOTIFICATION", "USER"); err != nil {
+			logrus.Error(err)
+		}
+		return
+	}
+	logrus.Errorf("Parse object to json: %v", err)
+}

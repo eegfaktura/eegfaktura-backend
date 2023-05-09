@@ -11,31 +11,14 @@ import (
 
 type TopicType string
 
+var messageBroker *MessageBroker
+
 func (t TopicType) Tenant() string {
 	elems := strings.Split(string(t), "/")
-	if len(elems) > 2 {
-		return elems[2]
+	if len(elems) > 3 {
+		return elems[3]
 	}
 	return string(t)
-}
-
-// SubscribeMessage aggregates the result from subscribing.
-type SubscribeMessage struct {
-	// Reports the index of corresponding SubscribeTopic.
-	MessageCode model.EbMsMessageType
-
-	// Reports the subscribed topic.
-	Topic string
-
-	// Reports the payload content.
-	Payload []byte
-}
-
-type SubscribeHandler func(msg SubscribeMessage)
-
-type Subscriptions struct {
-	messageCode model.EbMsMessageType
-	handler     SubscribeHandler
 }
 
 type InboundMessage struct {
@@ -44,10 +27,25 @@ type InboundMessage struct {
 }
 
 type MessageBroker struct {
-	callbackStore map[model.EbMsMessageType]SubscribeHandler
+	callbackStore map[model.EbMsMessageType]model.SubscribeHandler
 	Inbound       chan InboundMessage
 	Outbound      chan model.EbmsMessage
 	*MQTTStreamer
+}
+
+func StartMessageBroker() error {
+	in := make(chan InboundMessage)
+	out := make(chan model.EbmsMessage)
+
+	streamer, err := NewMqttStreamer()
+	if err != nil {
+		return err
+	}
+	messageBroker = &MessageBroker{make(map[model.EbMsMessageType]model.SubscribeHandler), in, out, streamer}
+
+	go messageBroker.Listen()
+
+	return nil
 }
 
 func NewMessageBroker() (*MessageBroker, error) {
@@ -58,7 +56,7 @@ func NewMessageBroker() (*MessageBroker, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &MessageBroker{make(map[model.EbMsMessageType]SubscribeHandler), in, out, streamer}, nil
+	return &MessageBroker{make(map[model.EbMsMessageType]model.SubscribeHandler), in, out, streamer}, nil
 }
 
 func (mb *MessageBroker) SendMessage(m model.EbmsMessage, callback func(m string) error) {
@@ -79,10 +77,11 @@ func (mb *MessageBroker) SendMessage(m model.EbmsMessage, callback func(m string
 }
 
 func (mb *MessageBroker) Listen() {
-	qos := 1
-	token := mb.client.Subscribe("eda/response/+", byte(qos), func(client mqtt.Client, msg mqtt.Message) {
+	qos := 0
+	token := mb.client.Subscribe("eda/response/#", byte(qos), func(client mqtt.Client, msg mqtt.Message) {
 		fmt.Printf("Message from MQTT: %s [%+v] %+v\n", TopicType(msg.Topic()).Tenant(), msg.Topic(), string(msg.Payload()))
-		mb.Inbound <- InboundMessage{TopicType(msg.Topic()).Tenant(), msg.Payload()}
+		mb.Inbound <- InboundMessage{strings.ToUpper(TopicType(msg.Topic()).Tenant()), msg.Payload()}
+		msg.Ack()
 	})
 	token.Wait()
 	if token.Error() != nil {
@@ -92,7 +91,7 @@ func (mb *MessageBroker) Listen() {
 	for {
 		select {
 		case msg := <-mb.Inbound:
-			fmt.Printf("Message Reveiced %+v\n", msg)
+			log.Infof("Message on topic: %s", msg.tenant)
 			mb.received(msg)
 		case send := <-mb.Outbound:
 			mb.SendMessage(send, func(m string) error {
@@ -103,19 +102,29 @@ func (mb *MessageBroker) Listen() {
 	}
 }
 
-func (mb *MessageBroker) Subscribe(subscriptions ...Subscriptions) {
+func (mb *MessageBroker) Subscribe(subscriptions ...model.Subscriptions) {
 	for _, s := range subscriptions {
-		mb.callbackStore[s.messageCode] = s.handler
+		mb.callbackStore[s.MessageCode] = s.Handler
+	}
+}
+
+func (mb *MessageBroker) Unsubscribe(subscriptions ...model.Subscriptions) {
+	for _, s := range subscriptions {
+		delete(mb.callbackStore, s.MessageCode)
 	}
 }
 
 func (mb *MessageBroker) received(inbound InboundMessage) {
-	message := model.EbmsMessage{}
-	json.Unmarshal(inbound.msg, &message)
+	msg := model.EdaMessage{}
+	err := json.Unmarshal(inbound.msg, &msg)
+	if err != nil {
+		log.Errorf("Error from MQTT: (%s) %v", inbound.tenant, inbound.msg)
+		return
+	}
 
-	c, ok := mb.callbackStore[message.MessageCode]
+	fmt.Printf("Subscriptions: %+v Code: %+v\n", mb.callbackStore, string(inbound.msg))
+	c, ok := mb.callbackStore[msg.Message.MessageCode]
 	if ok {
-		payload, _ := json.Marshal(message)
-		c(SubscribeMessage{message.MessageCode, inbound.tenant, payload})
+		c(model.SubscribeMessage{MessageCode: msg.Message.MessageCode, Tenant: inbound.tenant, Payload: msg.Message})
 	}
 }

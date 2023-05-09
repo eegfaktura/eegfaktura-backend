@@ -31,7 +31,7 @@ const (
 )
 
 type Address struct {
-	Type         AddressType `json:"type"`
+	Type         AddressType `json:"type" goqu:"skipupdate"`
 	Street       string      `json:"street,omitempty"`
 	StreetNumber int         `json:"streetNumber,omitempty" db:"street_number"`
 	Zip          string      `json:"zip,omitempty"`

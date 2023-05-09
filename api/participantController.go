@@ -4,6 +4,7 @@ import (
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
+	mqttclient "at.ourproject/vfeeg-backend/mqtt"
 	"at.ourproject/vfeeg-backend/parser"
 	"encoding/json"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 func InitParticipantRouter(r *mux.Router, jwtWrapper middleware.JWTWrapperFunc) *mux.Router {
@@ -40,22 +42,22 @@ func fetchParticipant() middleware.JWTHandlerFunc {
 
 func updateParticipant() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
-		vars := mux.Vars(r)
-		participantId := vars["id"]
+		//vars := mux.Vars(r)
+		//participantId := vars["id"]
 
-		var t map[string]interface{}
+		var t model.EegParticipant
 		err := json.NewDecoder(r.Body).Decode(&t)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		err = database.UpdateParticipant(tenant, participantId, t)
+		err = database.UpdateParticipant(tenant, claims.Username, &t)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		respondWithStatus(w, http.StatusAccepted)
+		respondWithJSON(w, http.StatusAccepted, t)
 	}
 }
 
@@ -83,9 +85,22 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 		vars := mux.Vars(r)
 		participantId := vars["id"]
 
+		eeg, err := database.GetEeg(tenant)
+		if err != nil {
+			log.WithField("error", err).Error("Query EEG")
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		participant, err := database.QueryParticipant(participantId)
+		if err != nil {
+			log.WithField("error", err).Error("Query Participant")
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
 		// Parse our multipart form, 10 << 20 specifies a maximum
 		// upload of 10 MB files.
-		var err error = r.ParseMultipartForm(10 << 20)
+		err = r.ParseMultipartForm(10 << 20)
 		if err != nil {
 			respondWithError(w, http.StatusBadRequest, err.Error())
 			return
@@ -131,6 +146,24 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 		if err = database.ConfirmParticipant(tenant, claims.Username, participantId); err != nil {
 			fmt.Fprintf(w, err.Error())
 			return
+		}
+
+		for _, m := range participant.MeteringPoint {
+			ebmsMessage := model.EbmsMessage{
+				//Sender:      strings.ToUpper(tenant),
+				Sender: strings.ToUpper("sepp.gaug"),
+				//Receiver:    strings.ToUpper(eeg.GridOperator),
+				Receiver:    strings.ToUpper("obermueller.peter"),
+				MessageCode: model.EBMS_ONLINE_REG_INIT,
+				EcId:        eeg.CommunityId,
+				Meter:       &model.Meter{MeteringPoint: m.MeteringPoint, Direction: m.Direction},
+			}
+
+			log.WithField("tenant", tenant).Infof("Start Meteringpoint %s registration", m.MeteringPoint)
+			if err = mqttclient.SendEbmsMessage(ebmsMessage); err != nil {
+				respondWithError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
 		}
 
 		if err = parser.SendMailFromTemplate(tenant, participantId,

@@ -1,6 +1,8 @@
 package mqttclient
 
 import (
+	"at.ourproject/vfeeg-backend/model"
+	"errors"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -10,6 +12,11 @@ import (
 type MQTTStreamer struct {
 	client mqtt.Client
 }
+type Error string
+
+var (
+	MqttBrokerNotStarted = errors.New("Broker not running")
+)
 
 func NewMqttStreamer() (*MQTTStreamer, error) {
 	opts := mqtt.NewClientOptions()
@@ -50,4 +57,28 @@ func NewMqttStreamer() (*MQTTStreamer, error) {
 	}
 
 	return &MQTTStreamer{client: client}, nil
+}
+
+func Subscribe(subscriptions ...model.Subscriptions) error {
+	if messageBroker != nil {
+		messageBroker.Subscribe(subscriptions...)
+		return nil
+	}
+	return MqttBrokerNotStarted
+}
+
+func Unsubscribe(subscriptions ...model.Subscriptions) error {
+	if messageBroker != nil {
+		messageBroker.Unsubscribe(subscriptions...)
+		return nil
+	}
+	return MqttBrokerNotStarted
+}
+
+func SendEbmsMessage(msg model.EbmsMessage) error {
+	if messageBroker != nil {
+		messageBroker.Outbound <- msg
+		return nil
+	}
+	return MqttBrokerNotStarted
 }

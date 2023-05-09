@@ -4,6 +4,7 @@ import (
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
+	mqttclient "at.ourproject/vfeeg-backend/mqtt"
 	"encoding/json"
 	"github.com/golang/glog"
 	"github.com/gorilla/mux"
@@ -13,15 +14,15 @@ import (
 	"time"
 )
 
-func InitEegRouter(r *mux.Router, jwtWrapper middleware.JWTWrapperFunc, mqttSendCh chan model.EbmsMessage) *mux.Router {
+func InitEegRouter(r *mux.Router, jwtWrapper middleware.JWTWrapperFunc) *mux.Router {
 	s := r.PathPrefix("/eeg").Subrouter()
 
 	s.HandleFunc("", jwtWrapper(getEEG())).Methods("GET")
 	s.HandleFunc("", jwtWrapper(updateEEG())).Methods("POST")
 	s.HandleFunc("/tariff", jwtWrapper(getTariff())).Methods("GET")
 	s.HandleFunc("/tariff", jwtWrapper(addTariff())).Methods("POST")
-	s.HandleFunc("/sync/participants", jwtWrapper(syncParticipantsEda(mqttSendCh))).Methods("POST")
-	s.HandleFunc("/sync/meterpoint", jwtWrapper(syncMeterpointEda(mqttSendCh))).Methods("POST")
+	s.HandleFunc("/sync/participants", jwtWrapper(syncParticipantsEda())).Methods("POST")
+	s.HandleFunc("/sync/meterpoint", jwtWrapper(syncMeterpointEda())).Methods("POST")
 	s.HandleFunc("/import/masterdata", jwtWrapper(uploadMasterData())).Methods("POST")
 
 	return r
@@ -87,7 +88,7 @@ func addTariff() middleware.JWTHandlerFunc {
 	}
 }
 
-func syncParticipantsEda(mqttSendCh chan model.EbmsMessage) middleware.JWTHandlerFunc {
+func syncParticipantsEda() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
 		eeg, err := database.GetEeg(tenant)
 		if err != nil {
@@ -107,14 +108,16 @@ func syncParticipantsEda(mqttSendCh chan model.EbmsMessage) middleware.JWTHandle
 				To:   time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location()).UnixMilli()},
 		}
 
-		log.WithField("tenant", tenant).Info("Start Metering sync")
-		mqttSendCh <- ebmsMessage
-
+		log.WithField("tenant", tenant).Info("Start Participant sync")
+		if err = mqttclient.SendEbmsMessage(ebmsMessage); err != nil {
+			respondWithError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 		respondWithStatus(w, http.StatusNoContent)
 	}
 }
 
-func syncMeterpointEda(mqttSendCh chan model.EbmsMessage) middleware.JWTHandlerFunc {
+func syncMeterpointEda() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
 		var m model.MeteringPoint
 		err := json.NewDecoder(r.Body).Decode(&m)
@@ -143,8 +146,10 @@ func syncMeterpointEda(mqttSendCh chan model.EbmsMessage) middleware.JWTHandlerF
 		}
 
 		log.WithField("tenant", tenant).Info("Start Metering sync")
-		mqttSendCh <- ebmsMessage
-
+		if err = mqttclient.SendEbmsMessage(ebmsMessage); err != nil {
+			respondWithError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 		respondWithStatus(w, http.StatusNoContent)
 	}
 }

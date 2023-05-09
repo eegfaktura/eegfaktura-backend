@@ -4,9 +4,9 @@ import (
 	"at.ourproject/vfeeg-backend/api"
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"at.ourproject/vfeeg-backend/config"
+	"at.ourproject/vfeeg-backend/eda"
 	"at.ourproject/vfeeg-backend/graph"
 	"at.ourproject/vfeeg-backend/graph/generated"
-	"at.ourproject/vfeeg-backend/model"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
 	"flag"
 	"fmt"
@@ -19,14 +19,14 @@ import (
 	"time"
 )
 
-func InitRouters(mqttSendCh chan model.EbmsMessage) *mux.Router {
+func InitRouters() *mux.Router {
 
 	jwtWrapper := middleware.JWTMiddleware(viper.GetString("jwt.pubKeyFile"))
 
 	//r := mux.NewRouter().PathPrefix("/api").Subrouter()
 	r := mux.NewRouter()
 	s := r.PathPrefix("/").Subrouter()
-	s = api.InitEegRouter(s, jwtWrapper, mqttSendCh)
+	s = api.InitEegRouter(s, jwtWrapper)
 	s = api.InitParticipantRouter(s, jwtWrapper)
 	s = api.InitMeteringRouter(s, jwtWrapper)
 
@@ -38,20 +38,22 @@ func main() {
 	flag.Parse()
 	config.ReadConfig(*configPath)
 
-	messageBroker, err := mqttclient.NewMessageBroker()
+	err := mqttclient.StartMessageBroker()
 	if err != nil {
 		panic(err)
 	}
 
 	log.SetReportCaller(true)
 
+	eda.InitEdaSubscription()
+	mqttclient.InitErrorSubscriptions()
+
 	gqlSrv := handler.NewDefaultServer(generated.NewExecutableSchema(generated.Config{Resolvers: &graph.Resolver{}}))
-	r := InitRouters(messageBroker.Outbound)
+	r := InitRouters()
 	r.Handle("/query", gqlSrv)
 	r.Use(middleware.GQLMiddleware(viper.GetString("jwt.pubKeyFile")))
 
-	go messageBroker.Listen()
-	messageBroker.Subscribe(mqttclient.GetSubsriptions()...)
+	//messageBroker.Subscribe(mqttclient.GetSubsriptions()...)
 
 	allowedOrigins := handlers.AllowedOrigins([]string{"*"})
 	allowedHeaders := handlers.AllowedHeaders(

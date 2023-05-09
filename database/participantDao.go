@@ -159,7 +159,7 @@ func CompleteParticipant(db *sqlx.DB, p *model.EegParticipant) error {
 	return nil
 }
 
-func UpdateParticipant(tenant, participantId string, participant map[string]interface{}) error {
+func UpdateParticipant(tenant, user string, participant *model.EegParticipant) error {
 	db, err := GetDBXConnection()
 	if err != nil {
 		return err
@@ -170,11 +170,59 @@ func UpdateParticipant(tenant, participantId string, participant map[string]inte
 		Set(participant).
 		Where(goqu.Ex{
 			"tenant": goqu.Op{"eq": tenant},
-			"id":     goqu.Op{"eq": participantId},
+			"id":     goqu.Op{"eq": participant.Id.String()},
 		}).
 		ToSQL()
 	_, err = db.Exec(sql)
+	if err != nil {
+		return err
+	}
 
+	sql, _, _ = goqu.Update("base.contactdetail").
+		Set(participant.Contact).
+		Where(goqu.Ex{
+			"participant_id": participant.Id.String(),
+		}).
+		ToSQL()
+	_, err = db.Exec(sql)
+	if err != nil {
+		return err
+	}
+
+	sql, _, _ = goqu.Update("base.address").
+		Set(participant.ResidentAddress).
+		Where(goqu.Ex{
+			"type":           model.RESIDENCE,
+			"participant_id": participant.Id.String(),
+		}).
+		ToSQL()
+	_, err = db.Exec(sql)
+	if err != nil {
+		return err
+	}
+
+	sql, _, _ = goqu.Update("base.address").
+		Set(participant.BillingAddress).
+		Where(goqu.Ex{
+			"type":           model.BILLING,
+			"participant_id": participant.Id.String(),
+		}).
+		ToSQL()
+	_, err = db.Exec(sql)
+	if err != nil {
+		return err
+	}
+
+	sql, _, _ = goqu.Update("base.bankaccount").
+		Set(participant.BankAccount).
+		Where(goqu.Ex{
+			"participant_id": participant.Id.String(),
+		}).
+		ToSQL()
+	_, err = db.Exec(sql)
+	if err != nil {
+		return err
+	}
 	return err
 }
 
@@ -187,6 +235,7 @@ type ParticipantWithMeta struct {
 
 func RegisterParticipant(tenant, username string, participant *model.EegParticipant) error {
 	participant.Status = model.PENDING
+	participant.Id = uuid.NewUUID()
 	return saveParticipant(tenant, username, participant, RegisterMeteringPoints)
 }
 
@@ -246,6 +295,7 @@ func saveParticipant(tenant, username string, participant *model.EegParticipant,
 		model.BankInfo
 		Participant_id string
 	}{participant.BankAccount, participantId}
+
 	sql, _, _ = pgDialect.Insert("base.bankaccount").Rows(bankInfoEntry).ToSQL()
 	_, err = tx.Exec(sql)
 	if err != nil {

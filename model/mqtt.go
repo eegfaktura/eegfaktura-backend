@@ -4,13 +4,18 @@ type EbMsMessageType string
 
 const (
 	EBMS_ENERGY_FILE_RESPONSE = "DATEN_CRMSG"
-	EBMS_ONLINE_REG_ANSWER    = "ANTWORT_ECON"
-	EBMS_ONLINE_REG_INIT      = "ANFORDERUNG_ECON"
-	EBMS_ZP_LIST              = "ANFORDERUNG_ECP"
-	EBMS_ZP_SYNC              = "ANFORDERUNG_PT"
-	EBMS_ZP_LIST_RESPONSE     = "SENDEN_ECP"
-	EBMS_EEG_BASE_DATA        = "ANFORDERUNG_GN"
-	EBMS_ERROR_MESSAGE        = "ERROR_MESSAGE"
+
+	EBMS_ONLINE_REG_INIT       = "ANFORDERUNG_ECON"
+	EBMS_ONLINE_REG_ANSWER     = "ANTWORT_ECON"
+	EBMS_ONLINE_REG_REJECTION  = "ABLEHNUNG_ECON"
+	EBMS_ONLINE_REG_APPROVAL   = "ZUSTIMMUNG_ECON"
+	EBMS_ONLINE_REG_COMPLETION = "ABSCHLUSS_ECON"
+
+	EBMS_ZP_LIST          = "ANFORDERUNG_ECP"
+	EBMS_ZP_SYNC          = "ANFORDERUNG_PT"
+	EBMS_ZP_LIST_RESPONSE = "SENDEN_ECP"
+	EBMS_EEG_BASE_DATA    = "ANFORDERUNG_GN"
+	EBMS_ERROR_MESSAGE    = "ERROR_MESSAGE"
 )
 
 type Timeline struct {
@@ -62,4 +67,27 @@ type EbmsMessage struct {
 	Timeline       *Timeline       `json:"timeline,omitempty"`
 	MeterList      []Meter         `json:"meterList,omitempty"`
 	ErrorMessage   string          `json:"errorMessage,omitempty"`
+}
+
+type EdaMessage struct {
+	Message EbmsMessage `json:"message"`
+}
+
+// SubscribeMessage aggregates the result from subscribing.
+type SubscribeMessage struct {
+	// Reports the index of corresponding SubscribeTopic.
+	MessageCode EbMsMessageType
+
+	// Determine the tenantId.
+	Tenant string
+
+	// Reports the payload content.
+	Payload EbmsMessage
+}
+
+type SubscribeHandler func(msg SubscribeMessage)
+
+type Subscriptions struct {
+	MessageCode EbMsMessageType
+	Handler     SubscribeHandler
 }
