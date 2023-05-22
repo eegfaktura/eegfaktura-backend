@@ -6,6 +6,7 @@ import (
 	"github.com/doug-martin/goqu/v9"
 	"github.com/jmoiron/sqlx"
 	"github.com/pborman/uuid"
+	"time"
 )
 
 func GetParticipant(tenant string) ([]model.EegParticipant, error) {
@@ -236,6 +237,7 @@ type ParticipantWithMeta struct {
 func RegisterParticipant(tenant, username string, participant *model.EegParticipant) error {
 	participant.Status = model.PENDING
 	participant.Id = uuid.NewUUID()
+	participant.ParticipantSince = time.Now()
 	return saveParticipant(tenant, username, participant, RegisterMeteringPoints)
 }
 
@@ -251,13 +253,13 @@ func ConfirmParticipant(tenant, username, participantId string) error {
 	}
 	defer db.Close()
 
-	_, err = db.Exec("UPDATE base.participant SET status = 'APPROVED', lastmodifieddate = 'now()', lastmodifiedby = $1 WHERE id = $2", username, participantId)
+	_, err = db.Exec("UPDATE base.participant SET status = 'ACTIVE', lastmodifieddate = 'now()', lastmodifiedby = $1 WHERE id = $2", username, participantId)
 
 	return err
 }
 
 func saveParticipant(tenant, username string, participant *model.EegParticipant,
-	registerMeteringPointsFunc func(*dbsql.Tx, string, string, []model.MeteringPoint) error) error {
+	registerMeteringPointsFunc func(*dbsql.Tx, string, string, []*model.MeteringPoint) error) error {
 	db, err := GetDBXConnection()
 	if err != nil {
 		return err

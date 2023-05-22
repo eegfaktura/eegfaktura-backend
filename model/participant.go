@@ -7,23 +7,23 @@ import (
 )
 
 type EegParticipant struct {
-	Id                    uuid.UUID       `json:"id" goqu:"skipupdate"`
-	FirstName             string          `json:"firstname"`
-	LastName              string          `json:"lastname"`
-	TitleBefore           string          `json:"titleBefore,omitempty"`
-	TitleAfter            string          `json:"titleAfter,omitempty"`
-	ParticipantSince      time.Time       `json:"participantSince" goqu:"defaultifempty"`
-	VatId                 string          `json:"vatId,omitempty"`
-	TaxId                 string          `json:"taxId,omitempty"`
-	CompanyRegisterNumber string          `json:"companyRegisterNumber,omitempty"`
-	Contact               ContactInfo     `json:"contact" db:"-" goqu:"skipinsert"`
-	BillingAddress        Address         `json:"billingAddress" db:"-" goqu:"skipinsert"`
-	ResidentAddress       Address         `json:"residentAddress" db:"-" goqu:"skipinsert"`
-	BankAccount           BankInfo        `json:"accountInfo" db:"-" goqu:"skipinsert"`
-	MeteringPoint         []MeteringPoint `json:"meters" db:"-" goqu:"skipinsert"`
-	TariffId              null.String     `json:"tariffId,omitempty" db:"tariffid" goqu:"skipinsert"`
-	Status                StatusType      `json:"status,omitempty" goqu:"defaultifempty"`
-	Version               int             `json:"version,omitempty" goqu:"defaultifempty"`
+	Id                    uuid.UUID        `json:"id" goqu:"skipupdate"`
+	FirstName             string           `json:"firstname"`
+	LastName              string           `json:"lastname"`
+	TitleBefore           string           `json:"titleBefore,omitempty"`
+	TitleAfter            string           `json:"titleAfter,omitempty"`
+	ParticipantSince      time.Time        `json:"participantSince" goqu:"defaultifempty"`
+	VatId                 string           `json:"vatId,omitempty"`
+	TaxId                 string           `json:"taxId,omitempty"`
+	CompanyRegisterNumber string           `json:"companyRegisterNumber,omitempty"`
+	Contact               ContactInfo      `json:"contact" db:"-" goqu:"skipinsert"`
+	BillingAddress        Address          `json:"billingAddress" db:"-" goqu:"skipinsert"`
+	ResidentAddress       Address          `json:"residentAddress" db:"-" goqu:"skipinsert"`
+	BankAccount           BankInfo         `json:"accountInfo" db:"-" goqu:"skipinsert"`
+	MeteringPoint         []*MeteringPoint `json:"meters" db:"-" goqu:"skipinsert"`
+	TariffId              null.String      `json:"tariffId,omitempty" db:"tariffid" goqu:"skipinsert"`
+	Status                StatusType       `json:"status,omitempty" goqu:"defaultifempty"`
+	Version               int              `json:"version,omitempty" goqu:"defaultifempty"`
 }
 
 type ContactInfo struct {
@@ -49,8 +49,10 @@ type StatusType string
 const (
 	NEW      = "NEW"
 	PENDING  = "PENDING"
+	APPROVED = "APPROVED"
 	ACTIVE   = "ACTIVE"
 	INACTIVE = "INACTIVE"
+	REJECTED = "REJECTED"
 )
 
 type MeteringPoint struct {

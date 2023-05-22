@@ -108,11 +108,13 @@ func ImportMasterdataFromExcel(r io.Reader, filename, sheet, tenant string) erro
 								},
 								Status:           model.StatusType(model.ACTIVE),
 								ParticipantSince: participantSince,
-								MeteringPoint:    []model.MeteringPoint{},
+								MeteringPoint:    []*model.MeteringPoint{},
+								BankAccount:      model.BankInfo{Iban: null.StringFrom(""), Owner: null.StringFrom("")},
+								Version:          0,
 							}
 							participants = append(participants, participant)
 						}
-						participant.MeteringPoint = append(participant.MeteringPoint, model.MeteringPoint{
+						participant.MeteringPoint = append(participant.MeteringPoint, &model.MeteringPoint{
 							MeteringPoint: getColumValue(cols, colMap, "Zählpunkt", "MeteringPoint Id"),
 							Transformer:   null.String{},
 							Direction:     model.DirectionType(role),

@@ -15,19 +15,19 @@ type meteringEntryType struct {
 	Tenant         string
 }
 
-func RegisterMeteringPoints(tx *sql.Tx, tenant, participantId string, point []model.MeteringPoint) error {
+func RegisterMeteringPoints(tx *sql.Tx, tenant, participantId string, point []*model.MeteringPoint) error {
 	meteringEntry := []meteringEntryType{}
 	for _, p := range point {
-		p.Status = model.PENDING
-		meteringEntry = append(meteringEntry, meteringEntryType{p, participantId, tenant})
+		p.Status = model.NEW
+		meteringEntry = append(meteringEntry, meteringEntryType{*p, participantId, tenant})
 	}
 	return saveMeteringPoint(tx, meteringEntry)
 }
 
-func ImportMeteringPoints(tx *sql.Tx, tenant, participantId string, point []model.MeteringPoint) error {
+func ImportMeteringPoints(tx *sql.Tx, tenant, participantId string, point []*model.MeteringPoint) error {
 	meteringEntry := []meteringEntryType{}
 	for _, p := range point {
-		meteringEntry = append(meteringEntry, meteringEntryType{p, participantId, tenant})
+		meteringEntry = append(meteringEntry, meteringEntryType{*p, participantId, tenant})
 	}
 	return saveMeteringPoint(tx, meteringEntry)
 }
@@ -87,6 +87,25 @@ func ActivateMeteringPoints(tenant string, meterId []string) error {
 
 	statement, _, _ := goqu.Update(TABLE_METERINGPOINT).
 		Set(goqu.Record{"status": "ACTIVE"}).
+		Where(goqu.Ex{
+			"tenant":            goqu.Op{"eq": tenant},
+			"metering_point_id": goqu.Op{"eq": meterId},
+		}).
+		ToSQL()
+	_, err = db.Exec(statement)
+
+	return err
+}
+
+func MeteringPointsSetStatus(tenant string, status model.StatusType, meterId []string) error {
+	db, err := GetDBXConnection()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	statement, _, _ := goqu.Update(TABLE_METERINGPOINT).
+		Set(goqu.Record{"status": status}).
 		Where(goqu.Ex{
 			"tenant":            goqu.Op{"eq": tenant},
 			"metering_point_id": goqu.Op{"eq": meterId},

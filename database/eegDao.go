@@ -16,12 +16,14 @@ func GetEeg(tenant string) (*model.Eeg, error) {
 	var eeg model.Eeg
 	err = db.QueryRow(""+
 		"SELECT name, businessNr, legal, gridoperator_name, communityId, gridoperator_code, rcNumber, allocationMode, "+
-		"settlementInterval, providerBusinessNr, street, street_number, zip, city, phone, email, website, iban, owner, sepa FROM base.eeg WHERE tenant = $1", tenant).
+		"settlementInterval, providerBusinessNr, street, street_number, zip, city, phone, email, website, iban, owner, sepa, "+
+		"taxid, vatid, online FROM base.eeg WHERE tenant = $1", tenant).
 		Scan(&eeg.Name, &eeg.BusinessNr, &eeg.Legal, &eeg.OperatorName,
 			&eeg.CommunityId, &eeg.GridOperator, &eeg.RcNumber,
 			&eeg.AllocationMode, &eeg.SettlementInterval, &eeg.ProviderBusinessNr,
 			&eeg.Street, &eeg.StreetNumber, &eeg.Zip, &eeg.City, &eeg.Contact.Phone, &eeg.Contact.Email,
 			&eeg.Optionals.Website, &eeg.AccountInfo.Iban, &eeg.AccountInfo.Owner, &eeg.AccountInfo.Sepa,
+			&eeg.TaxNumber, &eeg.VatNumber, &eeg.Online,
 		)
 	if err == sql.ErrNoRows {
 		return &eeg, nil
@@ -39,7 +41,7 @@ func UpdateEeg(tenant string, eeg *model.Eeg) error {
 	defer db.Close()
 
 	_, err = db.Exec(""+
-		"INSERT INTO base.eeg"+
+		"INSERT INTO base.eeg "+
 		" (tenant, name, businessNr, legal, gridoperator_name, communityId, gridoperator_code, rcNumber, allocationMode, settlementInterval, providerBusinessNr, "+
 		"street, street_number, city, zip, phone, email, website, iban, owner, sepa) "+
 		"VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, "+

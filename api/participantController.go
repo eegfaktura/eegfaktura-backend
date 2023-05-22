@@ -147,32 +147,42 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 			fmt.Fprintf(w, err.Error())
 			return
 		}
+		participant.Status = model.ACTIVE
 
-		for _, m := range participant.MeteringPoint {
-			ebmsMessage := model.EbmsMessage{
-				//Sender:      strings.ToUpper(tenant),
-				Sender: strings.ToUpper("sepp.gaug"),
-				//Receiver:    strings.ToUpper(eeg.GridOperator),
-				Receiver:    strings.ToUpper("obermueller.peter"),
-				MessageCode: model.EBMS_ONLINE_REG_INIT,
-				EcId:        eeg.CommunityId,
-				Meter:       &model.Meter{MeteringPoint: m.MeteringPoint, Direction: m.Direction},
+		if eeg.Online {
+			for _, m := range participant.MeteringPoint {
+				ebmsMessage := model.EbmsMessage{
+					//Sender:      strings.ToUpper(tenant),
+					Sender: strings.ToUpper("sepp.gaug"),
+					//Receiver:    strings.ToUpper(eeg.GridOperator),
+					Receiver:    strings.ToUpper("obermueller.peter"),
+					MessageCode: model.EBMS_ONLINE_REG_INIT,
+					EcId:        eeg.CommunityId,
+					Meter:       &model.Meter{MeteringPoint: m.MeteringPoint, Direction: m.Direction},
+				}
+
+				log.WithField("tenant", tenant).Infof("Start Meteringpoint %s registration", m.MeteringPoint)
+				if err = mqttclient.SendEbmsMessage(ebmsMessage); err != nil {
+					respondWithError(w, http.StatusInternalServerError, err.Error())
+					return
+				}
 			}
 
-			log.WithField("tenant", tenant).Infof("Start Meteringpoint %s registration", m.MeteringPoint)
-			if err = mqttclient.SendEbmsMessage(ebmsMessage); err != nil {
-				respondWithError(w, http.StatusInternalServerError, err.Error())
+			if err = parser.SendMailFromTemplate(tenant, participantId,
+				filepath.Join(viper.GetString("file-content.templates"), tenant, "template/AktivierungsEmail-template.html"),
+				"Aktivierung im Serviceportal",
+				"obermueller.peter@gmail.com"); err != nil {
+				fmt.Fprintf(w, err.Error())
 				return
 			}
+		} else {
+			meterIds := []string{}
+			for _, m := range participant.MeteringPoint {
+				meterIds = append(meterIds, m.MeteringPoint)
+				m.Status = model.ACTIVE
+			}
+			database.MeteringPointsSetStatus(tenant, model.ACTIVE, meterIds)
 		}
-
-		if err = parser.SendMailFromTemplate(tenant, participantId,
-			filepath.Join(viper.GetString("file-content.templates"), tenant, "template/AktivierungsEmail-template.html"),
-			"Aktivierung im Serviceportal",
-			"obermueller.peter@gmail.com"); err != nil {
-			fmt.Fprintf(w, err.Error())
-			return
-		}
-
+		respondWithJSON(w, http.StatusCreated, participant)
 	}
 }

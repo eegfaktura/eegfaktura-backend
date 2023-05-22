@@ -75,6 +75,23 @@ func regAnswerHandler(msg model.SubscribeMessage) {
 		"meteringPoint": meter,
 		"responseCode":  resp}
 
+	var status model.StatusType = model.REJECTED
+	switch responseCode {
+	case 175:
+		status = model.APPROVED
+		break
+	case 99:
+		status = model.PENDING
+		break
+	}
+
+	if len(meter) > 0 {
+		if err := database.MeteringPointsSetStatus(msg.Tenant, status, []string{meter}); err != nil {
+			logrus.WithField("error", err.Error()).Errorf("can not change metering point status %+v", meter)
+			return
+		}
+	}
+
 	var msgBytes []byte
 	if msgBytes, err = json.Marshal(notificationValue); err == nil {
 		if err = database.SaveNotification(msg.Tenant, string(msgBytes), "NOTIFICATION", "ADMIN"); err != nil {
@@ -92,7 +109,7 @@ func regCompletionHandler(msg model.SubscribeMessage) {
 	}
 
 	if len(meterIds) > 0 {
-		if err := database.ActivateMeteringPoints(msg.Tenant, meterIds); err != nil {
+		if err := database.MeteringPointsSetStatus(msg.Tenant, model.ACTIVE, meterIds); err != nil {
 			logrus.WithField("error", err.Error()).Errorf("can not activate metering points %+v", meterIds)
 			return
 		}
