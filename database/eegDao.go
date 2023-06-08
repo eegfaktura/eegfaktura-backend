@@ -3,7 +3,11 @@ package database
 import (
 	"at.ourproject/vfeeg-backend/model"
 	"database/sql"
+	"github.com/doug-martin/goqu/v9"
+	log "github.com/sirupsen/logrus"
 )
+
+const TABLE_EEG = "base.eeg"
 
 func GetEeg(tenant string) (*model.Eeg, error) {
 
@@ -15,8 +19,8 @@ func GetEeg(tenant string) (*model.Eeg, error) {
 
 	var eeg model.Eeg
 	err = db.QueryRow(""+
-		"SELECT name, businessNr, legal, gridoperator_name, communityId, gridoperator_code, rcNumber, allocationMode, "+
-		"settlementInterval, providerBusinessNr, street, street_number, zip, city, phone, email, website, iban, owner, sepa, "+
+		"SELECT name, \"businessNr\", legal, gridoperator_name, \"communityId\", gridoperator_code, \"rcNumber\", \"allocationMode\", "+
+		"\"settlementInterval\", \"providerBusinessNr\", street, street_number, zip, city, phone, email, website, iban, owner, sepa, "+
 		"taxid, vatid, online FROM base.eeg WHERE tenant = $1", tenant).
 		Scan(&eeg.Name, &eeg.BusinessNr, &eeg.Legal, &eeg.OperatorName,
 			&eeg.CommunityId, &eeg.GridOperator, &eeg.RcNumber,
@@ -62,6 +66,21 @@ func UpdateEeg(tenant string, eeg *model.Eeg) error {
 	return err
 }
 
+func UpdateEegPartial(tenant string, fields map[string]interface{}) error {
+	db, err := GetDBXConnection()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	statement, _, _ := pgDialect.Update(TABLE_EEG).Set(fields).Where(goqu.Ex{"tenant": goqu.V(tenant)}).ToSQL()
+
+	log.Debugf("Update EEG VALUES: %s\n", statement)
+
+	_, err = db.Exec(statement)
+	return err
+}
+
 func GetCommunityId(tenant string) (string, error) {
 
 	db, err := GetDBConnection()
@@ -71,7 +90,7 @@ func GetCommunityId(tenant string) (string, error) {
 	defer db.Close()
 
 	communityId := ""
-	err = db.QueryRow("SELECT communityid FROM base.eeg WHERE tenant = $1", tenant).Scan(&communityId)
+	err = db.QueryRow("SELECT communityId FROM base.eeg WHERE tenant = $1", tenant).Scan(&communityId)
 
 	return communityId, err
 }

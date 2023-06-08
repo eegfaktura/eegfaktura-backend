@@ -6,6 +6,7 @@ option java_outer_classname = "ExcelAdminProto";
 option go_package = "at.ourproject/vfeeg-backend/protobuf";
 
 package at.energydash;
+
 // The greeting service definition.
 service ExcelAdminService {
   // Sends a greeting

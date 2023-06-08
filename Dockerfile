@@ -12,6 +12,8 @@ RUN go build -o /usr/local/bin/vfeeg-backend -ldflags="-s -w"
 COPY zertifikat-pub.pem /usr/local/bin/
 COPY config.yaml /etc/backend/
 
+VOLUME /opt/public
+
 RUN rm -r ./*
 
 EXPOSE 8080

@@ -1,9 +1,10 @@
 package parser
 
 import (
-	"at.ourproject/vfeeg-backend/database"
+	"at.ourproject/vfeeg-backend/model"
 	"at.ourproject/vfeeg-backend/util"
 	"bytes"
+	log "github.com/sirupsen/logrus"
 	"html/template"
 )
 
@@ -20,11 +21,11 @@ func ParseTemplate(templateFileName string, data interface{}) (*bytes.Buffer, er
 	return buf, nil
 }
 
-func SendMailFromTemplate(tenant, participantId, templateFileName, subject, to string) error {
+func SendMailFromTemplate(tenant, templateFileName, subject string, participant *model.EegParticipant) error {
 
-	participant, err := database.QueryParticipant(participantId)
-	if err != nil {
-		return err
+	if !participant.Contact.Email.Valid {
+		log.Warnf("Participant without email contact: %s (%s)", participant.LastName, participant.Id)
+		return nil
 	}
 
 	buf, err := ParseTemplate(templateFileName, participant)
@@ -32,5 +33,5 @@ func SendMailFromTemplate(tenant, participantId, templateFileName, subject, to s
 		return err
 	}
 	//to := participant.Contact.Email
-	return util.SendMail(tenant, to, subject, buf, nil, nil)
+	return util.SendMail(tenant, participant.Contact.Email.String, subject, buf, nil, nil)
 }

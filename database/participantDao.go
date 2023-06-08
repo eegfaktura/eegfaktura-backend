@@ -343,3 +343,14 @@ func SaveNotification(tenant string, notification string, msgType, role string) 
 func InsertParticipant(tenant string, participant *model.EegParticipant) error {
 	return nil
 }
+
+func SaveEdaHistory(tenant, conversationId, direction string, notification string, msgType, role string) error {
+	db, err := GetDBXConnection()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	_, err = db.Exec("INSERT INTO base.processhistory (tenant, conversationid, type, date, issuer, message, direction) VALUES ($1, $2, $3, NOW(), $4, $5, $6)", tenant, conversationId, msgType, role, notification, direction)
+	return err
+}

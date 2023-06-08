@@ -78,6 +78,7 @@ func Unsubscribe(subscriptions ...model.Subscriptions) error {
 func SendEbmsMessage(msg model.EbmsMessage) error {
 	if messageBroker != nil {
 		messageBroker.Outbound <- msg
+
 		return nil
 	}
 	return MqttBrokerNotStarted

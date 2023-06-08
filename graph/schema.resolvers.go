@@ -51,7 +51,6 @@ func (r *queryResolver) Eeg(ctx context.Context) (*model.Eeg, error) {
 	if err != nil {
 		return nil, err
 	}
-	log.Infof("Query Eeg: %+v", eeg)
 	return eeg, nil
 }
 

@@ -8,6 +8,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	"github.com/pborman/uuid"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
@@ -77,9 +78,9 @@ func AddTariff(tenant string, tariff *model.Tariff) error {
 	}
 
 	update := updateType{tenant, *tariff}
-	fmt.Printf("Insert new Tariff %+v\n", update)
+	log.Debugf("Insert new Tariff %+v\n", update)
 
-	fmt.Printf("Tarrif: %+v\n", update)
+	log.Debugf("Tarrif: %+v\n", update)
 	_, err = db.NamedExec(
 		"INSERT INTO base.tariff (id, tenant, name, type, billingperiod, usevat, vatinpercent, accountnetamount, accountgrossamount, participantfee, basefee, discount, businessnr, centperkwh, freeKwh, createdby, version) VALUES (:id, :tenant, :name, :type, :billingperiod, :usevat, :vatinpercent, :accountnetamount, :accountgrossamount, :participantfee, :basefee, :discount, :businessnr, :centperkwh, :freekwh, :tenant, :version) ", &update)
 
@@ -106,7 +107,7 @@ func UpdateTariff(tenant string, tariff *model.Tariff) error {
 
 	update := updateType{tenant, *tariff}
 
-	fmt.Printf("Tarrif: %+v\n", update)
+	log.Debugf("Tarrif: %+v\n", update)
 	_, err = db.NamedExec(
 		"UPDATE base.tariff SET billingperiod=:billingperiod, usevat=:usevat, vatinpercent=:vatinpercent, accountnetamount=:accountnetamount, accountgrossamount=:accountgrossamount, participantfee=:participantfee, basefee=:basefee, discount=:discount, businessnr=:businessnr, centperkwh=:centperkwh, freeKwh = :freekwh, createdby=:createdby, version=:version WHERE id = :id", &update)
 

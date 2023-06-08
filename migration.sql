@@ -15,9 +15,11 @@ CREATE TABLE IF NOT EXISTS base.EEG
     communityId        TEXT    NOT NULL,
     businessNr         INTEGER NOT NULL,
     allocationMode     TEXT    NOT NULL DEFAULT 'DYNAMIC', /* "DYNAMIC" | "STATIC" */
-    settlementInterval TEXT    NOT NULL DEFAULT 'MONTHLY', /* "MONTHLY" | "ANNUAL" | BIANNUAL */
+    settlementInterval TEXT    NOT NULL DEFAULT 'MONTHLY', /* "MONTHLY" | "ANNUAL" | BIANNUAL | QUARTER*/
     providerBusinessNr INTEGER,
-    taxnumber          TEXT,
+    taxid              TEXT,
+    vatid              TEXT,
+    subjecttovat       BOOLEAN,
     -- Address Info
     street             TEXT    NOT NULL,
     street_number      INTEGER NOT NULL,
@@ -129,7 +131,7 @@ CREATE TABLE IF NOT EXISTS base.meteringpoint
     participant_id    UUID NOT NULL,
     tenant            TEXT NOT NULL,
     transformer       TEXT,
-    direction         TEXT NOT NULL DEFAULT 'CONSUMPTION', /* 'GENERATOR' | 'CONSUMPTION' */
+    direction         TEXT NOT NULL DEFAULT 'CONSUMPTION', /* 'GENERATION' | 'CONSUMPTION' */
     status            TEXT NOT NULL DEFAULT 'NEW', /* "NEW" | "PENDING" | "ACCEPTED" | "ACTIVE" | "INACTIVE" */
     tariff_id         UUID,
     inverterid        TEXT,
@@ -152,6 +154,19 @@ CREATE TABLE IF NOT EXISTS base.notification
     date         DATE    NOT NULL             DEFAULT now(),
     role         VARCHAR NOT NULL             DEFAULT 'ADMIN' /* 'USER' | 'ADMIN' */
 );
+
+CREATE TABLE IF NOT EXISTS base.processhistory
+(
+    id             UUID NOT NULL PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant         TEXT NOT NULL,
+    conversationId TEXT NOT NULL,
+    type           TEXT NOT NULL,
+    date           DATE NOT NULL             DEFAULT now(),
+    issuer         TEXT NOT NULL,
+    message        json NOT NULL             DEFAULT '{}',
+    direction      TEXT NOT NULL             DEFAULT 'OUT' /* MESSAGE DIRECTION 'OUT' | 'IN' */
+);
+
 
 CREATE VIEW base.activeTariff AS
 SELECT id,
@@ -188,13 +203,13 @@ SELECT p.id                                                     participant_id,
        p.taxid                                                  participant_tax_id,
        p.companyregisternumber                                  participant_company_register_number,
        pm.metering_point_id                                     metering_point_id,
-       (CASE WHEN pm.direction = 'GENERATOR' THEN 0 ELSE 1 END) metering_point_type,
+       (CASE WHEN pm.direction = 'GENERATION' THEN 0 ELSE 1 END) metering_point_type,
        c.tenant                                                 eec_id,
-       c.rcnumber                                               tenant_id,
+       c.rcNumber                                               tenant_id,
        c.name                                                   eec_name,
        c.vatid                                                  eec_vat_id,
        c.taxid                                                  eec_tax_id,
-       c.businessnr                                             eec_company_register_number,
+       c.businessNr                                             eec_company_register_number,
        c.subjecttovat                                           eec_subject_to_vat,
        ''                                                       eec_invoice_number_prefix,
        ''                                                       eec_credit_note_prefix,

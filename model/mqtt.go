@@ -69,9 +69,9 @@ type EbmsMessage struct {
 	ErrorMessage   string          `json:"errorMessage,omitempty"`
 }
 
-type EdaMessage struct {
-	Message EbmsMessage `json:"message"`
-}
+//type EdaMessage struct {
+//	Message EbmsMessage `json:"message"`
+//}
 
 // SubscribeMessage aggregates the result from subscribing.
 type SubscribeMessage struct {

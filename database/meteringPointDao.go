@@ -4,7 +4,7 @@ import (
 	"at.ourproject/vfeeg-backend/model"
 	"database/sql"
 	"github.com/doug-martin/goqu/v9"
-	"log"
+	log "github.com/sirupsen/logrus"
 )
 
 const TABLE_METERINGPOINT = "base.meteringpoint"
@@ -34,7 +34,7 @@ func ImportMeteringPoints(tx *sql.Tx, tenant, participantId string, point []*mod
 
 func saveMeteringPoint(tx *sql.Tx, meteringEntry []meteringEntryType) error {
 	statement, _, _ := pgDialect.Insert(TABLE_METERINGPOINT).Rows(meteringEntry).ToSQL()
-	log.Printf("Register Meterings: %+v", statement)
+	log.Debugf("Register Meterings: %+v", statement)
 	_, err := tx.Exec(statement)
 	return err
 }

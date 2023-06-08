@@ -79,7 +79,7 @@ func (mb *MessageBroker) SendMessage(m model.EbmsMessage, callback func(m string
 func (mb *MessageBroker) Listen() {
 	qos := 0
 	token := mb.client.Subscribe("eda/response/#", byte(qos), func(client mqtt.Client, msg mqtt.Message) {
-		fmt.Printf("Message from MQTT: %s [%+v] %+v\n", TopicType(msg.Topic()).Tenant(), msg.Topic(), string(msg.Payload()))
+		log.Infof("Message from MQTT: %s [%+v]\n", TopicType(msg.Topic()).Tenant(), msg.Topic())
 		mb.Inbound <- InboundMessage{strings.ToUpper(TopicType(msg.Topic()).Tenant()), msg.Payload()}
 		msg.Ack()
 	})
@@ -115,16 +115,15 @@ func (mb *MessageBroker) Unsubscribe(subscriptions ...model.Subscriptions) {
 }
 
 func (mb *MessageBroker) received(inbound InboundMessage) {
-	msg := model.EdaMessage{}
+	msg := model.EbmsMessage{}
 	err := json.Unmarshal(inbound.msg, &msg)
 	if err != nil {
 		log.Errorf("Error from MQTT: (%s) %v", inbound.tenant, inbound.msg)
 		return
 	}
 
-	fmt.Printf("Subscriptions: %+v Code: %+v\n", mb.callbackStore, string(inbound.msg))
-	c, ok := mb.callbackStore[msg.Message.MessageCode]
+	c, ok := mb.callbackStore[msg.MessageCode]
 	if ok {
-		c(model.SubscribeMessage{MessageCode: msg.Message.MessageCode, Tenant: inbound.tenant, Payload: msg.Message})
+		c(model.SubscribeMessage{MessageCode: msg.MessageCode, Tenant: inbound.tenant, Payload: msg})
 	}
 }

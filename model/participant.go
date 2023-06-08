@@ -39,20 +39,20 @@ type BankInfo struct {
 type DirectionType string
 
 const (
-	CONSUMPTION = "CONSUMPTION"
-	GENERATOR   = "GENERATOR"
-	UNKNOWN     = "UNKNOWN"
+	CONSUMPTION DirectionType = "CONSUMPTION"
+	GENERATOR   DirectionType = "GENERATION"
+	UNKNOWN     DirectionType = "UNKNOWN"
 )
 
 type StatusType string
 
 const (
-	NEW      = "NEW"
-	PENDING  = "PENDING"
-	APPROVED = "APPROVED"
-	ACTIVE   = "ACTIVE"
-	INACTIVE = "INACTIVE"
-	REJECTED = "REJECTED"
+	NEW      StatusType = "NEW"
+	PENDING  StatusType = "PENDING"
+	APPROVED StatusType = "APPROVED"
+	ACTIVE   StatusType = "ACTIVE"
+	INACTIVE StatusType = "INACTIVE"
+	REJECTED StatusType = "REJECTED"
 )
 
 type MeteringPoint struct {

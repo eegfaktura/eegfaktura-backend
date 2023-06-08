@@ -42,14 +42,14 @@ func getEEG() middleware.JWTHandlerFunc {
 
 func updateEEG() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
-		var e model.Eeg
+		var e map[string]interface{}
 		err := json.NewDecoder(r.Body).Decode(&e)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		if err = database.UpdateEeg(tenant, &e); err != nil {
+		if err = database.UpdateEegPartial(tenant, e); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}

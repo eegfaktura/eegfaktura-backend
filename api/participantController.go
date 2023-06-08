@@ -152,10 +152,10 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 		if eeg.Online {
 			for _, m := range participant.MeteringPoint {
 				ebmsMessage := model.EbmsMessage{
-					//Sender:      strings.ToUpper(tenant),
-					Sender: strings.ToUpper("sepp.gaug"),
-					//Receiver:    strings.ToUpper(eeg.GridOperator),
-					Receiver:    strings.ToUpper("obermueller.peter"),
+					Sender: strings.ToUpper(tenant),
+					//Sender: strings.ToUpper("sepp.gaug"),
+					Receiver: strings.ToUpper(eeg.GridOperator),
+					//Receiver:    strings.ToUpper("obermueller.peter"),
 					MessageCode: model.EBMS_ONLINE_REG_INIT,
 					EcId:        eeg.CommunityId,
 					Meter:       &model.Meter{MeteringPoint: m.MeteringPoint, Direction: m.Direction},
@@ -168,12 +168,14 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 				}
 			}
 
-			if err = parser.SendMailFromTemplate(tenant, participantId,
-				filepath.Join(viper.GetString("file-content.templates"), tenant, "template/AktivierungsEmail-template.html"),
-				"Aktivierung im Serviceportal",
-				"obermueller.peter@gmail.com"); err != nil {
-				fmt.Fprintf(w, err.Error())
-				return
+			if participant.Contact.Email.Valid {
+				if err = parser.SendMailFromTemplate(tenant,
+					filepath.Join(viper.GetString("file-content.templates"), tenant, "template/AktivierungsEmail-template.html"),
+					"Aktivierung im Serviceportal", participant); err != nil {
+					log.Errorf("Error Sending Mail: %+v", err.Error())
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
 			}
 		} else {
 			meterIds := []string{}
@@ -181,7 +183,11 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 				meterIds = append(meterIds, m.MeteringPoint)
 				m.Status = model.ACTIVE
 			}
-			database.MeteringPointsSetStatus(tenant, model.ACTIVE, meterIds)
+			err := database.MeteringPointsSetStatus(tenant, model.ACTIVE, meterIds)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 		}
 		respondWithJSON(w, http.StatusCreated, participant)
 	}

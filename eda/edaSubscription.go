@@ -42,6 +42,10 @@ func InitEdaSubscription() {
 func getSubsriptions() []model.Subscriptions {
 	return []model.Subscriptions{
 		{
+			MessageCode: model.EBMS_ONLINE_REG_INIT,
+			Handler:     reqInitialHandler,
+		},
+		{
 			MessageCode: model.EBMS_ONLINE_REG_ANSWER,
 			Handler:     regAnswerHandler,
 		},
@@ -58,6 +62,19 @@ func getSubsriptions() []model.Subscriptions {
 			Handler:     regCompletionHandler,
 		},
 	}
+}
+
+func reqInitialHandler(msg model.SubscribeMessage) {
+	logrus.Printf("Handle Subscriptions: %+v", msg)
+	var msgBytes []byte
+	var err error
+	if msgBytes, err = json.Marshal(msg.Payload); err == nil {
+		if err = database.SaveEdaHistory(msg.Tenant, msg.Payload.ConversationId, "OUT", string(msgBytes), string(msg.MessageCode), "ADMIN"); err != nil {
+			logrus.Error(err)
+		}
+		return
+	}
+	logrus.Errorf("Parse object to json: %v", err)
 }
 
 func regAnswerHandler(msg model.SubscribeMessage) {
@@ -97,6 +114,12 @@ func regAnswerHandler(msg model.SubscribeMessage) {
 		if err = database.SaveNotification(msg.Tenant, string(msgBytes), "NOTIFICATION", "ADMIN"); err != nil {
 			logrus.Error(err)
 		}
+	}
+
+	if msgBytes, err = json.Marshal(msg.Payload); err == nil {
+		if err = database.SaveEdaHistory(msg.Tenant, msg.Payload.ConversationId, "OUT", string(msgBytes), string(msg.MessageCode), "ADMIN"); err != nil {
+			logrus.Error(err)
+		}
 		return
 	}
 	logrus.Errorf("Parse object to json: %v", err)
@@ -121,8 +144,15 @@ func regCompletionHandler(msg model.SubscribeMessage) {
 
 	var err error
 	var msgBytes []byte
-	if msgBytes, err = json.Marshal(notificationValue); err == nil {
-		if err = database.SaveNotification(msg.Tenant, string(msgBytes), "NOTIFICATION", "USER"); err != nil {
+	if msgBytes, err = json.Marshal(notificationValue); err != nil {
+		logrus.Errorf("Parse object to json: %v", err)
+		return
+	}
+	if err = database.SaveNotification(msg.Tenant, string(msgBytes), "NOTIFICATION", "USER"); err != nil {
+		logrus.Error(err)
+	}
+	if msgBytes, err = json.Marshal(msg.Payload); err == nil {
+		if err = database.SaveEdaHistory(msg.Tenant, msg.Payload.ConversationId, "OUT", string(msgBytes), string(msg.MessageCode), "ADMIN"); err != nil {
 			logrus.Error(err)
 		}
 		return
