@@ -2,9 +2,9 @@ port: 9080
 database:
   host: "localhost"
   port: 6432
-  user: "postgresUser"
+  user: "postgresuser"
   password: "postgresPW"
-  dbname: "postgresDB"
+  dbname: "postgresdb"
 
 jwt:
   pubKeyFile: "./zertifikat-pub.pem"
@@ -18,5 +18,8 @@ file-content:
   basedir: "../../file-content/"
   templates: "./public"
 
+grpc-provider:
+  port: 9091
+
 services:
-  mail-server: "localhost:9090"
+  mail-server: "localhost:9091"

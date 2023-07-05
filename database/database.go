@@ -39,8 +39,8 @@ func GetTariff(tenant string) ([]model.Tariff, error) {
 	defer db.Close()
 
 	tariff := []model.Tariff{}
-	err = db.Select(&tariff, "SELECT id, name, billingperiod, usevat, vatinpercent, accountnetamount, accountgrossamount, participantfee, basefee, businessnr, version, type, centperKWH, discount, freeKwh "+
-		"FROM base.activetariff WHERE tenant = $1", tenant)
+	err = db.Select(&tariff, `SELECT id, name, "billingPeriod", "useVat", "vatInPercent", "accountNetAmount", "accountGrossAmount", "participantFee", "baseFee", "businessNr", version, type, "centPerKWh", discount, "freeKWh" `+
+		`FROM base.activetariff WHERE tenant = $1`, tenant)
 	if err == sql.ErrNoRows {
 		return []model.Tariff{}, nil
 	}
@@ -74,15 +74,15 @@ func AddTariff(tenant string, tariff *model.Tariff) error {
 
 	type updateType struct {
 		Tenant string `json:"tenant" db:"tenant"`
-		model.Tariff
+		*model.Tariff
 	}
 
-	update := updateType{tenant, *tariff}
+	update := updateType{tenant, tariff}
 	log.Debugf("Insert new Tariff %+v\n", update)
 
 	log.Debugf("Tarrif: %+v\n", update)
 	_, err = db.NamedExec(
-		"INSERT INTO base.tariff (id, tenant, name, type, billingperiod, usevat, vatinpercent, accountnetamount, accountgrossamount, participantfee, basefee, discount, businessnr, centperkwh, freeKwh, createdby, version) VALUES (:id, :tenant, :name, :type, :billingperiod, :usevat, :vatinpercent, :accountnetamount, :accountgrossamount, :participantfee, :basefee, :discount, :businessnr, :centperkwh, :freekwh, :tenant, :version) ", &update)
+		`INSERT INTO base.tariff (id, tenant, name, type, "billingPeriod", "useVat", "vatInPercent", "accountNetAmount", "accountGrossAmount", "participantFee", "baseFee", discount, "businessNr", "centPerKWh", "freeKWh", "createdBy", version) VALUES (:id, :tenant, :name, :type, :billingPeriod, :useVat, :vatInPercent, :accountNetAmount, :accountGrossAmount, :participantFee, :baseFee, :discount, :businessNr, :centPerKWh, :freeKWh, :tenant, :version)`, &update)
 
 	return err
 }
@@ -109,7 +109,7 @@ func UpdateTariff(tenant string, tariff *model.Tariff) error {
 
 	log.Debugf("Tarrif: %+v\n", update)
 	_, err = db.NamedExec(
-		"UPDATE base.tariff SET billingperiod=:billingperiod, usevat=:usevat, vatinpercent=:vatinpercent, accountnetamount=:accountnetamount, accountgrossamount=:accountgrossamount, participantfee=:participantfee, basefee=:basefee, discount=:discount, businessnr=:businessnr, centperkwh=:centperkwh, freeKwh = :freekwh, createdby=:createdby, version=:version WHERE id = :id", &update)
+		"UPDATE base.tariff SET \"billingPeriod\"=:billingperiod, \"useVat\"=:usevat, \"vatInPercent\"=:vatinpercent, \"accountNetAmount\"=:accountnetamount, \"accountGrossAmount\"=:accountgrossamount, \"participantFee\"=:participantfee, \"baseFee\"=:basefee, discount=:discount, \"businessNr\"=:businessnr, \"centPerKWh\"=:centperkwh, \"freeKWh\" = :freekwh, \"createdBy\"=:createdby, version=:version WHERE id = :id", &update)
 
 	return err
 }

@@ -17,7 +17,7 @@ func GetParticipant(tenant string) ([]model.EegParticipant, error) {
 	}
 	defer db.Close()
 
-	sql, _, err := pgDialect.From("base.participant").Select(&participants).Where(goqu.C("tenant").Eq(tenant)).ToSQL()
+	sql, _, err := pgDialect.From("base.participant").Select(&participants).Where(goqu.C("tenant").Eq(tenant)).Order(goqu.I("lastname").Asc()).ToSQL()
 	if err != nil {
 		return []model.EegParticipant{}, err
 	}
@@ -229,21 +229,33 @@ func UpdateParticipant(tenant, user string, participant *model.EegParticipant) e
 
 type ParticipantWithMeta struct {
 	*model.EegParticipant
-	Tenant         string
-	CreatedBy      string
-	LastmodifiedBy string
+	Tenant         string `db:"tenant"`
+	CreatedBy      string `db:"createdBy"`
+	LastmodifiedBy string `db:"lastModifiedBy"`
 }
 
 func RegisterParticipant(tenant, username string, participant *model.EegParticipant) error {
+	db, err := GetDBXConnection()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
 	participant.Status = model.PENDING
 	participant.Id = uuid.NewUUID()
 	participant.ParticipantSince = time.Now()
-	return saveParticipant(tenant, username, participant, RegisterMeteringPoints)
+	return saveParticipant(db, tenant, username, participant, RegisterMeteringPoints)
 }
 
 func ImportParticipant(tenant, username string, participant *model.EegParticipant) error {
+	db, err := GetDBXConnection()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
 	participant.Id = uuid.NewUUID()
-	return saveParticipant(tenant, username, participant, ImportMeteringPoints)
+	return saveParticipant(db, tenant, username, participant, ImportMeteringPoints)
 }
 
 func ConfirmParticipant(tenant, username, participantId string) error {
@@ -253,18 +265,13 @@ func ConfirmParticipant(tenant, username, participantId string) error {
 	}
 	defer db.Close()
 
-	_, err = db.Exec("UPDATE base.participant SET status = 'ACTIVE', lastmodifieddate = 'now()', lastmodifiedby = $1 WHERE id = $2", username, participantId)
+	_, err = db.Exec("UPDATE base.participant SET status = 'ACTIVE', \"lastModifiedDate\" = 'now()', \"lastModifiedBy\" = $1 WHERE id = $2", username, participantId)
 
 	return err
 }
 
-func saveParticipant(tenant, username string, participant *model.EegParticipant,
+func saveParticipant(db *sqlx.DB, tenant, username string, participant *model.EegParticipant,
 	registerMeteringPointsFunc func(*dbsql.Tx, string, string, []*model.MeteringPoint) error) error {
-	db, err := GetDBXConnection()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
 
 	registeredParticipant := ParticipantWithMeta{
 		participant, tenant, username, username,
@@ -277,7 +284,9 @@ func saveParticipant(tenant, username string, participant *model.EegParticipant,
 	defer tx.Rollback()
 
 	participantId := ""
-	sql, _, _ := pgDialect.Insert("base.participant").Rows(registeredParticipant).Returning("id").ToSQL()
+	sql, _, _ := pgDialect.Insert("base.participant").Rows(registeredParticipant).Returning("id").
+		//OnConflict(goqu.DoUpdate("lastmodifieddate", goqu.L("NOW()"))).
+		ToSQL()
 	err = tx.QueryRow(sql).Scan(&participantId)
 	if err != nil {
 		return err

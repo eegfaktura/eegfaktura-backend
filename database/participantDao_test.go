@@ -2,27 +2,17 @@ package database
 
 import (
 	"at.ourproject/vfeeg-backend/model"
+	dbsql "database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/doug-martin/goqu/v9"
-	"github.com/spf13/viper"
+	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"strings"
 	"testing"
 )
-
-func init() {
-	//viper.Set("database.host", "localhost")
-	//viper.Set("database.port", 15432)
-	//viper.Set("database.user", "vfeeg")
-	//viper.Set("database.password", "admin.2022-basicdata")
-	//viper.Set("database.dbname", "basicdata")
-	viper.Set("database.host", "localhost")
-	viper.Set("database.port", 6432)
-	viper.Set("database.user", "postgresUser")
-	viper.Set("database.password", "postgresPW")
-	viper.Set("database.dbname", "postgresDB")
-}
 
 func TestUpdateParticipant(t *testing.T) {
 	var tests = []struct {
@@ -72,4 +62,49 @@ func TestGetParticipant(t *testing.T) {
 
 	assert.NotEmpty(t, participants)
 	fmt.Printf("Participants: %+v\n", participants)
+}
+
+func Test_saveParticipant(t *testing.T) {
+	type args struct {
+		db                         *sqlx.DB
+		tenant                     string
+		username                   string
+		participant                *model.EegParticipant
+		registerMeteringPointsFunc func(*dbsql.Tx, string, string, []*model.MeteringPoint) error
+	}
+
+	mDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+
+	participantJson := `{"businessRole":"EEG_PRIVATE","firstname":"Peter","lastname":"Obermüller","residentAddress":{"street":"Lambacherstraße","streetNumber":39,"zip":"4680","city":"Haag am Hausruck","type":"RESIDENCE"},"contact":{"phone":"06603611758","email":"obermueller.peter@gmail.com"},"accountInfo":{},"optionals":{},"status":"NEW","id":"e98b8619-7b6a-4836-baff-5489fb539535","role":"EEG_USER","billingAddress":{"street":"Lambacherstraße","streetNumber":39,"zip":"4680","city":"Haag am Hausruck","type":"BILLING"},"meters":[{"direction":"CONSUMPTION","status":"NEW","meteringPoint":"AT48124817243712897412","participantId":"e98b8619-7b6a-4836-baff-5489fb539535","tariffId":"a48d1990-a5a2-40c9-8d0a-77bed8e7dbcd","street":"Lambacherstraße","streetNumber":"39","zip":"4680","city":"Haag am Hausruck"}]}`
+
+	var p model.EegParticipant
+	err = json.NewDecoder(strings.NewReader(participantJson)).Decode(&p)
+	assert.NoError(t, err)
+
+	mdb := sqlx.NewDb(mDB, "mock")
+
+	sql, _, _ := pgDialect.Insert("base.participant").Rows(p).Returning("id").ToSQL()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(sql).WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("11"))
+	mock.ExpectCommit()
+
+	tests := []struct {
+		name    string
+		args    args
+		wantErr assert.ErrorAssertionFunc
+	}{
+		{name: "Save Participant", // TODO: Add test cases.
+			args:    args{db: mdb, tenant: "te100001", username: "tester", participant: &p, registerMeteringPointsFunc: ImportMeteringPoints},
+			wantErr: assert.NoError},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := saveParticipant(tt.args.db, tt.args.tenant, tt.args.username, tt.args.participant, tt.args.registerMeteringPointsFunc)
+			assert.NoError(t, mock.ExpectationsWereMet())
+			require.NoError(t, err)
+
+		})
+	}
 }

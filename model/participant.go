@@ -8,20 +8,22 @@ import (
 
 type EegParticipant struct {
 	Id                    uuid.UUID        `json:"id" goqu:"skipupdate"`
+	ParticipantNumber     null.String      `json:"participantNumber" db:"participantNumber"`
+	BusinessRole          string           `json:"businessRole" db:"businessRole"`
 	FirstName             string           `json:"firstname"`
 	LastName              string           `json:"lastname"`
-	TitleBefore           string           `json:"titleBefore,omitempty"`
-	TitleAfter            string           `json:"titleAfter,omitempty"`
-	ParticipantSince      time.Time        `json:"participantSince" goqu:"defaultifempty"`
-	VatId                 string           `json:"vatId,omitempty"`
-	TaxId                 string           `json:"taxId,omitempty"`
-	CompanyRegisterNumber string           `json:"companyRegisterNumber,omitempty"`
+	TitleBefore           string           `json:"titleBefore,omitempty" db:"titleBefore"`
+	TitleAfter            string           `json:"titleAfter,omitempty" db:"titleAfter"`
+	ParticipantSince      time.Time        `json:"participantSince" db:"participantSince" goqu:"defaultifempty"`
+	VatNumber             string           `json:"vatNumber,omitempty" db:"vatNumber"`
+	TaxNumber             string           `json:"taxNumber,omitempty" db:"taxNumber"`
+	CompanyRegisterNumber string           `json:"companyRegisterNumber,omitempty" db:"companyRegisterNumber"`
 	Contact               ContactInfo      `json:"contact" db:"-" goqu:"skipinsert"`
 	BillingAddress        Address          `json:"billingAddress" db:"-" goqu:"skipinsert"`
 	ResidentAddress       Address          `json:"residentAddress" db:"-" goqu:"skipinsert"`
 	BankAccount           BankInfo         `json:"accountInfo" db:"-" goqu:"skipinsert"`
 	MeteringPoint         []*MeteringPoint `json:"meters" db:"-" goqu:"skipinsert"`
-	TariffId              null.String      `json:"tariffId,omitempty" db:"tariffid" goqu:"skipinsert"`
+	TariffId              null.String      `json:"tariffId,omitempty" db:"tariffId" goqu:"skipinsert"`
 	Status                StatusType       `json:"status,omitempty" goqu:"defaultifempty"`
 	Version               int              `json:"version,omitempty" goqu:"defaultifempty"`
 }
@@ -56,15 +58,16 @@ const (
 )
 
 type MeteringPoint struct {
-	MeteringPoint string        `json:"meteringPoint" db:"metering_point_id"`
-	Transformer   null.String   `json:"transformer,omitempty"`
-	Direction     DirectionType `json:"direction,omitempty"`
-	Status        StatusType    `json:"status,omitempty"`
-	TariffId      null.String   `json:"tariffId" db:"tariff_id"`
-	EquipmentName null.String   `json:"equipmentName,omitempty" db:"equipmentname"`
-	InverterId    null.String   `json:"inverterId,omitempty" db:"inverterid"`
-	Street        null.String   `json:"street,omitempty"`
-	StreetNumber  null.String   `json:"streetNumber,omitempty" db:"street_number"`
-	City          null.String   `json:"city,omitempty"`
-	Zip           null.String   `json:"zip,omitempty"`
+	MeteringPoint   string        `json:"meteringPoint" db:"metering_point_id"`
+	Transformer     null.String   `json:"transformer,omitempty"`
+	Direction       DirectionType `json:"direction,omitempty"`
+	Status          StatusType    `json:"status,omitempty"`
+	TariffId        null.String   `json:"tariffId" db:"tariff_id"`
+	EquipmentNumber null.String   `json:"equipmentNumber,omitempty" db:"equipmentNumber"`
+	EquipmentName   null.String   `json:"equipmentName,omitempty" db:"equipmentname"`
+	InverterId      null.String   `json:"inverterId,omitempty" db:"inverterid"`
+	Street          null.String   `json:"street,omitempty"`
+	StreetNumber    null.String   `json:"streetNumber,omitempty" db:"streetNumber"`
+	City            null.String   `json:"city,omitempty"`
+	Zip             null.String   `json:"zip,omitempty"`
 }

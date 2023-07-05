@@ -53,7 +53,12 @@ func updateEEG() middleware.JWTHandlerFunc {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		respondWithJSON(w, 200, e)
+		eeg, err := database.GetEeg(tenant)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		respondWithJSON(w, 200, eeg)
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"at.ourproject/vfeeg-backend/graph"
 	"at.ourproject/vfeeg-backend/graph/generated"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
+	"at.ourproject/vfeeg-backend/util"
 	"flag"
 	"fmt"
 	"github.com/99designs/gqlgen/graphql/handler"
@@ -74,18 +75,20 @@ func main() {
 			"Sec-Fetch-Mode",
 			"Sec-Fetch-Site",
 			"Cache-Control",
-			"tenant"})
+			"tenant",
+			"X-tenant"})
 	//allowedHeaders := handlers.AllowedHeaders(
 	//	[]string{"authorization", "content-type"})
 	allowedMethods := handlers.AllowedMethods([]string{"GET", "HEAD", "POST", "PUT", "OPTIONS", "DELETE"})
 	allowedCredentials := handlers.AllowCredentials()
+
+	go util.StartGRPCServer()
 
 	log.Infof("VFEEG BACKEND Config:  host: %s  port: %d  database:%s  user:%s",
 		viper.GetString("database.host"),
 		viper.GetInt("database.port"),
 		viper.GetString("database.dbname"),
 		viper.GetString("database.user"))
-
 	log.Infof("VFEEG BACKEND is going to listen on %s", fmt.Sprintf("127.0.0.1:%d", viper.GetInt("port")))
 
 	srv := &http.Server{

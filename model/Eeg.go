@@ -6,8 +6,8 @@ type Eeg struct {
 	Id                 string      `json:"id"`
 	Name               string      `json:"name,omitempty"`
 	Description        string      `json:"description,omitempty"`
-	BusinessNr         int64       `json:"businessNr,omitempty"`
-	Area               string      `json:"area"` /* LOCAL | REGIONAL*/
+	BusinessNr         null.Int    `json:"businessNr,omitempty"`
+	Area               AreaType    `json:"area"` /* LOCAL | REGIONAL*/
 	Legal              string      `json:"legal,omitempty"`
 	OperatorName       string      `json:"operatorName,omitempty"`
 	CommunityId        string      `json:"communityId,omitempty"`
@@ -16,8 +16,8 @@ type Eeg struct {
 	AllocationMode     string      `json:"allocationMode,omitempty"`
 	SettlementInterval string      `json:"settlementInterval,omitempty"`
 	ProviderBusinessNr null.Int    `json:"providerBusinessNr,omitempty"`
-	TaxNumber          null.String `json:"taxNumber,omitempty" db:"taxid"`
-	VatNumber          null.String `json:"vatNumber" db:"vatid"`
+	TaxNumber          null.String `json:"taxNumber,omitempty"`
+	VatNumber          null.String `json:"vatNumber"`
 	Address            `json:"address,omitempty"`
 	AccountInfo        AccountInfo `json:"accountInfo,omitempty"`
 	Contact            Contact     `json:"contact,omitempty"`
@@ -26,17 +26,24 @@ type Eeg struct {
 	Online             bool        `json:"online"`
 }
 
+type AreaType string
+
+const (
+	LOCAL    AreaType = "LOCAL"
+	REGIONAL AreaType = "REGIONAL"
+)
+
 type AddressType string
 
 const (
-	BILLING   = "BILLING"
-	RESIDENCE = "RESIDENCE"
+	BILLING   AddressType = "BILLING"
+	RESIDENCE AddressType = "RESIDENCE"
 )
 
 type Address struct {
 	Type         AddressType `json:"type" goqu:"skipupdate"`
 	Street       string      `json:"street,omitempty"`
-	StreetNumber int         `json:"streetNumber,omitempty" db:"street_number"`
+	StreetNumber string      `json:"streetNumber,omitempty" db:"streetNumber"`
 	Zip          string      `json:"zip,omitempty"`
 	City         string      `json:"city,omitempty"`
 }
@@ -47,9 +54,9 @@ type Contact struct {
 }
 
 type AccountInfo struct {
-	Iban  string `json:"iban"`
-	Owner string `json:"owner"`
-	Sepa  bool   `json:"sepa"`
+	Iban  null.String `json:"iban"`
+	Owner null.String `json:"owner"`
+	Sepa  bool        `json:"sepa"`
 }
 
 type Optionals struct {

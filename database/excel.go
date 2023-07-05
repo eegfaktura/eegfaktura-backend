@@ -54,6 +54,7 @@ func ImportMasterdataFromExcel(r io.Reader, filename, sheet, tenant string) erro
 				for i, c := range cols {
 					colMap[c] = i
 				}
+
 				continue
 			default:
 				switch {
@@ -61,11 +62,11 @@ func ImportMasterdataFromExcel(r io.Reader, filename, sheet, tenant string) erro
 					var firstname string
 					var lastname string
 
-					excelName1 := getColumValue(cols, colMap, "Name 1", "Name1")
-					excelName2 := getColumValue(cols, colMap, "Name 2", "Name2")
+					excelName1 := getColumValue(cols, colMap, "Name 2", "Name2")
+					excelName2 := getColumValue(cols, colMap, "Name 1", "Name1")
 
 					if len(excelName2) == 0 || len(excelName2) < 2 {
-						if _, err := fmt.Sscanf(getColumValue(cols, colMap, "Name 1", "Name1"), "%s %s", &lastname, &firstname); err != nil {
+						if _, err := fmt.Sscanf(getColumValue(cols, colMap, "Name 2", "Name2"), "%s %s", &lastname, &firstname); err != nil {
 							fmt.Printf("Error Name extracting: %s (%s)\n", err, getColumValue(cols, colMap, "Name 1", "Name1"))
 							continue
 						}
@@ -82,7 +83,7 @@ func ImportMasterdataFromExcel(r io.Reader, filename, sheet, tenant string) erro
 						role = model.CONSUMPTION
 					}
 
-					streetNumber, _ := strconv.Atoi(getColumValue(cols, colMap, "Hausnummer", "Street Number"))
+					streetNumber := getColumValue(cols, colMap, "Hausnummer", "Street Number")
 					var participantSince time.Time
 					docSignedAt := getColumValue(cols, colMap, "Dokument unterschrieben", "Document Signature Date")
 					if len(docSignedAt) > 0 {
@@ -98,9 +99,19 @@ func ImportMasterdataFromExcel(r io.Reader, filename, sheet, tenant string) erro
 							participant = p
 						} else {
 							participant = &model.EegParticipant{
-								FirstName: firstname, LastName: lastname,
+								FirstName:   firstname,
+								LastName:    lastname,
+								TitleBefore: getColumValue(cols, colMap, "TitelVor", "TitleBefor"),
+								TitleAfter:  getColumValue(cols, colMap, "TitelNach", "TitleAfter"),
 								ResidentAddress: model.Address{
 									Type:         model.RESIDENCE,
+									Street:       getColumValue(cols, colMap, "Straße", "Street"),
+									StreetNumber: streetNumber,
+									Zip:          getColumValue(cols, colMap, "PLZ", "ZIP"),
+									City:         getColumValue(cols, colMap, "Ort", "City"),
+								},
+								BillingAddress: model.Address{
+									Type:         model.BILLING,
 									Street:       getColumValue(cols, colMap, "Straße", "Street"),
 									StreetNumber: streetNumber,
 									Zip:          getColumValue(cols, colMap, "PLZ", "ZIP"),
@@ -109,8 +120,12 @@ func ImportMasterdataFromExcel(r io.Reader, filename, sheet, tenant string) erro
 								Status:           model.StatusType(model.ACTIVE),
 								ParticipantSince: participantSince,
 								MeteringPoint:    []*model.MeteringPoint{},
-								BankAccount:      model.BankInfo{Iban: null.StringFrom(""), Owner: null.StringFrom("")},
-								Version:          0,
+								BankAccount: model.BankInfo{
+									Iban:  null.StringFrom(getColumValue(cols, colMap, "IBAN", "IBAN")),
+									Owner: null.StringFrom(getColumValue(cols, colMap, "Kontoinhaber", "Accountname"))},
+								Contact:               model.ContactInfo{Email: null.StringFrom(getColumValue(cols, colMap, "email", "email"))},
+								CompanyRegisterNumber: getColumValue(cols, colMap, "RegisterNr", "companyRegisterNumber"),
+								Version:               0,
 							}
 							participants = append(participants, participant)
 						}
@@ -164,7 +179,7 @@ func getColumValue(cols []string, values map[string]int, deName, enName string) 
 	if idx < 0 {
 		return ""
 	}
-	if idx > len(cols) {
+	if idx >= len(cols) {
 		return ""
 	}
 	return cols[idx]

@@ -27,16 +27,16 @@ type Tariff struct {
 	Version            int             `json:"version" db:"version"`
 	Type               TariffModelType `json:"type"`
 	Name               string          `json:"name"`
-	BillingPeriod      BillingPeriod   `json:"billingPeriod"`
-	UseVat             bool            `json:"useVat,omitempty"`
-	VatInPercent       int             `json:"vatInPercent,omitempty,string"`
-	AccountNetAmount   int             `json:"accountNetAmount,omitempty,string"`
-	AccountGrossAmount int             `json:"accountGrossAmount,omitempty,string"`
-	ParticipantFee     int             `json:"participantFee,omitempty,string"`
-	BaseFee            int             `json:"baseFee,omitempty,string"`
-	BusinessNr         int             `json:"businessNr,omitempty,string"`
-	CentPerKWh         float64         `json:"centPerKWh,omitempty,string"`
-	FreeKWH            int             `json:"freeKWH,omitempty,string" db:"freekwh"`
+	BillingPeriod      string          `json:"billingPeriod,omitempty" db:"billingPeriod"`
+	UseVat             bool            `json:"useVat,omitempty" db:"useVat"`
+	VatInPercent       int             `json:"vatInPercent,omitempty,string" db:"vatInPercent"`
+	AccountNetAmount   int             `json:"accountNetAmount,omitempty,string" db:"accountNetAmount"`
+	AccountGrossAmount int             `json:"accountGrossAmount,omitempty,string"  db:"accountGrossAmount"`
+	ParticipantFee     int             `json:"participantFee,omitempty,string" db:"participantFee"`
+	BaseFee            int             `json:"baseFee,omitempty,string" db:"baseFee"`
+	BusinessNr         int             `json:"businessNr,omitempty,string" db:"businessNr"`
+	CentPerKWh         int             `json:"centPerKWh,omitempty,string" db:"centPerKWh"`
+	FreeKWh            int             `json:"freeKWh,omitempty,string" db:"freeKWh"`
 	Discount           int             `json:"discount,omitempty,string"`
 }
 
