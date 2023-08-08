@@ -10,6 +10,7 @@ import (
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -24,6 +25,7 @@ func InitEegRouter(r *mux.Router, jwtWrapper middleware.JWTWrapperFunc) *mux.Rou
 	s.HandleFunc("/sync/participants", jwtWrapper(syncParticipantsEda())).Methods("POST")
 	s.HandleFunc("/sync/meterpoint", jwtWrapper(syncMeterpointEda())).Methods("POST")
 	s.HandleFunc("/import/masterdata", jwtWrapper(uploadMasterData())).Methods("POST")
+	s.HandleFunc("/notifications/{id}", jwtWrapper(notifications())).Methods("GET")
 
 	return r
 }
@@ -187,5 +189,34 @@ func uploadMasterData() middleware.JWTHandlerFunc {
 			glog.Infof("Import File %s successful", handler.Filename)
 			w.WriteHeader(http.StatusOK)
 		}
+	}
+}
+
+func notifications() middleware.JWTHandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
+		vars := mux.Vars(r)
+		idStr := vars["id"]
+
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		isAdmin := func() bool {
+			for _, a := range claims.AccessGroups {
+				if a == "/EEG_ADMIN" {
+					return true
+				}
+			}
+			return false
+		}
+		//tenant = "RC100181"
+		notifications, err := database.GetNotification(tenant, id, isAdmin())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		respondWithJSON(w, 200, notifications)
 	}
 }

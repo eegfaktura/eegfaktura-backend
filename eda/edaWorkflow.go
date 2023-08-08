@@ -5,15 +5,19 @@ import (
 	"errors"
 )
 
-func extractResponseCodeAndMeteringPoint(ebmsMessage *model.EbmsMessage) (int16, string, error) {
+func extractResponseCodeAndMeteringPoint(ebmsMessage *model.EbmsMessage) ([]int16, []string, error) {
+	meters := []string{}
+	codes := []int16{}
 	for _, rd := range ebmsMessage.ResponseData {
-		meter := rd.MeteringPoint
 		if len(rd.ResponseCode) > 0 {
-			return rd.ResponseCode[0], meter, nil
-		} else {
-			return -1, meter, nil
+			meters = append(meters, rd.MeteringPoint)
+			codes = append(codes, rd.ResponseCode...)
 		}
 	}
 
-	return 0, "", errors.New("wrong Response from EDA")
+	if len(codes) == 0 {
+		return codes, meters, errors.New("wrong Response from EDA")
+	}
+
+	return codes, meters, nil
 }

@@ -3,19 +3,34 @@ package model
 type EbMsMessageType string
 
 const (
-	EBMS_ENERGY_FILE_RESPONSE = "DATEN_CRMSG"
+	EBMS_ENERGY_FILE_RESPONSE  EbMsMessageType = "DATEN_CRMSG"
+	EBMS_ONLINE_REG_INIT       EbMsMessageType = "ANFORDERUNG_ECON"
+	EBMS_ONLINE_REG_ANSWER     EbMsMessageType = "ANTWORT_ECON"
+	EBMS_ONLINE_REG_REJECTION  EbMsMessageType = "ABLEHNUNG_ECON"
+	EBMS_ONLINE_REG_APPROVAL   EbMsMessageType = "ZUSTIMMUNG_ECON"
+	EBMS_ONLINE_REG_COMPLETION EbMsMessageType = "ABSCHLUSS_ECON"
+	EBMS_ZP_LIST               EbMsMessageType = "ANFORDERUNG_ECP"
+	EBMS_ZP_SYNC               EbMsMessageType = "ANFORDERUNG_PT"
+	EBMS_ZP_RES                EbMsMessageType = "ANTWORT_PT"
+	EBMS_ZP_REJ                EbMsMessageType = "ABLEHNUNG_PT"
+	EBMS_ZP_LIST_RESPONSE      EbMsMessageType = "SENDEN_ECP"
+	EBMS_AUFHEBUNG_CCMI        EbMsMessageType = "AUFHEBUNG_CCMI"
+	EBMS_AUFHEBUNG_CCMS        EbMsMessageType = "AUFHEBUNG_CCMS"
+	EBMS_ABLEHNUNG_CCMS        EbMsMessageType = "ABLEHNUNG_CCMS"
+	EBMS_ANTWORT_CCMS          EbMsMessageType = "ANTWORT_CCMS"
+	EBMS_EEG_BASE_DATA         EbMsMessageType = "ANFORDERUNG_GN"
+	EBMS_ERROR_MESSAGE         EbMsMessageType = "ERROR_MESSAGE"
+)
 
-	EBMS_ONLINE_REG_INIT       = "ANFORDERUNG_ECON"
-	EBMS_ONLINE_REG_ANSWER     = "ANTWORT_ECON"
-	EBMS_ONLINE_REG_REJECTION  = "ABLEHNUNG_ECON"
-	EBMS_ONLINE_REG_APPROVAL   = "ZUSTIMMUNG_ECON"
-	EBMS_ONLINE_REG_COMPLETION = "ABSCHLUSS_ECON"
+type EdaProtocol string
 
-	EBMS_ZP_LIST          = "ANFORDERUNG_ECP"
-	EBMS_ZP_SYNC          = "ANFORDERUNG_PT"
-	EBMS_ZP_LIST_RESPONSE = "SENDEN_ECP"
-	EBMS_EEG_BASE_DATA    = "ANFORDERUNG_GN"
-	EBMS_ERROR_MESSAGE    = "ERROR_MESSAGE"
+const (
+	CR_MSG     EdaProtocol = "CR_MSG"
+	CR_REQ_PT  EdaProtocol = "CR_REQ_PT"
+	EC_PODLIST EdaProtocol = "EC_PODLIST"
+	EC_REQ_ONL EdaProtocol = "EC_REQ_ONL"
+	CM_REV_IMP EdaProtocol = "CM_REV_IMP"
+	ERROR      EdaProtocol = "ERROR"
 )
 
 type Timeline struct {
@@ -24,10 +39,10 @@ type Timeline struct {
 }
 
 type EnergyValue struct {
-	From   int64  `json:"from"`
-	To     int64  `json:"to,omitempty"`
-	Method string `json:"method,omitempty"`
-	Value  int64  `json:"value"`
+	From   int64   `json:"from"`
+	To     int64   `json:"to,omitempty"`
+	Method string  `json:"method,omitempty"`
+	Value  float64 `json:"value"`
 }
 
 type EnergyData struct {
@@ -69,6 +84,13 @@ type EbmsMessage struct {
 	ErrorMessage   string          `json:"errorMessage,omitempty"`
 }
 
+func (ebms EbmsMessage) Meters() []string {
+	if ebms.Meter != nil {
+		return []string{ebms.Meter.MeteringPoint}
+	}
+	return []string{}
+}
+
 //type EdaMessage struct {
 //	Message EbmsMessage `json:"message"`
 //}
@@ -77,6 +99,8 @@ type EbmsMessage struct {
 type SubscribeMessage struct {
 	// Reports the index of corresponding SubscribeTopic.
 	MessageCode EbMsMessageType
+
+	Protocol EdaProtocol
 
 	// Determine the tenantId.
 	Tenant string
@@ -88,6 +112,6 @@ type SubscribeMessage struct {
 type SubscribeHandler func(msg SubscribeMessage)
 
 type Subscriptions struct {
-	MessageCode EbMsMessageType
-	Handler     SubscribeHandler
+	Protocol EdaProtocol
+	Handler  SubscribeHandler
 }

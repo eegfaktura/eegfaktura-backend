@@ -81,8 +81,16 @@ func AddTariff(tenant string, tariff *model.Tariff) error {
 	log.Debugf("Insert new Tariff %+v\n", update)
 
 	log.Debugf("Tarrif: %+v\n", update)
-	_, err = db.NamedExec(
-		`INSERT INTO base.tariff (id, tenant, name, type, "billingPeriod", "useVat", "vatInPercent", "accountNetAmount", "accountGrossAmount", "participantFee", "baseFee", discount, "businessNr", "centPerKWh", "freeKWh", "createdBy", version) VALUES (:id, :tenant, :name, :type, :billingPeriod, :useVat, :vatInPercent, :accountNetAmount, :accountGrossAmount, :participantFee, :baseFee, :discount, :businessNr, :centPerKWh, :freeKWh, :tenant, :version)`, &update)
+
+	sql, _, err := goqu.Insert("base.tariff").Rows(update).ToSQL()
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Tariff Insert Statement: %s\n", sql)
+	_, err = db.Exec(sql)
+
+	//_, err = db.NamedExec(
+	//	`INSERT INTO base.tariff (id, tenant, name, type, "billingPeriod", "useVat", "vatInPercent", "accountNetAmount", "accountGrossAmount", "participantFee", "baseFee", discount, "businessNr", "centPerKWh", "freeKWh", "createdBy", version) VALUES (:id, :tenant, :name, :type, :billingPeriod, :useVat, :vatInPercent, :accountNetAmount, :accountGrossAmount, :participantFee, :baseFee, :discount, :businessNr, :centPerKWh, :freeKWh, :tenant, :version)`, &update)
 
 	return err
 }

@@ -2,7 +2,7 @@ package database
 
 import (
 	"at.ourproject/vfeeg-backend/model"
-	"database/sql"
+	dbsql "database/sql"
 	"github.com/doug-martin/goqu/v9"
 	log "github.com/sirupsen/logrus"
 )
@@ -30,7 +30,7 @@ func GetEeg(tenant string) (*model.Eeg, error) {
 			&eeg.Optionals.Website, &eeg.AccountInfo.Iban, &eeg.AccountInfo.Owner, &eeg.AccountInfo.Sepa,
 			&eeg.TaxNumber, &eeg.VatNumber, &eeg.Online,
 		)
-	if err == sql.ErrNoRows {
+	if err == dbsql.ErrNoRows {
 		return &eeg, nil
 	}
 	eeg.Id = tenant
@@ -112,3 +112,41 @@ func GetCommunityId(tenant string) (string, error) {
 }
 
 //func fetchEegAddressInfo(db sqlx.DB, tenant string)
+
+func SaveNotification(tenant string, notification string, msgType, role string) error {
+	db, err := GetDBXConnection()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	_, err = db.Exec("INSERT INTO base.notification (tenant, notification, date, type, role) VALUES ($1, $2, NOW(), $3, $4)", tenant, notification, msgType, role)
+	return err
+}
+
+func GetNotification(tenant string, start int64, isAdmin bool) ([]model.EegNotification, error) {
+	db, err := GetDBXConnection()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	n := []model.EegNotification{}
+
+	statement := pgDialect.From("base.notification").Select(&n).
+		Where(goqu.C("tenant").Eq(tenant), goqu.C("id").Gt(start))
+	if !isAdmin {
+		statement = statement.Where(goqu.C("role").Eq("USER"))
+	}
+
+	sql, _, err := statement.Order(goqu.I("id").Desc()).Limit(30).ToSQL()
+	if err != nil {
+		return nil, err
+	}
+	err = db.Select(&n, sql)
+	if err != nil && err != dbsql.ErrNoRows {
+		return nil, err
+	}
+
+	return n, err
+}

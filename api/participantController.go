@@ -6,6 +6,7 @@ import (
 	"at.ourproject/vfeeg-backend/model"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
 	"at.ourproject/vfeeg-backend/parser"
+	"at.ourproject/vfeeg-backend/util"
 	"encoding/json"
 	"fmt"
 	"github.com/gorilla/mux"
@@ -115,7 +116,7 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 			file, err := files[i].Open()
 			defer file.Close()
 			if err != nil {
-				fmt.Fprintln(w, err)
+				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 
@@ -133,7 +134,7 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 				return
 			}
 
-			_, err = io.Copy(out, file) // file not files[i] !
+			_, err = io.Copy(out, file)
 
 			if err != nil {
 				fmt.Fprintln(w, err)
@@ -141,7 +142,6 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 			}
 
 			log.Debug("Files uploaded successfully : ")
-			fmt.Fprintf(w, files[i].Filename+"\n")
 		}
 		if err = database.ConfirmParticipant(tenant, claims.Username, participantId); err != nil {
 			fmt.Fprintf(w, err.Error())
@@ -168,10 +168,10 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 				}
 			}
 
-			if participant.Contact.Email.Valid {
-				if err = parser.SendMailFromTemplate(tenant,
-					filepath.Join(viper.GetString("file-content.templates"), tenant, "template/AktivierungsEmail-template.html"),
-					"Aktivierung im Serviceportal", participant); err != nil {
+			template, err := parser.GetTemplateFor("ACTIVATION", tenant)
+			if err == nil && participant.Contact.Email.Valid {
+				if err = parser.SendActivationMailFromTemplate(util.SendMail,
+					tenant, template, "Aktivierung im Serviceportal", eeg, participant); err != nil {
 					log.Errorf("Error Sending Mail: %+v", err.Error())
 					http.Error(w, err.Error(), http.StatusBadRequest)
 					return

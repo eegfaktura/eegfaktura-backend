@@ -77,9 +77,9 @@ func createMeteringPoint() middleware.JWTHandlerFunc {
 					return
 				}
 
-				if err = parser.SendMailFromTemplate(tenant,
+				if err = parser.SendActivationMailFromTemplate(util.SendMail, tenant,
 					filepath.Join(viper.GetString("file-content.templates"), tenant, "template/AktivierungsEmail-template.html"),
-					"Aktivierung im Serviceportal", participant); err != nil {
+					"Aktivierung im Serviceportal", eeg, participant); err != nil {
 					log.Errorf("Error Sending Mail: %+v", err.Error())
 					http.Error(w, err.Error(), http.StatusBadRequest)
 					return
@@ -173,9 +173,9 @@ func registerMeteringPoint() middleware.JWTHandlerFunc {
 				return
 			}
 
-			if err = parser.SendMailFromTemplate(tenant,
+			if err = parser.SendActivationMailFromTemplate(util.SendMail, tenant,
 				filepath.Join(viper.GetString("file-content.templates"), tenant, "template/AktivierungsEmail-template.html"),
-				"Aktivierung im Serviceportal", participant); err != nil {
+				"Aktivierung im Serviceportal", eeg, participant); err != nil {
 				log.Errorf("Error Sending Mail: %+v", err.Error())
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
@@ -190,7 +190,14 @@ func requestMeteringPointValues() middleware.JWTHandlerFunc {
 		vars := mux.Vars(r)
 		participantId := vars["pid"]
 
-		request := registerMeterRequestType{}
+		request := struct {
+			MeteringPoints []struct {
+				Meter     string              `json:"meter"`
+				Direction model.DirectionType `json:"direction"`
+			} `json:"meteringPoints"`
+			From int64 `json:"from"`
+			To   int64 `json:"to"`
+		}{}
 		err := json.NewDecoder(r.Body).Decode(&request)
 		if err != nil {
 			log.WithField("error", err).Error("Decode Metering Request (Sync) Message Json")
@@ -212,34 +219,37 @@ func requestMeteringPointValues() middleware.JWTHandlerFunc {
 		}
 
 		// Check Meter available in Participant
-		meterExistsInParticipant := false
-		for _, p := range participant.MeteringPoint {
-			if p.MeteringPoint == request.MeteringPoint {
-				meterExistsInParticipant = true
-				break
-			}
-		}
+		//meterExistsInParticipant := false
+		//for _, p := range participant.MeteringPoint {
+		//	if p.MeteringPoint == request.MeteringPoints.Meter {
+		//		meterExistsInParticipant = true
+		//		break
+		//	}
+		//}
+		meterExistsInParticipant := true
 
 		fromDate := util.TruncateToStartOfDay(time.UnixMilli(request.From)).UnixMilli()
 		toDate := util.TruncateToEndOfDay(time.UnixMilli(request.To)).UnixMilli()
 
 		log.WithField("tenant", tenant).Infof("request Metering values %v (%d - %d)", request, fromDate, toDate)
 		if eeg.Online && meterExistsInParticipant {
-			ebmsMessage := model.EbmsMessage{
-				Sender: strings.ToUpper(tenant),
-				//Sender: strings.ToUpper("SEPP.GAUG"),
-				Receiver: strings.ToUpper(eeg.GridOperator),
-				//Receiver:    strings.ToUpper("OBERMUELLER.PETER"),
-				MessageCode: model.EBMS_ZP_SYNC,
-				Meter:       &model.Meter{MeteringPoint: request.MeteringPoint},
-				Timeline: &model.Timeline{
-					From: fromDate,
-					To:   toDate},
-			}
-			log.WithField("tenant", tenant).Infof("Start Meteringpoint (%s) value request", request.MeteringPoint)
-			if err = mqttclient.SendEbmsMessage(ebmsMessage); err != nil {
-				respondWithError(w, http.StatusInternalServerError, err.Error())
-				return
+			for _, m := range request.MeteringPoints {
+				ebmsMessage := model.EbmsMessage{
+					Sender: strings.ToUpper(tenant),
+					//Sender: strings.ToUpper("SEPP.GAUG"),
+					Receiver: strings.ToUpper(eeg.GridOperator),
+					//Receiver:    strings.ToUpper("OBERMUELLER.PETER"),
+					MessageCode: model.EBMS_ZP_SYNC,
+					Meter:       &model.Meter{MeteringPoint: m.Meter, Direction: m.Direction},
+					Timeline: &model.Timeline{
+						From: fromDate,
+						To:   toDate},
+				}
+				log.WithField("tenant", tenant).Infof("Start Meteringpoint (%v) value request", request.MeteringPoints)
+				if err = mqttclient.SendEbmsMessage(ebmsMessage); err != nil {
+					respondWithError(w, http.StatusInternalServerError, err.Error())
+					return
+				}
 			}
 		}
 		respondWithJSON(w, http.StatusCreated, participant)

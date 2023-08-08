@@ -11,8 +11,8 @@ jwt:
 
 mqtt:
   host: "tcp://localhost:1883"
-  id: "edash-backend-1"
-  qos: 0
+  id: "edash-backend-2"
+  qos: 1
 
 file-content:
   basedir: "../../file-content/"

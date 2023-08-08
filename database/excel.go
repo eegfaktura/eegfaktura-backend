@@ -45,6 +45,30 @@ func ImportMasterdataFromExcel(r io.Reader, filename, sheet, tenant string) erro
 	colMap := map[string]int{}
 	participants := []*model.EegParticipant{}
 
+	businessRole := func(cols []string, values map[string]int) string {
+		val := getColumValue(cols, colMap, "BusinessRole", "BusinessRole", nil)
+		if strings.ToLower(val) == "business" {
+			return "EEG_BUSINESS"
+		}
+		return "EEG_PRIVATE"
+	}
+
+	equipmentName := func(cols []string, values map[string]int) null.String {
+		val := getColumValue(cols, colMap, "ObjektName", "ObjectName", nil)
+		if len(val) > 0 {
+			return null.StringFrom(val)
+		}
+		return null.String{}
+	}
+
+	equipmentNumber := func(cols []string, values map[string]int) null.String {
+		val := getColumValue(cols, colMap, "EquipmentNr", "EquipmentNr", nil)
+		if len(val) > 0 {
+			return null.StringFrom(val)
+		}
+		return null.String{}
+	}
+
 	for rows.Next() {
 		if cols, err := rows.Columns(excelize.Options{RawCellValue: true}); err == nil && len(cols) > 0 {
 			switch cols[0] {
@@ -62,85 +86,89 @@ func ImportMasterdataFromExcel(r io.Reader, filename, sheet, tenant string) erro
 					var firstname string
 					var lastname string
 
-					excelName1 := getColumValue(cols, colMap, "Name 2", "Name2")
-					excelName2 := getColumValue(cols, colMap, "Name 1", "Name1")
+					excelName1 := getColumValue(cols, colMap, "Name 2", "Name2", nil)
+					excelName2 := getColumValue(cols, colMap, "Name 1", "Name1", nil)
 
 					if len(excelName2) == 0 || len(excelName2) < 2 {
-						if _, err := fmt.Sscanf(getColumValue(cols, colMap, "Name 2", "Name2"), "%s %s", &lastname, &firstname); err != nil {
-							fmt.Printf("Error Name extracting: %s (%s)\n", err, getColumValue(cols, colMap, "Name 1", "Name1"))
+						if _, err := fmt.Sscanf(getColumValue(cols, colMap, "Name 2", "Name2", nil), "%s %s", &lastname, &firstname); err != nil {
+							fmt.Printf("Error Name extracting: %s (%s)\n", err, getColumValue(cols, colMap, "Name 1", "Name1", nil))
 							continue
 						}
 					} else {
-						firstname = excelName1
-						lastname = excelName2
+						firstname = excelName2
+						lastname = excelName1
 					}
 
 					role := model.UNKNOWN
-					switch getColumValue(cols, colMap, "Energierichtung", "Energy Direction") {
+					switch getColumValue(cols, colMap, "Energierichtung", "Energy Direction", nil) {
 					case "GENERATION":
 						role = model.GENERATOR
 					case "CONSUMPTION":
 						role = model.CONSUMPTION
+					default:
+						role = model.CONSUMPTION
 					}
 
-					streetNumber := getColumValue(cols, colMap, "Hausnummer", "Street Number")
+					streetNumber := getColumValue(cols, colMap, "Hausnummer", "Street Number", nil)
 					var participantSince time.Time
-					docSignedAt := getColumValue(cols, colMap, "Dokument unterschrieben", "Document Signature Date")
+					docSignedAt := getColumValue(cols, colMap, "Dokument unterschrieben", "Document Signature Date", nil)
 					if len(docSignedAt) > 0 {
 						participantSince = parseExcelDate(docSignedAt)
 					} else {
 						participantSince = time.Now()
 					}
 
-					cpStatus := getColumValue(cols, colMap, "Zählpunktstatus", "Metering Point State")
+					cpStatus := getColumValue(cols, colMap, "Zählpunktstatus", "Metering Point State", nil)
 					if cpStatus == "ACTIVATED" || cpStatus == "REGISTERED" || len(cpStatus) == 0 {
 						var participant *model.EegParticipant
 						if p, ok := findParticipant(participants, firstname, lastname); ok {
 							participant = p
 						} else {
 							participant = &model.EegParticipant{
-								FirstName:   firstname,
-								LastName:    lastname,
-								TitleBefore: getColumValue(cols, colMap, "TitelVor", "TitleBefor"),
-								TitleAfter:  getColumValue(cols, colMap, "TitelNach", "TitleAfter"),
+								FirstName:    firstname,
+								LastName:     lastname,
+								TitleBefore:  getColumValue(cols, colMap, "TitelVor", "TitleBefor", nil),
+								TitleAfter:   getColumValue(cols, colMap, "TitelNach", "TitleAfter", nil),
+								BusinessRole: businessRole(cols, colMap),
 								ResidentAddress: model.Address{
 									Type:         model.RESIDENCE,
-									Street:       getColumValue(cols, colMap, "Straße", "Street"),
+									Street:       getColumValue(cols, colMap, "Straße", "Street", nil),
 									StreetNumber: streetNumber,
-									Zip:          getColumValue(cols, colMap, "PLZ", "ZIP"),
-									City:         getColumValue(cols, colMap, "Ort", "City"),
+									Zip:          getColumValue(cols, colMap, "PLZ", "ZIP", nil),
+									City:         getColumValue(cols, colMap, "Ort", "City", nil),
 								},
 								BillingAddress: model.Address{
 									Type:         model.BILLING,
-									Street:       getColumValue(cols, colMap, "Straße", "Street"),
+									Street:       getColumValue(cols, colMap, "Straße", "Street", nil),
 									StreetNumber: streetNumber,
-									Zip:          getColumValue(cols, colMap, "PLZ", "ZIP"),
-									City:         getColumValue(cols, colMap, "Ort", "City"),
+									Zip:          getColumValue(cols, colMap, "PLZ", "ZIP", nil),
+									City:         getColumValue(cols, colMap, "Ort", "City", nil),
 								},
-								Status:           model.StatusType(model.ACTIVE),
+								Status:           model.ACTIVE,
 								ParticipantSince: participantSince,
 								MeteringPoint:    []*model.MeteringPoint{},
 								BankAccount: model.BankInfo{
-									Iban:  null.StringFrom(getColumValue(cols, colMap, "IBAN", "IBAN")),
-									Owner: null.StringFrom(getColumValue(cols, colMap, "Kontoinhaber", "Accountname"))},
-								Contact:               model.ContactInfo{Email: null.StringFrom(getColumValue(cols, colMap, "email", "email"))},
-								CompanyRegisterNumber: getColumValue(cols, colMap, "RegisterNr", "companyRegisterNumber"),
+									Iban:  null.StringFrom(getColumValue(cols, colMap, "IBAN", "IBAN", nil)),
+									Owner: null.StringFrom(getColumValue(cols, colMap, "Kontoinhaber", "Accountname", nil))},
+								Contact:               model.ContactInfo{Email: null.StringFrom(getColumValue(cols, colMap, "email", "email", nil))},
+								CompanyRegisterNumber: getColumValue(cols, colMap, "RegisterNr", "companyRegisterNumber", nil),
 								Version:               0,
 							}
 							participants = append(participants, participant)
 						}
 						participant.MeteringPoint = append(participant.MeteringPoint, &model.MeteringPoint{
-							MeteringPoint: getColumValue(cols, colMap, "Zählpunkt", "MeteringPoint Id"),
-							Transformer:   null.String{},
-							Direction:     model.DirectionType(role),
-							Status:        model.StatusType(model.ACTIVE),
-							TariffId:      null.String{},
-							EquipmentName: null.String{},
-							InverterId:    null.String{},
-							Street:        null.StringFrom(getColumValue(cols, colMap, "Straße", "Street")),
-							StreetNumber:  null.StringFrom(getColumValue(cols, colMap, "Hausnummer", "Street Number")),
-							City:          null.StringFrom(getColumValue(cols, colMap, "Ort", "City")),
-							Zip:           null.StringFrom(getColumValue(cols, colMap, "PLZ", "ZIP")),
+							MeteringPoint:   getColumValue(cols, colMap, "Zählpunkt", "MeteringPoint Id", nil),
+							Transformer:     null.String{},
+							Direction:       role,
+							Status:          model.ACTIVE,
+							TariffId:        null.String{},
+							EquipmentNumber: equipmentNumber(cols, colMap),
+							EquipmentName:   equipmentName(cols, colMap),
+							InverterId:      null.String{},
+							Street:          null.StringFrom(getColumValue(cols, colMap, "Straße", "Street", nil)),
+							StreetNumber:    null.StringFrom(getColumValue(cols, colMap, "Hausnummer", "Street Number", nil)),
+							City:            null.StringFrom(getColumValue(cols, colMap, "Ort", "City", nil)),
+							Zip:             null.StringFrom(getColumValue(cols, colMap, "PLZ", "ZIP", nil)),
 						})
 					}
 				}
@@ -168,7 +196,7 @@ func findParticipant(participants []*model.EegParticipant, firstname, lastname s
 	return nil, false
 }
 
-func getColumValue(cols []string, values map[string]int, deName, enName string) string {
+func getColumValue(cols []string, values map[string]int, deName, enName string, defaultValue *string) string {
 	idx := -1
 	if _, ok := values[deName]; ok {
 		idx = values[deName]
@@ -177,9 +205,15 @@ func getColumValue(cols []string, values map[string]int, deName, enName string) 
 	}
 
 	if idx < 0 {
+		if defaultValue != nil {
+			return *defaultValue
+		}
 		return ""
 	}
 	if idx >= len(cols) {
+		if defaultValue != nil {
+			return *defaultValue
+		}
 		return ""
 	}
 	return cols[idx]

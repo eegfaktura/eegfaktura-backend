@@ -1,6 +1,10 @@
 package model
 
-import "gopkg.in/guregu/null.v4"
+import (
+	"github.com/jmoiron/sqlx/types"
+	"gopkg.in/guregu/null.v4"
+	"time"
+)
 
 type Eeg struct {
 	Id                 string      `json:"id"`
@@ -18,6 +22,7 @@ type Eeg struct {
 	ProviderBusinessNr null.Int    `json:"providerBusinessNr,omitempty"`
 	TaxNumber          null.String `json:"taxNumber,omitempty"`
 	VatNumber          null.String `json:"vatNumber"`
+	ContactPerson      string      `json:"contactPerson"`
 	Address            `json:"address,omitempty"`
 	AccountInfo        AccountInfo `json:"accountInfo,omitempty"`
 	Contact            Contact     `json:"contact,omitempty"`
@@ -61,4 +66,10 @@ type AccountInfo struct {
 
 type Optionals struct {
 	Website null.String `json:"website,omitempty"`
+}
+type EegNotification struct {
+	Id      int16          `json:"id"`
+	MsgType string         `json:"type" db:"type"`
+	Message types.JSONText `json:"message" db:"notification"`
+	Date    time.Time      `json:"date"`
 }

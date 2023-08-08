@@ -15,19 +15,28 @@ var messageBroker *MessageBroker
 
 func (t TopicType) Tenant() string {
 	elems := strings.Split(string(t), "/")
-	if len(elems) > 3 {
-		return elems[3]
+	if len(elems) > 4 {
+		return elems[2]
 	}
 	return string(t)
 }
 
+func (t TopicType) TypeInfo() (string, string) {
+	elems := strings.Split(string(t), "/")
+	if len(elems) > 4 {
+		return elems[2], elems[4]
+	}
+	return string(t), ""
+}
+
 type InboundMessage struct {
-	tenant string
-	msg    []byte
+	tenant   string
+	protocol model.EdaProtocol
+	msg      []byte
 }
 
 type MessageBroker struct {
-	callbackStore map[model.EbMsMessageType]model.SubscribeHandler
+	callbackStore map[model.EdaProtocol]model.SubscribeHandler
 	Inbound       chan InboundMessage
 	Outbound      chan model.EbmsMessage
 	*MQTTStreamer
@@ -41,7 +50,7 @@ func StartMessageBroker() error {
 	if err != nil {
 		return err
 	}
-	messageBroker = &MessageBroker{make(map[model.EbMsMessageType]model.SubscribeHandler), in, out, streamer}
+	messageBroker = &MessageBroker{make(map[model.EdaProtocol]model.SubscribeHandler), in, out, streamer}
 
 	go messageBroker.Listen()
 
@@ -56,7 +65,7 @@ func NewMessageBroker() (*MessageBroker, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &MessageBroker{make(map[model.EbMsMessageType]model.SubscribeHandler), in, out, streamer}, nil
+	return &MessageBroker{make(map[model.EdaProtocol]model.SubscribeHandler), in, out, streamer}, nil
 }
 
 func (mb *MessageBroker) SendMessage(m model.EbmsMessage, callback func(m string) error) {
@@ -78,10 +87,13 @@ func (mb *MessageBroker) SendMessage(m model.EbmsMessage, callback func(m string
 
 func (mb *MessageBroker) Listen() {
 	qos := 0
-	token := mb.client.Subscribe("eda/response/#", byte(qos), func(client mqtt.Client, msg mqtt.Message) {
+	token := mb.client.Subscribe("eda/response/+/protocol/#", byte(qos), func(client mqtt.Client, msg mqtt.Message) {
 		log.Infof("Message from MQTT: %s [%+v]\n", TopicType(msg.Topic()).Tenant(), msg.Topic())
-		mb.Inbound <- InboundMessage{strings.ToUpper(TopicType(msg.Topic()).Tenant()), msg.Payload()}
-		msg.Ack()
+		tenant, protocol := TopicType(msg.Topic()).TypeInfo()
+		mb.Inbound <- InboundMessage{
+			strings.ToUpper(tenant),
+			model.EdaProtocol(strings.ToUpper(protocol)),
+			msg.Payload()}
 	})
 	token.Wait()
 	if token.Error() != nil {
@@ -91,7 +103,7 @@ func (mb *MessageBroker) Listen() {
 	for {
 		select {
 		case msg := <-mb.Inbound:
-			log.Infof("Message on topic: %s", msg.tenant)
+			log.Infof("Message on topic: %s", msg.protocol)
 			mb.received(msg)
 		case send := <-mb.Outbound:
 			mb.SendMessage(send, func(m string) error {
@@ -104,13 +116,13 @@ func (mb *MessageBroker) Listen() {
 
 func (mb *MessageBroker) Subscribe(subscriptions ...model.Subscriptions) {
 	for _, s := range subscriptions {
-		mb.callbackStore[s.MessageCode] = s.Handler
+		mb.callbackStore[s.Protocol] = s.Handler
 	}
 }
 
 func (mb *MessageBroker) Unsubscribe(subscriptions ...model.Subscriptions) {
 	for _, s := range subscriptions {
-		delete(mb.callbackStore, s.MessageCode)
+		delete(mb.callbackStore, s.Protocol)
 	}
 }
 
@@ -118,12 +130,16 @@ func (mb *MessageBroker) received(inbound InboundMessage) {
 	msg := model.EbmsMessage{}
 	err := json.Unmarshal(inbound.msg, &msg)
 	if err != nil {
-		log.Errorf("Error from MQTT: (%s) %v", inbound.tenant, inbound.msg)
+		log.Errorf("Error from MQTT: (%s) %v - %v", inbound.tenant, inbound.protocol, err)
 		return
 	}
-
-	c, ok := mb.callbackStore[msg.MessageCode]
+	c, ok := mb.callbackStore[inbound.protocol]
 	if ok {
-		c(model.SubscribeMessage{MessageCode: msg.MessageCode, Tenant: inbound.tenant, Payload: msg})
+		c(model.SubscribeMessage{
+			Protocol:    inbound.protocol,
+			MessageCode: msg.MessageCode,
+			Tenant:      inbound.tenant,
+			Payload:     msg,
+		})
 	}
 }

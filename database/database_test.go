@@ -7,7 +7,7 @@ import (
 )
 
 func TestAddTariff(t *testing.T) {
-	tariff := model.Tariff{Version: 1, Name: "Sepp", UseVat: false, BillingPeriod: "monthly", FreeKWH: 100, CentPerKWh: 0.12}
+	tariff := model.Tariff{Version: 1, Name: "Sepp", UseVat: false, BillingPeriod: "monthly", FreeKWh: 100, CentPerKWh: 12}
 
 	err := AddTariff("sepp", &tariff)
 	assert.NoError(t, err)

@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS base.EEG
     "taxNumber"          TEXT,
     "vatNumber"          TEXT,
     subjecttovat         BOOLEAN,
+    "contactPerson"      TEXT,
     -- Address Info
     street               TEXT    NOT NULL,
     "streetNumber"       TEXT    NOT NULL,
@@ -68,7 +69,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_tariff ON base.tariff (id, tenant, name, t
 CREATE TABLE IF NOT EXISTS base.participant
 (
     id                      UUID    NOT NULL DEFAULT uuid_generate_v4(),
-    "participantNumber"       VARCHAR,
+    "participantNumber"     VARCHAR,
     tenant                  VARCHAR NOT NULL,
     firstname               VARCHAR NOT NULL,
     lastname                VARCHAR NOT NULL,
@@ -86,7 +87,7 @@ CREATE TABLE IF NOT EXISTS base.participant
     "lastModifiedBy"        VARCHAR NOT NULL,
     "lastModifiedDate"      DATE             DEFAULT now(),
     version                 INTEGER          DEFAULT 1,
-    tariffid                uuid,
+    "tariffId"              uuid,
     CONSTRAINT ParticipantPK PRIMARY KEY (id)
 );
 
@@ -142,18 +143,18 @@ CREATE TABLE IF NOT EXISTS base.meteringpoint
     city              TEXT,
     zip               TEXT,
     CONSTRAINT meteringpointPK PRIMARY KEY (metering_point_id, tenant),
-    CONSTRAINT FK_ParticipantMeteringpoint FOREIGN KEY (participant_id) REFERENCES base.participant (id) ON DELETE CASCADE,
-    CONSTRAINT FK_TariffMeteringpoint FOREIGN KEY (tariff_id) REFERENCES base.tariff (id)
+    CONSTRAINT FK_ParticipantMeteringpoint FOREIGN KEY (participant_id) REFERENCES base.participant (id) ON DELETE CASCADE
+--     CONSTRAINT FK_TariffMeteringpoint FOREIGN KEY (tariff_id) REFERENCES base.tariff (id)
 );
 
 CREATE TABLE IF NOT EXISTS base.notification
 (
-    id           UUID    NOT NULL PRIMARY KEY DEFAULT uuid_generate_v4(),
-    tenant       TEXT    NOT NULL,
-    type         TEXT    NOT NULL             DEFAULT 'MESSAGE',/* MESSAGE TYPE DESCRIBE 'ERROR' | 'MESSAGE' | 'NOTIFICATION' */
-    notification json    NOT NULL             DEFAULT '{}',
-    date         DATE    NOT NULL             DEFAULT now(),
-    role         VARCHAR NOT NULL             DEFAULT 'ADMIN' /* 'USER' | 'ADMIN' */
+    id           SERIAL PRIMARY KEY,
+    tenant       TEXT      NOT NULL,
+    type         TEXT      NOT NULL DEFAULT 'MESSAGE',/* MESSAGE TYPE DESCRIBE 'ERROR' | 'MESSAGE' | 'NOTIFICATION' */
+    notification json      NOT NULL DEFAULT '{}',
+    date         TIMESTAMP NOT NULL DEFAULT now(),
+    role         VARCHAR   NOT NULL DEFAULT 'ADMIN' /* 'USER' | 'ADMIN' */
 );
 
 CREATE TABLE IF NOT EXISTS base.processhistory
@@ -234,10 +235,99 @@ SELECT p.id                                                      participant_id,
        t.discount                                                tariff_discount,
        t."centPerKWh"                                            tariff_working_fee_per_consumedkwh,
        t."centPerKWh"                                            tariff_credit_amount_per_producedkwh,
-       t."freeKWh"                                               tariff_freekwh
+       t."freeKWh"                                               tariff_freekwh,
+       'Bank Name'                                               participant_bank_name,
+       b.iban                                                    participant_bank_iban,
+       b.owner                                                   participant_bank_owner,
+       o.email                                                   participant_email,
+       'Bank Name'                                               eec_bank_name,
+       c.iban                                                    eec_bank_iban,
+       c.owner                                                   eec_bank_owner,
+       'SEPA Mandat'                                             participant_sepa_mandate_reference
 FROM base.participant p
          LEFT JOIN base.eeg c ON c.tenant = p.tenant
          LEFT JOIN base.meteringpoint pm ON pm.participant_id = p.id
          LEFT JOIN base.address p_address ON p.id = p_address.participant_id AND p_address.type = 'BILLING'
-         LEFT JOIN base.activetariff t ON t.id = pm.tariff_id;
+         LEFT JOIN base.activetariff t ON t.id = pm.tariff_id
+         LEFT JOIN base.bankaccount b ON b.participant_id = p.id
+         LEFT JOIN base.contactdetail o ON o.participant_id = p.id;
 
+
+
+
+
+
+create table alembic_version
+(
+    version_num varchar(32) not null
+        constraint alembic_version_pkc
+            primary key
+);
+
+alter table alembic_version
+    owner to vfeeg;
+
+create table file_categories
+(
+    id   uuid default uuid_generate_v4() not null
+        primary key,
+    name varchar(128)
+);
+
+alter table file_categories
+    owner to vfeeg;
+
+create table storages
+(
+    id            uuid default uuid_generate_v4() not null
+        primary key,
+    community_id  varchar(8)                     not null,
+    name          varchar(128),
+    configuration json
+);
+
+alter table storages
+    owner to vfeeg;
+
+create table file_containers
+(
+    id               uuid default uuid_generate_v4() not null
+        primary key,
+    name             varchar(128),
+    configuration    json,
+    file_category_id uuid                           not null
+        references file_categories,
+    community_id     varchar(8)                     not null,
+    storage_id       uuid                           not null
+        references storages
+);
+
+alter table file_containers
+    owner to vfeeg;
+
+create table files
+(
+    id                uuid      default uuid_generate_v4() not null
+        primary key,
+    name              varchar(128),
+    file_container_id uuid                                not null
+        references file_containers,
+    community_id      varchar(8)                          not null,
+    user_id           uuid,
+    created_at        timestamp default now()             not null
+);
+
+alter table files
+    owner to vfeeg;
+
+create table file_attributes
+(
+    file_id uuid         not null
+        references files,
+    key     varchar(128) not null,
+    value   varchar(512) not null,
+    primary key (file_id, key)
+);
+
+alter table file_attributes
+    owner to vfeeg;

@@ -9,7 +9,7 @@ import (
 
 func GetSubsriptions() []model.Subscriptions {
 	return []model.Subscriptions{{
-		model.EBMS_ERROR_MESSAGE,
+		model.ERROR,
 		errorHandler,
 	}}
 }

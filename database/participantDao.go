@@ -338,17 +338,6 @@ func saveParticipant(db *sqlx.DB, tenant, username string, participant *model.Ee
 //
 //}
 
-func SaveNotification(tenant string, notification string, msgType, role string) error {
-	db, err := GetDBXConnection()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	_, err = db.Exec("INSERT INTO base.notification (tenant, notification, date, type, role) VALUES ($1, $2, NOW(), $3, $4)", tenant, notification, msgType, role)
-	return err
-}
-
 func InsertParticipant(tenant string, participant *model.EegParticipant) error {
 	return nil
 }
@@ -360,6 +349,6 @@ func SaveEdaHistory(tenant, conversationId, direction string, notification strin
 	}
 	defer db.Close()
 
-	_, err = db.Exec("INSERT INTO base.processhistory (tenant, conversationid, type, date, issuer, message, direction) VALUES ($1, $2, $3, NOW(), $4, $5, $6)", tenant, conversationId, msgType, role, notification, direction)
+	_, err = db.Exec("INSERT INTO base.processhistory (tenant, \"conversationId\", type, date, issuer, message, direction) VALUES ($1, $2, $3, NOW(), $4, $5, $6)", tenant, conversationId, msgType, role, notification, direction)
 	return err
 }

@@ -6,6 +6,7 @@ GOTEST=$(GOCMD) test
 GOGET=$(GOCMD) get
 BINARY_NAME=vfeeg-backend
 DOCKER=docker
+VERSION=v0.2.0
 
 GOPATH := ${PWD}/..:${GOPATH}
 export GOPATH
@@ -23,13 +24,13 @@ run:
 	./$(BINARY_NAME)
 
 docker-clean:
-	$(DOCKER) rmi ghcr.io/vfeeg-development/vfeeg-backend:latest
+	$(DOCKER) rmi ghcr.io/vfeeg-development/vfeeg-backend:$(VERSION)
 
-docker: docker-clean
-	$(DOCKER) build -t ghcr.io/vfeeg-development/vfeeg-backend:latest .
+docker:
+	$(DOCKER) build -t ghcr.io/vfeeg-development/vfeeg-backend:$(VERSION) .
 
 push: docker
-	$(DOCKER) push ghcr.io/vfeeg-development/vfeeg-backend:latest
+	$(DOCKER) push ghcr.io/vfeeg-development/vfeeg-backend:$(VERSION)
 
 protoc:
 	protoc --experimental_allow_proto3_optional=true --proto_path=. --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative ./proto/*.proto

@@ -19,6 +19,8 @@ import (
 	"time"
 )
 
+type SendMailFunc func(tenant, to, subject string, body *bytes.Buffer, fileName *string, fileContent *bytes.Buffer) error
+
 func SendMail(tenant, to, subject string, body *bytes.Buffer, fileName *string, fileContent *bytes.Buffer) error {
 	fmt.Printf("GRPC SERVER: %v\n", viper.GetString("services.mail-server"))
 	conn, err := grpc.Dial(viper.GetString("services.mail-server"), grpc.WithTransportCredentials(insecure.NewCredentials()))
