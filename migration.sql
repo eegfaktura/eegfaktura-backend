@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS base.participant
     "businessRole"          VARCHAR NOT NULL DEFAULT 'EEG_PRIVATE', /* 'EEG_PRIVATE' | 'EEG_BUSINESS' */
     "titleBefore"           VARCHAR,
     "titleAfter"            VARCHAR,
-    "participantSince"      DATE             DEFAULT now(),
+    "participantSince"      DATE    NOT NULL DEFAULT now(),
     "vatNumber"             VARCHAR,
     "taxNumber"             VARCHAR,
     "companyRegisterNumber" VARCHAR,
@@ -128,12 +128,12 @@ CREATE TABLE IF NOT EXISTS base.bankaccount
 
 CREATE TABLE IF NOT EXISTS base.meteringpoint
 (
-    metering_point_id TEXT NOT NULL,
-    participant_id    UUID NOT NULL,
-    tenant            TEXT NOT NULL,
+    metering_point_id TEXT      NOT NULL,
+    participant_id    UUID      NOT NULL,
+    tenant            TEXT      NOT NULL,
     transformer       TEXT,
-    direction         TEXT NOT NULL DEFAULT 'CONSUMPTION', /* 'GENERATION' | 'CONSUMPTION' */
-    status            TEXT NOT NULL DEFAULT 'NEW', /* "NEW" | "PENDING" | "ACCEPTED" | "ACTIVE" | "INACTIVE" */
+    direction         TEXT      NOT NULL DEFAULT 'CONSUMPTION', /* 'GENERATION' | 'CONSUMPTION' */
+    status            TEXT      NOT NULL DEFAULT 'NEW', /* "NEW" | "PENDING" | "ACCEPTED" | "ACTIVE" | "INACTIVE" */
     tariff_id         UUID,
     inverterid        TEXT,
     "equipmentNumber" TEXT,
@@ -142,6 +142,9 @@ CREATE TABLE IF NOT EXISTS base.meteringpoint
     "streetNumber"    TEXT,
     city              TEXT,
     zip               TEXT,
+    "registeredSince" DATE      NOT NULL DEFAULT now(),
+    "modifiedAt"      TIMESTAMP NOT NULL DEFAULT timenow(),
+    "modifiedBy"      TEXT,
     CONSTRAINT meteringpointPK PRIMARY KEY (metering_point_id, tenant),
     CONSTRAINT FK_ParticipantMeteringpoint FOREIGN KEY (participant_id) REFERENCES base.participant (id) ON DELETE CASCADE
 --     CONSTRAINT FK_TariffMeteringpoint FOREIGN KEY (tariff_id) REFERENCES base.tariff (id)
@@ -163,10 +166,11 @@ CREATE TABLE IF NOT EXISTS base.processhistory
     tenant           TEXT NOT NULL,
     "conversationId" TEXT NOT NULL,
     type             TEXT NOT NULL,
-    date             DATE NOT NULL             DEFAULT now(),
+    date             TIMESTAMP NOT NULL             DEFAULT now(),
     issuer           TEXT NOT NULL,
     message          json NOT NULL             DEFAULT '{}',
-    direction        TEXT NOT NULL             DEFAULT 'OUT' /* MESSAGE DIRECTION 'OUT' | 'IN' */
+    direction        TEXT NOT NULL             DEFAULT 'OUT', /* MESSAGE DIRECTION 'OUT' | 'IN' */
+    protocol         VARCHAR
 );
 
 
@@ -254,9 +258,6 @@ FROM base.participant p
 
 
 
-
-
-
 create table alembic_version
 (
     version_num varchar(32) not null
@@ -281,7 +282,7 @@ create table storages
 (
     id            uuid default uuid_generate_v4() not null
         primary key,
-    community_id  varchar(8)                     not null,
+    community_id  varchar(8)                      not null,
     name          varchar(128),
     configuration json
 );
@@ -295,10 +296,10 @@ create table file_containers
         primary key,
     name             varchar(128),
     configuration    json,
-    file_category_id uuid                           not null
+    file_category_id uuid                            not null
         references file_categories,
-    community_id     varchar(8)                     not null,
-    storage_id       uuid                           not null
+    community_id     varchar(8)                      not null,
+    storage_id       uuid                            not null
         references storages
 );
 
@@ -310,11 +311,11 @@ create table files
     id                uuid      default uuid_generate_v4() not null
         primary key,
     name              varchar(128),
-    file_container_id uuid                                not null
+    file_container_id uuid                                 not null
         references file_containers,
-    community_id      varchar(8)                          not null,
+    community_id      varchar(8)                           not null,
     user_id           uuid,
-    created_at        timestamp default now()             not null
+    created_at        timestamp default now()              not null
 );
 
 alter table files

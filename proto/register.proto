@@ -11,6 +11,15 @@ package at.ourproject;
 service RegisterEegService {
   // Sends a greeting
   rpc register (RegisterEegRequest) returns (RegisteredEegReply) {}
+  rpc eegExists (EegRequest) returns (EegResponse) {}
+}
+
+message EegRequest {
+  string rcNumber = 1;
+}
+
+message EegResponse {
+  bool exists = 1;
 }
 
 // The request message containing the user's name.
@@ -47,8 +56,8 @@ message RegisterEegRequest {
   bool sepa = 7;
   EEG_LEGAL legal = 8;
   string businessNr = 9;
-  string taxid = 10;
-  string vatid =11;
+  string taxNumber = 10;
+  string vatNumber =11;
   EEG_SETTELMENT settelmentInterval = 12;
   string gridId = 13;
   string gridName = 14;
@@ -60,8 +69,8 @@ message RegisterEegRequest {
   string city = 20;
   string zip = 21;
   string email = 22;
-  string web = 23;
-  string phone = 24;
+  optional string web = 23;
+  optional string phone = 24;
   bool online = 25;
 }
 

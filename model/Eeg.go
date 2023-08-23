@@ -7,28 +7,28 @@ import (
 )
 
 type Eeg struct {
-	Id                 string      `json:"id"`
+	Id                 string      `json:"id" db:"tenant"`
 	Name               string      `json:"name,omitempty"`
 	Description        string      `json:"description,omitempty"`
-	BusinessNr         null.Int    `json:"businessNr,omitempty"`
+	BusinessNr         null.Int    `json:"businessNr,omitempty" db:"businessNr"`
 	Area               AreaType    `json:"area"` /* LOCAL | REGIONAL*/
 	Legal              string      `json:"legal,omitempty"`
-	OperatorName       string      `json:"operatorName,omitempty"`
-	CommunityId        string      `json:"communityId,omitempty"`
-	GridOperator       string      `json:"gridOperator,omitempty"`
-	RcNumber           string      `json:"rcNumber"`
-	AllocationMode     string      `json:"allocationMode,omitempty"`
-	SettlementInterval string      `json:"settlementInterval,omitempty"`
-	ProviderBusinessNr null.Int    `json:"providerBusinessNr,omitempty"`
-	TaxNumber          null.String `json:"taxNumber,omitempty"`
-	VatNumber          null.String `json:"vatNumber"`
-	ContactPerson      string      `json:"contactPerson"`
-	Address            `json:"address,omitempty"`
-	AccountInfo        AccountInfo `json:"accountInfo,omitempty"`
-	Contact            Contact     `json:"contact,omitempty"`
-	Optionals          Optionals   `json:"optionals,omitempty"`
-	Periods            []int16     `json:"periods"`
-	Online             bool        `json:"online"`
+	OperatorName       string      `json:"operatorName,omitempty" db:"gridoperator_name"`
+	CommunityId        string      `json:"communityId,omitempty" db:"communityId"`
+	GridOperator       string      `json:"gridOperator,omitempty" db:"gridoperator_code"`
+	RcNumber           string      `json:"rcNumber" db:"rcNumber"`
+	AllocationMode     string      `json:"allocationMode,omitempty" db:"allocationMode"`
+	SettlementInterval string      `json:"settlementInterval,omitempty" db:"settlementInterval"`
+	ProviderBusinessNr null.Int    `json:"providerBusinessNr,omitempty" db:"providerBusinessNr"`
+	TaxNumber          null.String `json:"taxNumber,omitempty" db:"taxNumber"`
+	VatNumber          null.String `json:"vatNumber" db:"vatNumber"`
+	ContactPerson      string      `json:"contactPerson" db:"contactPerson"`
+	EegAddress         `json:"address,omitempty"`
+	AccountInfo        `json:"accountInfo,omitempty"`
+	Contact            `json:"contact,omitempty"`
+	Optionals          `json:"optionals,omitempty"`
+	Periods            []int16 `json:"periods" goqu:"skipinsert,defaultifempty"`
+	Online             bool    `json:"online"`
 }
 
 type AreaType string
@@ -46,11 +46,18 @@ const (
 )
 
 type Address struct {
-	Type         AddressType `json:"type" goqu:"skipupdate"`
+	Type         AddressType `json:"type, omitempty" goqu:"skipupdate"`
 	Street       string      `json:"street,omitempty"`
 	StreetNumber string      `json:"streetNumber,omitempty" db:"streetNumber"`
 	Zip          string      `json:"zip,omitempty"`
 	City         string      `json:"city,omitempty"`
+}
+
+type EegAddress struct {
+	Street       string `json:"street,omitempty"`
+	StreetNumber string `json:"streetNumber,omitempty" db:"streetNumber"`
+	Zip          string `json:"zip,omitempty"`
+	City         string `json:"city,omitempty"`
 }
 
 type Contact struct {

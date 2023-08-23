@@ -3,7 +3,9 @@ package database
 import (
 	"at.ourproject/vfeeg-backend/model"
 	dbsql "database/sql"
+	"fmt"
 	"github.com/doug-martin/goqu/v9"
+	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -37,29 +39,17 @@ func GetEeg(tenant string) (*model.Eeg, error) {
 	return &eeg, err
 }
 
-func UpdateEeg(tenant string, eeg *model.Eeg) error {
+func UpdateEeg(db *sqlx.DB, tenant string, eeg *model.Eeg) error {
 
-	db, err := GetDBXConnection()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
+	//db, err := GetDBXConnection()
+	//if err != nil {
+	//	return err
+	//}
+	//defer db.Close()
 
-	_, err = db.Exec(""+
-		`INSERT INTO base.eeg (tenant, name, "businessNr", legal, gridoperator_name, "communityId", gridoperator_code, `+
-		`"rcNumber", "allocationMode", "settlementInterval", "providerBusinessNr", "taxNumber", "vatNumber", `+
-		`street, "streetNumber", city, zip, phone, email, website, iban, owner, sepa, online) `+
-		`VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, `+
-		`$12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, %24) `+
-		`ON CONFLICT (tenant, name, "rcNumber") `+
-		`DO UPDATE SET "businessNr"=$3, legal=$4, gridoperator_name=$5, "communityId"=$6, gridoperator_code=$7, `+
-		`"allocationMode"=$9, "settlementInterval"=$10, "providerBusinessNr"=$11, "taxNumber"= $12, "vatNumber"=$13, `+
-		`street=$14, street_number=$15, city=$16, zip=$17, phone=$18, email=$19, website=$20, iban=$21, `+
-		`owner=$22, sepa=$23, online=$24`,
-		tenant, eeg.Name, eeg.BusinessNr, eeg.Legal, eeg.OperatorName,
-		eeg.CommunityId, eeg.GridOperator, eeg.RcNumber, eeg.AllocationMode,
-		eeg.SettlementInterval, eeg.ProviderBusinessNr, eeg.TaxNumber, eeg.VatNumber, eeg.Street, eeg.StreetNumber, eeg.City, eeg.Zip,
-		eeg.Contact.Phone, eeg.Contact.Email, eeg.Optionals.Website, eeg.AccountInfo.Iban, eeg.AccountInfo.Owner, eeg.AccountInfo.Sepa, eeg.Online)
+	sql, _, err := pgDialect.Insert("base.eeg").Rows(eeg).ToSQL()
+	fmt.Printf("Stmt: %s\n", sql)
+	_, err = db.Exec(sql)
 	if err != nil {
 		return err
 	}
@@ -113,8 +103,8 @@ func GetCommunityId(tenant string) (string, error) {
 
 //func fetchEegAddressInfo(db sqlx.DB, tenant string)
 
-func SaveNotification(tenant string, notification string, msgType, role string) error {
-	db, err := GetDBXConnection()
+func SaveNotification(dbOpen OpenDbXConnection, tenant string, notification string, msgType, role string) error {
+	db, err := dbOpen()
 	if err != nil {
 		return err
 	}

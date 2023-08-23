@@ -77,6 +77,9 @@ func GetParticipant(tenant string) ([]model.EegParticipant, error) {
 		if err != nil && err != dbsql.ErrNoRows {
 			return []model.EegParticipant{}, err
 		}
+		if participants[i].MeteringPoint == nil {
+			participants[i].MeteringPoint = []*model.MeteringPoint{}
+		}
 	}
 
 	return participants, nil
@@ -247,12 +250,30 @@ func RegisterParticipant(tenant, username string, participant *model.EegParticip
 	return saveParticipant(db, tenant, username, participant, RegisterMeteringPoints)
 }
 
-func ImportParticipant(tenant, username string, participant *model.EegParticipant) error {
-	db, err := GetDBXConnection()
+func ImportParticipant(dbConn OpenDbXConnection, tenant, username string, participant *model.EegParticipant) error {
+	db, err := dbConn()
 	if err != nil {
 		return err
 	}
 	defer db.Close()
+
+	// check if User already exists
+	sql, _, err := pgDialect.From("base.participant").
+		Select("id").
+		Where(goqu.C("firstname").Eq(participant.FirstName),
+			goqu.C("lastname").Eq(participant.LastName)).ToSQL()
+	if err == nil {
+		participantId := ""
+		err = db.Get(&participantId, sql)
+		if err == nil {
+			tx, err := db.Begin()
+			if err != nil {
+				return err
+			}
+			defer tx.Commit()
+			return ImportMeteringPoints(tx, tenant, participantId, participant.MeteringPoint)
+		}
+	}
 
 	participant.Id = uuid.NewUUID()
 	return saveParticipant(db, tenant, username, participant, ImportMeteringPoints)
@@ -334,21 +355,6 @@ func saveParticipant(db *sqlx.DB, tenant, username string, participant *model.Ee
 	return tx.Commit()
 }
 
-//func SelectParticipant(tenant, participantId string) (*model.EegParticipant, error) {
-//
-//}
-
 func InsertParticipant(tenant string, participant *model.EegParticipant) error {
 	return nil
-}
-
-func SaveEdaHistory(tenant, conversationId, direction string, notification string, msgType, role string) error {
-	db, err := GetDBXConnection()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	_, err = db.Exec("INSERT INTO base.processhistory (tenant, \"conversationId\", type, date, issuer, message, direction) VALUES ($1, $2, $3, NOW(), $4, $5, $6)", tenant, conversationId, msgType, role, notification, direction)
-	return err
 }

@@ -19,7 +19,7 @@ file-content:
   templates: "./public"
 
 grpc-provider:
-  port: 9091
+  port: 9092
 
 services:
   mail-server: "localhost:9091"

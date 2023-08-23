@@ -21,6 +21,7 @@ func InitMeteringRouter(r *mux.Router, jwtWrapper middleware.JWTWrapperFunc) *mu
 	s := r.PathPrefix("/meteringpoint").Subrouter()
 
 	s.HandleFunc("/{pid}/update/{mid}", jwtWrapper(updateMeteringPoint())).Methods("PUT")
+	s.HandleFunc("/{pid}/remove/{mid}", jwtWrapper(removeMeteringPoint())).Methods("DELETE")
 	s.HandleFunc("/{pid}/create", jwtWrapper(createMeteringPoint())).Methods("PUT")
 	s.HandleFunc("/{pid}/register", jwtWrapper(registerMeteringPoint())).Methods("POST")
 	s.HandleFunc("/{pid}/syncenergy", jwtWrapper(requestMeteringPointValues())).Methods("POST")
@@ -253,5 +254,21 @@ func requestMeteringPointValues() middleware.JWTHandlerFunc {
 			}
 		}
 		respondWithJSON(w, http.StatusCreated, participant)
+	}
+}
+
+func removeMeteringPoint() middleware.JWTHandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
+		vars := mux.Vars(r)
+		participantId := vars["pid"]
+		meterId := vars["mid"]
+
+		err := database.RemoveMeteringPoint(tenant, participantId, meterId)
+		if err != nil {
+			log.WithField("error", err).Errorf("Remove Meteringpoint %s", meterId)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		respondWithJSON(w, http.StatusAccepted, map[string]interface{}{"meteringpoint": meterId})
 	}
 }

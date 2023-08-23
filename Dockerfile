@@ -9,7 +9,7 @@ COPY go.mod go.sum ./
 RUN go mod download && go mod verify
 
 COPY . .
-RUN go build -o /usr/local/bin/vfeeg-backend -ldflags="-s -w"
+RUN go build -o /usr/local/bin/vfeeg-backend -ldflags="-s -w" server.go
 
 COPY zertifikat-pub.pem /usr/local/bin/
 COPY config.yaml /etc/backend/

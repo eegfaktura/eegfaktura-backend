@@ -16,6 +16,7 @@ const (
 	EBMS_ZP_LIST_RESPONSE      EbMsMessageType = "SENDEN_ECP"
 	EBMS_AUFHEBUNG_CCMI        EbMsMessageType = "AUFHEBUNG_CCMI"
 	EBMS_AUFHEBUNG_CCMS        EbMsMessageType = "AUFHEBUNG_CCMS"
+	EBMS_AUFHEBUNG_CCMC        EbMsMessageType = "AUFHEBUNG_CCMC"
 	EBMS_ABLEHNUNG_CCMS        EbMsMessageType = "ABLEHNUNG_CCMS"
 	EBMS_ANTWORT_CCMS          EbMsMessageType = "ANTWORT_CCMS"
 	EBMS_EEG_BASE_DATA         EbMsMessageType = "ANFORDERUNG_GN"
@@ -30,6 +31,7 @@ const (
 	EC_PODLIST EdaProtocol = "EC_PODLIST"
 	EC_REQ_ONL EdaProtocol = "EC_REQ_ONL"
 	CM_REV_IMP EdaProtocol = "CM_REV_IMP"
+	CM_REV_CUS EdaProtocol = "CM_REV_CUS"
 	ERROR      EdaProtocol = "ERROR"
 )
 

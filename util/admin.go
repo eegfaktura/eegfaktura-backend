@@ -61,7 +61,15 @@ type RegisterService struct {
 
 func (r *RegisterService) Register(ctx context.Context, eeg *protobuf.RegisterEegRequest) (*protobuf.RegisteredEegReply, error) {
 
+	getOptionalField := func(field *string) null.String {
+		if field == nil {
+			return null.String{}
+		}
+		return null.StringFrom(*field)
+	}
+
 	newEeg := model.Eeg{
+		Id:                 eeg.RcNumber,
 		Name:               eeg.Name,
 		Description:        eeg.Description,
 		BusinessNr:         null.Int{},
@@ -74,10 +82,9 @@ func (r *RegisterService) Register(ctx context.Context, eeg *protobuf.RegisterEe
 		AllocationMode:     eeg.Allocation.String(),
 		SettlementInterval: eeg.SettelmentInterval.String(),
 		ProviderBusinessNr: null.Int{},
-		TaxNumber:          null.StringFrom(eeg.Taxid),
-		VatNumber:          null.StringFrom(eeg.Vatid),
-		Address: model.Address{
-			Type:         model.BILLING,
+		TaxNumber:          null.StringFrom(eeg.TaxNumber),
+		VatNumber:          null.StringFrom(eeg.VatNumber),
+		EegAddress: model.EegAddress{
 			Street:       eeg.Street,
 			StreetNumber: eeg.Street,
 			Zip:          eeg.Street,
@@ -89,24 +96,32 @@ func (r *RegisterService) Register(ctx context.Context, eeg *protobuf.RegisterEe
 			Sepa:  eeg.Sepa,
 		},
 		Contact: model.Contact{
-			Phone: null.StringFrom(eeg.Phone),
+			Phone: getOptionalField(eeg.Phone),
 			Email: null.StringFrom(eeg.Email),
 		},
 		Optionals: model.Optionals{
-			Website: null.StringFrom(eeg.Web),
+			Website: getOptionalField(eeg.Web),
 		},
 		Periods: nil,
 		Online:  eeg.Online,
 	}
 
-	err := database.UpdateEeg(eeg.RcNumber, &newEeg)
+	//fmt.Printf("Register EEG: %+v\n", newEeg)
+	db, err := database.GetDBXConnection()
+	if err != nil {
+		log.Errorf("Database Error: %v", err)
+		return &protobuf.RegisteredEegReply{Status: 500}, err
+	}
+	defer db.Close()
+
+	err = database.UpdateEeg(db, eeg.RcNumber, &newEeg)
 	if err != nil {
 		log.Errorf("Could not create an EEG! %v", err.Error())
 		return &protobuf.RegisteredEegReply{Status: 500},
 			status.Errorf(codes.NotFound, "unknown service %v", err)
 	}
 
-	return &protobuf.RegisteredEegReply{Status: 200}, nil
+	return &protobuf.RegisteredEegReply{Status: 201}, nil
 }
 
 func StartGRPCServer() {

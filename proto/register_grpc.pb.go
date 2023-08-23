@@ -19,7 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	RegisterEegService_Register_FullMethodName = "/at.ourproject.RegisterEegService/register"
+	RegisterEegService_Register_FullMethodName  = "/at.ourproject.RegisterEegService/register"
+	RegisterEegService_EegExists_FullMethodName = "/at.ourproject.RegisterEegService/eegExists"
 )
 
 // RegisterEegServiceClient is the client API for RegisterEegService service.
@@ -28,6 +29,7 @@ const (
 type RegisterEegServiceClient interface {
 	// Sends a greeting
 	Register(ctx context.Context, in *RegisterEegRequest, opts ...grpc.CallOption) (*RegisteredEegReply, error)
+	EegExists(ctx context.Context, in *EegRequest, opts ...grpc.CallOption) (*EegResponse, error)
 }
 
 type registerEegServiceClient struct {
@@ -47,12 +49,22 @@ func (c *registerEegServiceClient) Register(ctx context.Context, in *RegisterEeg
 	return out, nil
 }
 
+func (c *registerEegServiceClient) EegExists(ctx context.Context, in *EegRequest, opts ...grpc.CallOption) (*EegResponse, error) {
+	out := new(EegResponse)
+	err := c.cc.Invoke(ctx, RegisterEegService_EegExists_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RegisterEegServiceServer is the server API for RegisterEegService service.
 // All implementations must embed UnimplementedRegisterEegServiceServer
 // for forward compatibility
 type RegisterEegServiceServer interface {
 	// Sends a greeting
 	Register(context.Context, *RegisterEegRequest) (*RegisteredEegReply, error)
+	EegExists(context.Context, *EegRequest) (*EegResponse, error)
 	mustEmbedUnimplementedRegisterEegServiceServer()
 }
 
@@ -62,6 +74,9 @@ type UnimplementedRegisterEegServiceServer struct {
 
 func (UnimplementedRegisterEegServiceServer) Register(context.Context, *RegisterEegRequest) (*RegisteredEegReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Register not implemented")
+}
+func (UnimplementedRegisterEegServiceServer) EegExists(context.Context, *EegRequest) (*EegResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method EegExists not implemented")
 }
 func (UnimplementedRegisterEegServiceServer) mustEmbedUnimplementedRegisterEegServiceServer() {}
 
@@ -94,6 +109,24 @@ func _RegisterEegService_Register_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _RegisterEegService_EegExists_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EegRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RegisterEegServiceServer).EegExists(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RegisterEegService_EegExists_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RegisterEegServiceServer).EegExists(ctx, req.(*EegRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // RegisterEegService_ServiceDesc is the grpc.ServiceDesc for RegisterEegService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -104,6 +137,10 @@ var RegisterEegService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "register",
 			Handler:    _RegisterEegService_Register_Handler,
+		},
+		{
+			MethodName: "eegExists",
+			Handler:    _RegisterEegService_EegExists_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

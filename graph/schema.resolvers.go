@@ -36,7 +36,7 @@ func (r *mutationResolver) UpdateEegModel(ctx context.Context, tenant string, ee
 // MasterDataUpload is the resolver for the masterDataUpload field.
 func (r *mutationResolver) MasterDataUpload(ctx context.Context, tenant string, sheet string, file graphql.Upload) (bool, error) {
 
-	if err := database.ImportMasterdataFromExcel(file.File, file.Filename, sheet, tenant); err != nil {
+	if err := database.ImportMasterdataFromExcel(database.GetDBXConnection, file.File, file.Filename, sheet, tenant); err != nil {
 		return false, err
 	}
 

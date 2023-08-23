@@ -30,6 +30,7 @@ func InitRouters() *mux.Router {
 	s = api.InitEegRouter(s, jwtWrapper)
 	s = api.InitParticipantRouter(s, jwtWrapper)
 	s = api.InitMeteringRouter(s, jwtWrapper)
+	s = api.InitProcessRouter(s, jwtWrapper)
 
 	return s
 }

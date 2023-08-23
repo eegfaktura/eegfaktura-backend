@@ -78,6 +78,26 @@ func UpdateMeteringPoint(tenant, participantId, meterId string, meteringPoint *m
 	return err
 }
 
+func RemoveMeteringPoint(tenant, participantId, meterId string) error {
+	db, err := GetDBXConnection()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	statement, _, _ := goqu.Delete(TABLE_METERINGPOINT).
+		Where(goqu.Ex{
+			"tenant":            goqu.Op{"eq": tenant},
+			"metering_point_id": goqu.Op{"eq": meterId},
+			"participant_id":    goqu.Op{"eq": participantId},
+			"status":            goqu.Op{"eq": "INVALID"},
+		}).
+		ToSQL()
+	_, err = db.Exec(statement)
+
+	return err
+}
+
 func ActivateMeteringPoints(tenant string, meterId []string) error {
 	db, err := GetDBXConnection()
 	if err != nil {

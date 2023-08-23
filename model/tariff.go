@@ -23,7 +23,7 @@ const (
 )
 
 type Tariff struct {
-	Id                 uuid.UUID       `json:"id"`
+	Id                 uuid.UUID       `json:"id" goqu:"defaultifempty"`
 	Version            int             `json:"version" db:"version"`
 	Type               TariffModelType `json:"type"`
 	Name               string          `json:"name"`

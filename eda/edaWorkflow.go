@@ -21,3 +21,23 @@ func extractResponseCodeAndMeteringPoint(ebmsMessage *model.EbmsMessage) ([]int1
 
 	return codes, meters, nil
 }
+
+func extractMeterList(ebmsMessage *model.EbmsMessage) []string {
+	meters := []string{}
+	for _, m := range ebmsMessage.MeterList {
+		meters = append(meters, m.MeteringPoint)
+	}
+	return meters
+}
+
+func codesContains(expected, codes []int16) bool {
+	var intersect []int16
+	for _, element1 := range codes {
+		for _, element2 := range expected {
+			if element1 == element2 {
+				intersect = append(intersect, element1)
+			}
+		}
+	}
+	return len(intersect) > 0
+}

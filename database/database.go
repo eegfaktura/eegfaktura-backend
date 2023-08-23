@@ -12,6 +12,8 @@ import (
 	"github.com/spf13/viper"
 )
 
+type OpenDbXConnection func() (*sqlx.DB, error)
+
 func GetDBConnection() (*sql.DB, error) {
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=disable",
@@ -59,15 +61,15 @@ func DeleteTariff(tenant string, id string) error {
 	return err
 }
 
-func AddTariff(tenant string, tariff *model.Tariff) error {
-	db, err := GetDBXConnection()
+func AddTariff(dbConn OpenDbXConnection, tenant string, tariff *model.Tariff) error {
+	db, err := dbConn()
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 
 	if len(tariff.Id.String()) == 0 {
-		tariff.Id = uuid.NewUUID()
+		//tariff.Id = uuid.NewUUID()
 	} else {
 		tariff.Version = tariff.Version + 1
 	}

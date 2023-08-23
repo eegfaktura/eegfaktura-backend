@@ -25,7 +25,7 @@ func openReader(r io.Reader, filename string, opt ...excelize.Options) (*exceliz
 	return f, nil
 }
 
-func ImportMasterdataFromExcel(r io.Reader, filename, sheet, tenant string) error {
+func ImportMasterdataFromExcel(dbConn OpenDbXConnection, r io.Reader, filename, sheet, tenant string) error {
 	var f *excelize.File
 	var err error
 
@@ -34,14 +34,79 @@ func ImportMasterdataFromExcel(r io.Reader, filename, sheet, tenant string) erro
 	}
 
 	defer f.Close()
-	fmt.Println("Successfully open stream")
+	log.Debug("Successfully open stream")
 
 	rows, err := f.Rows(sheet)
 	if err != nil {
 		glog.Error(err)
 		return err
 	}
-	fmt.Printf("Rows: %+v\n", rows)
+	participants := transformExcelData(rows)
+	log.Debugf("Rows: %+v\n", rows)
+	log.Debugf("LEN _ Import participants: %+v\n", len(participants))
+
+	for _, p := range participants {
+		err = ImportParticipant(dbConn, strings.ToUpper(tenant), "excel", p)
+		if err != nil {
+			log.Errorf("Error Import Participant from Excel: %s", err.Error())
+		}
+	}
+
+	return nil
+}
+
+func findParticipant(participants []*model.EegParticipant, firstname, lastname string) (*model.EegParticipant, bool) {
+	for _, p := range participants {
+		if p.FirstName == firstname && p.LastName == lastname {
+			return p, true
+		}
+	}
+	return nil, false
+}
+
+func getColumValue(cols []string, values map[string]int, deName, enName string, defaultValue *string) string {
+	idx := -1
+	if _, ok := values[strings.ToLower(deName)]; ok {
+		idx = values[strings.ToLower(deName)]
+	} else if _, ok := values[strings.ToLower(enName)]; ok {
+		idx = values[strings.ToLower(enName)]
+	}
+
+	if idx < 0 {
+		if defaultValue != nil {
+			return *defaultValue
+		}
+		return ""
+	}
+	if idx >= len(cols) {
+		if defaultValue != nil {
+			return *defaultValue
+		}
+		return ""
+	}
+	return cols[idx]
+}
+
+var numberPattern = regexp.MustCompile(`^[0-9\\.,]+$`)
+
+func isDate(cell string) bool {
+	if len(cell) > 0 && numberPattern.MatchString(cell) {
+		return true
+	}
+	println(cell)
+	return false
+}
+
+func parseExcelDate(cell string) time.Time {
+	if isDate(cell) {
+		var excelEpoch = time.Date(1899, time.December, 30, 0, 0, 0, 0, time.UTC)
+		var days, _ = strconv.ParseFloat(cell, 64)
+		return excelEpoch.Add(time.Second * time.Duration(days*86400))
+	}
+	return time.Now()
+}
+
+func transformExcelData(rows *excelize.Rows) []*model.EegParticipant {
 	colMap := map[string]int{}
 	participants := []*model.EegParticipant{}
 
@@ -76,7 +141,7 @@ func ImportMasterdataFromExcel(r io.Reader, filename, sheet, tenant string) erro
 				continue
 			case "Netzbetreiber", "Grid Operator":
 				for i, c := range cols {
-					colMap[c] = i
+					colMap[strings.ToLower(c)] = i
 				}
 
 				continue
@@ -125,11 +190,12 @@ func ImportMasterdataFromExcel(r io.Reader, filename, sheet, tenant string) erro
 							participant = p
 						} else {
 							participant = &model.EegParticipant{
-								FirstName:    firstname,
-								LastName:     lastname,
-								TitleBefore:  getColumValue(cols, colMap, "TitelVor", "TitleBefor", nil),
-								TitleAfter:   getColumValue(cols, colMap, "TitelNach", "TitleAfter", nil),
-								BusinessRole: businessRole(cols, colMap),
+								ParticipantNumber: null.StringFrom(getColumValue(cols, colMap, "MitgliedsNr", "ParticipantNr", nil)),
+								FirstName:         firstname,
+								LastName:          lastname,
+								TitleBefore:       getColumValue(cols, colMap, "TitelVor", "TitleBefor", nil),
+								TitleAfter:        getColumValue(cols, colMap, "TitelNach", "TitleAfter", nil),
+								BusinessRole:      businessRole(cols, colMap),
 								ResidentAddress: model.Address{
 									Type:         model.RESIDENCE,
 									Street:       getColumValue(cols, colMap, "Straße", "Street", nil),
@@ -150,9 +216,9 @@ func ImportMasterdataFromExcel(r io.Reader, filename, sheet, tenant string) erro
 								BankAccount: model.BankInfo{
 									Iban:  null.StringFrom(getColumValue(cols, colMap, "IBAN", "IBAN", nil)),
 									Owner: null.StringFrom(getColumValue(cols, colMap, "Kontoinhaber", "Accountname", nil))},
-								Contact:               model.ContactInfo{Email: null.StringFrom(getColumValue(cols, colMap, "email", "email", nil))},
-								CompanyRegisterNumber: getColumValue(cols, colMap, "RegisterNr", "companyRegisterNumber", nil),
-								Version:               0,
+								Contact:   model.ContactInfo{Email: null.StringFrom(getColumValue(cols, colMap, "email", "email", nil))},
+								TaxNumber: getColumValue(cols, colMap, "SteuerNr", "taxNumber", nil),
+								Version:   0,
 							}
 							participants = append(participants, participant)
 						}
@@ -175,65 +241,5 @@ func ImportMasterdataFromExcel(r io.Reader, filename, sheet, tenant string) erro
 			}
 		}
 	}
-	fmt.Printf("LEN _ Import participants: %+v\n", len(participants))
-	for _, p := range participants {
-		//fmt.Printf("Import participants: %+v\n", p)
-		err = ImportParticipant(strings.ToUpper(tenant), "petero", p)
-		if err != nil {
-			log.Errorf("Error Import Participant from Excel: %s", err.Error())
-		}
-	}
-
-	return nil
-}
-
-func findParticipant(participants []*model.EegParticipant, firstname, lastname string) (*model.EegParticipant, bool) {
-	for _, p := range participants {
-		if p.FirstName == firstname && p.LastName == lastname {
-			return p, true
-		}
-	}
-	return nil, false
-}
-
-func getColumValue(cols []string, values map[string]int, deName, enName string, defaultValue *string) string {
-	idx := -1
-	if _, ok := values[deName]; ok {
-		idx = values[deName]
-	} else if _, ok := values[enName]; ok {
-		idx = values[enName]
-	}
-
-	if idx < 0 {
-		if defaultValue != nil {
-			return *defaultValue
-		}
-		return ""
-	}
-	if idx >= len(cols) {
-		if defaultValue != nil {
-			return *defaultValue
-		}
-		return ""
-	}
-	return cols[idx]
-}
-
-var numberPattern = regexp.MustCompile(`^[0-9\\.,]+$`)
-
-func isDate(cell string) bool {
-	if len(cell) > 0 && numberPattern.MatchString(cell) {
-		return true
-	}
-	println(cell)
-	return false
-}
-
-func parseExcelDate(cell string) time.Time {
-	if isDate(cell) {
-		var excelEpoch = time.Date(1899, time.December, 30, 0, 0, 0, 0, time.UTC)
-		var days, _ = strconv.ParseFloat(cell, 64)
-		return excelEpoch.Add(time.Second * time.Duration(days*86400))
-	}
-	return time.Now()
+	return participants
 }

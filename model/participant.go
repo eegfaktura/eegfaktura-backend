@@ -56,6 +56,7 @@ const (
 	INACTIVE StatusType = "INACTIVE"
 	REJECTED StatusType = "REJECTED"
 	REVOKED  StatusType = "REVOKED"
+	INVALID  StatusType = "INVALID"
 )
 
 type MeteringPoint struct {
@@ -71,4 +72,7 @@ type MeteringPoint struct {
 	StreetNumber    null.String   `json:"streetNumber,omitempty" db:"streetNumber"`
 	City            null.String   `json:"city,omitempty"`
 	Zip             null.String   `json:"zip,omitempty"`
+	RegisteredSince time.Time     `json:"registeredSince" db:"registeredSince"`
+	ModifiedAt      time.Time     `json:"modifiedAt" db:"modifiedAt"`
+	ModifiedBy      null.String   `json:"modifiedBy" db:"modifiedBy"`
 }

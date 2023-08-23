@@ -87,7 +87,7 @@ func addTariff() middleware.JWTHandlerFunc {
 		}
 		log.Printf("ADD TARIF: %+v Tenant: %+v", t, tenant)
 
-		if err = database.AddTariff(tenant, &t); err != nil {
+		if err = database.AddTariff(database.GetDBXConnection, tenant, &t); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -182,7 +182,7 @@ func uploadMasterData() middleware.JWTHandlerFunc {
 		defer file.Close()
 		glog.Infof("--- Upload File: %s, %s, %s\n", sheet, handler.Filename, tenant)
 
-		if err = database.ImportMasterdataFromExcel(file, handler.Filename, sheet, tenant); err != nil {
+		if err = database.ImportMasterdataFromExcel(database.GetDBXConnection, file, handler.Filename, sheet, tenant); err != nil {
 			glog.Error(err)
 			respondWithError(w, http.StatusBadRequest, err.Error())
 		} else {
