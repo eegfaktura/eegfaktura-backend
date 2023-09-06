@@ -3,6 +3,7 @@ package database
 import (
 	"at.ourproject/vfeeg-backend/model"
 	"database/sql"
+	"errors"
 	"fmt"
 	"github.com/doug-martin/goqu/v9"
 	"github.com/jmoiron/sqlx"
@@ -13,6 +14,10 @@ import (
 )
 
 type OpenDbXConnection func() (*sqlx.DB, error)
+
+var (
+	ErrTariffUtilized = errors.New("Tariff is currently used")
+)
 
 func GetDBConnection() (*sql.DB, error) {
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
@@ -50,14 +55,33 @@ func GetTariff(tenant string) ([]model.Tariff, error) {
 	return tariff, err
 }
 
-func DeleteTariff(tenant string, id string) error {
+func ArchiveTariff(dbConn OpenDbXConnection, tenant string, id string) error {
 
-	db, err := GetDBXConnection()
+	db, err := dbConn()
 	if err != nil {
 		return err
 	}
 	defer db.Close()
-	_, err = db.Exec("DELETE FROM base.tariff WHERE tenant = $1 AND id = $2", tenant, id)
+
+	stmt, _, err := pgDialect.Select("id").From("base.participant").Where(goqu.Ex{"tariffId": id}).ToSQL()
+	if err != nil {
+		return err
+	}
+	_, err = db.Query(stmt)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return ErrTariffUtilized
+	}
+
+	stmt, _, err = pgDialect.Select("id").From("base.meteringpoint").Where(goqu.Ex{"tariffId": id, "tenant": tenant}).ToSQL()
+	if err != nil {
+		return err
+	}
+	_, err = db.Query(stmt)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return ErrTariffUtilized
+	}
+
+	_, err = db.Exec("UPDATE base.tariff SET status = 'ARCHIVED' WHERE tenant = $1 AND id = $2", tenant, id)
 	return err
 }
 
@@ -69,7 +93,7 @@ func AddTariff(dbConn OpenDbXConnection, tenant string, tariff *model.Tariff) er
 	defer db.Close()
 
 	if len(tariff.Id.String()) == 0 {
-		//tariff.Id = uuid.NewUUID()
+		tariff.Id = uuid.NewUUID()
 	} else {
 		tariff.Version = tariff.Version + 1
 	}

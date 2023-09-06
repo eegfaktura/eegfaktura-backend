@@ -27,17 +27,17 @@ type Tariff struct {
 	Version            int             `json:"version" db:"version"`
 	Type               TariffModelType `json:"type"`
 	Name               string          `json:"name"`
-	BillingPeriod      string          `json:"billingPeriod,omitempty" db:"billingPeriod"`
-	UseVat             bool            `json:"useVat,omitempty" db:"useVat"`
-	VatInPercent       int             `json:"vatInPercent,omitempty,string" db:"vatInPercent"`
-	AccountNetAmount   int             `json:"accountNetAmount,omitempty,string" db:"accountNetAmount"`
-	AccountGrossAmount int             `json:"accountGrossAmount,omitempty,string"  db:"accountGrossAmount"`
-	ParticipantFee     int             `json:"participantFee,omitempty,string" db:"participantFee"`
-	BaseFee            int             `json:"baseFee,omitempty,string" db:"baseFee"`
-	BusinessNr         int             `json:"businessNr,omitempty,string" db:"businessNr"`
-	CentPerKWh         int             `json:"centPerKWh,omitempty,string" db:"centPerKWh"`
-	FreeKWh            int             `json:"freeKWh,omitempty,string" db:"freeKWh"`
-	Discount           int             `json:"discount,omitempty,string"`
+	BillingPeriod      string          `json:"billingPeriod" db:"billingPeriod"`
+	UseVat             bool            `json:"useVat" db:"useVat"`
+	VatInPercent       int             `json:"vatInPercent,string" db:"vatInPercent"`
+	AccountNetAmount   int             `json:"accountNetAmount,string" db:"accountNetAmount"`
+	AccountGrossAmount int             `json:"accountGrossAmount,string"  db:"accountGrossAmount"`
+	ParticipantFee     int             `json:"participantFee,string" db:"participantFee"`
+	BaseFee            int             `json:"baseFee,string" db:"baseFee"`
+	BusinessNr         int             `json:"businessNr,string" db:"businessNr"`
+	CentPerKWh         int             `json:"centPerKWh,string" db:"centPerKWh"`
+	FreeKWh            int             `json:"freeKWh,string" db:"freeKWh"`
+	Discount           int             `json:"discount,string"`
 }
 
 //func (t Tariff) PrepareType() Tariff {

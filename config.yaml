@@ -22,4 +22,4 @@ grpc-provider:
   port: 9092
 
 services:
-  mail-server: "localhost:9091"
+  mail-server: "localhost:9093"

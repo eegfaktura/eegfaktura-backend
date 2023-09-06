@@ -4,7 +4,6 @@ import (
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
-	"fmt"
 	"github.com/sirupsen/logrus"
 )
 
@@ -54,13 +53,13 @@ func getSubsriptions() []model.Subscriptions {
 		{
 			Protocol: model.CR_MSG,
 			Handler: func(msg model.SubscribeMessage) {
-				protcolCrMsgHandler(msg, recorder)
+				protocolCrMsgHandler(msg, recorder)
 			},
 		},
 		{
 			Protocol: model.CR_REQ_PT,
 			Handler: func(msg model.SubscribeMessage) {
-				protcolCrReqPtHandler(msg, recorder)
+				protocolCrReqPtHandler(msg, recorder)
 			},
 		},
 		{
@@ -81,60 +80,20 @@ func getSubsriptions() []model.Subscriptions {
 				protocolCmRevImpHandler(msg, recorder)
 			},
 		},
-		//{
-		//	MessageCode: model.EBMS_ONLINE_REG_ANSWER,
-		//	Handler:     regAnswerHandler,
-		//},
-		//{
-		//	MessageCode: model.EBMS_ONLINE_REG_REJECTION,
-		//	Handler:     regAnswerHandler,
-		//},
-		//{
-		//	MessageCode: model.EBMS_ONLINE_REG_APPROVAL,
-		//	Handler:     regAnswerHandler,
-		//},
-		//{
-		//	MessageCode: model.EBMS_ONLINE_REG_COMPLETION,
-		//	Handler:     regCompletionHandler,
-		//},
-		//{
-		//	MessageCode: model.EBMS_ZP_RES,
-		//	Handler:     regAnswerHandler,
-		//},
-		//{
-		//	MessageCode: model.EBMS_ZP_REJ,
-		//	Handler:     regAnswerHandler,
-		//},
-		//{
-		//	MessageCode: model.EBMS_AUFHEBUNG_CCMI,
-		//	Handler:     regAnswerHandler,
-		//},
-		//{
-		//	MessageCode: model.EBMS_AUFHEBUNG_CCMS,
-		//	Handler:     regAnswerHandler,
-		//},
-		//{
-		//	MessageCode: model.EBMS_ABLEHNUNG_CCMS,
-		//	Handler:     regAnswerHandler,
-		//},
-		//{
-		//	MessageCode: model.EBMS_ANTWORT_CCMS,
-		//	Handler:     regAnswerHandler,
-		//},
 	}
 }
 
-func protcolCrMsgHandler(msg model.SubscribeMessage, recorder *EdaRecorder) {
+func protocolCrMsgHandler(msg model.SubscribeMessage, recorder EdaRecording) {
 	logrus.Printf("Handle Subscriptions: %+v", msg.Protocol)
 
 	if msg.Payload.Meter != nil && msg.Payload.Energy != nil {
 		historyValue := map[string]interface{}{"meter": msg.Payload.Meter.MeteringPoint, "from": msg.Payload.Energy.Start, "to": msg.Payload.Energy.End}
-		_ = recorder.saveHistory(msg.Tenant, string(msg.MessageCode), msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, historyValue)
+		_ = recorder.saveHistory(msg.Tenant, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, historyValue)
 	}
 	return
 }
 
-func protcolCrReqPtHandler(msg model.SubscribeMessage, recorder *EdaRecorder) {
+func protocolCrReqPtHandler(msg model.SubscribeMessage, recorder EdaRecording) {
 	var err error
 	logrus.Printf("Handle Subscriptions: %+v", msg.Protocol)
 
@@ -154,10 +113,10 @@ func protcolCrReqPtHandler(msg model.SubscribeMessage, recorder *EdaRecorder) {
 	}, msg.Tenant, "NOTIFICATION", "ADMIN"); err != nil {
 		logrus.WithField("PROTOCOL", msg.Protocol).Error(err)
 	}
-	_ = recorder.saveHistory(msg.Tenant, string(msg.MessageCode), msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
+	_ = recorder.saveHistory(msg.Tenant, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
 }
 
-func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder *EdaRecorder) {
+func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) {
 	var err error
 	logrus.Printf("Handle Subscriptions: %+v", msg.Protocol)
 
@@ -181,6 +140,12 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder *EdaRecorder) 
 				status = model.APPROVED
 			}
 		}
+	case model.EBMS_ONLINE_REG_ANSWER:
+		for _, c := range codes {
+			if c == 99 {
+				status = model.PENDING
+			}
+		}
 	case model.EBMS_ONLINE_REG_INIT:
 		codes = []int16{}
 	default:
@@ -188,7 +153,7 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder *EdaRecorder) 
 	}
 
 	if len(meters) > 0 && len(status) > 0 {
-		if err := database.MeteringPointsSetStatus(msg.Tenant, status, meters); err != nil {
+		if err := database.MeteringPointsSetStatus(recorder.databaseConnect, msg.Tenant, status, meters); err != nil {
 			logrus.WithField("error", err.Error()).Errorf("can not change metering point status %+v", meters)
 			return
 		}
@@ -201,10 +166,10 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder *EdaRecorder) 
 	}, msg.Tenant, "NOTIFICATION", "ADMIN"); err != nil {
 		logrus.WithField("PROTOCOL", msg.Protocol).Error(err)
 	}
-	_ = recorder.saveHistory(msg.Tenant, string(msg.MessageCode), msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
+	_ = recorder.saveHistory(msg.Tenant, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
 }
 
-func protocolCmRevImpHandler(msg model.SubscribeMessage, recorder *EdaRecorder) {
+func protocolCmRevImpHandler(msg model.SubscribeMessage, recorder EdaRecording) {
 	var err error
 	logrus.Printf("Handle Subscriptions: %+v", msg.Protocol)
 
@@ -219,7 +184,7 @@ func protocolCmRevImpHandler(msg model.SubscribeMessage, recorder *EdaRecorder) 
 	}
 
 	if len(meters) > 0 && len(status) > 0 {
-		if err := database.MeteringPointsSetStatus(msg.Tenant, status, meters); err != nil {
+		if err := database.MeteringPointsSetStatus(recorder.databaseConnect, msg.Tenant, status, meters); err != nil {
 			logrus.WithField("error", err.Error()).Errorf("can not change metering point status %+v", meters)
 			return
 		}
@@ -232,157 +197,5 @@ func protocolCmRevImpHandler(msg model.SubscribeMessage, recorder *EdaRecorder) 
 	}, msg.Tenant, "NOTIFICATION", "ADMIN"); err != nil {
 		logrus.WithField("PROTOCOL", msg.Protocol).Error(err)
 	}
-	_ = recorder.saveHistory(msg.Tenant, string(msg.MessageCode), msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
+	_ = recorder.saveHistory(msg.Tenant, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
 }
-
-//func saveNotification(notificationValue map[string]interface{}, tenant, notifcationType, role string) error {
-//	var msgBytes []byte
-//	var err error
-//	if msgBytes, err = json.Marshal(notificationValue); err == nil {
-//		if err = database.SaveNotification(tenant, string(msgBytes), notifcationType, role); err != nil {
-//			logrus.Error(err)
-//			return err
-//		}
-//	}
-//	return nil
-//}
-//
-//func saveHistory(tenant, messageCode, conversationId, role, dir string, protocol model.EdaProtocol, msg interface{}) error {
-//	db, err := database.GetDBXConnection()
-//	if err != nil {
-//		return err
-//	}
-//	defer db.Close()
-//
-//	var msgBytes []byte
-//	if msgBytes, err = json.Marshal(msg); err == nil {
-//		if err = database.SaveEdaHistory(db, &model.EdaProcessHistory{
-//			Tenant:         tenant,
-//			ConversationId: conversationId,
-//			ProcessType:    messageCode,
-//			Date:           time.Time{},
-//			Protocol:       null.StringFrom(string(protocol)),
-//			Issuer:         role,
-//			MessageByte:    msgBytes,
-//			MessageMap:     nil,
-//			Direction:      dir,
-//		}); err != nil {
-//			logrus.Error(err)
-//			return err
-//		}
-//	}
-//	return nil
-//}
-
-func convertCodes2Strings(codes []int16) []string {
-	strCodes := []string{}
-	for _, c := range codes {
-		sc, ok := ECON_RESPONSE_CODES[c]
-		if !ok {
-			sc = fmt.Sprintf("%d", c)
-		}
-		strCodes = append(strCodes, sc)
-	}
-	return strCodes
-}
-
-//func reqInitialHandler(msg model.SubscribeMessage) {
-//	logrus.Printf("Handle Subscriptions: %+v", msg)
-//	var msgBytes []byte
-//	var err error
-//	if msgBytes, err = json.Marshal(msg.Payload); err == nil {
-//		if err = database.SaveEdaHistory(msg.Tenant, msg.Payload.ConversationId, "OUT", string(msgBytes), string(msg.MessageCode), "ADMIN"); err != nil {
-//			logrus.Error(err)
-//		}
-//		return
-//	}
-//	logrus.Errorf("Parse object to json: %v", err)
-//}
-//func regAnswerHandler(msg model.SubscribeMessage) {
-//	fmt.Printf("Handle EDA MESSAGE: %+v\n", msg)
-//	responseCode, meter, err := extractResponseCodeAndMeteringPoint(&msg.Payload)
-//	if err != nil {
-//		logrus.Error(err)
-//		return
-//	}
-//	resp, ok := ECON_RESPONSE_CODES[responseCode]
-//	if !ok {
-//		resp = fmt.Sprintf("%d", responseCode)
-//	}
-//	notificationValue := map[string]interface{}{
-//		"type":          msg.MessageCode,
-//		"meteringPoint": meter,
-//		"responseCode":  resp}
-//
-//	var status model.StatusType = model.REJECTED
-//	switch responseCode {
-//	case 175:
-//		status = model.APPROVED
-//		break
-//	case 99:
-//		status = model.PENDING
-//		break
-//	}
-//
-//	if msg.MessageCode == model.EBMS_AUFHEBUNG_CCMI ||
-//		msg.MessageCode == model.EBMS_AUFHEBUNG_CCMS {
-//		status = model.REVOKED
-//	}
-//
-//	if len(meter) > 0 {
-//		if err := database.MeteringPointsSetStatus(msg.Tenant, status, []string{meter}); err != nil {
-//			logrus.WithField("error", err.Error()).Errorf("can not change metering point status %+v", meter)
-//			return
-//		}
-//	}
-//
-//	var msgBytes []byte
-//	if msgBytes, err = json.Marshal(notificationValue); err == nil {
-//		if err = database.SaveNotification(msg.Tenant, string(msgBytes), "NOTIFICATION", "ADMIN"); err != nil {
-//			logrus.Error(err)
-//		}
-//	}
-//
-//	if msgBytes, err = json.Marshal(msg.Payload); err == nil {
-//		if err = database.SaveEdaHistory(msg.Tenant, msg.Payload.ConversationId, "IN", string(msgBytes), string(msg.MessageCode), "ADMIN"); err != nil {
-//			logrus.Error(err)
-//		}
-//		return
-//	}
-//	logrus.Errorf("Parse object to json: %v", err)
-//}
-//
-//func regCompletionHandler(msg model.SubscribeMessage) {
-//	meterIds := []string{}
-//	for _, m := range msg.Payload.MeterList {
-//		meterIds = append(meterIds, m.MeteringPoint)
-//	}
-//
-//	if len(meterIds) > 0 {
-//		if err := database.MeteringPointsSetStatus(msg.Tenant, model.ACTIVE, meterIds); err != nil {
-//			logrus.WithField("error", err.Error()).Errorf("can not activate metering points %+v", meterIds)
-//			return
-//		}
-//	}
-//
-//	notificationValue := map[string]interface{}{
-//		"type":           msg.MessageCode,
-//		"meteringPoints": meterIds}
-//
-//	var err error
-//	var msgBytes []byte
-//	if msgBytes, err = json.Marshal(notificationValue); err != nil {
-//		logrus.Errorf("Parse object to json: %v", err)
-//		return
-//	}
-//	if err = database.SaveNotification(msg.Tenant, string(msgBytes), "NOTIFICATION", "USER"); err != nil {
-//		logrus.Error(err)
-//	}
-//	if msgBytes, err = json.Marshal(msg.Payload); err == nil {
-//		if err = database.SaveEdaHistory(msg.Tenant, msg.Payload.ConversationId, "IN", string(msgBytes), string(msg.MessageCode), "ADMIN"); err != nil {
-//			logrus.Error(err)
-//		}
-//		return
-//	}
-//	logrus.Errorf("Parse object to json: %v", err)
-//}

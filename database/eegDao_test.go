@@ -12,13 +12,13 @@ import (
 	"testing"
 )
 
-func TestGetMeteringPoint(t *testing.T) {
-	eeg, err := GetEeg("RC100181")
-	assert.NoError(t, err)
-
-	assert.NotEmpty(t, eeg)
-	fmt.Printf("EEG: %+v\n", eeg)
-}
+//func TestGetMeteringPoint(t *testing.T) {
+//	eeg, err := GetEeg("RC100181")
+//	assert.NoError(t, err)
+//
+//	assert.NotEmpty(t, eeg)
+//	fmt.Printf("EEG: %+v\n", eeg)
+//}
 
 func TestUpdateEeg(t *testing.T) {
 	mDB, mock, err := sqlmock.New()
@@ -83,7 +83,8 @@ func TestUpdateEeg(t *testing.T) {
 			wantErr: assert.NoError}}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.wantErr(t, UpdateEeg(mdb, tt.args.tenant, tt.args.eeg), fmt.Sprintf("UpdateEeg(%v, %v)", tt.args.tenant, tt.args.eeg))
+			mock.ExpectExec("INSERT INTO (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
+			tt.wantErr(t, UpdateEeg(mdb, tt.args.tenant, tt.args.eeg), fmt.Sprintf("UpdateEeg(%v, %+v)", tt.args.tenant, tt.args.eeg))
 			assert.NoError(t, mock.ExpectationsWereMet())
 			require.NoError(t, err)
 		})

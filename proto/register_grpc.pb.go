@@ -4,7 +4,7 @@
 // - protoc             v3.12.4
 // source: proto/register.proto
 
-package protobuf
+package proto
 
 import (
 	context "context"

@@ -4,7 +4,6 @@ import (
 	"at.ourproject/vfeeg-backend/model"
 	"database/sql"
 	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/guregu/null.v4"
@@ -13,25 +12,8 @@ import (
 	"testing"
 )
 
-type mockDatabase struct {
-	mock sqlmock.Sqlmock
-	db   *sql.DB
-}
-
-func openDb() (*mockDatabase, error) {
-	var err error
-	m := &mockDatabase{}
-	m.db, m.mock, err = sqlmock.New()
-
-	return m, err
-}
-
-func (m *mockDatabase) mockDb() (*sqlx.DB, error) {
-	return sqlx.NewDb(m.db, "mock"), nil
-}
-
 func TestImportMasterdataFromExcel(t *testing.T) {
-	var mockDb, err = openDb()
+	var mockDb, err = GetDatabaseMock()
 	require.NoError(t, err)
 
 	reader, err := os.Open("../tests/TE100200-Muster-Stammdatenimport.xlsx")
@@ -54,7 +36,7 @@ func TestImportMasterdataFromExcel(t *testing.T) {
 		{
 			name: "import file",
 			args: args{
-				dbConn:   mockDb.mockDb,
+				dbConn:   mockDb.OpenMockDb,
 				r:        reader,
 				filename: "TE100200-Muster-Stammdatenimport.xlsx",
 				sheet:    "EEG Stammdaten",
@@ -66,17 +48,17 @@ func TestImportMasterdataFromExcel(t *testing.T) {
 			test: func(t *testing.T, args args) {
 				require.NoError(t, err)
 				//mockDb.mock.ExpectExec("^INSERT INTO (.+) VALUES (.+)") //.WithArgs("firstname", "lastname")
-				mockDb.mock.ExpectQuery("^SELECT (.+)").WillReturnError(sql.ErrNoRows)
-				mockDb.mock.ExpectBegin()
+				mockDb.Mock.ExpectQuery("^SELECT (.+)").WillReturnError(sql.ErrNoRows)
+				mockDb.Mock.ExpectBegin()
 				// , 'excel', 'Mustermann', '001', '2023-08-19T13:15:07.776003233Z', 'ACTIVE', '001-9876', 'TE100200', '', '', '', DEFAULT
-				mockDb.mock.ExpectQuery("^INSERT (.+) VALUES ('EEG_PRIVATE', '', 'excel', 'Max', (.+)").WillReturnRows(sqlmock.NewRows([]string{"id"}).FromCSVString("1")) //.WillReturnResult(sqlmock.NewResult(1, 1)) //.WithArgs("firstname", "lastname")
-				mockDb.mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
-				mockDb.mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
-				mockDb.mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
-				mockDb.mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
+				mockDb.Mock.ExpectQuery("^INSERT (.+)").WillReturnRows(sqlmock.NewRows([]string{"id"}).FromCSVString("1")) //.WillReturnResult(sqlmock.NewResult(1, 1)) //.WithArgs("firstname", "lastname")
+				mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
+				mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
+				mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
+				mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
 
 				require.NoError(t, ImportMasterdataFromExcel(args.dbConn, args.r, args.filename, args.sheet, args.tenant))
-				require.NoError(t, mockDb.mock.ExpectationsWereMet())
+				require.NoError(t, mockDb.Mock.ExpectationsWereMet())
 			},
 		},
 	}

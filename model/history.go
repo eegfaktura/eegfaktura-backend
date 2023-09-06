@@ -8,7 +8,7 @@ import (
 type EdaProcessHistory struct {
 	Tenant         string                 `db:"tenant"`
 	ConversationId string                 `json:"conversationId" db:"conversationId"`
-	ProcessType    string                 `json:"processType" db:"type"`
+	ProcessType    EbMsMessageType        `json:"processType" db:"type"`
 	Date           time.Time              `json:"date" goqu:"skipinsert,defaultifempty"`
 	Protocol       null.String            `json:"protocol"`
 	Issuer         string                 `json:"issuer"`

@@ -19,38 +19,95 @@ import (
 	"time"
 )
 
-type SendMailFunc func(tenant, to, subject string, body *bytes.Buffer, fileName *string, fileContent *bytes.Buffer) error
+type SendMailFunc func(tenant, to, subject string, body *bytes.Buffer, attachments []*Attachment) error
 
-func SendMail(tenant, to, subject string, body *bytes.Buffer, fileName *string, fileContent *bytes.Buffer) error {
-	fmt.Printf("GRPC SERVER: %v\n", viper.GetString("services.mail-server"))
+type Attachment struct {
+	Type        string
+	Filename    string
+	Filecontent *bytes.Buffer
+	MimeType    string
+	ContentId   *string
+}
+
+func SendMail(tenant, to, subject string, body *bytes.Buffer, attachments []*Attachment) error {
+	//fmt.Printf("GRPC SERVER: %v\n", viper.GetString("services.mail-server"))
+	//conn, err := grpc.Dial(viper.GetString("services.mail-server"), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	//if err != nil {
+	//	return err
+	//}
+	//defer conn.Close()
+	//c := protobuf.NewSendMailServiceClient(conn)
+	//
+	//ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	//defer cancel()
+
+	//filterInlineAttachments := func() ([]*Attachment, []*Attachment) {
+	//	in, at := []*Attachment{}, []*Attachment{}
+	//	for i := range attachments {
+	//		if attachments[i].Type == "INLINE" {
+	//			in = append(in, attachments[i])
+	//		} else {
+	//			at = append(at, attachments[i])
+	//		}
+	//	}
+	//	return in, at
+	//}
+
+	//if body != nil {
+	//	request.Body = body.Bytes()
+	//}
+
+	//if attachments != nil {
+	return sendHtmlInlineAttachment(tenant, to, subject, body, attachments)
+	//}
+
+	//if fileName != nil && fileContent != nil {
+	//	request.Content = fileContent.Bytes()
+	//	request.Filename = fileName
+	//}
+	//
+	//r, err := c.SendExcel(ctx, request)
+	//log.Infof("Response from MAIL-SERVER: %v", r)
+	//if r == nil {
+	//	return errors.New("error Send Mail")
+	//}
+	//return err
+}
+
+func sendHtmlInlineAttachment(sender, recipient, subject string, htmlBody *bytes.Buffer, attachments []*Attachment) error {
 	conn, err := grpc.Dial(viper.GetString("services.mail-server"), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
-	c := protobuf.NewExcelAdminServiceClient(conn)
+	c := protobuf.NewSendMailServiceClient(conn)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 
-	request := &protobuf.SendExcelRequest{
-		Tenant:    tenant,
-		Recipient: to,
-		Subject:   subject,
+	_attachments := []*protobuf.Attachement{}
+	for i := range attachments {
+		_attachments = append(_attachments, &protobuf.Attachement{
+			MimeType:  attachments[i].MimeType,
+			Filename:  attachments[i].Filename,
+			Content:   attachments[i].Filecontent.Bytes(),
+			ContentId: attachments[i].ContentId,
+		})
 	}
-	if body != nil {
-		request.Body = body.Bytes()
+	request := &protobuf.SendMailWithInlineAttachmentsRequest{
+		Sender:      sender,
+		Recipient:   recipient,
+		Subject:     subject,
+		HtmlBody:    htmlBody.String(),
+		Attachments: _attachments,
 	}
-
-	if fileName != nil && fileContent != nil {
-		request.Content = fileContent.Bytes()
-		request.Filename = fileName
-	}
-
-	r, err := c.SendExcel(ctx, request)
+	r, err := c.SendMailWithInlineAttachment(ctx, request)
 	log.Infof("Response from MAIL-SERVER: %v", r)
 	if r == nil {
 		return errors.New("error Send Mail")
+	}
+	if r.Status != 200 {
+		return errors.New(*r.Message)
 	}
 	return err
 }

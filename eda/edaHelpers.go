@@ -3,6 +3,7 @@ package eda
 import (
 	"at.ourproject/vfeeg-backend/model"
 	"errors"
+	"fmt"
 )
 
 func extractResponseCodeAndMeteringPoint(ebmsMessage *model.EbmsMessage) ([]int16, []string, error) {
@@ -40,4 +41,16 @@ func codesContains(expected, codes []int16) bool {
 		}
 	}
 	return len(intersect) > 0
+}
+
+func convertCodes2Strings(codes []int16) []string {
+	strCodes := []string{}
+	for _, c := range codes {
+		sc, ok := ECON_RESPONSE_CODES[c]
+		if !ok {
+			sc = fmt.Sprintf("%d", c)
+		}
+		strCodes = append(strCodes, sc)
+	}
+	return strCodes
 }

@@ -143,7 +143,7 @@ CREATE TABLE IF NOT EXISTS base.meteringpoint
     city              TEXT,
     zip               TEXT,
     "registeredSince" DATE      NOT NULL DEFAULT now(),
-    "modifiedAt"      TIMESTAMP NOT NULL DEFAULT timenow(),
+    "modifiedAt"      TIMESTAMP NOT NULL DEFAULT now(),
     "modifiedBy"      TEXT,
     CONSTRAINT meteringpointPK PRIMARY KEY (metering_point_id, tenant),
     CONSTRAINT FK_ParticipantMeteringpoint FOREIGN KEY (participant_id) REFERENCES base.participant (id) ON DELETE CASCADE
@@ -194,7 +194,7 @@ SELECT id,
 FROM base.tariff,
      (SELECT id as tid, MAX(version) as tversion FROM base.tariff GROUP BY id) as x
 WHERE id = x.tid
-  AND version = x.tversion;
+  AND version = x.tversion AND status != 'ARCHIVED';
 
 
 

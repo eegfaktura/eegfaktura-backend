@@ -4,7 +4,7 @@
 // - protoc             v3.12.4
 // source: proto/excel.proto
 
-package protobuf
+package proto
 
 import (
 	context "context"

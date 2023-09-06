@@ -13,7 +13,7 @@ func Test_registerParticipant(t *testing.T) {
 	registerObject := `{
 		"id": "",
 		"participantNumber": "072",
-		"participantSince": 1692288068,
+		"participantSince": "2006-01-02T15:04:05Z",
 		"firstname": "Helmut",
 		"lastname": "Stieger",
 		"status": "NEW",

@@ -1,9 +1,7 @@
 package mqttclient
 
 import (
-	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
-	"encoding/json"
 	"github.com/sirupsen/logrus"
 )
 
@@ -15,15 +13,16 @@ func GetSubsriptions() []model.Subscriptions {
 }
 
 func errorHandler(msg model.SubscribeMessage) {
-	var err error
-	var msgBytes []byte
-	if msgBytes, err = json.Marshal(msg.Payload); err == nil {
-		if err = database.SaveNotification(msg.Tenant, string(msgBytes), "ERROR", "USER"); err != nil {
-			logrus.Error(err)
-		}
-		return
-	}
-	logrus.Errorf("Parse object to json: %v", err)
+	//var err error
+	//var msgBytes []byte
+	//if msgBytes, err = json.Marshal(msg.Payload); err == nil {
+	//	if err = recorder.saveNotification(string(msgBytes), msg.Tenant, "ERROR", "USER"); err != nil {
+	//		logrus.Error(err)
+	//	}
+	//	return
+	//}
+	logrus.Errorf("Receive Error from EDA COMMUNICATION. Reason: %v", msg)
+
 }
 
 func InitErrorSubscriptions() {

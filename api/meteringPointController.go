@@ -10,9 +10,8 @@ import (
 	"encoding/json"
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
+	"gopkg.in/guregu/null.v4"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -22,6 +21,7 @@ func InitMeteringRouter(r *mux.Router, jwtWrapper middleware.JWTWrapperFunc) *mu
 
 	s.HandleFunc("/{pid}/update/{mid}", jwtWrapper(updateMeteringPoint())).Methods("PUT")
 	s.HandleFunc("/{pid}/remove/{mid}", jwtWrapper(removeMeteringPoint())).Methods("DELETE")
+	s.HandleFunc("/{pid}/archive/{mid}", jwtWrapper(archiveMeteringPoint())).Methods("PUT")
 	s.HandleFunc("/{pid}/create", jwtWrapper(createMeteringPoint())).Methods("PUT")
 	s.HandleFunc("/{pid}/register", jwtWrapper(registerMeteringPoint())).Methods("POST")
 	s.HandleFunc("/{pid}/syncenergy", jwtWrapper(requestMeteringPointValues())).Methods("POST")
@@ -40,6 +40,10 @@ func createMeteringPoint() middleware.JWTHandlerFunc {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+
+		m.ModifiedAt = time.Now()
+		m.RegisteredSince = time.Now()
+		m.ModifiedBy = null.StringFrom(claims.Username)
 
 		err = database.RegisterMeteringPoint(tenant, participantId, &m)
 		if err != nil {
@@ -79,7 +83,6 @@ func createMeteringPoint() middleware.JWTHandlerFunc {
 				}
 
 				if err = parser.SendActivationMailFromTemplate(util.SendMail, tenant,
-					filepath.Join(viper.GetString("file-content.templates"), tenant, "template/AktivierungsEmail-template.html"),
 					"Aktivierung im Serviceportal", eeg, participant); err != nil {
 					log.Errorf("Error Sending Mail: %+v", err.Error())
 					http.Error(w, err.Error(), http.StatusBadRequest)
@@ -105,6 +108,8 @@ func updateMeteringPoint() middleware.JWTHandlerFunc {
 			return
 		}
 
+		m.ModifiedAt = time.Now()
+		m.ModifiedBy = null.StringFrom(claims.Username)
 		err = database.UpdateMeteringPoint(tenant, participantId, meterId, &m)
 		if err != nil {
 			log.WithField("error", err).Error("Update Meteringpoint")
@@ -122,6 +127,9 @@ type registerMeterRequestType struct {
 	To            int64               `json:"to"`
 }
 
+// registerMeteringPoint activates existing meter at the net operator
+//
+// Here the registration only perform an online EDA communication
 func registerMeteringPoint() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
 		vars := mux.Vars(r)
@@ -175,7 +183,6 @@ func registerMeteringPoint() middleware.JWTHandlerFunc {
 			}
 
 			if err = parser.SendActivationMailFromTemplate(util.SendMail, tenant,
-				filepath.Join(viper.GetString("file-content.templates"), tenant, "template/AktivierungsEmail-template.html"),
 				"Aktivierung im Serviceportal", eeg, participant); err != nil {
 				log.Errorf("Error Sending Mail: %+v", err.Error())
 				http.Error(w, err.Error(), http.StatusBadRequest)
@@ -263,7 +270,22 @@ func removeMeteringPoint() middleware.JWTHandlerFunc {
 		participantId := vars["pid"]
 		meterId := vars["mid"]
 
-		err := database.RemoveMeteringPoint(tenant, participantId, meterId)
+		err := database.RemoveMeteringPoint(database.GetDBXConnection, tenant, participantId, meterId)
+		if err != nil {
+			log.WithField("error", err).Errorf("Remove Meteringpoint %s", meterId)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		respondWithJSON(w, http.StatusAccepted, map[string]interface{}{"meteringpoint": meterId})
+	}
+}
+
+func archiveMeteringPoint() middleware.JWTHandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
+		vars := mux.Vars(r)
+		meterId := vars["mid"]
+
+		err := database.MeteringPointsSetStatus(database.GetDBXConnection, tenant, model.ARCHIVED, []string{meterId})
 		if err != nil {
 			log.WithField("error", err).Errorf("Remove Meteringpoint %s", meterId)
 			http.Error(w, err.Error(), http.StatusBadRequest)

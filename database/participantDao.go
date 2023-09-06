@@ -9,15 +9,17 @@ import (
 	"time"
 )
 
-func GetParticipant(tenant string) ([]model.EegParticipant, error) {
+func GetParticipant(dbConn OpenDbXConnection, tenant string) ([]model.EegParticipant, error) {
 	var participants []model.EegParticipant = []model.EegParticipant{}
-	db, err := GetDBXConnection()
+	db, err := dbConn()
 	if err != nil {
 		return []model.EegParticipant{}, err
 	}
 	defer db.Close()
 
-	sql, _, err := pgDialect.From("base.participant").Select(&participants).Where(goqu.C("tenant").Eq(tenant)).Order(goqu.I("lastname").Asc()).ToSQL()
+	sql, _, err := pgDialect.From("base.participant").Select(&participants).
+		Where(goqu.Ex{
+			"tenant": tenant, "status": goqu.Op{"neq": "ARCHIVED"}}).Order(goqu.I("lastname").Asc()).ToSQL()
 	if err != nil {
 		return []model.EegParticipant{}, err
 	}
@@ -237,8 +239,8 @@ type ParticipantWithMeta struct {
 	LastmodifiedBy string `db:"lastModifiedBy"`
 }
 
-func RegisterParticipant(tenant, username string, participant *model.EegParticipant) error {
-	db, err := GetDBXConnection()
+func RegisterParticipant(dbConn OpenDbXConnection, tenant, username string, participant *model.EegParticipant) error {
+	db, err := dbConn()
 	if err != nil {
 		return err
 	}
@@ -353,6 +355,24 @@ func saveParticipant(db *sqlx.DB, tenant, username string, participant *model.Ee
 		return err
 	}
 	return tx.Commit()
+}
+
+func ArchiveParticipant(dbConn OpenDbXConnection, user string, id string) error {
+
+	db, err := dbConn()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	stmt, _, err := pgDialect.Update("base.participant").
+		Set(goqu.Record{"status": "ARCHIVED", "lastModifiedDate": time.Now(), "lastModifiedBy": user}).
+		Where(goqu.Ex{"id": id}).ToSQL()
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(stmt)
+	return err
 }
 
 func InsertParticipant(tenant string, participant *model.EegParticipant) error {

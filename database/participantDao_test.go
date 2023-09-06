@@ -8,10 +8,12 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/doug-martin/goqu/v9"
 	"github.com/jmoiron/sqlx"
+	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestUpdateParticipant(t *testing.T) {
@@ -44,20 +46,61 @@ func TestUpdateParticipant(t *testing.T) {
 
 func TestRegisterParticipant(t *testing.T) {
 
-	participantJson := `{"businessRole":"EEG_PRIVATE","firstname":"Peter","lastname":"Obermüller","residentAddress":{"street":"Lambacherstraße","streetNumber":39,"zip":"4680","city":"Haag am Hausruck","type":"RESIDENCE"},"contact":{"phone":"06603611758","email":"obermueller.peter@gmail.com"},"accountInfo":{},"optionals":{},"status":"NEW","id":"e98b8619-7b6a-4836-baff-5489fb539535","role":"EEG_USER","billingAddress":{"street":"Lambacherstraße","streetNumber":39,"zip":"4680","city":"Haag am Hausruck","type":"BILLING"},"meters":[{"direction":"CONSUMPTION","status":"NEW","meteringPoint":"AT48124817243712897412","participantId":"e98b8619-7b6a-4836-baff-5489fb539535","tariffId":"a48d1990-a5a2-40c9-8d0a-77bed8e7dbcd","street":"Lambacherstraße","streetNumber":"39","zip":"4680","city":"Haag am Hausruck"}]}`
+	mockDb, err := GetDatabaseMock()
+
+	participantJson := `{"businessRole":"EEG_PRIVATE","firstname":"Peter","lastname":"Obermüller","residentAddress":{"street":"Lambacherstraße","streetNumber":"39","zip":"4680","city":"Haag am Hausruck","type":"RESIDENCE"},"contact":{"phone":"06603611758","email":"obermueller.peter@gmail.com"},"accountInfo":{},"optionals":{},"status":"NEW","id":"e98b8619-7b6a-4836-baff-5489fb539535","role":"EEG_USER","billingAddress":{"street":"Lambacherstraße","streetNumber":"39","zip":"4680","city":"Haag am Hausruck","type":"BILLING"},"meters":[{"direction":"CONSUMPTION","status":"NEW","meteringPoint":"AT48124817243712897412","participantId":"e98b8619-7b6a-4836-baff-5489fb539535","tariffId":"a48d1990-a5a2-40c9-8d0a-77bed8e7dbcd","street":"Lambacherstraße","streetNumber":"39","zip":"4680","city":"Haag am Hausruck"}]}`
 
 	var p model.EegParticipant
-	err := json.NewDecoder(strings.NewReader(participantJson)).Decode(&p)
+	err = json.NewDecoder(strings.NewReader(participantJson)).Decode(&p)
 	assert.NoError(t, err)
 
 	fmt.Printf("Participant: %+v\n", p)
 
-	err = RegisterParticipant("RC200200", "petero", &p)
+	mockDb.Mock.ExpectBegin()
+	mockDb.Mock.ExpectQuery("INSERT (.+)").WillReturnRows(sqlmock.NewRows([]string{"id"}).FromCSVString("1")) //.WillReturnResult(sqlmock.NewResult(1, 1)) //.WithArgs("firstname", "lastname")
+	mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
+	mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
+	mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
+	mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
+	mockDb.Mock.ExpectCommit()
+
+	err = RegisterParticipant(mockDb.OpenMockDb, "RC200200", "petero", &p)
 	assert.NoError(t, err)
 }
 
 func TestGetParticipant(t *testing.T) {
-	participants, err := GetParticipant("RC100298")
+	mockDb, err := GetDatabaseMock()
+
+	participantRows := sqlmock.NewRows([]string{
+		"id", "firstname", "lastname", "role", "businessRole", "titleBefore", "titleAfter", "participantSince",
+		"vatNumber", "taxNumber", "companyRegisterNumber", "status", "createdBy", //"createdDate", "lastModifiedBy", "lastModifiedDate",
+		"version", "tariffId", "participantNumber"}).
+			AddRow(uuid.New(), "Sepp", "Huber", "EEG_USER", "EEG_PRIVATE", "", "", time.Now(),
+				"", "", "", "NEW", "admin", //time.Now(), "petero", time.Now(),
+				1, uuid.New(), "001")
+	mockDb.Mock.ExpectQuery("SELECT (.+) FROM \"base\".\"participant\" (.+)").WillReturnRows(participantRows)
+
+	contactDetailsRows := sqlmock.NewRows([]string{"email", "phone"}).AddRow("mail@test.com", "+4325622 232311 32323")
+	mockDb.Mock.ExpectQuery("SELECT (.+) FROM \"base\".\"contactdetail\" (.+)").WillReturnRows(contactDetailsRows)
+
+	bankaccountRows := sqlmock.NewRows([]string{"iban", "owner"}).AddRow("AT12 3456 7987 9887 7765", "Sepp Huber")
+	mockDb.Mock.ExpectQuery("SELECT (.+) FROM \"base\".\"bankaccount\" (.+)").WillReturnRows(bankaccountRows)
+
+	addressRows := sqlmock.NewRows([]string{"city", "street", "streetNumber", "type", "zip"}).
+		AddRow("Solarcity", "Energieweg", "12a", "BILLING", "1234")
+	mockDb.Mock.ExpectQuery("SELECT (.+) FROM \"base\".\"address\" (.+)").WillReturnRows(addressRows)
+
+	addressResidenceRows := sqlmock.NewRows([]string{"city", "street", "streetNumber", "type", "zip"}).
+		AddRow("Solarcity", "Energieweg", "12a", "RESIDENCE", "1234")
+	mockDb.Mock.ExpectQuery("SELECT (.+) FROM \"base\".\"address\" (.+)").WillReturnRows(addressResidenceRows)
+
+	meterRows := sqlmock.NewRows([]string{"city", "direction", "equipmentName", "equipmentNumber", "inverterid", "metering_point_id",
+		"modifiedAt", "modifiedBy", "registeredSince", "status", "street", "streetNumber", "tariff_id", "transformer", "zip"}).
+			AddRow("Solarcity", "GENERATOR", "", "", "", "AT0020001110000010011111001",
+				time.Now(), "admin", time.Now(), "NEW", "Energieweg", "12a", uuid.New(), "", "1234")
+	mockDb.Mock.ExpectQuery("SELECT (.+) FROM \"base\".\"meteringpoint\" (.+)").WillReturnRows(meterRows)
+
+	participants, err := GetParticipant(mockDb.OpenMockDb, "RC100298")
 	assert.NoError(t, err)
 
 	assert.NotEmpty(t, participants)
@@ -84,10 +127,12 @@ func Test_saveParticipant(t *testing.T) {
 
 	mdb := sqlx.NewDb(mDB, "mock")
 
-	sql, _, _ := pgDialect.Insert("base.participant").Rows(p).Returning("id").ToSQL()
-
 	mock.ExpectBegin()
-	mock.ExpectQuery(sql).WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("11"))
+	mock.ExpectQuery("INSERT (.+) \"base\".\"participant\"").WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("11"))
+	mock.ExpectExec("INSERT (.+) \"base\".\"contactdetail\"").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("INSERT (.+) \"base\".\"bankaccount\"").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("INSERT (.+) \"base\".\"address\"").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("INSERT (.+) \"base\".\"meteringpoint\"").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
 	tests := []struct {

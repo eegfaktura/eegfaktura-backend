@@ -2,12 +2,28 @@ package parser
 
 import (
 	"at.ourproject/vfeeg-backend/model"
+	"at.ourproject/vfeeg-backend/util"
 	"bytes"
+	"github.com/spf13/viper"
+	"github.com/stretchr/testify/assert"
 	"gopkg.in/guregu/null.v4"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
+
+func init() {
+	viper.Set("services.mail-server", "localhost:9092")
+	viper.Set("file-content.templates", "../public")
+}
+
+func trimString(s string) string {
+	s = strings.Replace(s, " ", "", -1)
+	s = strings.Replace(s, "\t", "", -1)
+	s = strings.Replace(s, "\n", "", -1)
+	return s
+}
 
 func TestGetTemplateFor(t *testing.T) {
 	type args struct {
@@ -22,7 +38,7 @@ func TestGetTemplateFor(t *testing.T) {
 	}{
 		{"Hugo",
 			args{"ACTIVATION", "RC100181"},
-			"../public/templates/AktivierungsEmail-template.html",
+			"../public/templates/AktivierungsEmail-templates.html",
 			false,
 		},
 	}
@@ -59,7 +75,7 @@ func TestParseTemplate(t *testing.T) {
 		TaxNumber:          null.String{},
 		VatNumber:          null.String{},
 		ContactPerson:      "Max Sonnenmann",
-		Address:            model.Address{},
+		EegAddress:         model.EegAddress{},
 		AccountInfo:        model.AccountInfo{},
 		Contact: model.Contact{
 			Phone: null.StringFrom("123456789"),
@@ -106,11 +122,41 @@ func TestParseTemplate(t *testing.T) {
 	}{
 		{
 			"Parse ACTIVATION Template",
-			args{"../public/templates/AktivierungsEmail-template.html", struct {
+			args{"../public/templates/AktivierungsEmail-templates.html", struct {
 				Eeg         *model.Eeg
 				Participant *model.EegParticipant
 			}{eeg, participant}},
-			bytes.NewBufferString(""),
+			bytes.NewBufferString(`<!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <title>Aktivierung Zählpunkt</title>
+        </head>
+        <body>
+        <p>Servus Max,</p>
+        
+        <p>recht lieben Dank für die Anmeldung! Du musst jetzt abschließend noch die Aktivierung bei der Netz OÖ durchführen. Im Menü Datenfreigabe sollte die EEG bereits angeführt sein und Du musst den offenen Zählpunkt anhakerln.</p>
+        <br>
+        
+        <ol>
+          <li>
+            <p>
+              Registrieren und/oder anmelden unter <a href="https://eservice.netzooe.at/app/login">https://eservice.netzooe.at/app/login</a> (im Falle der Registrierung bekommst Du mit der Post auch noch einen Code geschickt mit dem Du die Registrierung abschließen musst. Die unter Punkt 2 angeführt Zustimmung zur EEG kannst Du aber ohne Code sofort durchführen)
+            </p>
+          </li>
+        </ol>
+        <p>Mit besten Grüßen</p>
+        <p>
+        <div>Max Sonnenmann</div>
+        
+        <div>123456789</div>
+        
+        </p>
+        <div>Erneuerbare Energie Gemeinschaft - TE-EEG</div>
+        <div>TEST EEG</div>
+        
+        </body>
+        </html>`),
 			false,
 		},
 	}
@@ -121,34 +167,72 @@ func TestParseTemplate(t *testing.T) {
 				t.Errorf("ParseTemplate() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("ParseTemplate() got = %v, want %v", got, tt.want)
+			if !reflect.DeepEqual(bytes.NewBufferString(trimString(got.String())), bytes.NewBufferString(trimString(tt.want.String()))) {
+				t.Errorf("ParseTemplate() got = %v, want %v", trimString(got.String()), tt.want)
 			}
 		})
 	}
 }
 
-//
-//func TestSendActivationMailFromTemplate(t *testing.T) {
-//	type args struct {
-//		tenant           string
-//		templateFileName string
-//		subject          string
-//		eeg              *model.Eeg
-//		participant      *model.EegParticipant
-//	}
-//	tests := []struct {
-//		name    string
-//		args    args
-//		wantErr bool
-//	}{
-//		// TODO: Add test cases.
-//	}
-//	for _, tt := range tests {
-//		t.Run(tt.name, func(t *testing.T) {
-//			if err := SendActivationMailFromTemplate(tt.args.tenant, tt.args.templateFileName, tt.args.subject, tt.args.eeg, tt.args.participant); (err != nil) != tt.wantErr {
-//				t.Errorf("SendActivationMailFromTemplate() error = %v, wantErr %v", err, tt.wantErr)
-//			}
-//		})
-//	}
-//}
+func TestParseTemplate2(t *testing.T) {
+	eeg := &model.Eeg{
+		Id:                 "",
+		Name:               "TE-EEG",
+		Description:        "TEST EEG",
+		BusinessNr:         null.Int{},
+		Area:               "",
+		Legal:              "",
+		OperatorName:       "",
+		CommunityId:        "",
+		GridOperator:       "",
+		RcNumber:           "",
+		AllocationMode:     "",
+		SettlementInterval: "",
+		ProviderBusinessNr: null.Int{},
+		TaxNumber:          null.String{},
+		VatNumber:          null.String{},
+		ContactPerson:      "Max Sonnenmann",
+		EegAddress:         model.EegAddress{},
+		AccountInfo:        model.AccountInfo{},
+		Contact: model.Contact{
+			Phone: null.StringFrom("123456789"),
+		},
+		Optionals: model.Optionals{},
+		Periods:   nil,
+		Online:    false,
+	}
+
+	participant := &model.EegParticipant{
+		Id:                    nil,
+		ParticipantNumber:     null.String{},
+		BusinessRole:          "",
+		FirstName:             "Max",
+		LastName:              "Mustermann",
+		TitleBefore:           "",
+		TitleAfter:            "",
+		ParticipantSince:      time.Time{},
+		VatNumber:             "",
+		TaxNumber:             "",
+		CompanyRegisterNumber: "",
+		Contact: model.ContactInfo{
+			Phone: null.String{},
+			Email: null.StringFrom("my@mail.com"),
+		},
+		BillingAddress:  model.Address{},
+		ResidentAddress: model.Address{},
+		BankAccount:     model.BankInfo{},
+		MeteringPoint:   nil,
+		TariffId:        null.String{},
+		Status:          "",
+		Version:         0,
+	}
+
+	sendMock := func(tenant, to, subject string, body *bytes.Buffer, attachments []*util.Attachment) error {
+		println("SendMock")
+		return nil
+	}
+
+	err := SendActivationMailFromTemplate(sendMock, "sepp", "test", eeg, participant)
+	assert.NoError(t, err)
+
+}

@@ -78,8 +78,8 @@ func UpdateMeteringPoint(tenant, participantId, meterId string, meteringPoint *m
 	return err
 }
 
-func RemoveMeteringPoint(tenant, participantId, meterId string) error {
-	db, err := GetDBXConnection()
+func RemoveMeteringPoint(dbOpen OpenDbXConnection, tenant, participantId, meterId string) error {
+	db, err := dbOpen()
 	if err != nil {
 		return err
 	}
@@ -117,8 +117,8 @@ func ActivateMeteringPoints(tenant string, meterId []string) error {
 	return err
 }
 
-func MeteringPointsSetStatus(tenant string, status model.StatusType, meterId []string) error {
-	db, err := GetDBXConnection()
+func MeteringPointsSetStatus(dbOpen OpenDbXConnection, tenant string, status model.StatusType, meterId []string) error {
+	db, err := dbOpen()
 	if err != nil {
 		return err
 	}

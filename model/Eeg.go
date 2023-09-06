@@ -22,7 +22,7 @@ type Eeg struct {
 	ProviderBusinessNr null.Int    `json:"providerBusinessNr,omitempty" db:"providerBusinessNr"`
 	TaxNumber          null.String `json:"taxNumber,omitempty" db:"taxNumber"`
 	VatNumber          null.String `json:"vatNumber" db:"vatNumber"`
-	ContactPerson      string      `json:"contactPerson" db:"contactPerson"`
+	ContactPerson      null.String `json:"contactPerson" db:"contactPerson"`
 	EegAddress         `json:"address,omitempty"`
 	AccountInfo        `json:"accountInfo,omitempty"`
 	Contact            `json:"contact,omitempty"`

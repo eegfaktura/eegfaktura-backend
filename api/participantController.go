@@ -11,11 +11,7 @@ import (
 	"fmt"
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
-	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -25,6 +21,7 @@ func InitParticipantRouter(r *mux.Router, jwtWrapper middleware.JWTWrapperFunc) 
 	s.HandleFunc("", jwtWrapper(fetchParticipant())).Methods("GET")
 	s.HandleFunc("", jwtWrapper(registerParticipant())).Methods("POST")
 	s.HandleFunc("/{id}", jwtWrapper(updateParticipant())).Methods("PUT")
+	s.HandleFunc("/{id}", jwtWrapper(archiveParticipant())).Methods("DELETE")
 	s.HandleFunc("/{id}/confirm", jwtWrapper(confirmParticipant())).Methods("POST")
 
 	return r
@@ -32,7 +29,7 @@ func InitParticipantRouter(r *mux.Router, jwtWrapper middleware.JWTWrapperFunc) 
 
 func fetchParticipant() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
-		participant, err := database.GetParticipant(tenant)
+		participant, err := database.GetParticipant(database.GetDBXConnection, tenant)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -71,7 +68,7 @@ func registerParticipant() middleware.JWTHandlerFunc {
 			return
 		}
 
-		err = database.RegisterParticipant(tenant, claims.Username, &t)
+		err = database.RegisterParticipant(database.GetDBXConnection, tenant, claims.Username, &t)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -99,50 +96,50 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 			return
 		}
 
-		// Parse our multipart form, 10 << 20 specifies a maximum
-		// upload of 10 MB files.
-		err = r.ParseMultipartForm(10 << 20)
-		if err != nil {
-			respondWithError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-
-		formdata := r.MultipartForm // ok, no problem so far, read the Form data
-
-		//get the *fileheaders
-		files := formdata.File["docfiles"] // grab the filenames
-
-		for i, _ := range files { // loop through the files one by one
-			file, err := files[i].Open()
-			defer file.Close()
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-
-			outputPath := filepath.Join(viper.GetString("file-content.basedir"), tenant)
-			err = os.MkdirAll(outputPath, os.ModePerm)
-			if err != nil {
-				fmt.Fprintf(w, "Unable to create the file for writing. Check your write access privilege %s", err.Error())
-				return
-			}
-			out, err := os.Create(filepath.Join(outputPath, files[i].Filename))
-
-			defer out.Close()
-			if err != nil {
-				fmt.Fprintf(w, "Unable to create the file for writing. Check your write access privilege %s", err.Error())
-				return
-			}
-
-			_, err = io.Copy(out, file)
-
-			if err != nil {
-				fmt.Fprintln(w, err)
-				return
-			}
-
-			log.Debug("Files uploaded successfully : ")
-		}
+		//// Parse our multipart form, 10 << 20 specifies a maximum
+		//// upload of 10 MB files.
+		//err = r.ParseMultipartForm(10 << 20)
+		//if err != nil {
+		//	respondWithError(w, http.StatusBadRequest, err.Error())
+		//	return
+		//}
+		//
+		//formdata := r.MultipartForm // ok, no problem so far, read the Form data
+		//
+		////get the *fileheaders
+		//files := formdata.File["docfiles"] // grab the filenames
+		//
+		//for i, _ := range files { // loop through the files one by one
+		//	file, err := files[i].Open()
+		//	defer file.Close()
+		//	if err != nil {
+		//		http.Error(w, err.Error(), http.StatusBadRequest)
+		//		return
+		//	}
+		//
+		//	outputPath := filepath.Join(viper.GetString("file-content.basedir"), tenant)
+		//	err = os.MkdirAll(outputPath, os.ModePerm)
+		//	if err != nil {
+		//		fmt.Fprintf(w, "Unable to create the file for writing. Check your write access privilege %s", err.Error())
+		//		return
+		//	}
+		//	out, err := os.Create(filepath.Join(outputPath, files[i].Filename))
+		//
+		//	defer out.Close()
+		//	if err != nil {
+		//		fmt.Fprintf(w, "Unable to create the file for writing. Check your write access privilege %s", err.Error())
+		//		return
+		//	}
+		//
+		//	_, err = io.Copy(out, file)
+		//
+		//	if err != nil {
+		//		fmt.Fprintln(w, err)
+		//		return
+		//	}
+		//
+		//	log.Debug("Files uploaded successfully : ")
+		//}
 		if err = database.ConfirmParticipant(tenant, claims.Username, participantId); err != nil {
 			fmt.Fprintf(w, err.Error())
 			return
@@ -168,13 +165,12 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 				}
 			}
 
-			template, err := parser.GetTemplateFor("ACTIVATION", tenant)
 			if err == nil && participant.Contact.Email.Valid {
 				if err = parser.SendActivationMailFromTemplate(util.SendMail,
-					tenant, template, "Aktivierung im Serviceportal", eeg, participant); err != nil {
+					tenant, "Aktivierung im Serviceportal", eeg, participant); err != nil {
 					log.Errorf("Error Sending Mail: %+v", err.Error())
-					http.Error(w, err.Error(), http.StatusBadRequest)
-					return
+					//http.Error(w, err.Error(), http.StatusBadRequest)
+					//return
 				}
 			}
 		} else {
@@ -183,12 +179,26 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 				meterIds = append(meterIds, m.MeteringPoint)
 				m.Status = model.ACTIVE
 			}
-			err := database.MeteringPointsSetStatus(tenant, model.ACTIVE, meterIds)
+			err := database.MeteringPointsSetStatus(database.GetDBXConnection, tenant, model.ACTIVE, meterIds)
 			if err != nil {
+				log.Errorf("Error SET PARTICIPANT ACTIVE: %+v", err.Error())
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 		}
 		respondWithJSON(w, http.StatusCreated, participant)
+	}
+}
+
+func archiveParticipant() middleware.JWTHandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
+		vars := mux.Vars(r)
+		idStr := vars["id"]
+
+		if err := database.ArchiveParticipant(database.GetDBXConnection, claims.Username, idStr); err != nil {
+			respondWithJSON(w, http.StatusBadRequest, map[string]interface{}{"id": 500, "error": err.Error()})
+			return
+		}
+		respondWithJSON(w, http.StatusAccepted, map[string]interface{}{"status": "ok"})
 	}
 }

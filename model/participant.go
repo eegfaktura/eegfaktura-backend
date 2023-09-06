@@ -10,6 +10,7 @@ type EegParticipant struct {
 	Id                    uuid.UUID        `json:"id" goqu:"skipupdate"`
 	ParticipantNumber     null.String      `json:"participantNumber" db:"participantNumber"`
 	BusinessRole          string           `json:"businessRole" db:"businessRole"`
+	Role                  string           `json:"role" db:"role"`
 	FirstName             string           `json:"firstname"`
 	LastName              string           `json:"lastname"`
 	TitleBefore           string           `json:"titleBefore" db:"titleBefore"`
@@ -26,6 +27,7 @@ type EegParticipant struct {
 	TariffId              null.String      `json:"tariffId" db:"tariffId" goqu:"skipinsert"`
 	Status                StatusType       `json:"status" goqu:"defaultifempty"`
 	Version               int              `json:"version" goqu:"defaultifempty"`
+	CreatedBy             string           `json:"createdBy,omitempty" db:"createdBy"`
 }
 
 type ContactInfo struct {
@@ -57,6 +59,7 @@ const (
 	REJECTED StatusType = "REJECTED"
 	REVOKED  StatusType = "REVOKED"
 	INVALID  StatusType = "INVALID"
+	ARCHIVED StatusType = "ARCHIVED"
 )
 
 type MeteringPoint struct {
