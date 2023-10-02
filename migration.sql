@@ -162,15 +162,29 @@ CREATE TABLE IF NOT EXISTS base.notification
 
 CREATE TABLE IF NOT EXISTS base.processhistory
 (
-    id               UUID NOT NULL PRIMARY KEY DEFAULT uuid_generate_v4(),
-    tenant           TEXT NOT NULL,
-    "conversationId" TEXT NOT NULL,
-    type             TEXT NOT NULL,
+    id               UUID      NOT NULL PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant           TEXT      NOT NULL,
+    "conversationId" TEXT      NOT NULL,
+    type             TEXT      NOT NULL,
     date             TIMESTAMP NOT NULL             DEFAULT now(),
-    issuer           TEXT NOT NULL,
-    message          json NOT NULL             DEFAULT '{}',
-    direction        TEXT NOT NULL             DEFAULT 'OUT', /* MESSAGE DIRECTION 'OUT' | 'IN' */
+    issuer           TEXT      NOT NULL,
+    message          json      NOT NULL             DEFAULT '{}',
+    direction        TEXT      NOT NULL             DEFAULT 'OUT', /* MESSAGE DIRECTION 'OUT' | 'IN' */
     protocol         VARCHAR
+);
+
+CREATE TABLE IF NOT EXISTS base.participant_meter_state
+(
+    participant_id    UUID      NOT NULL,
+    tenant            TEXT      NOT NULL,
+    metering_point_id TEXT      NOT NULL,
+    activeSince       TIMESTAMP NOT NULL DEFAULT now(),
+    inactiveSince     TIMESTAMP NOT NULL DEFAULT Date('2999-12-31'),
+    changed_at        TIMESTAMP NOT NULL DEFAULT now(),
+    changed_by        TEXT      NOT NULL,
+    CONSTRAINT PK_Participant_meter_state PRIMARY KEY (participant_id, metering_point_id),
+    CONSTRAINT FK_Participant_state FOREIGN KEY (participant_id) REFERENCES base.participant (id) ON DELETE CASCADE,
+    CONSTRAINT FK_Metering_state FOREIGN KEY (metering_point_id, tenant) REFERENCES base.meteringpoint (metering_point_id, tenant) ON DELETE CASCADE
 );
 
 
@@ -194,7 +208,8 @@ SELECT id,
 FROM base.tariff,
      (SELECT id as tid, MAX(version) as tversion FROM base.tariff GROUP BY id) as x
 WHERE id = x.tid
-  AND version = x.tversion AND status != 'ARCHIVED';
+  AND version = x.tversion
+  AND status != 'ARCHIVED';
 
 
 

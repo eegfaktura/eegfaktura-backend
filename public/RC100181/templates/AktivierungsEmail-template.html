@@ -19,9 +19,11 @@
 </ol>
 <p>Mit besten Grüßen</p>
 <p>
-<div>{{.Eeg.ContactPerson}}</div>
-{{if Eeg.Contact.Phone != nil}}
-<div>{{.Eeg.Contact.Phone}}</div>
+{{if .Eeg.ContactPerson.Valid}}
+    <div>{{.Eeg.ContactPerson}}</div>
+{{end}}
+{{if .Eeg.Contact.Phone.Valid}}
+    <div>{{.Eeg.Contact.Phone.String}}</div>
 {{end}}
 </p>
 <div>Erneuerbare Energie Gemeinschaft - {{.Eeg.Name}}</div>

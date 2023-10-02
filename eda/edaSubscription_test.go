@@ -5,7 +5,6 @@ import (
 	"at.ourproject/vfeeg-backend/model"
 	"encoding/json"
 	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"testing"
@@ -42,8 +41,8 @@ func (_m *RecorderMock) saveHistory(tenant string, messageCode model.EbMsMessage
 	return nil
 }
 
-func (_m *RecorderMock) databaseConnect() (*sqlx.DB, error) {
-	return _m.dbOpen()
+func (_m *RecorderMock) databaseConnectFunc() database.OpenDbXConnection {
+	return _m.dbOpen
 }
 
 func TestProtcolCrMsgHandler(t *testing.T) {

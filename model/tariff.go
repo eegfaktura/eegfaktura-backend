@@ -35,7 +35,7 @@ type Tariff struct {
 	ParticipantFee     int             `json:"participantFee,string" db:"participantFee"`
 	BaseFee            int             `json:"baseFee,string" db:"baseFee"`
 	BusinessNr         int             `json:"businessNr,string" db:"businessNr"`
-	CentPerKWh         int             `json:"centPerKWh,string" db:"centPerKWh"`
+	CentPerKWh         float32         `json:"centPerKWh" db:"centPerKWh"`
 	FreeKWh            int             `json:"freeKWh,string" db:"freeKWh"`
 	Discount           int             `json:"discount,string"`
 }

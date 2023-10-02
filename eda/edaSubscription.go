@@ -147,13 +147,14 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 			}
 		}
 	case model.EBMS_ONLINE_REG_INIT:
+		meters = msg.Payload.Meters()
 		codes = []int16{}
 	default:
 		return
 	}
 
 	if len(meters) > 0 && len(status) > 0 {
-		if err := database.MeteringPointsSetStatus(recorder.databaseConnect, msg.Tenant, status, meters); err != nil {
+		if err := database.MeteringPointsSetStatus(recorder.databaseConnectFunc(), msg.Tenant, status, meters); err != nil {
 			logrus.WithField("error", err.Error()).Errorf("can not change metering point status %+v", meters)
 			return
 		}
@@ -161,7 +162,7 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 
 	if err = recorder.saveNotification(map[string]interface{}{
 		"type":           msg.MessageCode,
-		"meteringPoints": msg.Payload.Meters(),
+		"meteringPoints": meters,
 		"responseCodes":  convertCodes2Strings(codes),
 	}, msg.Tenant, "NOTIFICATION", "ADMIN"); err != nil {
 		logrus.WithField("PROTOCOL", msg.Protocol).Error(err)
@@ -184,7 +185,7 @@ func protocolCmRevImpHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 	}
 
 	if len(meters) > 0 && len(status) > 0 {
-		if err := database.MeteringPointsSetStatus(recorder.databaseConnect, msg.Tenant, status, meters); err != nil {
+		if err := database.MeteringPointsSetStatus(recorder.databaseConnectFunc(), msg.Tenant, status, meters); err != nil {
 			logrus.WithField("error", err.Error()).Errorf("can not change metering point status %+v", meters)
 			return
 		}

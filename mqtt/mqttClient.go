@@ -38,6 +38,7 @@ func NewMqttStreamer() (*MQTTStreamer, error) {
 	// Automate connection management (will keep trying to connect and will reconnect if network drops)
 	opts.ConnectRetry = true
 	opts.AutoReconnect = true
+	opts.CleanSession = false
 
 	// Log events
 	opts.OnConnectionLost = func(cl mqtt.Client, err error) {

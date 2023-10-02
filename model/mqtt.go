@@ -2,6 +2,42 @@ package model
 
 type EbMsMessageType string
 
+var (
+	ECON_RESPONSE_CODES = map[int16]string{
+		99:  "Meldung erhalten",
+		182: "Noch kein fernauslesbarer Zähler eingebaut",
+		183: "Summe der gemeldeten Aufteilungsschlüssel übersteigt 100%",
+
+		175: "Zustimmung erteilt",
+
+		56:  "Zählpunkt nicht gefunden",
+		184: "Kunde hat optiert",
+		177: "Keine Datenfreigabe vorhanden",
+		160: "Verteilmodell entspricht nicht der Vereinbarung",
+		159: "Zu Prozessdatum ZP inaktiv bzw. noch kein Gerät eingebaut",
+		158: "ZP ist nicht teilnahmeberechtigt",
+		157: "ZP bereits einem Betreiber zugeordnet",
+		156: "ZP bereits zugeordnet",
+		86:  "konkurrierende Prozesse",
+		181: "Gemeinschafts-ID nicht vorhanden",
+		178: "Consent existiert bereits",
+		174: "Angefragte Daten nicht lieferbar",
+		173: "Kunde hat auf Datenfreigabe nicht reagiert (Timeout)",
+		172: "Kunde hat Datenfreigabe abgelehnt",
+		76:  "Ungültige Anforderungsdaten",
+		57:  "Zählpunkt nicht versorgt",
+		185: "Zählpunkt befindet sich nicht im Bereich der Energiegemeinschaft",
+		37:  "Stornierung nicht möglich",
+
+		55: "Zählpunkt nicht dem Lieferanten zugeordnet",
+		70: "Änderung/Anforderung akzeptiert",
+		82: "Prozessdatum falsch",
+		90: "Kein Smart Meter",
+		94: "Keine Daten im angeforderten Zeitraum vorhanden",
+	}
+	REJECTED_INVALID_CODES = []int16{56, 184, 177, 159, 158, 156, 86}
+)
+
 const (
 	EBMS_ENERGY_FILE_RESPONSE  EbMsMessageType = "DATEN_CRMSG"
 	EBMS_ONLINE_REG_INIT       EbMsMessageType = "ANFORDERUNG_ECON"
@@ -68,6 +104,15 @@ type Meter struct {
 type ResponseData struct {
 	MeteringPoint string  `json:"meteringPoint,omitempty"`
 	ResponseCode  []int16 `json:"responseCode"`
+	ConsentEnd    string  `json:"consentEnd,omitempty"`
+}
+
+type EdaHistoryData struct {
+	Meter        string   `json:"meter"`
+	ResponseCode []string `json:"responseCode"`
+	To           int64    `json:"to,omitempty"`
+	From         int64    `json:"from,omitempty"`
+	Method       string   `json:"method,omitempty"`
 }
 
 type EbmsMessage struct {
@@ -90,7 +135,41 @@ func (ebms EbmsMessage) Meters() []string {
 	if ebms.Meter != nil {
 		return []string{ebms.Meter.MeteringPoint}
 	}
+	if ebms.MeterList != nil && len(ebms.MeterList) > 0 {
+		meters := []string{}
+		for _, m := range ebms.MeterList {
+			meters = append(meters, m.MeteringPoint)
+		}
+		return meters
+	}
 	return []string{}
+}
+
+func (ebms EbmsMessage) HistoryData() []EdaHistoryData {
+	data := []EdaHistoryData{}
+	for _, m := range ebms.Meters() {
+		data = append(data, EdaHistoryData{
+			Meter:        m,
+			ResponseCode: ebms.ResponseCodes(),
+			To:           0,
+			From:         0,
+			Method:       "",
+		})
+	}
+	return data
+}
+
+func (ebms EbmsMessage) ResponseCodes() []string {
+	codes := []string{}
+	for _, r := range ebms.ResponseData {
+		for _, c := range r.ResponseCode {
+			codes = append(codes, ECON_RESPONSE_CODES[c])
+		}
+	}
+	if len(codes) == 0 {
+		return nil
+	}
+	return codes
 }
 
 //type EdaMessage struct {

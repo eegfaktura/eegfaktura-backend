@@ -88,7 +88,7 @@ func (mb *MessageBroker) SendMessage(m model.EbmsMessage, callback func(m string
 func (mb *MessageBroker) Listen() {
 	qos := 0
 	token := mb.client.Subscribe("eda/response/+/protocol/#", byte(qos), func(client mqtt.Client, msg mqtt.Message) {
-		log.Infof("Message from MQTT: %s [%+v]\n", TopicType(msg.Topic()).Tenant(), msg.Topic())
+		log.Infof("Message from MQTT: %s [%+v]", TopicType(msg.Topic()).Tenant(), msg.Topic())
 		tenant, protocol := TopicType(msg.Topic()).TypeInfo()
 		mb.Inbound <- InboundMessage{
 			strings.ToUpper(tenant),

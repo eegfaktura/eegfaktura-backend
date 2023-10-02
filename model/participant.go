@@ -6,6 +6,26 @@ import (
 	"time"
 )
 
+//func (ts EegParticipantState) MarshalJSON() ([]byte, error) {
+//	type Alias EegParticipantState
+//	if ts.Since == nil {
+//		return json.Marshal(&ts)
+//	}
+//
+//	return json.Marshal(&struct {
+//		*Alias
+//		Since int64 `json:"since"`
+//	}{
+//		Alias: (*Alias)(&ts),
+//		Since: (*ts.Since).UnixMilli(),
+//	})
+//}
+
+type MeterState struct {
+	ActiveSince   time.Time `json:"activeSince"`
+	InactiveSince time.Time `json:"inactiveSince"`
+}
+
 type EegParticipant struct {
 	Id                    uuid.UUID        `json:"id" goqu:"skipupdate"`
 	ParticipantNumber     null.String      `json:"participantNumber" db:"participantNumber"`
@@ -63,7 +83,7 @@ const (
 )
 
 type MeteringPoint struct {
-	MeteringPoint   string        `json:"meteringPoint" db:"metering_point_id"`
+	MeteringPoint   string        `json:"meteringPoint" db:"meteringpoint.metering_point_id" goqu:"skipupdate"`
 	Transformer     null.String   `json:"transformer,omitempty"`
 	Direction       DirectionType `json:"direction,omitempty"`
 	Status          StatusType    `json:"status,omitempty"`
@@ -78,4 +98,5 @@ type MeteringPoint struct {
 	RegisteredSince time.Time     `json:"registeredSince" db:"registeredSince"`
 	ModifiedAt      time.Time     `json:"modifiedAt" db:"modifiedAt"`
 	ModifiedBy      null.String   `json:"modifiedBy" db:"modifiedBy"`
+	State           *MeterState   `json:"participantState" db:"participant_meter_state" goqu:"skipupdate"`
 }

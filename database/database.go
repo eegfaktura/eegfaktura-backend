@@ -104,15 +104,12 @@ func AddTariff(dbConn OpenDbXConnection, tenant string, tariff *model.Tariff) er
 	}
 
 	update := updateType{tenant, tariff}
-	log.Debugf("Insert new Tariff %+v\n", update)
-
 	log.Debugf("Tarrif: %+v\n", update)
 
 	sql, _, err := goqu.Insert("base.tariff").Rows(update).ToSQL()
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Tariff Insert Statement: %s\n", sql)
 	_, err = db.Exec(sql)
 
 	//_, err = db.NamedExec(

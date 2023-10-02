@@ -140,7 +140,7 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 		//
 		//	log.Debug("Files uploaded successfully : ")
 		//}
-		if err = database.ConfirmParticipant(tenant, claims.Username, participantId); err != nil {
+		if err = database.ConfirmParticipant(database.GetDBXConnection, claims.Username, participantId); err != nil {
 			fmt.Fprintf(w, err.Error())
 			return
 		}
