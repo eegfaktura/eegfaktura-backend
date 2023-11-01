@@ -9,7 +9,7 @@ import (
 type Eeg struct {
 	Id                 string      `json:"id" db:"tenant"`
 	Name               string      `json:"name,omitempty"`
-	Description        string      `json:"description,omitempty"`
+	Description        string      `json:"description"`
 	BusinessNr         null.String `json:"businessNr,omitempty" db:"businessNr"`
 	Area               AreaType    `json:"area"` /* LOCAL | REGIONAL*/
 	Legal              string      `json:"legal,omitempty"`

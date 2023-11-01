@@ -1,13 +1,23 @@
 package api
 
 import (
+	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
 	"encoding/json"
 	"fmt"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 	"strings"
 	"testing"
 )
+
+func init() {
+	viper.Set("database.host", "localhost")
+	viper.Set("database.port", 6432)
+	viper.Set("database.user", "postgresuser")
+	viper.Set("database.password", "postgresPW")
+	viper.Set("database.dbname", "postgresdb")
+}
 
 func Test_registerParticipant(t *testing.T) {
 	registerObject := `{
@@ -67,4 +77,12 @@ func Test_registerParticipant(t *testing.T) {
 	require.NoError(t, err)
 
 	fmt.Printf("Part: %+v\n", p)
+}
+
+func Test_ConfirmParticipant(t *testing.T) {
+	participantId := "ea9942da-03da-11ee-b82b-5a985b4b033a"
+	participant, err := database.QueryParticipant(participantId)
+
+	require.NoError(t, err)
+	fmt.Printf("P: %+v\n", participant)
 }

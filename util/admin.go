@@ -143,9 +143,9 @@ func (r *RegisterService) Register(ctx context.Context, eeg *protobuf.RegisterEe
 		VatNumber:          null.StringFrom(eeg.VatNumber),
 		EegAddress: model.EegAddress{
 			Street:       eeg.Street,
-			StreetNumber: eeg.Street,
-			Zip:          eeg.Street,
-			City:         eeg.Street,
+			StreetNumber: eeg.StreetNumber,
+			Zip:          eeg.Zip,
+			City:         eeg.City,
 		},
 		AccountInfo: model.AccountInfo{
 			Iban:  null.StringFrom(eeg.Iban),
@@ -159,11 +159,12 @@ func (r *RegisterService) Register(ctx context.Context, eeg *protobuf.RegisterEe
 		Optionals: model.Optionals{
 			Website: getOptionalField(eeg.Web),
 		},
-		Periods: nil,
-		Online:  eeg.Online,
+		Periods:       nil,
+		Online:        eeg.Online,
+		ContactPerson: null.StringFrom(eeg.EegOwner),
 	}
 
-	//fmt.Printf("Register EEG: %+v\n", newEeg)
+	fmt.Printf("Register EEG: %+v\n", newEeg)
 	db, err := database.GetDBXConnection()
 	if err != nil {
 		log.Errorf("Database Error: %v", err)

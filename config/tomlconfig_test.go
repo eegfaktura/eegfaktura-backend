@@ -1,13 +1,15 @@
 package config
 
 import (
-	"fmt"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"testing"
 )
 
 func TestReadActivationMailTemplateConfig(t *testing.T) {
-	config, err := ReadActivationMailTemplateConfig("./activation-mail-templates.toml")
+	config, err := ReadActivationMailTemplateConfig("../public/templates/activation-mail-template.toml")
 	assert.NoError(t, err)
-	fmt.Printf("CONFIG: %+v\n", config)
+	assert.Equal(t, "AktivierungsEmail-template.html", config.TemplateFile)
+	require.Equal(t, 1, len(config.InlinePictures))
+	assert.Equal(t, "eegfaktura-logo.png", config.InlinePictures[0].Filepath)
 }

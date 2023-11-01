@@ -58,6 +58,7 @@ type ContactInfo struct {
 type BankInfo struct {
 	Iban  null.String `json:"iban"`
 	Owner null.String `json:"owner"`
+	Name  null.String `json:"bankname"`
 }
 
 type DirectionType string
@@ -83,7 +84,7 @@ const (
 )
 
 type MeteringPoint struct {
-	MeteringPoint   string        `json:"meteringPoint" db:"meteringpoint.metering_point_id" goqu:"skipupdate"`
+	MeteringPoint   string        `json:"meteringPoint" db:"metering_point_id" goqu:"skipupdate"`
 	Transformer     null.String   `json:"transformer,omitempty"`
 	Direction       DirectionType `json:"direction,omitempty"`
 	Status          StatusType    `json:"status,omitempty"`

@@ -153,6 +153,18 @@ func TestProtocolEcReqOnlHandler(t *testing.T) {
 			messageType: model.EBMS_ONLINE_REG_COMPLETION,
 		},
 	}
+
+	extractMeters := func(p model.EbmsMessage, proto model.EbMsMessageType) []string {
+		meters := []string{}
+		switch proto {
+		case model.EBMS_ONLINE_REG_APPROVAL, model.EBMS_ONLINE_REG_ANSWER:
+			_, meters, _ = extractResponseCodeAndMeteringPoint(&p)
+		default:
+			meters = p.Meters()
+		}
+		return meters
+	}
+
 	for _, m := range tests {
 		t.Run(m.name, func(t *testing.T) {
 			var mockDb, err = database.GetDatabaseMock()
@@ -173,7 +185,7 @@ func TestProtocolEcReqOnlHandler(t *testing.T) {
 
 			recorder.Mock.On("saveNotification", map[string]interface{}{
 				"type":           msg.MessageCode,
-				"meteringPoints": msg.Payload.Meters(),
+				"meteringPoints": extractMeters(msg.Payload, m.messageType),
 				"responseCodes":  m.codes,
 			}, msg.Tenant, "NOTIFICATION", "ADMIN")
 

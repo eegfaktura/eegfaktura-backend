@@ -13,35 +13,35 @@ import (
 const TABLE_METERINGPOINT = "base.meteringpoint"
 
 type meteringEntryType struct {
-	model.MeteringPoint
+	*model.MeteringPoint
 	Participant_id string
 	Tenant         string
 }
 
 func RegisterMeteringPoints(tx *sql.Tx, tenant, participantId string, point []*model.MeteringPoint) error {
-	meteringEntry := []meteringEntryType{}
+	meteringEntry := []*meteringEntryType{}
 	for _, p := range point {
 		p.Status = model.NEW
 		p.RegisteredSince = time.Now()
 		p.ModifiedBy = null.StringFrom("SYSTEM")
 		p.ModifiedAt = time.Now()
-		meteringEntry = append(meteringEntry, meteringEntryType{*p, participantId, tenant})
+		meteringEntry = append(meteringEntry, &meteringEntryType{p, participantId, tenant})
 	}
 	return saveMeteringPoint(tx, meteringEntry)
 }
 
 func ImportMeteringPoints(tx *sql.Tx, tenant, participantId string, point []*model.MeteringPoint) error {
-	meteringEntry := []meteringEntryType{}
+	meteringEntry := []*meteringEntryType{}
 	for _, p := range point {
 		p.RegisteredSince = time.Now()
 		p.ModifiedBy = null.StringFrom("SYSTEM")
 		p.ModifiedAt = time.Now()
-		meteringEntry = append(meteringEntry, meteringEntryType{*p, participantId, tenant})
+		meteringEntry = append(meteringEntry, &meteringEntryType{p, participantId, tenant})
 	}
 	return saveMeteringPoint(tx, meteringEntry)
 }
 
-func saveMeteringPoint(tx *sql.Tx, meteringEntry []meteringEntryType) error {
+func saveMeteringPoint(tx *sql.Tx, meteringEntry []*meteringEntryType) error {
 	statement, _, _ := pgDialect.Insert(TABLE_METERINGPOINT).Rows(meteringEntry).ToSQL()
 	log.Debugf("Register Meterings: %+v", statement)
 	_, err := tx.Exec(statement)
@@ -51,19 +51,24 @@ func saveMeteringPoint(tx *sql.Tx, meteringEntry []meteringEntryType) error {
 	}
 
 	type participantMeterState struct {
-		participant_id    string
-		tenant            string
-		metering_point_id string
-		changed_by        string
+		Participant_id    string `db:"participant_id"`
+		Tenant            string
+		Metering_point_id string `db:"metering_point"`
+		Changed_by        string
 	}
 
 	stateEntries := []participantMeterState{}
 	for _, e := range meteringEntry {
+		e.State = &model.MeterState{
+			ActiveSince:   time.Now(),
+			InactiveSince: time.Date(2999, 12, 31, 0, 0, 0, 0, time.Local),
+		}
+
 		stateEntries = append(stateEntries, participantMeterState{
-			participant_id:    e.Participant_id,
-			tenant:            e.Tenant,
-			metering_point_id: e.MeteringPoint.MeteringPoint,
-			changed_by:        e.ModifiedBy.String,
+			Participant_id:    e.Participant_id,
+			Tenant:            e.Tenant,
+			Metering_point_id: e.MeteringPoint.MeteringPoint,
+			Changed_by:        e.ModifiedBy.String,
 		})
 	}
 
@@ -104,11 +109,11 @@ func UpdateMeteringPoint(tenant, participantId, meterId string, meteringPoint *m
 	updateObject.State = nil
 	statement, _, _ := goqu.Update(TABLE_METERINGPOINT).
 		Set(updateObject).
-		Where(goqu.Ex{
-			"tenant":            goqu.Op{"eq": tenant},
-			"metering_point_id": goqu.Op{"eq": meterId},
-			"participant_id":    goqu.Op{"eq": participantId},
-		}).
+			Where(goqu.Ex{
+				"tenant":            goqu.Op{"eq": tenant},
+				"metering_point_id": goqu.Op{"eq": meterId},
+				"participant_id":    goqu.Op{"eq": participantId},
+			}).
 		ToSQL()
 
 	fmt.Printf("Update Metering Point: %+v\n", statement)
@@ -125,12 +130,12 @@ func RemoveMeteringPoint(dbOpen OpenDbXConnection, tenant, participantId, meterI
 	defer db.Close()
 
 	statement, _, _ := goqu.Delete(TABLE_METERINGPOINT).
-		Where(goqu.Ex{
-			"tenant":            goqu.Op{"eq": tenant},
-			"metering_point_id": goqu.Op{"eq": meterId},
-			"participant_id":    goqu.Op{"eq": participantId},
-			"status":            goqu.Op{"eq": "INVALID"},
-		}).
+			Where(goqu.Ex{
+				"tenant":            goqu.Op{"eq": tenant},
+				"metering_point_id": goqu.Op{"eq": meterId},
+				"participant_id":    goqu.Op{"eq": participantId},
+				"status":            goqu.Op{"eq": "INVALID"},
+			}).
 		ToSQL()
 	_, err = db.Exec(statement)
 
@@ -146,10 +151,10 @@ func ActivateMeteringPoints(tenant string, meterId []string) error {
 
 	statement, _, _ := goqu.Update(TABLE_METERINGPOINT).
 		Set(goqu.Record{"status": "ACTIVE"}).
-		Where(goqu.Ex{
-			"tenant":            goqu.Op{"eq": tenant},
-			"metering_point_id": goqu.Op{"eq": meterId},
-		}).
+			Where(goqu.Ex{
+				"tenant":            goqu.Op{"eq": tenant},
+				"metering_point_id": goqu.Op{"eq": meterId},
+			}).
 		ToSQL()
 	_, err = db.Exec(statement)
 
@@ -165,10 +170,10 @@ func MeteringPointsSetStatus(dbOpen OpenDbXConnection, tenant string, status mod
 
 	statement, _, _ := goqu.Update(TABLE_METERINGPOINT).
 		Set(goqu.Record{"status": status, "registeredSince": time.Now(), "modifiedAt": time.Now(), "modifiedBy": "EVU"}).
-		Where(goqu.Ex{
-			"tenant":            goqu.Op{"eq": tenant},
-			"metering_point_id": goqu.Op{"eq": meterId},
-		}).
+			Where(goqu.Ex{
+				"tenant":            goqu.Op{"eq": tenant},
+				"metering_point_id": goqu.Op{"eq": meterId},
+			}).
 		ToSQL()
 	_, err = db.Exec(statement)
 

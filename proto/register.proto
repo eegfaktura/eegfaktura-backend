@@ -25,9 +25,9 @@ message EegResponse {
 // The request message containing the user's name.
 message RegisterEegRequest {
   enum EEG_LEGAL{
-    VEREIN = 0;
-    GENOSSENSCHAFT = 1;
-    GESELLSCHAFT = 2;
+    verein = 0;
+    genossenschaft = 1;
+    gesellschaft = 2;
   }
 
   enum EEG_SETTELMENT {

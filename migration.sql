@@ -177,14 +177,14 @@ CREATE TABLE IF NOT EXISTS base.participant_meter_state
 (
     participant_id    UUID      NOT NULL,
     tenant            TEXT      NOT NULL,
-    metering_point_id TEXT      NOT NULL,
+    metering_point TEXT      NOT NULL,
     activeSince       TIMESTAMP NOT NULL DEFAULT now(),
     inactiveSince     TIMESTAMP NOT NULL DEFAULT Date('2999-12-31'),
     changed_at        TIMESTAMP NOT NULL DEFAULT now(),
     changed_by        TEXT      NOT NULL,
-    CONSTRAINT PK_Participant_meter_state PRIMARY KEY (participant_id, metering_point_id),
+    CONSTRAINT PK_Participant_meter_state PRIMARY KEY (participant_id, metering_point),
     CONSTRAINT FK_Participant_state FOREIGN KEY (participant_id) REFERENCES base.participant (id) ON DELETE CASCADE,
-    CONSTRAINT FK_Metering_state FOREIGN KEY (metering_point_id, tenant) REFERENCES base.meteringpoint (metering_point_id, tenant) ON DELETE CASCADE
+    CONSTRAINT FK_Metering_state FOREIGN KEY (metering_point, tenant) REFERENCES base.meteringpoint (metering_point_id, tenant) ON DELETE CASCADE
 );
 
 

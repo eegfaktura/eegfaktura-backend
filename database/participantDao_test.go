@@ -62,6 +62,7 @@ func TestRegisterParticipant(t *testing.T) {
 	mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
 	mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
 	mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
+	mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
 	mockDb.Mock.ExpectCommit()
 
 	err = RegisterParticipant(mockDb.OpenMockDb, "RC200200", "petero", &p)
@@ -75,9 +76,9 @@ func TestGetParticipant(t *testing.T) {
 		"id", "firstname", "lastname", "role", "businessRole", "titleBefore", "titleAfter", "participantSince",
 		"vatNumber", "taxNumber", "companyRegisterNumber", "status", "createdBy", //"createdDate", "lastModifiedBy", "lastModifiedDate",
 		"version", "tariffId", "participantNumber"}).
-			AddRow(uuid.New(), "Sepp", "Huber", "EEG_USER", "EEG_PRIVATE", "", "", time.Now(),
-				"", "", "", "NEW", "admin", //time.Now(), "petero", time.Now(),
-				1, uuid.New(), "001")
+		AddRow(uuid.New(), "Sepp", "Huber", "EEG_USER", "EEG_PRIVATE", "", "", time.Now(),
+			"", "", "", "NEW", "admin", //time.Now(), "petero", time.Now(),
+			1, uuid.New(), "001")
 	mockDb.Mock.ExpectQuery("SELECT (.+) FROM \"base\".\"participant\" (.+)").WillReturnRows(participantRows)
 
 	contactDetailsRows := sqlmock.NewRows([]string{"email", "phone"}).AddRow("mail@test.com", "+4325622 232311 32323")
@@ -96,9 +97,9 @@ func TestGetParticipant(t *testing.T) {
 
 	meterRows := sqlmock.NewRows([]string{"city", "direction", "equipmentName", "equipmentNumber", "inverterid", "metering_point_id",
 		"modifiedAt", "modifiedBy", "registeredSince", "status", "street", "streetNumber", "tariff_id", "transformer", "zip"}).
-			AddRow("Solarcity", "GENERATOR", "", "", "", "AT0020001110000010011111001",
-				time.Now(), "admin", time.Now(), "NEW", "Energieweg", "12a", uuid.New(), "", "1234")
-	mockDb.Mock.ExpectQuery("SELECT (.+) FROM \"base\".\"meteringpoint\" (.+)").WillReturnRows(meterRows)
+		AddRow("Solarcity", "GENERATOR", "", "", "", "AT0020001110000010011111001",
+			time.Now(), "admin", time.Now(), "NEW", "Energieweg", "12a", uuid.New(), "", "1234")
+	mockDb.Mock.ExpectQuery("SELECT (.+) FROM \"base\".\"participant_meter_state\" (.+)").WillReturnRows(meterRows)
 
 	participants, err := GetParticipant(mockDb.OpenMockDb, "RC100298")
 	assert.NoError(t, err)
@@ -133,6 +134,7 @@ func Test_saveParticipant(t *testing.T) {
 	mock.ExpectExec("INSERT (.+) \"base\".\"bankaccount\"").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec("INSERT (.+) \"base\".\"address\"").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec("INSERT (.+) \"base\".\"meteringpoint\"").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("INSERT (.+) \"base\".\"participant_meter_state\"").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
 	tests := []struct {

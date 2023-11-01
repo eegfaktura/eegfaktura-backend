@@ -6,7 +6,7 @@ GOTEST=$(GOCMD) test
 GOGET=$(GOCMD) get
 BINARY_NAME=vfeeg-backend
 DOCKER=docker
-VERSION=v0.1.0
+VERSION=v0.1.1
 
 GOPATH := ${PWD}/..:${GOPATH}
 export GOPATH
@@ -26,7 +26,7 @@ run:
 docker-clean:
 	$(DOCKER) rmi ghcr.io/vfeeg-development/vfeeg-backend:$(VERSION)
 
-docker: docker-clean
+docker:
 	$(DOCKER) build -t ghcr.io/vfeeg-development/vfeeg-backend:$(VERSION) .
 
 push: docker
