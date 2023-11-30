@@ -9,6 +9,7 @@ import (
 	"at.ourproject/vfeeg-backend/util"
 	"encoding/json"
 	"fmt"
+	"github.com/golang/glog"
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
 	"net/http"
@@ -23,13 +24,14 @@ func InitParticipantRouter(r *mux.Router, jwtWrapper middleware.JWTWrapperFunc) 
 	s.HandleFunc("/{id}", jwtWrapper(updateParticipant())).Methods("PUT")
 	s.HandleFunc("/{id}", jwtWrapper(archiveParticipant())).Methods("DELETE")
 	s.HandleFunc("/{id}/confirm", jwtWrapper(confirmParticipant())).Methods("POST")
+	s.HandleFunc("/v2/{id}", jwtWrapper(updateParticipantPartial())).Methods("PUT")
 
 	return r
 }
 
 func fetchParticipant() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
-		participant, err := database.GetParticipant(database.GetDBXConnection, tenant)
+		participant, err := database.GetParticipants(database.GetDBXConnection, tenant)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -59,6 +61,41 @@ func updateParticipant() middleware.JWTHandlerFunc {
 	}
 }
 
+func updateParticipantPartial() middleware.JWTHandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
+		vars := mux.Vars(r)
+		participantId := vars["id"]
+
+		var p map[string]interface{}
+		err := json.NewDecoder(r.Body).Decode(&p)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		name := p["path"].(string)
+		value := p["value"]
+
+		_, err = database.UpdateParticipantPartial(database.GetDBXConnection, participantId, name, value)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		participant, err := database.GetParticipant(database.GetDBXConnection, participantId)
+		//names := strings.Split(name, ".")
+		//ret := map[string]interface{}{}
+		//rr := ret
+		//for _, n := range names[:len(names)-1] {
+		//	rr[n] = make(map[string]interface{})
+		//	rr = rr[n].(map[string]interface{})
+		//}
+		//rr[names[len(names)-1]] = value
+		//fmt.Printf("ret: %+v\n", ret)
+		respondWithJSON(w, http.StatusAccepted, participant)
+	}
+}
+
 func registerParticipant() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
 		var t model.EegParticipant
@@ -68,11 +105,28 @@ func registerParticipant() middleware.JWTHandlerFunc {
 			return
 		}
 
-		err = database.RegisterParticipant(database.GetDBXConnection, tenant, claims.Username, &t)
+		db, err := database.GetDBXConnection()
+		if err != nil {
+			glog.Error(err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		defer db.Close()
+
+		tx, err := db.Beginx()
+		if err != nil {
+			glog.Error(err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		defer tx.Rollback()
+
+		err = database.RegisterParticipant(tx, tenant, claims.Username, &t)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		tx.Commit()
 		respondWithJSON(w, http.StatusCreated, t)
 	}
 }

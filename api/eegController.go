@@ -221,7 +221,7 @@ func exportMasterData() middleware.JWTHandlerFunc {
 			return
 		}
 
-		participants, err := database.GetParticipant(database.GetDBXConnection, tenant)
+		participants, err := database.GetParticipants(database.GetDBXConnection, tenant)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

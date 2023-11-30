@@ -46,14 +46,29 @@ func ImportMasterdataFromExcel(dbConn OpenDbXConnection, r io.Reader, filename, 
 	log.Debugf("Rows: %+v\n", rows)
 	log.Debugf("LEN _ Import participants: %+v\n", len(participants))
 
+	db, err := dbConn()
+	if err != nil {
+		glog.Error(err)
+		return err
+	}
+	defer db.Close()
+
+	tx, err := db.Beginx()
+	if err != nil {
+		glog.Error(err)
+		return err
+	}
+	defer tx.Rollback()
+
 	for _, p := range participants {
-		err = ImportParticipant(dbConn, strings.ToUpper(tenant), "excel", p)
+		err = ImportParticipant(tx, strings.ToUpper(tenant), "excel", p)
 		if err != nil {
 			log.Errorf("Error Import Participant from Excel: %s", err.Error())
+			return err
 		}
 	}
 
-	return nil
+	return tx.Commit()
 }
 
 func ExportMasterdataToExcel(participants []model.EegParticipant, eeg *model.Eeg) (*bytes.Buffer, error) {
@@ -349,17 +364,30 @@ func getColumValue(cols []string, values map[string]int, deName, enName string, 
 }
 
 var numberPattern = regexp.MustCompile(`^[0-9\\.,]+$`)
+var dateStringPattern = regexp.MustCompile(`^\d{1,2}\.\d{1,2}\.\d{4}$`)
 
 func isDate(cell string) bool {
 	if len(cell) > 0 && numberPattern.MatchString(cell) {
 		return true
 	}
-	println(cell)
+	return false
+}
+
+func isDateString(cell string) bool {
+	if len(cell) > 0 && dateStringPattern.MatchString(cell) {
+		return true
+	}
 	return false
 }
 
 func parseExcelDate(cell string) time.Time {
-	if isDate(cell) {
+	if isDateString(cell) {
+		var d, m, y int
+		if _, err := fmt.Sscanf(cell, "%d.%d.%d", &d, &m, &y); err != nil {
+			return time.Now()
+		}
+		return time.Date(y, time.Month(m), d, 0, 0, 0, 0, time.UTC)
+	} else if isDate(cell) {
 		var excelEpoch = time.Date(1899, time.December, 30, 0, 0, 0, 0, time.UTC)
 		var days, _ = strconv.ParseFloat(cell, 64)
 		return excelEpoch.Add(time.Second * time.Duration(days*86400))
@@ -444,6 +472,14 @@ func transformExcelData(rows *excelize.Rows) []*model.EegParticipant {
 						participantSince = time.Now()
 					}
 
+					var registeredSince time.Time
+					regDateAt := getColumValue(cols, colMap, "registriert seit", "registred since", nil)
+					if len(regDateAt) > 0 {
+						registeredSince = parseExcelDate(regDateAt)
+					} else {
+						registeredSince = time.Date(time.Now().Year(), 1, 1, 0, 0, 0, 0, time.UTC)
+					}
+
 					cpStatus := getColumValue(cols, colMap, "Zählpunktstatus", "Metering Point State", nil)
 					if cpStatus == "ACTIVATED" || cpStatus == "REGISTERED" || len(cpStatus) == 0 {
 						var participant *model.EegParticipant
@@ -491,6 +527,7 @@ func transformExcelData(rows *excelize.Rows) []*model.EegParticipant {
 							TariffId:        null.String{},
 							EquipmentNumber: equipmentNumber(cols, colMap),
 							EquipmentName:   equipmentName(cols, colMap),
+							RegisteredSince: registeredSince,
 							InverterId:      null.String{},
 							Street:          null.StringFrom(getColumValue(cols, colMap, "Straße", "Street", nil)),
 							StreetNumber:    null.StringFrom(getColumValue(cols, colMap, "Hausnummer", "Street Number", nil)),

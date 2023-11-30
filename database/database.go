@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/doug-martin/goqu/v9"
+	"github.com/golang/glog"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	"github.com/pborman/uuid"
@@ -18,6 +19,15 @@ type OpenDbXConnection func() (*sqlx.DB, error)
 var (
 	ErrTariffUtilized = errors.New("Tariff is currently used")
 )
+
+func GetTx(db sqlx.DB) (*sqlx.Tx, error) {
+	tx, err := db.Beginx()
+	if err != nil {
+		glog.Error(err)
+		return nil, err
+	}
+	return tx, nil
+}
 
 func GetDBConnection() (*sql.DB, error) {
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+

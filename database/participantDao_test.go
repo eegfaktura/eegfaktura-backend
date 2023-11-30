@@ -101,7 +101,7 @@ func TestGetParticipant(t *testing.T) {
 			time.Now(), "admin", time.Now(), "NEW", "Energieweg", "12a", uuid.New(), "", "1234")
 	mockDb.Mock.ExpectQuery("SELECT (.+) FROM \"base\".\"participant_meter_state\" (.+)").WillReturnRows(meterRows)
 
-	participants, err := GetParticipant(mockDb.OpenMockDb, "RC100298")
+	participants, err := GetParticipants(mockDb.OpenMockDb, "RC100298")
 	assert.NoError(t, err)
 
 	assert.NotEmpty(t, participants)

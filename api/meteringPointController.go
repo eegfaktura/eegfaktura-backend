@@ -42,10 +42,12 @@ func createMeteringPoint() middleware.JWTHandlerFunc {
 		}
 
 		m.ModifiedAt = time.Now()
-		m.RegisteredSince = time.Now()
+		if m.Status != model.ACTIVE {
+			m.RegisteredSince = time.Now()
+		}
 		m.ModifiedBy = null.StringFrom(claims.Username)
 
-		err = database.RegisterMeteringPoint(tenant, participantId, &m)
+		err = database.RegisterMeteringPoint(database.GetDBXConnection, tenant, participantId, &m)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
