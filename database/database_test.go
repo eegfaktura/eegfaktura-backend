@@ -13,7 +13,8 @@ func TestAddTariff(t *testing.T) {
 	var mockDb, err = GetDatabaseMock()
 	require.NoError(t, err)
 
-	stmt := "INSERT INTO (.+) VALUES \\(0, 0, 0, 'monthly', 0, 12, 0, 100, DEFAULT, 'Sepp', 0, 'sepp', '', FALSE, 0, 1\\)"
+	//stmt := "INSERT INTO (.+) VALUES \\(0, 0, 0, 'monthly', 0, 12, 0, 100, DEFAULT, 'Sepp', 0, 'sepp', '', FALSE, 0, 1\\)"
+	stmt := "INSERT INTO \"base\".\"tariff\" \\(\"accountGrossAmount\", \"accountNetAmount\", \"baseFee\", \"billingPeriod\", \"businessNr\", \"centPerKWh\", \"discount\", \"freeKWh\", \"id\", \"name\", \"participantFee\", \"tenant\", \"type\", \"useVat\", \"vatInPercent\", \"version\"\\) VALUES (.+)"
 
 	mockDb.Mock.ExpectExec(stmt).WillReturnResult(sqlmock.NewResult(1, 1))
 

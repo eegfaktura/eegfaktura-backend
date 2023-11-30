@@ -4,7 +4,9 @@ import (
 	"at.ourproject/vfeeg-backend/model"
 	dbsql "database/sql"
 	"encoding/json"
+	"fmt"
 	"github.com/doug-martin/goqu/v9"
+	"time"
 )
 
 func SaveEdaHistory(dbOpen OpenDbXConnection, history *model.EdaProcessHistory) error {
@@ -19,18 +21,22 @@ func SaveEdaHistory(dbOpen OpenDbXConnection, history *model.EdaProcessHistory) 
 	return err
 }
 
-func FetchEdaHistory(dbOpen OpenDbXConnection, tenant string) (map[string]map[string][]model.EdaProcessHistory, error) {
+func FetchEdaHistory(dbOpen OpenDbXConnection, tenant string, start, end int64) (map[string]map[string][]model.EdaProcessHistory, error) {
 	db, err := dbOpen()
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
 
-	h := []model.EdaProcessHistory{}
-	sql, _, err := pgDialect.From("base.processhistory").Select(&h).
-		Where(goqu.C("tenant").Eq(tenant), goqu.C("protocol").IsNotNull()).ToSQL()
+	startDate := time.UnixMilli(start)
+	endDate := time.UnixMilli(end)
 
-	err = db.Select(&h, sql)
+	h := []model.EdaProcessHistory{}
+	stmt, _, err := pgDialect.From("base.processhistory").Select(&h).
+		Where(goqu.C("tenant").Eq(tenant), goqu.C("protocol").IsNotNull(), goqu.C("date").Between(goqu.Range(startDate, endDate))).ToSQL()
+
+	fmt.Printf("Query History: %+v\n", stmt)
+	err = db.Select(&h, stmt)
 	if err != nil && err != dbsql.ErrNoRows {
 		return nil, err
 	}

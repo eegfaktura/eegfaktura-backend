@@ -7,6 +7,7 @@ import (
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/golang/glog"
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
@@ -27,6 +28,7 @@ func InitEegRouter(r *mux.Router, jwtWrapper middleware.JWTWrapperFunc) *mux.Rou
 	s.HandleFunc("/sync/participants", jwtWrapper(syncParticipantsEda())).Methods("POST")
 	s.HandleFunc("/sync/meterpoint", jwtWrapper(syncMeterpointEda())).Methods("POST")
 	s.HandleFunc("/import/masterdata", jwtWrapper(uploadMasterData())).Methods("POST")
+	s.HandleFunc("/export/masterdata", jwtWrapper(exportMasterData())).Methods("GET")
 	s.HandleFunc("/notifications/{id}", jwtWrapper(notifications())).Methods("GET")
 
 	return r
@@ -207,6 +209,42 @@ func uploadMasterData() middleware.JWTHandlerFunc {
 		} else {
 			glog.Infof("Import File %s successful", handler.Filename)
 			w.WriteHeader(http.StatusOK)
+		}
+	}
+}
+
+func exportMasterData() middleware.JWTHandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
+		eeg, err := database.GetEeg(tenant)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		participants, err := database.GetParticipants(database.GetDBXConnection, tenant)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		b, err := database.ExportMasterdataToExcel(participants, eeg)
+
+		if err != nil {
+			glog.Errorf("Create Energy Export: %v", err.Error())
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		filename := fmt.Sprintf("%s-EEG-Masterdata-%s",
+			tenant,
+			time.Now().Format("20060102"),
+		)
+
+		w.Header().Set("Content-type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.xlsx"`, filename))
+		w.Header().Set("filename", filename)
+
+		if _, err := b.WriteTo(w); err != nil {
+			fmt.Fprintf(w, "%s", err)
 		}
 	}
 }

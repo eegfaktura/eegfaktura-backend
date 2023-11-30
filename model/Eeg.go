@@ -9,8 +9,8 @@ import (
 type Eeg struct {
 	Id                 string      `json:"id" db:"tenant"`
 	Name               string      `json:"name,omitempty"`
-	Description        string      `json:"description,omitempty"`
-	BusinessNr         null.Int    `json:"businessNr,omitempty" db:"businessNr"`
+	Description        string      `json:"description"`
+	BusinessNr         null.String `json:"businessNr,omitempty" db:"businessNr"`
 	Area               AreaType    `json:"area"` /* LOCAL | REGIONAL*/
 	Legal              string      `json:"legal,omitempty"`
 	OperatorName       string      `json:"operatorName,omitempty" db:"gridoperator_name"`

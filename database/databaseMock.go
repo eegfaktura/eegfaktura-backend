@@ -22,3 +22,7 @@ func GetDatabaseMock() (*mockDatabase, error) {
 func (m *mockDatabase) OpenMockDb() (*sqlx.DB, error) {
 	return sqlx.NewDb(m.db, "mock"), nil
 }
+
+func (m *mockDatabase) Close() error {
+	return m.db.Close()
+}

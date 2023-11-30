@@ -4,7 +4,6 @@ import (
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
 	"encoding/json"
-	"github.com/jmoiron/sqlx"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/guregu/null.v4"
 	"time"
@@ -13,7 +12,7 @@ import (
 type EdaRecording interface {
 	saveNotification(notificationValue map[string]interface{}, tenant, notificationType, role string) error
 	saveHistory(tenant string, messageCode model.EbMsMessageType, conversationId, role, dir string, protocol model.EdaProtocol, msg interface{}) error
-	databaseConnect() (*sqlx.DB, error)
+	databaseConnectFunc() database.OpenDbXConnection
 }
 
 type EdaRecorder struct {
@@ -24,8 +23,8 @@ func NewEdaRecorder() *EdaRecorder {
 	return &EdaRecorder{dbOpen: database.GetDBXConnection}
 }
 
-func (r *EdaRecorder) databaseConnect() (*sqlx.DB, error) {
-	return r.dbOpen()
+func (r *EdaRecorder) databaseConnectFunc() database.OpenDbXConnection {
+	return r.dbOpen
 }
 
 func (r *EdaRecorder) saveNotification(notificationValue map[string]interface{}, tenant, notificationType, role string) error {
@@ -41,12 +40,8 @@ func (r *EdaRecorder) saveNotification(notificationValue map[string]interface{},
 }
 
 func (r *EdaRecorder) saveHistory(tenant string, messageCode model.EbMsMessageType, conversationId, role, dir string, protocol model.EdaProtocol, msg interface{}) error {
-	db, err := database.GetDBXConnection()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
 
+	var err error
 	var msgBytes []byte
 	if msgBytes, err = json.Marshal(msg); err == nil {
 		if err = database.SaveEdaHistory(r.dbOpen, &model.EdaProcessHistory{

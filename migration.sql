@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS base.EEG
 (
     tenant               VARCHAR PRIMARY KEY,
     name                 TEXT    NOT NULL,
-    description          TEXT,
+    description          VARCHAR(40),
     periods              JSON             DEFAULT ('[]'),
     "rcNumber"           TEXT    NOT NULL,
     area                 TEXT    NOT NULL, /* Ortsgebiet (LOCAL | REGIONAL) */
@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS base.EEG
     gridoperator_code    TEXT    NOT NULL,
     gridoperator_name    TEXT    NOT NULL,
     "communityId"        TEXT    NOT NULL,
-    "businessNr"         INTEGER,
+    "businessNr"         TEXT,
     "allocationMode"     TEXT    NOT NULL DEFAULT 'DYNAMIC', /* "DYNAMIC" | "STATIC" */
     "settlementInterval" TEXT    NOT NULL DEFAULT 'MONTHLY', /* "MONTHLY" | "ANNUAL" | BIANNUAL | QUARTER*/
     "providerBusinessNr" INTEGER,
@@ -122,6 +122,7 @@ CREATE TABLE IF NOT EXISTS base.bankaccount
     participant_id UUID NOT NULL,
     iban           TEXT NOT NULL,
     owner          TEXT,
+    name    TEXT,
     CONSTRAINT bankaccountPK PRIMARY KEY (id),
     CONSTRAINT FK_ParticipantBankaccount FOREIGN KEY (participant_id) REFERENCES base.participant (id) ON DELETE CASCADE
 );
@@ -162,15 +163,29 @@ CREATE TABLE IF NOT EXISTS base.notification
 
 CREATE TABLE IF NOT EXISTS base.processhistory
 (
-    id               UUID NOT NULL PRIMARY KEY DEFAULT uuid_generate_v4(),
-    tenant           TEXT NOT NULL,
-    "conversationId" TEXT NOT NULL,
-    type             TEXT NOT NULL,
+    id               UUID      NOT NULL PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant           TEXT      NOT NULL,
+    "conversationId" TEXT      NOT NULL,
+    type             TEXT      NOT NULL,
     date             TIMESTAMP NOT NULL             DEFAULT now(),
-    issuer           TEXT NOT NULL,
-    message          json NOT NULL             DEFAULT '{}',
-    direction        TEXT NOT NULL             DEFAULT 'OUT', /* MESSAGE DIRECTION 'OUT' | 'IN' */
+    issuer           TEXT      NOT NULL,
+    message          json      NOT NULL             DEFAULT '{}',
+    direction        TEXT      NOT NULL             DEFAULT 'OUT', /* MESSAGE DIRECTION 'OUT' | 'IN' */
     protocol         VARCHAR
+);
+
+CREATE TABLE IF NOT EXISTS base.participant_meter_state
+(
+    participant_id    UUID      NOT NULL,
+    tenant            TEXT      NOT NULL,
+    metering_point TEXT      NOT NULL,
+    activeSince       TIMESTAMP NOT NULL DEFAULT now(),
+    inactiveSince     TIMESTAMP NOT NULL DEFAULT Date('2999-12-31'),
+    changed_at        TIMESTAMP NOT NULL DEFAULT now(),
+    changed_by        TEXT      NOT NULL,
+    CONSTRAINT PK_Participant_meter_state PRIMARY KEY (participant_id, metering_point),
+    CONSTRAINT FK_Participant_state FOREIGN KEY (participant_id) REFERENCES base.participant (id) ON DELETE CASCADE,
+    CONSTRAINT FK_Metering_state FOREIGN KEY (metering_point, tenant) REFERENCES base.meteringpoint (metering_point_id, tenant) ON DELETE CASCADE
 );
 
 
@@ -194,7 +209,8 @@ SELECT id,
 FROM base.tariff,
      (SELECT id as tid, MAX(version) as tversion FROM base.tariff GROUP BY id) as x
 WHERE id = x.tid
-  AND version = x.tversion AND status != 'ARCHIVED';
+  AND version = x.tversion
+  AND status != 'ARCHIVED';
 
 
 
@@ -256,6 +272,70 @@ FROM base.participant p
          LEFT JOIN base.bankaccount b ON b.participant_id = p.id
          LEFT JOIN base.contactdetail o ON o.participant_id = p.id;
 
+
+CREATE VIEW
+    base.billing_masterdata AS
+SELECT p.id                                                      participant_id,
+       p."titleBefore"                                           participant_title_before,
+       p.firstname                                               participant_firstname,
+       p."participantNumber"                                     participant_number,
+       p.lastname                                                participant_lastname,
+       p."titleAfter"                                            participant_title_after,
+       p."vatNumber"                                             participant_vat_id,
+       p."taxNumber"                                             participant_tax_id,
+       p."companyRegisterNumber"                                 participant_company_register_number,
+       p."participantNumber"                                     participant_sepa_mandate_reference,
+       p."participantSince"                                      participant_sepa_mandate_issue_date,
+       pm.metering_point_id                                      metering_point_id,
+       pm."equipmentNumber"                                      equipment_number,
+       pm."equipmentName"                                        metering_equipment_name,
+       (CASE WHEN pm.direction = 'GENERATION' THEN 0 ELSE 1 END) metering_point_type,
+       c.tenant                                                  eec_id,
+       c."rcNumber"                                              tenant_id,
+       c.description                                             eec_name,
+       c."vatNumber"                                             eec_vat_id,
+       c."taxNumber"                                             eec_tax_id,
+       c."businessNr"                                            eec_company_register_number,
+       c.subjecttovat                                            eec_subject_to_vat,
+       c.phone                                                   eec_phone,
+       c.email                                                   eec_email,
+       c.website                                                 eec_website,
+       concat(c.street, ' ', c."streetNumber")                   eec_street,
+       c.zip                                                     eec_zip_code,
+       c.city                                                    eec_city,
+       concat(p_address.street, ' ', p_address."streetNumber")   participant_street,
+       p_address.zip                                             participant_zip_code,
+       p_address.city                                            participant_city,
+       t.type                                                    tariff_type,
+       t.name                                                    tariff_name,
+       t."billingPeriod"                                         tariff_billing_period,
+       t."useVat"                                                tariff_use_vat,
+       t."vatInPercent"                                          tariff_vat_in_percent,
+       COALESCE(tp."participantFee", 0)                          tariff_participant_fee,
+       COALESCE(tp."name", '')                                   tariff_participant_fee_name,
+       COALESCE(tp."useVat", false)                              tariff_participant_fee_use_vat,
+       COALESCE(tp."vatInPercent", 0)                            tariff_participant_fee_vat_in_percent,
+       COALESCE(tp.discount, 0)                                  tariff_participant_fee_discount,
+       t."baseFee"                                               tariff_basic_fee,
+       t.discount                                                tariff_discount,
+       t."centPerKWh"                                            tariff_working_fee_per_consumedkwh,
+       t."centPerKWh"                                            tariff_credit_amount_per_producedkwh,
+       t."freeKWh"                                               tariff_freekwh,
+       'Bank Name'                                               participant_bank_name,
+       b.iban                                                    participant_bank_iban,
+       b.owner                                                   participant_bank_owner,
+       o.email                                                   participant_email,
+       'Bank Name'                                               eec_bank_name,
+       c.iban                                                    eec_bank_iban,
+       c.owner                                                   eec_bank_owner
+FROM base.participant p
+         LEFT JOIN base.eeg c ON c.tenant = p.tenant
+         LEFT JOIN base.meteringpoint pm ON pm.participant_id = p.id
+         LEFT JOIN base.address p_address ON p.id = p_address.participant_id AND p_address.type = 'BILLING'
+         LEFT JOIN base.activetariff t ON t.id = pm.tariff_id
+         LEFT JOIN base.activetariff tp ON tp.id = p."tariffId" AND tp.type = 'EEG'
+         LEFT JOIN base.bankaccount b ON b.participant_id = p.id
+         LEFT JOIN base.contactdetail o ON o.participant_id = p.id;
 
 
 create table alembic_version

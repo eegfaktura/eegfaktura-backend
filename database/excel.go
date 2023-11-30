@@ -2,6 +2,7 @@ package database
 
 import (
 	"at.ourproject/vfeeg-backend/model"
+	"bytes"
 	"fmt"
 	"github.com/golang/glog"
 	log "github.com/sirupsen/logrus"
@@ -45,14 +46,289 @@ func ImportMasterdataFromExcel(dbConn OpenDbXConnection, r io.Reader, filename, 
 	log.Debugf("Rows: %+v\n", rows)
 	log.Debugf("LEN _ Import participants: %+v\n", len(participants))
 
+	db, err := dbConn()
+	if err != nil {
+		glog.Error(err)
+		return err
+	}
+	defer db.Close()
+
+	tx, err := db.Beginx()
+	if err != nil {
+		glog.Error(err)
+		return err
+	}
+	defer tx.Rollback()
+
 	for _, p := range participants {
-		err = ImportParticipant(dbConn, strings.ToUpper(tenant), "excel", p)
+		err = ImportParticipant(tx, strings.ToUpper(tenant), "excel", p)
 		if err != nil {
 			log.Errorf("Error Import Participant from Excel: %s", err.Error())
+			return err
 		}
 	}
 
+	return tx.Commit()
+}
+
+func ExportMasterdataToExcel(participants []model.EegParticipant, eeg *model.Eeg) (*bytes.Buffer, error) {
+	f := excelize.NewFile()
+	defer func() {
+		if err := f.Close(); err != nil {
+			fmt.Println(err)
+		}
+	}()
+
+	err := generateEegMastersheet(f, eeg)
+	if err != nil {
+		return nil, err
+	}
+	err = generateParticipantMastersheet(f, participants)
+	if err != nil {
+		return nil, err
+	}
+
+	_ = f.DeleteSheet("Sheet1")
+	return f.WriteToBuffer()
+}
+
+func generateEegMastersheet(f *excelize.File, eeg *model.Eeg) error {
+
+	styleId, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Size: 10.0}})
+	styleIdHeader, err := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Bold: true, Size: 10.0},
+		Alignment: &excelize.Alignment{Vertical: "top", WrapText: true},
+	})
+	styleIdHeaderTop, err := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Bold: true, Size: 11.0},
+		Alignment: &excelize.Alignment{Vertical: "top", WrapText: true},
+		Fill: excelize.Fill{
+			Type:    "pattern",
+			Pattern: 1,
+			Color:   []string{"#cccccc"},
+			Shading: 0,
+		},
+	})
+
+	line := 1
+	sheet := eeg.RcNumber
+	_, err = f.NewSheet(sheet)
+	if err != nil {
+		return err
+	}
+
+	_ = f.SetSheetRow(sheet, fmt.Sprintf("A%d", line), &[]interface{}{"EEG"})
+	_ = f.SetRowStyle(sheet, 1, 1, styleIdHeaderTop)
+	line += 1
+	_ = f.SetSheetRow(sheet, fmt.Sprintf("A%d", line), &[]interface{}{
+		"Kurzname", "Bezeichnung", "Gemeinschafts-ID", "Ponton",
+	})
+	_ = f.SetRowStyle(sheet, line, line, styleIdHeader)
+	line += 1
+	_ = f.SetSheetRow(sheet, fmt.Sprintf("A%d", line), &[]interface{}{
+		eeg.Name, eeg.Description, eeg.CommunityId, eeg.Online,
+	})
+	_ = f.SetRowStyle(sheet, line, line, styleId)
+
+	line += 2
+	// Net Operator
+	_ = f.SetSheetRow(sheet, fmt.Sprintf("A%d", line), &[]interface{}{"Netz"})
+	_ = f.SetRowStyle(sheet, line, line, styleIdHeaderTop)
+	line += 1
+	_ = f.SetSheetRow(sheet, fmt.Sprintf("A%d", line), &[]interface{}{
+		"Netzbetreiber", "Netzbetreiber Name", "Verteilung",
+	})
+	_ = f.SetRowStyle(sheet, line, line, styleIdHeader)
+	line += 1
+	_ = f.SetSheetRow(sheet, fmt.Sprintf("A%d", line), &[]interface{}{
+		eeg.GridOperator, eeg.OperatorName, eeg.AllocationMode,
+	})
+	_ = f.SetRowStyle(sheet, line, line, styleId)
+
+	line += 2
+	// Contact
+	_ = f.SetSheetRow(sheet, fmt.Sprintf("A%d", line), &[]interface{}{"Kontakt"})
+	_ = f.SetRowStyle(sheet, line, line, styleIdHeaderTop)
+	line += 1
+	_ = f.SetSheetRow(sheet, fmt.Sprintf("A%d", line), &[]interface{}{
+		"Kontaktperson", "E-Mail", "TelefonNr.", "PLZ", "Wohnort", "Straße", "StraßenNr.", "Web Seite",
+	})
+	_ = f.SetRowStyle(sheet, line, line, styleIdHeader)
+	line += 1
+	_ = f.SetSheetRow(sheet, fmt.Sprintf("A%d", line), &[]interface{}{
+		eeg.ContactPerson.String, eeg.Email.String, eeg.Phone.String, eeg.Zip, eeg.City, eeg.Street, eeg.StreetNumber, eeg.Website.String,
+	})
+	_ = f.SetRowStyle(sheet, line, line, styleId)
+
+	line += 2
+	// Bank Account
+	_ = f.SetSheetRow(sheet, fmt.Sprintf("A%d", line), &[]interface{}{"Bankdaten"})
+	_ = f.SetRowStyle(sheet, line, line, styleIdHeaderTop)
+	line += 1
+	_ = f.SetSheetRow(sheet, fmt.Sprintf("A%d", line), &[]interface{}{
+		"Kontoinhaber", "IBAN", "SEPA",
+	})
+	_ = f.SetRowStyle(sheet, line, line, styleIdHeader)
+	line += 1
+	_ = f.SetSheetRow(sheet, fmt.Sprintf("A%d", line), &[]interface{}{
+		eeg.Owner.String, eeg.Iban.String, eeg.Sepa,
+	})
+	_ = f.SetRowStyle(sheet, line, line, styleId)
+
+	line += 2
+	// Business
+	_ = f.SetSheetRow(sheet, fmt.Sprintf("A%d", line), &[]interface{}{"Geschäftliches"})
+	_ = f.SetRowStyle(sheet, line, line, styleIdHeaderTop)
+	line += 1
+	_ = f.SetSheetRow(sheet, fmt.Sprintf("A%d", line), &[]interface{}{
+		"Rechtsform", "Geschäftsnummer", "Verrechnungsinterval", "Ust.", "SteuerNr.",
+	})
+	_ = f.SetRowStyle(sheet, line, line, styleIdHeader)
+	line += 1
+	_ = f.SetSheetRow(sheet, fmt.Sprintf("A%d", line), &[]interface{}{
+		eeg.Legal, eeg.BusinessNr.String, eeg.SettlementInterval, eeg.VatNumber.String, eeg.TaxNumber.String,
+	})
+	_ = f.SetRowStyle(sheet, line, line, styleId)
+
+	_ = f.SetColWidth(sheet, "A", "B", 25.0)
+	_ = f.SetColWidth(sheet, "C", "C", 35.0)
+	_ = f.SetColWidth(sheet, "D", "H", 20.0)
+
 	return nil
+}
+
+func generateParticipantMastersheet(f *excelize.File, participants []model.EegParticipant) error {
+
+	styleId, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Size: 10.0}})
+	styleDateId, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Size: 10.0}, NumFmt: 14})
+	styleIdHeader, err := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Bold: true, Size: 10.0},
+		Alignment: &excelize.Alignment{Vertical: "top", WrapText: true},
+	})
+
+	sheet := "Mitglieder"
+	_, err = f.NewSheet(sheet)
+	if err != nil {
+		return err
+	}
+
+	sw, err := f.NewStreamWriter(sheet)
+	if err != nil {
+		return err
+	}
+
+	err = sw.SetColWidth(1, 1, 5.0)
+	err = sw.SetColWidth(2, 3, 30.0)
+	err = sw.SetColWidth(6, 12, 20.0)
+	colNr, _ := excelize.ColumnNameToNumber("N")
+	err = sw.SetColWidth(colNr, colNr+1, 20.0)
+	colNr, _ = excelize.ColumnNameToNumber("U")
+	err = sw.SetColWidth(colNr, colNr, 35.0)
+	err = sw.SetColWidth(colNr+2, colNr+2, 8.0)
+	err = sw.SetColWidth(colNr+3, colNr+3, 20.0)
+	err = sw.SetColWidth(colNr+5, colNr+5, 20.0)
+	colNr, _ = excelize.ColumnNameToNumber("AC")
+	err = sw.SetColWidth(colNr, colNr+1, 20.0)
+	err = sw.SetColWidth(colNr+3, colNr+5, 12.0)
+
+	line := 1
+	err = sw.SetRow(fmt.Sprintf("A%d", line),
+		[]interface{}{
+			excelize.Cell{Value: "Mit. Nr."},
+			excelize.Cell{Value: "Name 1"},
+			excelize.Cell{Value: "Name 2"},
+			excelize.Cell{Value: "Titel"},
+			excelize.Cell{Value: "Status"},
+			excelize.Cell{Value: "E-Mail"},
+			excelize.Cell{Value: "Telefonnummer"},
+			excelize.Cell{Value: "SteuerNr."},
+			excelize.Cell{Value: "Ust."},
+			excelize.Cell{Value: "IBAN."},
+			excelize.Cell{Value: "Kontoinhaber"},
+			excelize.Cell{Value: "Bankname"},
+			excelize.Cell{Value: "PLZ"},
+			excelize.Cell{Value: "Ort"},
+			excelize.Cell{Value: "Straße"},
+			excelize.Cell{Value: "HausNr."},
+			excelize.Cell{Value: ""},
+			excelize.Cell{Value: "EEG-Role"},
+			excelize.Cell{Value: "teilnahme als"},
+			excelize.Cell{Value: "Status"},
+			excelize.Cell{Value: "Zählpunkt"},
+			excelize.Cell{Value: "ZP-Status"},
+			excelize.Cell{Value: "ZpNr."},
+			excelize.Cell{Value: "Zählpunktname"},
+			excelize.Cell{Value: "registriert"},
+			excelize.Cell{Value: "Bezugsrichtung"},
+			excelize.Cell{Value: "WechselrichterNr."},
+			excelize.Cell{Value: "PLZ"},
+			excelize.Cell{Value: "Ort"},
+			excelize.Cell{Value: "Straße"},
+			excelize.Cell{Value: "HausNr."},
+			excelize.Cell{Value: "aktiviert"},
+			excelize.Cell{Value: "deaktiviert"},
+			excelize.Cell{Value: "Umspannwerk"},
+		}, excelize.RowOpts{StyleID: styleIdHeader, Height: 0.42 * 72})
+	for _, c := range participants {
+		for _, m := range c.MeteringPoint {
+			line = line + 1
+			err = sw.SetRow(fmt.Sprintf("A%d", line),
+				[]interface{}{
+					excelize.Cell{Value: c.ParticipantNumber.String},
+					excelize.Cell{Value: c.FirstName},
+					excelize.Cell{Value: c.LastName},
+					excelize.Cell{Value: func() string {
+						titles := []string{}
+						if len(c.TitleBefore) > 0 {
+							titles = append(titles, c.TitleBefore)
+						}
+						if len(c.TitleAfter) > 0 {
+							titles = append(titles, c.TitleAfter)
+						}
+						return strings.Join(titles, ",")
+					}()},
+					excelize.Cell{Value: c.Status},
+					excelize.Cell{Value: c.Contact.Email.String},
+					excelize.Cell{Value: c.Contact.Phone.String},
+					excelize.Cell{Value: c.TaxNumber},
+					excelize.Cell{Value: c.VatNumber},
+					excelize.Cell{Value: c.BankAccount.Iban.String},
+					excelize.Cell{Value: c.BankAccount.Owner.String},
+					excelize.Cell{Value: c.BankAccount.Name.String},
+					excelize.Cell{Value: c.BillingAddress.Zip},
+					excelize.Cell{Value: c.BillingAddress.City},
+					excelize.Cell{Value: c.BillingAddress.Street},
+					excelize.Cell{Value: c.BillingAddress.StreetNumber},
+					excelize.Cell{Value: c.CompanyRegisterNumber},
+					excelize.Cell{Value: c.Role},
+					excelize.Cell{Value: func() string {
+						if c.BusinessRole == "EEG_PRIVATE" {
+							return "Privat"
+						} else {
+							return "Business"
+						}
+					}()},
+					excelize.Cell{Value: c.Status},
+					excelize.Cell{Value: m.MeteringPoint},
+					excelize.Cell{Value: m.Status},
+					excelize.Cell{Value: m.EquipmentNumber.String},
+					excelize.Cell{Value: m.EquipmentName.String},
+					excelize.Cell{Value: m.RegisteredSince, StyleID: styleDateId},
+					excelize.Cell{Value: m.Direction},
+					excelize.Cell{Value: m.InverterId.String},
+					excelize.Cell{Value: m.Zip.String},
+					excelize.Cell{Value: m.City.String},
+					excelize.Cell{Value: m.Street.String},
+					excelize.Cell{Value: m.StreetNumber.String},
+					excelize.Cell{Value: m.State.ActiveSince, StyleID: styleDateId},
+					excelize.Cell{Value: m.State.InactiveSince, StyleID: styleDateId},
+					excelize.Cell{Value: m.Transformer.String},
+				}, excelize.RowOpts{StyleID: styleId})
+		}
+	}
+
+	err = sw.Flush()
+	return err
 }
 
 func findParticipant(participants []*model.EegParticipant, firstname, lastname string) (*model.EegParticipant, bool) {
@@ -88,17 +364,30 @@ func getColumValue(cols []string, values map[string]int, deName, enName string, 
 }
 
 var numberPattern = regexp.MustCompile(`^[0-9\\.,]+$`)
+var dateStringPattern = regexp.MustCompile(`^\d{1,2}\.\d{1,2}\.\d{4}$`)
 
 func isDate(cell string) bool {
 	if len(cell) > 0 && numberPattern.MatchString(cell) {
 		return true
 	}
-	println(cell)
+	return false
+}
+
+func isDateString(cell string) bool {
+	if len(cell) > 0 && dateStringPattern.MatchString(cell) {
+		return true
+	}
 	return false
 }
 
 func parseExcelDate(cell string) time.Time {
-	if isDate(cell) {
+	if isDateString(cell) {
+		var d, m, y int
+		if _, err := fmt.Sscanf(cell, "%d.%d.%d", &d, &m, &y); err != nil {
+			return time.Now()
+		}
+		return time.Date(y, time.Month(m), d, 0, 0, 0, 0, time.UTC)
+	} else if isDate(cell) {
 		var excelEpoch = time.Date(1899, time.December, 30, 0, 0, 0, 0, time.UTC)
 		var days, _ = strconv.ParseFloat(cell, 64)
 		return excelEpoch.Add(time.Second * time.Duration(days*86400))
@@ -183,6 +472,14 @@ func transformExcelData(rows *excelize.Rows) []*model.EegParticipant {
 						participantSince = time.Now()
 					}
 
+					var registeredSince time.Time
+					regDateAt := getColumValue(cols, colMap, "registriert seit", "registred since", nil)
+					if len(regDateAt) > 0 {
+						registeredSince = parseExcelDate(regDateAt)
+					} else {
+						registeredSince = time.Date(time.Now().Year(), 1, 1, 0, 0, 0, 0, time.UTC)
+					}
+
 					cpStatus := getColumValue(cols, colMap, "Zählpunktstatus", "Metering Point State", nil)
 					if cpStatus == "ACTIVATED" || cpStatus == "REGISTERED" || len(cpStatus) == 0 {
 						var participant *model.EegParticipant
@@ -230,6 +527,7 @@ func transformExcelData(rows *excelize.Rows) []*model.EegParticipant {
 							TariffId:        null.String{},
 							EquipmentNumber: equipmentNumber(cols, colMap),
 							EquipmentName:   equipmentName(cols, colMap),
+							RegisteredSince: registeredSince,
 							InverterId:      null.String{},
 							Street:          null.StringFrom(getColumValue(cols, colMap, "Straße", "Street", nil)),
 							StreetNumber:    null.StringFrom(getColumValue(cols, colMap, "Hausnummer", "Street Number", nil)),

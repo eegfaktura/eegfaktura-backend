@@ -13,7 +13,6 @@ import (
 	"at.ourproject/vfeeg-backend/graph/gmodel"
 	"at.ourproject/vfeeg-backend/model"
 	"github.com/99designs/gqlgen/graphql"
-	log "github.com/sirupsen/logrus"
 )
 
 // UpdateEegModel is the resolver for the updateEegModel field.
@@ -46,7 +45,6 @@ func (r *mutationResolver) MasterDataUpload(ctx context.Context, tenant string, 
 // Eeg is the resolver for the eeg field.
 func (r *queryResolver) Eeg(ctx context.Context) (*model.Eeg, error) {
 	tenant := middleware.ForContextTenant(ctx)
-	log.Infof("Query Tenant: %+v", tenant)
 	eeg, err := database.GetEeg(tenant)
 	if err != nil {
 		return nil, err

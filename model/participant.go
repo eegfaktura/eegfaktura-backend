@@ -6,6 +6,26 @@ import (
 	"time"
 )
 
+//func (ts EegParticipantState) MarshalJSON() ([]byte, error) {
+//	type Alias EegParticipantState
+//	if ts.Since == nil {
+//		return json.Marshal(&ts)
+//	}
+//
+//	return json.Marshal(&struct {
+//		*Alias
+//		Since int64 `json:"since"`
+//	}{
+//		Alias: (*Alias)(&ts),
+//		Since: (*ts.Since).UnixMilli(),
+//	})
+//}
+
+type MeterState struct {
+	ActiveSince   time.Time `json:"activeSince"`
+	InactiveSince time.Time `json:"inactiveSince"`
+}
+
 type EegParticipant struct {
 	Id                    uuid.UUID        `json:"id" goqu:"skipupdate"`
 	ParticipantNumber     null.String      `json:"participantNumber" db:"participantNumber"`
@@ -38,6 +58,7 @@ type ContactInfo struct {
 type BankInfo struct {
 	Iban  null.String `json:"iban"`
 	Owner null.String `json:"owner"`
+	Name  null.String `json:"bankname"`
 }
 
 type DirectionType string
@@ -63,14 +84,14 @@ const (
 )
 
 type MeteringPoint struct {
-	MeteringPoint   string        `json:"meteringPoint" db:"metering_point_id"`
+	MeteringPoint   string        `json:"meteringPoint" db:"metering_point_id" goqu:"skipupdate"`
 	Transformer     null.String   `json:"transformer,omitempty"`
 	Direction       DirectionType `json:"direction,omitempty"`
 	Status          StatusType    `json:"status,omitempty"`
-	TariffId        null.String   `json:"tariffId" db:"tariff_id"`
+	TariffId        null.String   `json:"tariff_id" db:"tariff_id"`
 	EquipmentNumber null.String   `json:"equipmentNumber,omitempty" db:"equipmentNumber"`
 	EquipmentName   null.String   `json:"equipmentName,omitempty" db:"equipmentName"`
-	InverterId      null.String   `json:"inverterId,omitempty" db:"inverterid"`
+	InverterId      null.String   `json:"inverterid,omitempty" db:"inverterid"`
 	Street          null.String   `json:"street,omitempty"`
 	StreetNumber    null.String   `json:"streetNumber,omitempty" db:"streetNumber"`
 	City            null.String   `json:"city,omitempty"`
@@ -78,4 +99,5 @@ type MeteringPoint struct {
 	RegisteredSince time.Time     `json:"registeredSince" db:"registeredSince"`
 	ModifiedAt      time.Time     `json:"modifiedAt" db:"modifiedAt"`
 	ModifiedBy      null.String   `json:"modifiedBy" db:"modifiedBy"`
+	State           *MeterState   `json:"participantState" db:"participant_meter_state" goqu:"skipupdate"`
 }

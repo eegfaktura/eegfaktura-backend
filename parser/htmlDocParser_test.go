@@ -38,7 +38,7 @@ func TestGetTemplateFor(t *testing.T) {
 	}{
 		{"Hugo",
 			args{"ACTIVATION", "RC100181"},
-			"../public/templates/AktivierungsEmail-templates.html",
+			"../public/RC100181/templates/AktivierungsEmail-templates.html",
 			false,
 		},
 	}
@@ -62,7 +62,7 @@ func TestParseTemplate(t *testing.T) {
 		Id:                 "",
 		Name:               "TE-EEG",
 		Description:        "TEST EEG",
-		BusinessNr:         null.Int{},
+		BusinessNr:         null.String{},
 		Area:               "",
 		Legal:              "",
 		OperatorName:       "",
@@ -74,7 +74,7 @@ func TestParseTemplate(t *testing.T) {
 		ProviderBusinessNr: null.Int{},
 		TaxNumber:          null.String{},
 		VatNumber:          null.String{},
-		ContactPerson:      "Max Sonnenmann",
+		ContactPerson:      null.StringFrom("Max Sonnenmann"),
 		EegAddress:         model.EegAddress{},
 		AccountInfo:        model.AccountInfo{},
 		Contact: model.Contact{
@@ -122,10 +122,11 @@ func TestParseTemplate(t *testing.T) {
 	}{
 		{
 			"Parse ACTIVATION Template",
-			args{"../public/templates/AktivierungsEmail-templates.html", struct {
-				Eeg         *model.Eeg
-				Participant *model.EegParticipant
-			}{eeg, participant}},
+			args{"../public/templates/AktivierungsEmail-template.html", struct {
+				Eeg            *model.Eeg
+				Participant    *model.EegParticipant
+				Meteringpoints []string
+			}{eeg, participant, []string{"AT0010000000000000000000000111"}}},
 			bytes.NewBufferString(`<!DOCTYPE html>
         <html lang="en">
         <head>
@@ -133,28 +134,29 @@ func TestParseTemplate(t *testing.T) {
             <title>Aktivierung Zählpunkt</title>
         </head>
         <body>
-        <p>Servus Max,</p>
-        
-        <p>recht lieben Dank für die Anmeldung! Du musst jetzt abschließend noch die Aktivierung bei der Netz OÖ durchführen. Im Menü Datenfreigabe sollte die EEG bereits angeführt sein und Du musst den offenen Zählpunkt anhakerln.</p>
+        <p>Hallo Max,</p>
+        <p>damit deine Registrierung abgeschlossen werden kann,
+            benötigen wir die Freigabe deiner Zählpunkte
+            <ul> <li>AT0010000000000000000000000111</li> </ul>.
+            Auf der Webseite deines Netzbetreibers kann diese Freigabe online erteilt werden.</p>
         <br>
         
-        <ol>
-          <li>
-            <p>
-              Registrieren und/oder anmelden unter <a href="https://eservice.netzooe.at/app/login">https://eservice.netzooe.at/app/login</a> (im Falle der Registrierung bekommst Du mit der Post auch noch einen Code geschickt mit dem Du die Registrierung abschließen musst. Die unter Punkt 2 angeführt Zustimmung zur EEG kannst Du aber ohne Code sofort durchführen)
-            </p>
-          </li>
-        </ol>
         <p>Mit besten Grüßen</p>
+        <p>deine VFEEG Team. Im Auftrag von, </p>
         <p>
-        <div>Max Sonnenmann</div>
+        
+        <div>{{Max Sonnenmann true}}</div>
+        
         
         <div>123456789</div>
         
         </p>
-        <div>Erneuerbare Energie Gemeinschaft - TE-EEG</div>
+        <div>Erneuerbare Energie Gemeinschaft:</div>
+        <div>TE-EEG</div>
         <div>TEST EEG</div>
         
+        <p>Powered by eegFaktura.at</p>
+        <img src="cid:eegfaktura-logo-1" style="max-height: 90px"/>
         </body>
         </html>`),
 			false,
@@ -168,7 +170,7 @@ func TestParseTemplate(t *testing.T) {
 				return
 			}
 			if !reflect.DeepEqual(bytes.NewBufferString(trimString(got.String())), bytes.NewBufferString(trimString(tt.want.String()))) {
-				t.Errorf("ParseTemplate() got = %v, want %v", trimString(got.String()), tt.want)
+				t.Errorf("ParseTemplate() got = %v, want %v", got.String(), tt.want)
 			}
 		})
 	}
@@ -179,7 +181,7 @@ func TestParseTemplate2(t *testing.T) {
 		Id:                 "",
 		Name:               "TE-EEG",
 		Description:        "TEST EEG",
-		BusinessNr:         null.Int{},
+		BusinessNr:         null.String{},
 		Area:               "",
 		Legal:              "",
 		OperatorName:       "",
@@ -191,7 +193,7 @@ func TestParseTemplate2(t *testing.T) {
 		ProviderBusinessNr: null.Int{},
 		TaxNumber:          null.String{},
 		VatNumber:          null.String{},
-		ContactPerson:      "Max Sonnenmann",
+		ContactPerson:      null.StringFrom("Max Sonnenmann"),
 		EegAddress:         model.EegAddress{},
 		AccountInfo:        model.AccountInfo{},
 		Contact: model.Contact{
