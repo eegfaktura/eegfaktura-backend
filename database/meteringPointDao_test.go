@@ -58,7 +58,7 @@ func TestRegisterMeteringPoint(t *testing.T) {
 			mock.Mock.ExpectExec("INSERT (.+) \"base\".\"meteringpoint\"").WillReturnResult(sqlmock.NewResult(1, 1))
 			mock.Mock.ExpectExec("INSERT INTO \"base\".\"participant_meter_state\" (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
 
-			assert.NoError(t, RegisterMeteringPoint(mock.OpenMockDb, tt.args.tenant, tt.args.participantId, tt.args.point))
+			assert.NoError(t, RegisterMeteringPoint(mock.OpenMockDb, tt.args.tenant, "userId", tt.args.participantId, tt.args.point))
 		})
 	}
 }

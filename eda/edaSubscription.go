@@ -144,6 +144,10 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 		for _, c := range codes {
 			if c == 99 {
 				status = model.PENDING
+				if err := recorder.meteringPointPerformAnswerMsg(msg.Tenant, meters); err != nil {
+					logrus.WithField("error", err.Error()).Errorf("Perform Answer Message %+v", meters)
+					return
+				}
 			}
 		}
 	case model.EBMS_ONLINE_REG_INIT:

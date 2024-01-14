@@ -172,10 +172,6 @@ func (ebms EbmsMessage) ResponseCodes() []string {
 	return codes
 }
 
-//type EdaMessage struct {
-//	Message EbmsMessage `json:"message"`
-//}
-
 // SubscribeMessage aggregates the result from subscribing.
 type SubscribeMessage struct {
 	// Reports the index of corresponding SubscribeTopic.

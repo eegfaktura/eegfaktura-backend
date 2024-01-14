@@ -27,7 +27,6 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type RegisterEegServiceClient interface {
-	// Sends a greeting
 	Register(ctx context.Context, in *RegisterEegRequest, opts ...grpc.CallOption) (*RegisteredEegReply, error)
 	EegExists(ctx context.Context, in *EegRequest, opts ...grpc.CallOption) (*EegResponse, error)
 }
@@ -62,7 +61,6 @@ func (c *registerEegServiceClient) EegExists(ctx context.Context, in *EegRequest
 // All implementations must embed UnimplementedRegisterEegServiceServer
 // for forward compatibility
 type RegisterEegServiceServer interface {
-	// Sends a greeting
 	Register(context.Context, *RegisterEegRequest) (*RegisteredEegReply, error)
 	EegExists(context.Context, *EegRequest) (*EegResponse, error)
 	mustEmbedUnimplementedRegisterEegServiceServer()

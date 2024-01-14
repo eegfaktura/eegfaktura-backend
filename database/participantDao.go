@@ -8,9 +8,12 @@ import (
 	"github.com/doug-martin/goqu/v9"
 	"github.com/jmoiron/sqlx"
 	"github.com/pborman/uuid"
+	log "github.com/sirupsen/logrus"
 	"strings"
 	"time"
 )
+
+const TABLE_PARTICIPANT = "base.participant"
 
 func GetParticipants(dbConn OpenDbXConnection, tenant string) ([]model.EegParticipant, error) {
 	var participants []model.EegParticipant = []model.EegParticipant{}
@@ -77,12 +80,15 @@ func GetParticipants(dbConn OpenDbXConnection, tenant string) ([]model.EegPartic
 					Eq(goqu.S("base").Table("participant_meter_state").Col("metering_point")),
 				goqu.S("base").Table("meteringpoint").Col("tenant").
 					Eq(goqu.S("base").Table("participant_meter_state").Col("tenant")))).
-			Where(goqu.C("participant_id").Table("participant_meter_state").Schema("base").Eq(p.Id.String())).ToSQL()
+			Where(
+				goqu.C("participant_id").Table("participant_meter_state").Schema("base").Eq(p.Id.String()),
+				goqu.C("tenant").Table("participant_meter_state").Schema("base").Eq(tenant)).ToSQL()
 		if err != nil {
 			return []model.EegParticipant{}, err
 		}
 		err = db.Select(&(participants[i].MeteringPoint), stmt)
 		if err != nil && err != dbsql.ErrNoRows {
+			log.WithField("SQL", "SELECT").Errorf("Select Meteringpoints: %s\n", stmt)
 			return []model.EegParticipant{}, err
 		}
 		if participants[i].MeteringPoint == nil {
@@ -255,7 +261,7 @@ type ParticipantWithMeta struct {
 	LastmodifiedDate time.Time `db:"lastModifiedDate"`
 }
 
-// func RegisterParticipant(dbConn OpenDbXConnection, tenant, username string, participant *model.EegParticipant) error {
+// RegisterParticipant func RegisterParticipant(dbConn OpenDbXConnection, tenant, username string, participant *model.EegParticipant) error {
 func RegisterParticipant(tx *sqlx.Tx, tenant, username string, participant *model.EegParticipant) error {
 	//db, err := dbConn()
 	//if err != nil {
@@ -267,32 +273,24 @@ func RegisterParticipant(tx *sqlx.Tx, tenant, username string, participant *mode
 	participant.Id = uuid.NewUUID()
 	participant.ParticipantSince = time.Now()
 	participant.CreatedBy = username
-	return saveParticipant(tx, tenant, username, participant, RegisterMeteringPoints)
+	return saveParticipant(tx, tenant, username, participant, ImportMeteringPoints)
 }
 
-// func ImportParticipant(dbConn OpenDbXConnection, tenant, username string, participant *model.EegParticipant) error {
+// ImportParticipant func ImportParticipant(dbConn OpenDbXConnection, tenant, username string, participant *model.EegParticipant) error {
 func ImportParticipant(tx *sqlx.Tx, tenant, username string, participant *model.EegParticipant) error {
-	//db, err := dbConn()
-	//if err != nil {
-	//	return err
-	//}
-	//defer db.Close()
 
 	// check if User already exists
 	stmt, _, err := pgDialect.From("base.participant").
 		Select("id").
-		Where(goqu.C("firstname").Eq(participant.FirstName),
-			goqu.C("lastname").Eq(participant.LastName)).ToSQL()
+		Where(
+			goqu.C("firstname").Eq(participant.FirstName),
+			goqu.C("lastname").Eq(participant.LastName),
+			goqu.C("tenant").Eq(tenant)).ToSQL()
 	if err == nil {
 		participantId := ""
 		err = tx.Get(&participantId, stmt)
 		if err == nil {
-			//tx, err := db.Begin()
-			//if err != nil {
-			//	return err
-			//}
-			//defer tx.Commit()
-			return ImportMeteringPoints(tx, tenant, participantId, participant.MeteringPoint)
+			return ImportMeteringPoints(tx, tenant, username, participantId, participant.MeteringPoint)
 		}
 	}
 
@@ -313,7 +311,7 @@ func ConfirmParticipant(dbConn OpenDbXConnection, username, participantId string
 }
 
 func saveParticipant(tx *sqlx.Tx, tenant, username string, participant *model.EegParticipant,
-	registerMeteringPointsFunc func(*sqlx.Tx, string, string, []*model.MeteringPoint) error) error {
+	registerMeteringPointsFunc func(*sqlx.Tx, string, string, string, []*model.MeteringPoint) error) error {
 
 	registeringParticipant := ParticipantWithMeta{
 		participant, tenant, username, username, time.Now(),
@@ -370,7 +368,7 @@ func saveParticipant(tx *sqlx.Tx, tenant, username string, participant *model.Ee
 		return err
 	}
 
-	err = registerMeteringPointsFunc(tx, tenant, participantId, participant.MeteringPoint)
+	err = registerMeteringPointsFunc(tx, tenant, username, participantId, participant.MeteringPoint)
 	//if err != nil {
 	//	return err
 	//}
@@ -570,4 +568,27 @@ func completeParticipant(db *sqlx.DB, participant *model.EegParticipant) error {
 	}
 
 	return nil
+}
+
+func FindParticipantByMeteringPoint(tx *sqlx.Tx, tenant, meteringPoint string) (*model.EegParticipant, error) {
+
+	participant := model.EegParticipant{}
+
+	participantIdStmt := pgDialect.From("base.participant_meter_state").Select("participant_id").
+		Where(
+			goqu.C("metering_point").Eq(meteringPoint),
+			goqu.C("tenant").Eq(tenant),
+			goqu.C("inactivesince").Gt("now()"),
+			goqu.C("activesince").Lt("now()"))
+
+	stmt, _, err := pgDialect.From(TABLE_PARTICIPANT).Select(&participant).Where(goqu.C("id").Eq(participantIdStmt)).ToSQL()
+	if err != nil {
+		return nil, err
+	}
+
+	err = tx.Select(&(participant), stmt)
+	if err != nil && err != dbsql.ErrNoRows {
+		return nil, err
+	}
+	return &participant, nil
 }

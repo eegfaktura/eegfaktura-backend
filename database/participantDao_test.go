@@ -2,7 +2,6 @@ package database
 
 import (
 	"at.ourproject/vfeeg-backend/model"
-	dbsql "database/sql"
 	"encoding/json"
 	"fmt"
 	"github.com/DATA-DOG/go-sqlmock"
@@ -65,7 +64,12 @@ func TestRegisterParticipant(t *testing.T) {
 	mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
 	mockDb.Mock.ExpectCommit()
 
-	err = RegisterParticipant(mockDb.OpenMockDb, "RC200200", "petero", &p)
+	db, _ := mockDb.OpenMockDb()
+	tx, err := db.Beginx()
+
+	err = RegisterParticipant(tx, "RC200200", "petero", &p)
+
+	assert.NoError(t, tx.Commit())
 	assert.NoError(t, err)
 }
 
@@ -114,7 +118,7 @@ func Test_saveParticipant(t *testing.T) {
 		tenant                     string
 		username                   string
 		participant                *model.EegParticipant
-		registerMeteringPointsFunc func(*dbsql.Tx, string, string, []*model.MeteringPoint) error
+		registerMeteringPointsFunc func(*sqlx.Tx, string, string, string, []*model.MeteringPoint) error
 	}
 
 	mDB, mock, err := sqlmock.New()
@@ -148,10 +152,18 @@ func Test_saveParticipant(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := saveParticipant(tt.args.db, tt.args.tenant, tt.args.username, tt.args.participant, tt.args.registerMeteringPointsFunc)
+			tx, err := tt.args.db.Beginx()
+			assert.NoError(t, err)
+			err = saveParticipant(tx, tt.args.tenant, tt.args.username, tt.args.participant, tt.args.registerMeteringPointsFunc)
+			assert.NoError(t, tx.Commit())
 			assert.NoError(t, mock.ExpectationsWereMet())
 			require.NoError(t, err)
 
 		})
 	}
+}
+
+func Test_findParticipantByMeteringPoint(t *testing.T) {
+	_, err := FindParticipantByMeteringPoint(nil, "TE100110", "AT0020000000000000000000020793777")
+	assert.NoError(t, err)
 }

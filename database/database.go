@@ -65,6 +65,18 @@ func GetTariff(tenant string) ([]model.Tariff, error) {
 	return tariff, err
 }
 
+func GetTariffNameMap(tenant string) (map[string]string, error) {
+	tariffs, err := GetTariff(tenant)
+	if err != nil {
+		return nil, err
+	}
+	tariffMap := map[string]string{}
+	for _, t := range tariffs {
+		tariffMap[t.Id.String()] = t.Name
+	}
+	return tariffMap, nil
+}
+
 func ArchiveTariff(dbConn OpenDbXConnection, tenant string, id string) error {
 
 	db, err := dbConn()
@@ -82,7 +94,7 @@ func ArchiveTariff(dbConn OpenDbXConnection, tenant string, id string) error {
 		return ErrTariffUtilized
 	}
 
-	stmt, _, err = pgDialect.Select("id").From("base.meteringpoint").Where(goqu.Ex{"tariffId": id, "tenant": tenant}).ToSQL()
+	stmt, _, err = pgDialect.Select("metering_point_id").From("base.meteringpoint").Where(goqu.Ex{"tariff_id": id, "tenant": tenant}).ToSQL()
 	if err != nil {
 		return err
 	}

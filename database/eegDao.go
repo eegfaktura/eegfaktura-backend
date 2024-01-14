@@ -3,7 +3,6 @@ package database
 import (
 	"at.ourproject/vfeeg-backend/model"
 	dbsql "database/sql"
-	"fmt"
 	"github.com/doug-martin/goqu/v9"
 	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
@@ -22,14 +21,14 @@ func GetEeg(tenant string) (*model.Eeg, error) {
 
 	var eeg model.Eeg
 	err = db.QueryRow(""+
-		"SELECT name, description, \"businessNr\", legal, gridoperator_name, \"communityId\", gridoperator_code, \"rcNumber\", \"allocationMode\", "+
-		"\"settlementInterval\", \"providerBusinessNr\", street, \"streetNumber\", zip, city, phone, email, website, iban, owner, sepa, "+
+		"SELECT name, description, \"businessNr\", legal, gridoperator_name, \"communityId\", gridoperator_code, \"rcNumber\", area, \"allocationMode\", "+
+		"\"settlementInterval\", \"providerBusinessNr\", street, \"streetNumber\", zip, city, phone, email, website, iban, owner, sepa, \"bankName\", "+
 		"\"taxNumber\", \"vatNumber\", online, \"contactPerson\" FROM base.eeg WHERE tenant = $1", tenant).
 		Scan(&eeg.Name, &eeg.Description, &eeg.BusinessNr, &eeg.Legal, &eeg.OperatorName,
-			&eeg.CommunityId, &eeg.GridOperator, &eeg.RcNumber,
+			&eeg.CommunityId, &eeg.GridOperator, &eeg.RcNumber, &eeg.Area,
 			&eeg.AllocationMode, &eeg.SettlementInterval, &eeg.ProviderBusinessNr,
 			&eeg.Street, &eeg.StreetNumber, &eeg.Zip, &eeg.City, &eeg.Contact.Phone, &eeg.Contact.Email,
-			&eeg.Optionals.Website, &eeg.AccountInfo.Iban, &eeg.AccountInfo.Owner, &eeg.AccountInfo.Sepa,
+			&eeg.Optionals.Website, &eeg.AccountInfo.Iban, &eeg.AccountInfo.Owner, &eeg.AccountInfo.Sepa, &eeg.AccountInfo.BankName,
 			&eeg.TaxNumber, &eeg.VatNumber, &eeg.Online, &eeg.ContactPerson,
 		)
 	if err == dbsql.ErrNoRows {
@@ -41,14 +40,8 @@ func GetEeg(tenant string) (*model.Eeg, error) {
 
 func UpdateEeg(db *sqlx.DB, tenant string, eeg *model.Eeg) error {
 
-	//db, err := GetDBXConnection()
-	//if err != nil {
-	//	return err
-	//}
-	//defer db.Close()
-
 	sql, _, err := pgDialect.Insert("base.eeg").Rows(eeg).ToSQL()
-	fmt.Printf("Stmt: %s\n", sql)
+	log.Printf("Stmt: %s", sql)
 	_, err = db.Exec(sql)
 	if err != nil {
 		return err

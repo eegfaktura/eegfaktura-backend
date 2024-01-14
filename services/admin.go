@@ -1,4 +1,4 @@
-package util
+package services
 
 import (
 	"at.ourproject/vfeeg-backend/database"
@@ -148,9 +148,10 @@ func (r *RegisterService) Register(ctx context.Context, eeg *protobuf.RegisterEe
 			City:         eeg.City,
 		},
 		AccountInfo: model.AccountInfo{
-			Iban:  null.StringFrom(eeg.Iban),
-			Owner: null.StringFrom(eeg.Owner),
-			Sepa:  eeg.Sepa,
+			Iban:     null.StringFrom(eeg.Iban),
+			Owner:    null.StringFrom(eeg.Owner),
+			Sepa:     eeg.Sepa,
+			BankName: null.StringFrom(eeg.BankName),
 		},
 		Contact: model.Contact{
 			Phone: getOptionalField(eeg.Phone),
@@ -164,7 +165,7 @@ func (r *RegisterService) Register(ctx context.Context, eeg *protobuf.RegisterEe
 		ContactPerson: null.StringFrom(eeg.EegOwner),
 	}
 
-	fmt.Printf("Register EEG: %+v\n", newEeg)
+	log.Printf("Register EEG: %+v", newEeg)
 	db, err := database.GetDBXConnection()
 	if err != nil {
 		log.Errorf("Database Error: %v", err)

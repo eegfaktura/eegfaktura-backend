@@ -3,7 +3,7 @@ package parser
 import (
 	"at.ourproject/vfeeg-backend/config"
 	"at.ourproject/vfeeg-backend/model"
-	"at.ourproject/vfeeg-backend/util"
+	"at.ourproject/vfeeg-backend/services"
 	"bytes"
 	"embed"
 	"errors"
@@ -31,7 +31,7 @@ func ParseTemplate(templateFileName string, data interface{}) (*bytes.Buffer, er
 	return buf, nil
 }
 
-func SendActivationMailFromTemplate(sendMail util.SendMailFunc,
+func SendActivationMailFromTemplate(sendMail services.SendMailFunc,
 	tenant, subject string, eeg *model.Eeg, participant *model.EegParticipant) error {
 
 	templateConfigDir := filepath.Join(viper.GetString("file-content.templates"), tenant, "templates")
@@ -48,7 +48,7 @@ func SendActivationMailFromTemplate(sendMail util.SendMailFunc,
 	return sendMailFromTemplate(sendMail, tenant, subject, templateConfigDir, templateConfig, eeg, participant)
 }
 
-func sendMailFromTemplate(sendMail util.SendMailFunc, tenant, subject, templatePath string, templateConfig *model.ActivationMailTemplate, eeg *model.Eeg, participant *model.EegParticipant) error {
+func sendMailFromTemplate(sendMail services.SendMailFunc, tenant, subject, templatePath string, templateConfig *model.ActivationMailTemplate, eeg *model.Eeg, participant *model.EegParticipant) error {
 	meterIds := []string{}
 	for i := range participant.MeteringPoint {
 		meterIds = append(meterIds, participant.MeteringPoint[i].MeteringPoint)
@@ -89,8 +89,8 @@ func GetTemplateFor(templateType, tenant string) (string, error) {
 	return "", errors.New("Template not found")
 }
 
-func buildAttachments(templatePath string, a []model.InlinePicture) []*util.Attachment {
-	attachments := []*util.Attachment{}
+func buildAttachments(templatePath string, a []model.InlinePicture) []*services.Attachment {
+	attachments := []*services.Attachment{}
 	for i := range a {
 		att := a[i]
 		data, err := os.ReadFile(filepath.Join(templatePath, att.Filepath))
@@ -99,7 +99,7 @@ func buildAttachments(templatePath string, a []model.InlinePicture) []*util.Atta
 			continue
 		}
 		mime := mimetype.Detect(data)
-		attachments = append(attachments, &util.Attachment{
+		attachments = append(attachments, &services.Attachment{
 			Type:        "INLINE",
 			Filename:    filepath.Base(att.Filepath),
 			Filecontent: bytes.NewBuffer(data),

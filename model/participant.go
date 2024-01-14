@@ -22,8 +22,8 @@ import (
 //}
 
 type MeterState struct {
-	ActiveSince   time.Time `json:"activeSince"`
-	InactiveSince time.Time `json:"inactiveSince"`
+	ActiveSince   time.Time `json:"activeSince" goqu:"skipinsert"`
+	InactiveSince time.Time `json:"inactiveSince" goqu:"skipinsert"`
 }
 
 type EegParticipant struct {
@@ -56,9 +56,9 @@ type ContactInfo struct {
 }
 
 type BankInfo struct {
-	Iban  null.String `json:"iban"`
-	Owner null.String `json:"owner"`
-	Name  null.String `json:"bankname"`
+	Iban     null.String `json:"iban"`
+	Owner    null.String `json:"owner"`
+	BankName null.String `json:"bankName" db:"bankName"`
 }
 
 type DirectionType string
@@ -84,20 +84,22 @@ const (
 )
 
 type MeteringPoint struct {
-	MeteringPoint   string        `json:"meteringPoint" db:"metering_point_id" goqu:"skipupdate"`
-	Transformer     null.String   `json:"transformer,omitempty"`
-	Direction       DirectionType `json:"direction,omitempty"`
-	Status          StatusType    `json:"status,omitempty"`
-	TariffId        null.String   `json:"tariff_id" db:"tariff_id"`
-	EquipmentNumber null.String   `json:"equipmentNumber,omitempty" db:"equipmentNumber"`
-	EquipmentName   null.String   `json:"equipmentName,omitempty" db:"equipmentName"`
-	InverterId      null.String   `json:"inverterid,omitempty" db:"inverterid"`
-	Street          null.String   `json:"street,omitempty"`
-	StreetNumber    null.String   `json:"streetNumber,omitempty" db:"streetNumber"`
-	City            null.String   `json:"city,omitempty"`
-	Zip             null.String   `json:"zip,omitempty"`
-	RegisteredSince time.Time     `json:"registeredSince" db:"registeredSince"`
-	ModifiedAt      time.Time     `json:"modifiedAt" db:"modifiedAt"`
-	ModifiedBy      null.String   `json:"modifiedBy" db:"modifiedBy"`
-	State           *MeterState   `json:"participantState" db:"participant_meter_state" goqu:"skipupdate"`
+	MeteringPoint    string        `json:"meteringPoint" db:"metering_point_id" goqu:"skipupdate"`
+	Transformer      null.String   `json:"transformer,omitempty"`
+	Direction        DirectionType `json:"direction,omitempty"`
+	Status           StatusType    `json:"status,omitempty"`
+	TariffId         null.String   `json:"tariff_id,omitempty" db:"tariff_id"`
+	EquipmentNumber  null.String   `json:"equipmentNumber,omitempty" db:"equipmentNumber"`
+	EquipmentName    null.String   `json:"equipmentName,omitempty" db:"equipmentName"`
+	InverterId       null.String   `json:"inverterid,omitempty" db:"inverterid"`
+	Street           null.String   `json:"street,omitempty"`
+	StreetNumber     null.String   `json:"streetNumber,omitempty" db:"streetNumber"`
+	City             null.String   `json:"city,omitempty"`
+	Zip              null.String   `json:"zip,omitempty"`
+	RegisteredSince  time.Time     `json:"registeredSince" db:"registeredSince"`
+	ModifiedAt       time.Time     `json:"modifiedAt" db:"modifiedAt"`
+	ModifiedBy       null.String   `json:"modifiedBy" db:"modifiedBy"`
+	GridOperatorId   null.String   `json:"gridOperatorId,omitempty" db:"grid_operator_id"`
+	GridOperatorName null.String   `json:"gridOperatorName,omitempty" db:"grid_operator_name"`
+	State            *MeterState   `json:"participantState" db:"participant_meter_state" goqu:"skipupdate"`
 }

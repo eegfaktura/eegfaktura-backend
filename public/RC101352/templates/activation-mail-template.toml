@@ -1,0 +1,6 @@
+TemplateFile="AktivierungsEmail-template.html"
+InlinePictures = [
+  { Filepath="Aktivierungsmail-menu-1.png", contentId="aktivierungsmail-menu-1"},
+  { Filepath="Aktivierungsmail-menu-2.png", contentId="aktivierungsmail-menu-2"},
+  { Filepath="Aktivierungsmail-menu-3.png", contentId="aktivierungsmail-menu-3"},
+]

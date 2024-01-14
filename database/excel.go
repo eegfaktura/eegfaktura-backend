@@ -71,7 +71,7 @@ func ImportMasterdataFromExcel(dbConn OpenDbXConnection, r io.Reader, filename, 
 	return tx.Commit()
 }
 
-func ExportMasterdataToExcel(participants []model.EegParticipant, eeg *model.Eeg) (*bytes.Buffer, error) {
+func ExportMasterdataToExcel(participants []model.EegParticipant, eeg *model.Eeg, tariffMap map[string]string) (*bytes.Buffer, error) {
 	f := excelize.NewFile()
 	defer func() {
 		if err := f.Close(); err != nil {
@@ -83,7 +83,7 @@ func ExportMasterdataToExcel(participants []model.EegParticipant, eeg *model.Eeg
 	if err != nil {
 		return nil, err
 	}
-	err = generateParticipantMastersheet(f, participants)
+	err = generateParticipantMastersheet(f, participants, tariffMap)
 	if err != nil {
 		return nil, err
 	}
@@ -197,13 +197,25 @@ func generateEegMastersheet(f *excelize.File, eeg *model.Eeg) error {
 	return nil
 }
 
-func generateParticipantMastersheet(f *excelize.File, participants []model.EegParticipant) error {
+func generateParticipantMastersheet(f *excelize.File, participants []model.EegParticipant, tariffMap map[string]string) error {
+
+	getTariffName := func(id string) string {
+		name, ok := tariffMap[id]
+		if !ok {
+			return ""
+		}
+		return name
+	}
 
 	styleId, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Size: 10.0}})
 	styleDateId, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Size: 10.0}, NumFmt: 14})
 	styleIdHeader, err := f.NewStyle(&excelize.Style{
 		Font:      &excelize.Font{Bold: true, Size: 10.0},
 		Alignment: &excelize.Alignment{Vertical: "top", WrapText: true},
+	})
+	styleIdDate, err := f.NewStyle(&excelize.Style{
+		Font:   &excelize.Font{Size: 10.0},
+		NumFmt: 14,
 	})
 
 	sheet := "Mitglieder"
@@ -219,17 +231,21 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 
 	err = sw.SetColWidth(1, 1, 5.0)
 	err = sw.SetColWidth(2, 3, 30.0)
-	err = sw.SetColWidth(6, 12, 20.0)
-	colNr, _ := excelize.ColumnNameToNumber("N")
+	colNr, _ := excelize.ColumnNameToNumber("F")
+	err = sw.SetColWidth(colNr, colNr, 12.0)
+	err = sw.SetColWidth(colNr+1, colNr+1, 25.0)
+	err = sw.SetColWidth(colNr+2, colNr+7, 20.0)
+	colNr, _ = excelize.ColumnNameToNumber("O")
 	err = sw.SetColWidth(colNr, colNr+1, 20.0)
-	colNr, _ = excelize.ColumnNameToNumber("U")
-	err = sw.SetColWidth(colNr, colNr, 35.0)
-	err = sw.SetColWidth(colNr+2, colNr+2, 8.0)
-	err = sw.SetColWidth(colNr+3, colNr+3, 20.0)
-	err = sw.SetColWidth(colNr+5, colNr+5, 20.0)
-	colNr, _ = excelize.ColumnNameToNumber("AC")
+	colNr, _ = excelize.ColumnNameToNumber("V")
+	err = sw.SetColWidth(colNr, colNr+1, 32.0)
+	err = sw.SetColWidth(colNr+3, colNr+3, 8.0)
+	err = sw.SetColWidth(colNr+4, colNr+4, 20.0)
+	err = sw.SetColWidth(colNr+6, colNr+6, 18.0)
+	colNr, _ = excelize.ColumnNameToNumber("AE")
 	err = sw.SetColWidth(colNr, colNr+1, 20.0)
-	err = sw.SetColWidth(colNr+3, colNr+5, 12.0)
+	err = sw.SetColWidth(colNr+3, colNr+4, 12.0)
+	err = sw.SetColWidth(colNr+5, colNr+5, 30.0)
 
 	line := 1
 	err = sw.SetRow(fmt.Sprintf("A%d", line),
@@ -239,6 +255,7 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 			excelize.Cell{Value: "Name 2"},
 			excelize.Cell{Value: "Titel"},
 			excelize.Cell{Value: "Status"},
+			excelize.Cell{Value: "Mitglied seit."},
 			excelize.Cell{Value: "E-Mail"},
 			excelize.Cell{Value: "Telefonnummer"},
 			excelize.Cell{Value: "SteuerNr."},
@@ -254,6 +271,7 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 			excelize.Cell{Value: "EEG-Role"},
 			excelize.Cell{Value: "teilnahme als"},
 			excelize.Cell{Value: "Status"},
+			excelize.Cell{Value: "Mitgliedstarif"},
 			excelize.Cell{Value: "Zählpunkt"},
 			excelize.Cell{Value: "ZP-Status"},
 			excelize.Cell{Value: "ZpNr."},
@@ -267,6 +285,7 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 			excelize.Cell{Value: "HausNr."},
 			excelize.Cell{Value: "aktiviert"},
 			excelize.Cell{Value: "deaktiviert"},
+			excelize.Cell{Value: "Zp. Tarifname"},
 			excelize.Cell{Value: "Umspannwerk"},
 		}, excelize.RowOpts{StyleID: styleIdHeader, Height: 0.42 * 72})
 	for _, c := range participants {
@@ -288,13 +307,14 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 						return strings.Join(titles, ",")
 					}()},
 					excelize.Cell{Value: c.Status},
+					excelize.Cell{Value: c.ParticipantSince, StyleID: styleIdDate},
 					excelize.Cell{Value: c.Contact.Email.String},
 					excelize.Cell{Value: c.Contact.Phone.String},
 					excelize.Cell{Value: c.TaxNumber},
 					excelize.Cell{Value: c.VatNumber},
 					excelize.Cell{Value: c.BankAccount.Iban.String},
 					excelize.Cell{Value: c.BankAccount.Owner.String},
-					excelize.Cell{Value: c.BankAccount.Name.String},
+					excelize.Cell{Value: c.BankAccount.BankName.String},
 					excelize.Cell{Value: c.BillingAddress.Zip},
 					excelize.Cell{Value: c.BillingAddress.City},
 					excelize.Cell{Value: c.BillingAddress.Street},
@@ -309,6 +329,7 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 						}
 					}()},
 					excelize.Cell{Value: c.Status},
+					excelize.Cell{Value: getTariffName(c.TariffId.String), StyleID: styleDateId},
 					excelize.Cell{Value: m.MeteringPoint},
 					excelize.Cell{Value: m.Status},
 					excelize.Cell{Value: m.EquipmentNumber.String},
@@ -322,6 +343,7 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 					excelize.Cell{Value: m.StreetNumber.String},
 					excelize.Cell{Value: m.State.ActiveSince, StyleID: styleDateId},
 					excelize.Cell{Value: m.State.InactiveSince, StyleID: styleDateId},
+					excelize.Cell{Value: getTariffName(m.TariffId.String), StyleID: styleDateId},
 					excelize.Cell{Value: m.Transformer.String},
 				}, excelize.RowOpts{StyleID: styleId})
 		}

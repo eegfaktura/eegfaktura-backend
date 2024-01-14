@@ -8,7 +8,7 @@ import (
 	"at.ourproject/vfeeg-backend/graph"
 	"at.ourproject/vfeeg-backend/graph/generated"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
-	"at.ourproject/vfeeg-backend/util"
+	"at.ourproject/vfeeg-backend/services"
 	"flag"
 	"fmt"
 	"github.com/99designs/gqlgen/graphql/handler"
@@ -99,7 +99,7 @@ func main() {
 	allowedMethods := handlers.AllowedMethods([]string{"GET", "HEAD", "POST", "PUT", "OPTIONS", "DELETE"})
 	allowedCredentials := handlers.AllowCredentials()
 
-	go util.StartGRPCServer()
+	go services.StartGRPCServer()
 
 	log.Infof("VFEEG BACKEND Config:  host: %s  port: %d  database:%s  user:%s",
 		viper.GetString("database.host"),

@@ -6,10 +6,12 @@ import (
 )
 
 func GetSubsriptions() []model.Subscriptions {
-	return []model.Subscriptions{{
-		model.ERROR,
-		errorHandler,
-	}}
+	return []model.Subscriptions{
+		{
+			model.ERROR,
+			errorHandler,
+		},
+	}
 }
 
 func errorHandler(msg model.SubscribeMessage) {
