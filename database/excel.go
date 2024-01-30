@@ -4,7 +4,6 @@ import (
 	"at.ourproject/vfeeg-backend/model"
 	"bytes"
 	"fmt"
-	"github.com/golang/glog"
 	log "github.com/sirupsen/logrus"
 	"github.com/xuri/excelize/v2"
 	"gopkg.in/guregu/null.v4"
@@ -39,23 +38,37 @@ func ImportMasterdataFromExcel(dbConn OpenDbXConnection, r io.Reader, filename, 
 
 	rows, err := f.Rows(sheet)
 	if err != nil {
-		glog.Error(err)
+		log.Error(err)
 		return err
 	}
-	participants := transformExcelData(rows)
-	log.Debugf("Rows: %+v\n", rows)
-	log.Debugf("LEN _ Import participants: %+v\n", len(participants))
 
 	db, err := dbConn()
 	if err != nil {
-		glog.Error(err)
+		log.Error(err)
 		return err
 	}
 	defer db.Close()
 
+	gridOperators, err := GetGridOperators(db)
+	if err != nil {
+		return err
+	}
+
+	gridOperatorName := func(id string) string {
+		name, ok := gridOperators[id]
+		if ok {
+			return name
+		}
+		return ""
+	}
+
+	participants := transformExcelData(rows, gridOperatorName)
+	log.Debugf("Rows: %+v", rows)
+	log.Debugf("LEN _ Import participants: %v", len(participants))
+
 	tx, err := db.Beginx()
 	if err != nil {
-		glog.Error(err)
+		log.Error(err)
 		return err
 	}
 	defer tx.Rollback()
@@ -349,6 +362,7 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 		}
 	}
 
+	err = f.AutoFilter(sheet, "A1:AH10", nil)
 	err = sw.Flush()
 	return err
 }
@@ -417,7 +431,7 @@ func parseExcelDate(cell string) time.Time {
 	return time.Now()
 }
 
-func transformExcelData(rows *excelize.Rows) []*model.EegParticipant {
+func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) string) []*model.EegParticipant {
 	colMap := map[string]int{}
 	participants := []*model.EegParticipant{}
 
@@ -459,6 +473,7 @@ func transformExcelData(rows *excelize.Rows) []*model.EegParticipant {
 			default:
 				switch {
 				case netOperatorMatch.MatchString(cols[0]):
+					netOperatorId := cols[0]
 					var firstname string
 					var lastname string
 
@@ -533,28 +548,36 @@ func transformExcelData(rows *excelize.Rows) []*model.EegParticipant {
 								ParticipantSince: participantSince,
 								MeteringPoint:    []*model.MeteringPoint{},
 								BankAccount: model.BankInfo{
-									Iban:  null.StringFrom(getColumValue(cols, colMap, "IBAN", "IBAN", nil)),
-									Owner: null.StringFrom(getColumValue(cols, colMap, "Kontoinhaber", "Accountname", nil))},
-								Contact:   model.ContactInfo{Email: null.StringFrom(getColumValue(cols, colMap, "email", "email", nil))},
+									Iban:     null.StringFrom(getColumValue(cols, colMap, "IBAN", "IBAN", nil)),
+									Owner:    null.StringFrom(getColumValue(cols, colMap, "Kontoinhaber", "Accountname", nil)),
+									BankName: null.StringFrom(getColumValue(cols, colMap, "Bankname", "Bankname", nil)),
+								},
+								Contact: model.ContactInfo{
+									Email: null.StringFrom(getColumValue(cols, colMap, "email", "email", nil)),
+									Phone: null.StringFrom(getColumValue(cols, colMap, "TelefonNr", "phonenr", nil)),
+								},
 								TaxNumber: getColumValue(cols, colMap, "SteuerNr", "taxNumber", nil),
+								VatNumber: getColumValue(cols, colMap, "UmsatzsteuerNr", "vatNumber", nil),
 								Version:   0,
 							}
 							participants = append(participants, participant)
 						}
 						participant.MeteringPoint = append(participant.MeteringPoint, &model.MeteringPoint{
-							MeteringPoint:   getColumValue(cols, colMap, "Zählpunkt", "MeteringPoint Id", nil),
-							Transformer:     null.String{},
-							Direction:       role,
-							Status:          model.ACTIVE,
-							TariffId:        null.String{},
-							EquipmentNumber: equipmentNumber(cols, colMap),
-							EquipmentName:   equipmentName(cols, colMap),
-							RegisteredSince: registeredSince,
-							InverterId:      null.String{},
-							Street:          null.StringFrom(getColumValue(cols, colMap, "Straße", "Street", nil)),
-							StreetNumber:    null.StringFrom(getColumValue(cols, colMap, "Hausnummer", "Street Number", nil)),
-							City:            null.StringFrom(getColumValue(cols, colMap, "Ort", "City", nil)),
-							Zip:             null.StringFrom(getColumValue(cols, colMap, "PLZ", "ZIP", nil)),
+							GridOperatorId:   null.StringFrom(netOperatorId),
+							GridOperatorName: null.StringFrom(gridOperatorName(netOperatorId)),
+							MeteringPoint:    getColumValue(cols, colMap, "Zählpunkt", "MeteringPoint Id", nil),
+							Transformer:      null.String{},
+							Direction:        role,
+							Status:           model.ACTIVE,
+							TariffId:         null.String{},
+							EquipmentNumber:  equipmentNumber(cols, colMap),
+							EquipmentName:    equipmentName(cols, colMap),
+							RegisteredSince:  registeredSince,
+							InverterId:       null.String{},
+							Street:           null.StringFrom(getColumValue(cols, colMap, "Straße", "Street", nil)),
+							StreetNumber:     null.StringFrom(getColumValue(cols, colMap, "Hausnummer", "Street Number", nil)),
+							City:             null.StringFrom(getColumValue(cols, colMap, "Ort", "City", nil)),
+							Zip:              null.StringFrom(getColumValue(cols, colMap, "PLZ", "ZIP", nil)),
 						})
 					}
 				}

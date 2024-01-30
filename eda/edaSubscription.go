@@ -5,6 +5,7 @@ import (
 	"at.ourproject/vfeeg-backend/model"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
 	"github.com/sirupsen/logrus"
+	"time"
 )
 
 var (
@@ -40,7 +41,8 @@ var (
 		90: "Kein Smart Meter",
 		94: "Keine Daten im angeforderten Zeitraum vorhanden",
 	}
-	REJECTED_INVALID_CODES = []int16{56, 184, 177, 159, 158, 156, 86}
+	REJECTED_INVALID_CODES = []int16{56, 184, 177, 159, 158}
+	REJECTED_VALID_CODES   = []int16{156, 86}
 )
 
 func InitEdaSubscription() {
@@ -118,7 +120,7 @@ func protocolCrReqPtHandler(msg model.SubscribeMessage, recorder EdaRecording) {
 
 func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) {
 	var err error
-	logrus.Printf("Handle Subscriptions: %+v", msg.Protocol)
+	logrus.WithField("tenant", msg.Tenant).Printf("Handle Subscriptions: %+v", msg.Protocol)
 
 	codes, meters, _ := extractResponseCodeAndMeteringPoint(&msg.Payload)
 	var status model.StatusType
@@ -131,6 +133,8 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 	case model.EBMS_ONLINE_REG_REJECTION:
 		if codesContains(REJECTED_INVALID_CODES, codes) {
 			status = model.INVALID
+		} else if codesContains(REJECTED_VALID_CODES, codes) {
+			status = ""
 		} else {
 			status = model.REJECTED
 		}
@@ -162,6 +166,12 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 			logrus.WithField("error", err.Error()).Errorf("can not change metering point status %+v", meters)
 			return
 		}
+
+		switch status {
+		case model.ACTIVE:
+
+		}
+
 	}
 
 	if err = recorder.saveNotification(map[string]interface{}{
@@ -176,21 +186,27 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 
 func protocolCmRevImpHandler(msg model.SubscribeMessage, recorder EdaRecording) {
 	var err error
-	logrus.Printf("Handle Subscriptions: %+v", msg.Protocol)
+	logrus.Printf("Handle Subscriptions: %+v Code: %s", msg.Protocol, msg.MessageCode)
 
-	codes, meters, _ := extractResponseCodeAndMeteringPoint(&msg.Payload)
+	meters, _ := extractResponseCodeAndMeteringPointV2(&msg.Payload)
 	var status model.StatusType
 
 	switch msg.MessageCode {
 	case model.EBMS_AUFHEBUNG_CCMI, model.EBMS_AUFHEBUNG_CCMS, model.EBMS_AUFHEBUNG_CCMC:
-		status = model.REVOKED
+		status = model.INACTIVE
 	default:
 		return
 	}
 
-	if len(meters) > 0 && len(status) > 0 {
-		if err := database.MeteringPointsSetStatus(recorder.databaseConnectFunc(), msg.Tenant, status, meters); err != nil {
-			logrus.WithField("error", err.Error()).Errorf("can not change metering point status %+v", meters)
+	if len(meters) > 0 && len(status) > 0 && meters[0].consentEnd > 0 {
+		consentEnd := time.UnixMilli(meters[0].consentEnd).Local()
+		db, err := recorder.databaseConnection()
+		if err != nil {
+			logrus.WithField("tenant", msg.Tenant).Error(err)
+			return
+		}
+		if err := database.MeteringPointRevoke(db, msg.Tenant, meters[0].meter, status, consentEnd); err != nil {
+			logrus.WithField("tenant", msg.Tenant).Errorf("can not revoke metering point %+v - %+v", meters, err)
 			return
 		}
 	}
@@ -198,7 +214,7 @@ func protocolCmRevImpHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 	if err = recorder.saveNotification(map[string]interface{}{
 		"type":           msg.MessageCode,
 		"meteringPoints": msg.Payload.Meters(),
-		"responseCodes":  convertCodes2Strings(codes),
+		"responseCodes":  convertCodes2Strings(meters[0].codes),
 	}, msg.Tenant, "NOTIFICATION", "ADMIN"); err != nil {
 		logrus.WithField("PROTOCOL", msg.Protocol).Error(err)
 	}

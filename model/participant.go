@@ -24,6 +24,8 @@ import (
 type MeterState struct {
 	ActiveSince   time.Time `json:"activeSince" goqu:"skipinsert"`
 	InactiveSince time.Time `json:"inactiveSince" goqu:"skipinsert"`
+	Active        int       `json:"-" goqu:"skipinsert"`
+	Flag          int       `json:"-" db:"-" goqu:"skipinsert"`
 }
 
 type EegParticipant struct {
@@ -101,5 +103,5 @@ type MeteringPoint struct {
 	ModifiedBy       null.String   `json:"modifiedBy" db:"modifiedBy"`
 	GridOperatorId   null.String   `json:"gridOperatorId,omitempty" db:"grid_operator_id"`
 	GridOperatorName null.String   `json:"gridOperatorName,omitempty" db:"grid_operator_name"`
-	State            *MeterState   `json:"participantState" db:"participant_meter_state" goqu:"skipupdate"`
+	State            *MeterState   `json:"participantState" goqu:"skipupdate"`
 }

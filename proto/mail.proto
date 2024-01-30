@@ -19,6 +19,7 @@ message SendMailWithInlineAttachmentsRequest {
   string subject = 3;
   string htmlBody = 4;
   repeated Attachement attachments = 5;
+  optional string cc = 6;
 }
 
 message SendMailRequest {
@@ -28,6 +29,7 @@ message SendMailRequest {
   optional string filename = 4;
   optional bytes content = 5;
   optional bytes body = 6;
+  optional string cc = 7;
 }
 
 // The response status for sending emails

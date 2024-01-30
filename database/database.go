@@ -6,9 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/doug-martin/goqu/v9"
-	"github.com/golang/glog"
+	_ "github.com/jackc/pgx/v5"
 	"github.com/jmoiron/sqlx"
-	_ "github.com/lib/pq"
 	"github.com/pborman/uuid"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -23,7 +22,7 @@ var (
 func GetTx(db sqlx.DB) (*sqlx.Tx, error) {
 	tx, err := db.Beginx()
 	if err != nil {
-		glog.Error(err)
+		log.Error(err)
 		return nil, err
 	}
 	return tx, nil

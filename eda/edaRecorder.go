@@ -5,7 +5,10 @@ import (
 	"at.ourproject/vfeeg-backend/model"
 	"at.ourproject/vfeeg-backend/parser"
 	"at.ourproject/vfeeg-backend/services"
+	"database/sql"
 	"encoding/json"
+	"errors"
+	"github.com/jmoiron/sqlx"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/guregu/null.v4"
 	"time"
@@ -16,6 +19,7 @@ type EdaRecording interface {
 	saveHistory(tenant string, messageCode model.EbMsMessageType, conversationId, role, dir string, protocol model.EdaProtocol, msg interface{}) error
 	meteringPointPerformAnswerMsg(tenant string, meterId []string) error
 	databaseConnectFunc() database.OpenDbXConnection
+	databaseConnection() (*sqlx.DB, error)
 }
 
 type EdaRecorder struct {
@@ -28,6 +32,10 @@ func NewEdaRecorder() *EdaRecorder {
 
 func (r *EdaRecorder) databaseConnectFunc() database.OpenDbXConnection {
 	return r.dbOpen
+}
+
+func (r *EdaRecorder) databaseConnection() (*sqlx.DB, error) {
+	return r.dbOpen()
 }
 
 func (r *EdaRecorder) saveNotification(notificationValue map[string]interface{}, tenant, notificationType, role string) error {
@@ -67,7 +75,7 @@ func (r *EdaRecorder) saveHistory(tenant string, messageCode model.EbMsMessageTy
 
 func (r *EdaRecorder) meteringPointPerformAnswerMsg(tenant string, meterId []string) error {
 
-	eeg, err := database.GetEeg(tenant)
+	eeg, err := database.GetEeg(database.GetDBXConnection, tenant)
 	if err != nil {
 		return err
 	}
@@ -88,18 +96,19 @@ func (r *EdaRecorder) meteringPointPerformAnswerMsg(tenant string, meterId []str
 		return err
 	}
 	defer func() {
-		err := tx.Rollback()
-		if err != nil {
-			logrus.Errorf("Rollback Error: %v", err)
-		}
+		_ = tx.Rollback()
 	}()
 
 	for _, mid := range meterId {
-		participant, err := database.FindParticipantByMeteringPoint(tx, tenant, mid)
+		participant, err := database.FindParticipantByMeteringPoint(db, tenant, mid)
 		if err != nil {
-			return err
+			if !errors.Is(err, sql.ErrNoRows) {
+				return err
+			} else {
+				logrus.WithField("tenant", tenant).Warn(err)
+			}
 		}
-		if participant.Contact.Email.Valid {
+		if participant != nil && participant.Contact.Email.Valid {
 			if err = parser.SendActivationMailFromTemplate(services.SendMail,
 				tenant, "Aktivierung im Serviceportal", eeg, participant); err != nil {
 				logrus.Errorf("Error Sending Mail: %+v", err.Error())

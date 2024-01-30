@@ -55,7 +55,7 @@ func createMeteringPoint() middleware.JWTHandlerFunc {
 
 		if m.Status == model.NEW {
 			log.WithField("tenant", tenant).Infof("register Meter:  %v ", m)
-			eeg, err := database.GetEeg(tenant)
+			eeg, err := database.GetEeg(database.GetDBXConnection, tenant)
 			if err != nil {
 				log.WithField("error", "SQLQuery").Error(err.Error())
 				respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1112, err.Error()))
@@ -96,7 +96,7 @@ func updateMeteringPoint() middleware.JWTHandlerFunc {
 
 		m.ModifiedAt = time.Now()
 		m.ModifiedBy = null.StringFrom(claims.Username)
-		err = database.UpdateMeteringPoint(tenant, claims.Username, participantId, meterId, &m)
+		err = database.UpdateMeteringPoint(database.GetDBXConnection, tenant, claims.Username, participantId, meterId, &m)
 		if err != nil {
 			log.WithField("error", "SQLUpdate").Error(err.Error())
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1115, err.Error()))
@@ -129,7 +129,7 @@ func registerMeteringPoint() middleware.JWTHandlerFunc {
 			return
 		}
 
-		eeg, err := database.GetEeg(tenant)
+		eeg, err := database.GetEeg(database.GetDBXConnection, tenant)
 		if err != nil {
 			log.WithField("error", "SQLQuery").Error(err.Error())
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1131, err.Error()))
@@ -184,7 +184,7 @@ func requestMeteringPointValues() middleware.JWTHandlerFunc {
 			return
 		}
 
-		eeg, err := database.GetEeg(tenant)
+		eeg, err := database.GetEeg(database.GetDBXConnection, tenant)
 		if err != nil {
 			log.WithField("tenant", tenant).WithField("error", "SQLQuery").Error(err.Error())
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1000, err.Error()))
@@ -243,6 +243,7 @@ func archiveMeteringPoint() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
 		vars := mux.Vars(r)
 		meterId := vars["mid"]
+		//participantId := vars["pid"]
 
 		err := database.MeteringPointsSetStatus(database.GetDBXConnection, tenant, model.ARCHIVED, []string{meterId})
 		if err != nil {

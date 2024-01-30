@@ -79,7 +79,7 @@ func NewMessageBroker() (*MessageBroker, error) {
 }
 
 func (mb *MessageBroker) SendMessage(m model.EbmsMessage, callback func(m string) error) {
-	log.WithField("MSG", m.MessageCode).Info("Send Message to MQTT")
+	log.WithField("tenant", m.Sender).WithField("MSG", m.MessageCode).Info("Send Message to MQTT")
 	payload, err := json.Marshal(m)
 	if err != nil {
 		log.WithField("error", err).Error("Marshaling EbmsMessage")
@@ -127,7 +127,7 @@ func (mb *MessageBroker) Listen() {
 	for {
 		select {
 		case msg := <-mb.Inbound:
-			log.Infof("Message on topic: %s", msg.protocol)
+			log.WithField("tenant", msg.tenant).Infof("Message on topic: %s", msg.protocol)
 			mb.received(msg)
 		case cmd := <-mb.Command:
 			mb.command(cmd)

@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/golang/glog"
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
 	"net/http"
@@ -35,7 +34,7 @@ func InitEegRouter(r *mux.Router, jwtWrapper middleware.JWTWrapperFunc) *mux.Rou
 func getEEG() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
 		log.Infof("Query EEG with TENANT: %s", tenant)
-		eeg, err := database.GetEeg(tenant)
+		eeg, err := database.GetEeg(database.GetDBXConnection, tenant)
 		if err != nil {
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1000, err.Error()))
 			return
@@ -57,7 +56,7 @@ func updateEEG() middleware.JWTHandlerFunc {
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1002, err.Error()))
 			return
 		}
-		eeg, err := database.GetEeg(tenant)
+		eeg, err := database.GetEeg(database.GetDBXConnection, tenant)
 		if err != nil {
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1003, err.Error()))
 			return
@@ -116,7 +115,7 @@ func archiveTariff() middleware.JWTHandlerFunc {
 
 func syncParticipantsEda() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
-		eeg, err := database.GetEeg(tenant)
+		eeg, err := database.GetEeg(database.GetDBXConnection, tenant)
 		if err != nil {
 			log.WithField("error", err).Error("Query EEG")
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1030, err.Error()))
@@ -149,18 +148,18 @@ func uploadMasterData() middleware.JWTHandlerFunc {
 
 		file, handler, err := r.FormFile("masterdatafile")
 		if err != nil {
-			glog.Error(err)
+			log.WithField("tanant", tenant).Error(err)
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1051, err.Error()))
 			return
 		}
 		defer file.Close()
-		glog.Infof("--- Upload File: %s, %s, %s\n", sheet, handler.Filename, tenant)
+		log.Infof("--- Upload File: %s, %s, %s\n", sheet, handler.Filename, tenant)
 
 		if err = database.ImportMasterdataFromExcel(database.GetDBXConnection, file, handler.Filename, sheet, tenant); err != nil {
-			glog.Error(err)
+			log.WithField("tanant", tenant).Error(err)
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1052, err.Error()))
 		} else {
-			glog.Infof("Import File %s successful", handler.Filename)
+			log.Infof("Import File %s successful", handler.Filename)
 			w.WriteHeader(http.StatusOK)
 		}
 	}
@@ -168,7 +167,7 @@ func uploadMasterData() middleware.JWTHandlerFunc {
 
 func exportMasterData() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
-		eeg, err := database.GetEeg(tenant)
+		eeg, err := database.GetEeg(database.GetDBXConnection, tenant)
 		if err != nil {
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1000, err.Error()))
 			return
@@ -189,7 +188,7 @@ func exportMasterData() middleware.JWTHandlerFunc {
 		b, err := database.ExportMasterdataToExcel(participants, eeg, tariffMap)
 
 		if err != nil {
-			glog.Errorf("Create Energy Export: %v", err.Error())
+			log.Errorf("Create Energy Export: %v", err.Error())
 			respondWithHttpError(w, http.StatusInternalServerError, BadProcessError(1051, err.Error()))
 			return
 		}
@@ -227,7 +226,7 @@ func notifications() middleware.JWTHandlerFunc {
 			}
 			return false
 		}
-		notifications, err := database.GetNotification(tenant, id, isAdmin())
+		notifications, err := database.GetNotification(database.GetDBXConnection, tenant, id, isAdmin())
 		if err != nil {
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1055, err.Error()))
 			return

@@ -72,7 +72,7 @@ func sendMailFromTemplate(sendMail services.SendMailFunc, tenant, subject, templ
 	}
 
 	return sendMail(tenant, participant.Contact.Email.String,
-		subject, buf, buildAttachments(templatePath, templateConfig.InlinePictures))
+		subject, eeg.Email.Ptr(), buf, buildAttachments(templatePath, templateConfig.InlinePictures))
 }
 
 func GetTemplateFor(templateType, tenant string) (string, error) {

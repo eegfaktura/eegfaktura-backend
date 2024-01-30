@@ -8,17 +8,54 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/guregu/null.v4"
 	"strings"
 	"testing"
 )
 
-//func TestGetMeteringPoint(t *testing.T) {
-//	eeg, err := GetEeg("RC100181")
-//	assert.NoError(t, err)
-//
-//	assert.NotEmpty(t, eeg)
-//	fmt.Printf("EEG: %+v\n", eeg)
-//}
+func TestGetEeg(t *testing.T) {
+	eeg, err := GetEeg(openTestDb, "TE000001")
+	assert.NoError(t, err)
+
+	expectedEeg := &model.Eeg{
+		Id:                 "TE000001",
+		Name:               "MY-TEST",
+		Description:        "Gemeinnütziger Verein",
+		BusinessNr:         null.StringFrom("123456789"),
+		Area:               "LOCAL",
+		Legal:              "verein",
+		OperatorName:       "Netz OOE",
+		CommunityId:        "AT00300000000TC000001000000000001",
+		GridOperator:       "AT003000",
+		RcNumber:           "TE000001",
+		AllocationMode:     "DYNAMIC",
+		SettlementInterval: "MONTHLY",
+		ProviderBusinessNr: null.Int{},
+		TaxNumber:          null.StringFrom("11 123/4567"),
+		VatNumber:          null.String{},
+		ContactPerson:      null.StringFrom("Max Sonnenmann"),
+		EegAddress: model.EegAddress{
+			Street:       "Solarstraße",
+			StreetNumber: "9",
+			Zip:          "1111",
+			City:         "Solarcity",
+		},
+		AccountInfo: model.AccountInfo{
+			Iban:     null.StringFrom("AT011234000000321321"),
+			Owner:    null.StringFrom("T-VIERE"),
+			BankName: null.String{},
+			Sepa:     false,
+		},
+		Contact: model.Contact{
+			Phone: null.StringFrom("0043-664-1234567"),
+			Email: null.StringFrom("test-eeg@gmx.at"),
+		},
+		Optionals: model.Optionals{Website: null.StringFrom("test-eeg.at")},
+		Periods:   nil,
+		Online:    false,
+	}
+	assert.Equal(t, expectedEeg, eeg)
+}
 
 func TestUpdateEeg(t *testing.T) {
 	mDB, mock, err := sqlmock.New()
@@ -84,9 +121,19 @@ func TestUpdateEeg(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mock.ExpectExec("INSERT INTO (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
-			tt.wantErr(t, UpdateEeg(mdb, tt.args.tenant, tt.args.eeg), fmt.Sprintf("UpdateEeg(%v, %+v)", tt.args.tenant, tt.args.eeg))
+			tt.wantErr(t, InsertEeg(mdb, tt.args.tenant, tt.args.eeg), fmt.Sprintf("InsertEeg(%v, %+v)", tt.args.tenant, tt.args.eeg))
 			assert.NoError(t, mock.ExpectationsWereMet())
 			require.NoError(t, err)
 		})
 	}
+}
+
+func TestNotification(t *testing.T) {
+	err := SaveNotification(openTestDb, "TE000001", `{"msg":"hello world"}`, "NOTIFICATION", "ADMIN")
+	assert.NoError(t, err)
+
+	not, err := GetNotification(openTestDb, "TE000001", 0, true)
+	assert.NoError(t, err)
+
+	assert.NotEmpty(t, not)
 }

@@ -6,8 +6,6 @@ import (
 	"at.ourproject/vfeeg-backend/model"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
 	"encoding/json"
-	"fmt"
-	"github.com/golang/glog"
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
 	"net/http"
@@ -105,7 +103,7 @@ func registerParticipant() middleware.JWTHandlerFunc {
 
 		db, err := database.GetDBXConnection()
 		if err != nil {
-			glog.Error(err)
+			log.Error(err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -113,7 +111,7 @@ func registerParticipant() middleware.JWTHandlerFunc {
 
 		tx, err := db.Beginx()
 		if err != nil {
-			glog.Error(err)
+			log.Error(err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -135,21 +133,21 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 		vars := mux.Vars(r)
 		participantId := vars["id"]
 
-		eeg, err := database.GetEeg(tenant)
+		eeg, err := database.GetEeg(database.GetDBXConnection, tenant)
 		if err != nil {
-			log.WithField("error", err).Error("Query EEG")
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			log.WithField("tenant", tenant).Error(err)
+			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(500, err.Error()))
 			return
 		}
 		participant, err := database.QueryParticipant(participantId)
 		if err != nil {
-			log.WithField("error", err).Error("Query Participant")
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			log.WithField("tenant", tenant).WithField("SQL", "QUERY Participant").Error(err)
+			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(500, err.Error()))
 			return
 		}
 
 		if err = database.ConfirmParticipant(database.GetDBXConnection, claims.Username, participantId); err != nil {
-			fmt.Fprintf(w, err.Error())
+			log.WithField("tenant", tenant).Error(err)
 			return
 		}
 		participant.Status = model.ACTIVE

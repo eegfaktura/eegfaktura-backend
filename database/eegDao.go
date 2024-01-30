@@ -11,9 +11,9 @@ import (
 const TABLE_EEG = "base.eeg"
 const TABLE_EEG_ADDRESS = "base.address"
 
-func GetEeg(tenant string) (*model.Eeg, error) {
+func GetEeg(dbOpen OpenDbXConnection, tenant string) (*model.Eeg, error) {
 
-	db, err := GetDBXConnection()
+	db, err := dbOpen()
 	if err != nil {
 		return nil, err
 	}
@@ -38,7 +38,7 @@ func GetEeg(tenant string) (*model.Eeg, error) {
 	return &eeg, err
 }
 
-func UpdateEeg(db *sqlx.DB, tenant string, eeg *model.Eeg) error {
+func InsertEeg(db *sqlx.DB, tenant string, eeg *model.Eeg) error {
 
 	sql, _, err := pgDialect.Insert("base.eeg").Rows(eeg).ToSQL()
 	log.Printf("Stmt: %s", sql)
@@ -80,35 +80,21 @@ func UpdateEegAddressPartial(tenant string, fields map[string]interface{}) error
 	return err
 }
 
-func GetCommunityId(tenant string) (string, error) {
-
-	db, err := GetDBConnection()
-	if err != nil {
-		return "", err
-	}
-	defer db.Close()
-
-	communityId := ""
-	err = db.QueryRow(`SELECT "communityId" FROM base.eeg WHERE tenant = $1`, tenant).Scan(&communityId)
-
-	return communityId, err
-}
-
-//func fetchEegAddressInfo(db sqlx.DB, tenant string)
-
 func SaveNotification(dbOpen OpenDbXConnection, tenant string, notification string, msgType, role string) error {
 	db, err := dbOpen()
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() {
+		_ = db.Close()
+	}()
 
 	_, err = db.Exec("INSERT INTO base.notification (tenant, notification, date, type, role) VALUES ($1, $2, NOW(), $3, $4)", tenant, notification, msgType, role)
 	return err
 }
 
-func GetNotification(tenant string, start int64, isAdmin bool) ([]model.EegNotification, error) {
-	db, err := GetDBXConnection()
+func GetNotification(dbOpen OpenDbXConnection, tenant string, start int64, isAdmin bool) ([]model.EegNotification, error) {
+	db, err := dbOpen()
 	if err != nil {
 		return nil, err
 	}
@@ -132,4 +118,27 @@ func GetNotification(tenant string, start int64, isAdmin bool) ([]model.EegNotif
 	}
 
 	return n, err
+}
+
+func GetGridOperators(db *sqlx.DB) (map[string]string, error) {
+
+	sql, _, err := pgDialect.From("base.gridoperators").ToSQL()
+
+	rows, err := db.Query(sql)
+	if err != nil {
+		return nil, err
+	}
+
+	var id string
+	var name string
+	result := map[string]string{}
+	for rows.Next() {
+		err = rows.Scan(&id, &name)
+		if err != nil {
+			return nil, err
+		}
+		result[id] = name
+	}
+
+	return result, nil
 }

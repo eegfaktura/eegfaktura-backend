@@ -229,7 +229,7 @@ func TestParseTemplate2(t *testing.T) {
 		Version:         0,
 	}
 
-	sendMock := func(tenant, to, subject string, body *bytes.Buffer, attachments []*services.Attachment) error {
+	sendMock := func(tenant, to, subject string, cc *string, body *bytes.Buffer, attachments []*services.Attachment) error {
 		println("SendMock")
 		return nil
 	}

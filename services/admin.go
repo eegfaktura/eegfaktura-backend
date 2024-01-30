@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-type SendMailFunc func(tenant, to, subject string, body *bytes.Buffer, attachments []*Attachment) error
+type SendMailFunc func(tenant, to, subject string, cc *string, body *bytes.Buffer, attachments []*Attachment) error
 
 type Attachment struct {
 	Type        string
@@ -29,7 +29,7 @@ type Attachment struct {
 	ContentId   *string
 }
 
-func SendMail(tenant, to, subject string, body *bytes.Buffer, attachments []*Attachment) error {
+func SendMail(tenant, to, subject string, cc *string, body *bytes.Buffer, attachments []*Attachment) error {
 	//fmt.Printf("GRPC SERVER: %v\n", viper.GetString("services.mail-server"))
 	//conn, err := grpc.Dial(viper.GetString("services.mail-server"), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	//if err != nil {
@@ -58,7 +58,7 @@ func SendMail(tenant, to, subject string, body *bytes.Buffer, attachments []*Att
 	//}
 
 	//if attachments != nil {
-	return sendHtmlInlineAttachment(tenant, to, subject, body, attachments)
+	return sendHtmlInlineAttachment(tenant, to, subject, cc, body, attachments)
 	//}
 
 	//if fileName != nil && fileContent != nil {
@@ -74,7 +74,7 @@ func SendMail(tenant, to, subject string, body *bytes.Buffer, attachments []*Att
 	//return err
 }
 
-func sendHtmlInlineAttachment(sender, recipient, subject string, htmlBody *bytes.Buffer, attachments []*Attachment) error {
+func sendHtmlInlineAttachment(sender, recipient, subject string, cc *string, htmlBody *bytes.Buffer, attachments []*Attachment) error {
 	conn, err := grpc.Dial(viper.GetString("services.mail-server"), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return err
@@ -101,6 +101,11 @@ func sendHtmlInlineAttachment(sender, recipient, subject string, htmlBody *bytes
 		HtmlBody:    htmlBody.String(),
 		Attachments: _attachments,
 	}
+
+	if cc != nil {
+		request.Cc = cc
+	}
+
 	r, err := c.SendMailWithInlineAttachment(ctx, request)
 	log.Infof("Response from MAIL-SERVER: %v", r)
 	if r == nil {
@@ -173,7 +178,7 @@ func (r *RegisterService) Register(ctx context.Context, eeg *protobuf.RegisterEe
 	}
 	defer db.Close()
 
-	err = database.UpdateEeg(db, eeg.RcNumber, &newEeg)
+	err = database.InsertEeg(db, eeg.RcNumber, &newEeg)
 	if err != nil {
 		log.Errorf("Could not create an EEG! %v", err.Error())
 		return &protobuf.RegisteredEegReply{Status: 500},
