@@ -3,10 +3,26 @@ package database
 import (
 	"at.ourproject/vfeeg-backend/model"
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"os"
 	"testing"
 )
+
+var testDbInstance *sqlx.DB
+var testDB *TestDatabase
+
+func openTestDb() (*sqlx.DB, error) {
+	testDB.Open()
+	return testDB.DbInstance, nil
+}
+
+func TestMain(m *testing.M) {
+	testDB = SetupTestDatabase()
+	defer testDB.TearDown()
+	os.Exit(m.Run())
+}
 
 func TestAddTariff(t *testing.T) {
 	tariff := model.Tariff{Version: 1, Name: "Sepp", UseVat: false, BillingPeriod: "monthly", FreeKWh: 100, CentPerKWh: 12}

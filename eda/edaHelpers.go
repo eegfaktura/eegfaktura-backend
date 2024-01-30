@@ -6,6 +6,12 @@ import (
 	"fmt"
 )
 
+type responseCodesPerMeter struct {
+	meter      string
+	codes      []int16
+	consentEnd int64
+}
+
 func extractResponseCodeAndMeteringPoint(ebmsMessage *model.EbmsMessage) ([]int16, []string, error) {
 	meters := []string{}
 	codes := []int16{}
@@ -21,6 +27,29 @@ func extractResponseCodeAndMeteringPoint(ebmsMessage *model.EbmsMessage) ([]int1
 	}
 
 	return codes, meters, nil
+}
+
+func extractResponseCodeAndMeteringPointV2(ebmsMessage *model.EbmsMessage) ([]responseCodesPerMeter, error) {
+	codes := []int16{}
+	response := []responseCodesPerMeter{}
+
+	for _, rd := range ebmsMessage.ResponseData {
+		if len(rd.ResponseCode) > 0 {
+			codes = append(codes, rd.ResponseCode...)
+		}
+
+		response = append(response, responseCodesPerMeter{
+			meter:      rd.MeteringPoint,
+			codes:      codes,
+			consentEnd: rd.ConsentEnd,
+		})
+	}
+
+	if len(codes) == 0 {
+		return response, errors.New("wrong Response from EDA")
+	}
+
+	return response, nil
 }
 
 func extractMeterList(ebmsMessage *model.EbmsMessage) []string {

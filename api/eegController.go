@@ -8,28 +8,25 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/golang/glog"
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 )
 
 func InitEegRouter(r *mux.Router, jwtWrapper middleware.JWTWrapperFunc) *mux.Router {
 	s := r.PathPrefix("/eeg").Subrouter()
 
-	s.HandleFunc("", jwtWrapper(getEEG())).Methods("GET")
+	s.HandleFunc("", middleware.Protect(getEEG())).Methods("GET")
 	s.HandleFunc("", jwtWrapper(updateEEG())).Methods("POST")
-	s.HandleFunc("/tariff", jwtWrapper(getTariff())).Methods("GET")
+	s.HandleFunc("/tariff", middleware.Protect(getTariff())).Methods("GET")
 	s.HandleFunc("/tariff", jwtWrapper(addTariff())).Methods("POST")
 	s.HandleFunc("/tariff/{id}", jwtWrapper(archiveTariff())).Methods("DELETE")
 	s.HandleFunc("/sync/participants", jwtWrapper(syncParticipantsEda())).Methods("POST")
-	s.HandleFunc("/sync/meterpoint", jwtWrapper(syncMeterpointEda())).Methods("POST")
 	s.HandleFunc("/import/masterdata", jwtWrapper(uploadMasterData())).Methods("POST")
 	s.HandleFunc("/export/masterdata", jwtWrapper(exportMasterData())).Methods("GET")
-	s.HandleFunc("/notifications/{id}", jwtWrapper(notifications())).Methods("GET")
+	s.HandleFunc("/notifications/{id}", middleware.Protect(notifications())).Methods("GET")
 
 	return r
 }
@@ -37,9 +34,9 @@ func InitEegRouter(r *mux.Router, jwtWrapper middleware.JWTWrapperFunc) *mux.Rou
 func getEEG() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
 		log.Infof("Query EEG with TENANT: %s", tenant)
-		eeg, err := database.GetEeg(tenant)
+		eeg, err := database.GetEeg(database.GetDBXConnection, tenant)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1000, err.Error()))
 			return
 		}
 		respondWithJSON(w, 200, eeg)
@@ -51,17 +48,17 @@ func updateEEG() middleware.JWTHandlerFunc {
 		var e map[string]interface{}
 		err := json.NewDecoder(r.Body).Decode(&e)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1001, err.Error()))
 			return
 		}
 
 		if err = database.UpdateEegPartial(tenant, e); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1002, err.Error()))
 			return
 		}
-		eeg, err := database.GetEeg(tenant)
+		eeg, err := database.GetEeg(database.GetDBXConnection, tenant)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1003, err.Error()))
 			return
 		}
 		respondWithJSON(w, 200, eeg)
@@ -72,7 +69,7 @@ func getTariff() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
 		tariff, err := database.GetTariff(tenant)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1010, err.Error()))
 			return
 		}
 		respondWithJSON(w, 200, tariff)
@@ -86,13 +83,13 @@ func addTariff() middleware.JWTHandlerFunc {
 		var t model.Tariff
 		err := json.NewDecoder(r.Body).Decode(&t)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1020, err.Error()))
 			return
 		}
 		log.Printf("ADD TARIF: %+v Tenant: %+v", t, tenant)
 
 		if err = database.AddTariff(database.GetDBXConnection, tenant, &t); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1021, err.Error()))
 			return
 		}
 		respondWithJSON(w, http.StatusCreated, t)
@@ -106,10 +103,10 @@ func archiveTariff() middleware.JWTHandlerFunc {
 
 		if err := database.ArchiveTariff(database.GetDBXConnection, tenant, idStr); err != nil {
 			if errors.Is(err, database.ErrTariffUtilized) {
-				respondWithJSON(w, http.StatusBadRequest, map[string]interface{}{"id": 900, "error": err.Error()})
+				respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1022, err.Error()))
 				return
 			}
-			respondWithJSON(w, http.StatusBadRequest, map[string]interface{}{"id": 500, "error": err.Error()})
+			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1023, err.Error()))
 			return
 		}
 		respondWithJSON(w, http.StatusAccepted, map[string]interface{}{"status": "ok"})
@@ -118,64 +115,19 @@ func archiveTariff() middleware.JWTHandlerFunc {
 
 func syncParticipantsEda() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
-		eeg, err := database.GetEeg(tenant)
+		eeg, err := database.GetEeg(database.GetDBXConnection, tenant)
 		if err != nil {
 			log.WithField("error", err).Error("Query EEG")
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1030, err.Error()))
 			return
 		}
 
 		day := time.Now()
-		ebmsMessage := model.EbmsMessage{
-			Sender:      strings.ToUpper(tenant),
-			Receiver:    strings.ToUpper(eeg.GridOperator),
-			MessageCode: model.EBMS_ZP_LIST,
-			Meter:       &model.Meter{MeteringPoint: eeg.CommunityId},
-			Timeline: &model.Timeline{
-				From: time.Date(day.Year(), day.Month(), day.Day()-1, 0, 0, 0, 0, day.Location()).UnixMilli(),
-				To:   time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location()).UnixMilli()},
-		}
+		from := time.Date(day.Year(), day.Month(), day.Day()-1, 0, 0, 0, 0, day.Location()).UnixMilli()
+		to := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location()).UnixMilli()
 
-		log.WithField("tenant", tenant).Info("Start Participant sync")
-		if err = mqttclient.SendEbmsMessage(ebmsMessage); err != nil {
-			respondWithError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		respondWithStatus(w, http.StatusNoContent)
-	}
-}
-
-func syncMeterpointEda() middleware.JWTHandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
-		var m model.MeteringPoint
-		err := json.NewDecoder(r.Body).Decode(&m)
-		if err != nil {
-			log.Errorf("Body Parsing. %v", err)
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		eeg, err := database.GetEeg(tenant)
-		if err != nil {
-			log.WithField("error", err).Error("Query EEG")
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		day := time.Now()
-		ebmsMessage := model.EbmsMessage{
-			Sender:      strings.ToUpper(tenant),
-			Receiver:    strings.ToUpper(eeg.GridOperator),
-			MessageCode: model.EBMS_ZP_SYNC,
-			Meter:       &model.Meter{MeteringPoint: m.MeteringPoint},
-			Timeline: &model.Timeline{
-				From: time.Date(day.Year(), day.Month(), day.Day()-3, 0, 0, 0, 0, day.Location()).UnixMilli(),
-				To:   time.Date(day.Year(), day.Month(), day.Day()-2, 0, 0, 0, 0, day.Location()).UnixMilli()},
-		}
-
-		log.WithField("tenant", tenant).Info("Start Metering sync")
-		if err = mqttclient.SendEbmsMessage(ebmsMessage); err != nil {
-			respondWithError(w, http.StatusInternalServerError, err.Error())
+		if err = mqttclient.RequestingMeteringPointList(tenant, eeg, from, to); err != nil {
+			respondWithHttpError(w, http.StatusInternalServerError, BadProcessError(1031, err.Error()))
 			return
 		}
 		respondWithStatus(w, http.StatusNoContent)
@@ -188,7 +140,7 @@ func uploadMasterData() middleware.JWTHandlerFunc {
 		// upload of 10 MB files.
 		var err error = r.ParseMultipartForm(10 << 20)
 		if err != nil {
-			respondWithError(w, http.StatusBadRequest, err.Error())
+			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1050, err.Error()))
 			return
 		}
 
@@ -196,18 +148,18 @@ func uploadMasterData() middleware.JWTHandlerFunc {
 
 		file, handler, err := r.FormFile("masterdatafile")
 		if err != nil {
-			glog.Error(err)
-			respondWithError(w, http.StatusBadRequest, err.Error())
+			log.WithField("tanant", tenant).Error(err)
+			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1051, err.Error()))
 			return
 		}
 		defer file.Close()
-		glog.Infof("--- Upload File: %s, %s, %s\n", sheet, handler.Filename, tenant)
+		log.Infof("--- Upload File: %s, %s, %s\n", sheet, handler.Filename, tenant)
 
 		if err = database.ImportMasterdataFromExcel(database.GetDBXConnection, file, handler.Filename, sheet, tenant); err != nil {
-			glog.Error(err)
-			respondWithError(w, http.StatusBadRequest, err.Error())
+			log.WithField("tanant", tenant).Error(err)
+			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1052, err.Error()))
 		} else {
-			glog.Infof("Import File %s successful", handler.Filename)
+			log.Infof("Import File %s successful", handler.Filename)
 			w.WriteHeader(http.StatusOK)
 		}
 	}
@@ -215,23 +167,29 @@ func uploadMasterData() middleware.JWTHandlerFunc {
 
 func exportMasterData() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
-		eeg, err := database.GetEeg(tenant)
+		eeg, err := database.GetEeg(database.GetDBXConnection, tenant)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1000, err.Error()))
 			return
 		}
 
 		participants, err := database.GetParticipants(database.GetDBXConnection, tenant)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1050, err.Error()))
 			return
 		}
 
-		b, err := database.ExportMasterdataToExcel(participants, eeg)
+		tariffMap, err := database.GetTariffNameMap(tenant)
+		if err != nil {
+			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1059, err.Error()))
+			return
+		}
+
+		b, err := database.ExportMasterdataToExcel(participants, eeg, tariffMap)
 
 		if err != nil {
-			glog.Errorf("Create Energy Export: %v", err.Error())
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Errorf("Create Energy Export: %v", err.Error())
+			respondWithHttpError(w, http.StatusInternalServerError, BadProcessError(1051, err.Error()))
 			return
 		}
 		filename := fmt.Sprintf("%s-EEG-Masterdata-%s",
@@ -256,7 +214,7 @@ func notifications() middleware.JWTHandlerFunc {
 
 		id, err := strconv.ParseInt(idStr, 10, 64)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1054, err.Error()))
 			return
 		}
 
@@ -268,10 +226,9 @@ func notifications() middleware.JWTHandlerFunc {
 			}
 			return false
 		}
-		//tenant = "RC100181"
-		notifications, err := database.GetNotification(tenant, id, isAdmin())
+		notifications, err := database.GetNotification(database.GetDBXConnection, tenant, id, isAdmin())
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1055, err.Error()))
 			return
 		}
 		respondWithJSON(w, 200, notifications)

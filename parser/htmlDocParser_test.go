@@ -2,7 +2,7 @@ package parser
 
 import (
 	"at.ourproject/vfeeg-backend/model"
-	"at.ourproject/vfeeg-backend/util"
+	"at.ourproject/vfeeg-backend/services"
 	"bytes"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
@@ -229,7 +229,7 @@ func TestParseTemplate2(t *testing.T) {
 		Version:         0,
 	}
 
-	sendMock := func(tenant, to, subject string, body *bytes.Buffer, attachments []*util.Attachment) error {
+	sendMock := func(tenant, to, subject string, cc *string, body *bytes.Buffer, attachments []*services.Attachment) error {
 		println("SendMock")
 		return nil
 	}

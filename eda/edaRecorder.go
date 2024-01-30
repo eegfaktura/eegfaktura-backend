@@ -3,7 +3,12 @@ package eda
 import (
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
+	"at.ourproject/vfeeg-backend/parser"
+	"at.ourproject/vfeeg-backend/services"
+	"database/sql"
 	"encoding/json"
+	"errors"
+	"github.com/jmoiron/sqlx"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/guregu/null.v4"
 	"time"
@@ -12,7 +17,9 @@ import (
 type EdaRecording interface {
 	saveNotification(notificationValue map[string]interface{}, tenant, notificationType, role string) error
 	saveHistory(tenant string, messageCode model.EbMsMessageType, conversationId, role, dir string, protocol model.EdaProtocol, msg interface{}) error
+	meteringPointPerformAnswerMsg(tenant string, meterId []string) error
 	databaseConnectFunc() database.OpenDbXConnection
+	databaseConnection() (*sqlx.DB, error)
 }
 
 type EdaRecorder struct {
@@ -25,6 +32,10 @@ func NewEdaRecorder() *EdaRecorder {
 
 func (r *EdaRecorder) databaseConnectFunc() database.OpenDbXConnection {
 	return r.dbOpen
+}
+
+func (r *EdaRecorder) databaseConnection() (*sqlx.DB, error) {
+	return r.dbOpen()
 }
 
 func (r *EdaRecorder) saveNotification(notificationValue map[string]interface{}, tenant, notificationType, role string) error {
@@ -60,4 +71,49 @@ func (r *EdaRecorder) saveHistory(tenant string, messageCode model.EbMsMessageTy
 		}
 	}
 	return nil
+}
+
+func (r *EdaRecorder) meteringPointPerformAnswerMsg(tenant string, meterId []string) error {
+
+	eeg, err := database.GetEeg(database.GetDBXConnection, tenant)
+	if err != nil {
+		return err
+	}
+
+	db, err := r.dbOpen()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		err = db.Close()
+		if err != nil {
+			logrus.Errorf("Error Close Database: %v", err)
+		}
+	}()
+
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	for _, mid := range meterId {
+		participant, err := database.FindParticipantByMeteringPoint(db, tenant, mid)
+		if err != nil {
+			if !errors.Is(err, sql.ErrNoRows) {
+				return err
+			} else {
+				logrus.WithField("tenant", tenant).Warn(err)
+			}
+		}
+		if participant != nil && participant.Contact.Email.Valid {
+			if err = parser.SendActivationMailFromTemplate(services.SendMail,
+				tenant, "Aktivierung im Serviceportal", eeg, participant); err != nil {
+				logrus.Errorf("Error Sending Mail: %+v", err.Error())
+			}
+		}
+	}
+	return tx.Commit()
 }

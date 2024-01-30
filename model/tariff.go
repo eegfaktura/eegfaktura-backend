@@ -32,7 +32,7 @@ type Tariff struct {
 	VatInPercent       int             `json:"vatInPercent,string" db:"vatInPercent"`
 	AccountNetAmount   int             `json:"accountNetAmount,string" db:"accountNetAmount"`
 	AccountGrossAmount int             `json:"accountGrossAmount,string"  db:"accountGrossAmount"`
-	ParticipantFee     int             `json:"participantFee,string" db:"participantFee"`
+	ParticipantFee     float32         `json:"participantFee" db:"participantFee"`
 	BaseFee            int             `json:"baseFee,string" db:"baseFee"`
 	BusinessNr         int             `json:"businessNr,string" db:"businessNr"`
 	CentPerKWh         float32         `json:"centPerKWh" db:"centPerKWh"`

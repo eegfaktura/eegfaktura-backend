@@ -104,7 +104,7 @@ type Meter struct {
 type ResponseData struct {
 	MeteringPoint string  `json:"meteringPoint,omitempty"`
 	ResponseCode  []int16 `json:"responseCode"`
-	ConsentEnd    string  `json:"consentEnd,omitempty"`
+	ConsentEnd    int64   `json:"consentEnd,omitempty"`
 }
 
 type EdaHistoryData struct {
@@ -171,10 +171,6 @@ func (ebms EbmsMessage) ResponseCodes() []string {
 	}
 	return codes
 }
-
-//type EdaMessage struct {
-//	Message EbmsMessage `json:"message"`
-//}
 
 // SubscribeMessage aggregates the result from subscribing.
 type SubscribeMessage struct {

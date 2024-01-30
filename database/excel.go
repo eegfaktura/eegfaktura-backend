@@ -4,7 +4,6 @@ import (
 	"at.ourproject/vfeeg-backend/model"
 	"bytes"
 	"fmt"
-	"github.com/golang/glog"
 	log "github.com/sirupsen/logrus"
 	"github.com/xuri/excelize/v2"
 	"gopkg.in/guregu/null.v4"
@@ -39,23 +38,37 @@ func ImportMasterdataFromExcel(dbConn OpenDbXConnection, r io.Reader, filename, 
 
 	rows, err := f.Rows(sheet)
 	if err != nil {
-		glog.Error(err)
+		log.Error(err)
 		return err
 	}
-	participants := transformExcelData(rows)
-	log.Debugf("Rows: %+v\n", rows)
-	log.Debugf("LEN _ Import participants: %+v\n", len(participants))
 
 	db, err := dbConn()
 	if err != nil {
-		glog.Error(err)
+		log.Error(err)
 		return err
 	}
 	defer db.Close()
 
+	gridOperators, err := GetGridOperators(db)
+	if err != nil {
+		return err
+	}
+
+	gridOperatorName := func(id string) string {
+		name, ok := gridOperators[id]
+		if ok {
+			return name
+		}
+		return ""
+	}
+
+	participants := transformExcelData(rows, gridOperatorName)
+	log.Debugf("Rows: %+v", rows)
+	log.Debugf("LEN _ Import participants: %v", len(participants))
+
 	tx, err := db.Beginx()
 	if err != nil {
-		glog.Error(err)
+		log.Error(err)
 		return err
 	}
 	defer tx.Rollback()
@@ -71,7 +84,7 @@ func ImportMasterdataFromExcel(dbConn OpenDbXConnection, r io.Reader, filename, 
 	return tx.Commit()
 }
 
-func ExportMasterdataToExcel(participants []model.EegParticipant, eeg *model.Eeg) (*bytes.Buffer, error) {
+func ExportMasterdataToExcel(participants []model.EegParticipant, eeg *model.Eeg, tariffMap map[string]string) (*bytes.Buffer, error) {
 	f := excelize.NewFile()
 	defer func() {
 		if err := f.Close(); err != nil {
@@ -83,7 +96,7 @@ func ExportMasterdataToExcel(participants []model.EegParticipant, eeg *model.Eeg
 	if err != nil {
 		return nil, err
 	}
-	err = generateParticipantMastersheet(f, participants)
+	err = generateParticipantMastersheet(f, participants, tariffMap)
 	if err != nil {
 		return nil, err
 	}
@@ -197,13 +210,25 @@ func generateEegMastersheet(f *excelize.File, eeg *model.Eeg) error {
 	return nil
 }
 
-func generateParticipantMastersheet(f *excelize.File, participants []model.EegParticipant) error {
+func generateParticipantMastersheet(f *excelize.File, participants []model.EegParticipant, tariffMap map[string]string) error {
+
+	getTariffName := func(id string) string {
+		name, ok := tariffMap[id]
+		if !ok {
+			return ""
+		}
+		return name
+	}
 
 	styleId, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Size: 10.0}})
 	styleDateId, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Size: 10.0}, NumFmt: 14})
 	styleIdHeader, err := f.NewStyle(&excelize.Style{
 		Font:      &excelize.Font{Bold: true, Size: 10.0},
 		Alignment: &excelize.Alignment{Vertical: "top", WrapText: true},
+	})
+	styleIdDate, err := f.NewStyle(&excelize.Style{
+		Font:   &excelize.Font{Size: 10.0},
+		NumFmt: 14,
 	})
 
 	sheet := "Mitglieder"
@@ -219,17 +244,21 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 
 	err = sw.SetColWidth(1, 1, 5.0)
 	err = sw.SetColWidth(2, 3, 30.0)
-	err = sw.SetColWidth(6, 12, 20.0)
-	colNr, _ := excelize.ColumnNameToNumber("N")
+	colNr, _ := excelize.ColumnNameToNumber("F")
+	err = sw.SetColWidth(colNr, colNr, 12.0)
+	err = sw.SetColWidth(colNr+1, colNr+1, 25.0)
+	err = sw.SetColWidth(colNr+2, colNr+7, 20.0)
+	colNr, _ = excelize.ColumnNameToNumber("O")
 	err = sw.SetColWidth(colNr, colNr+1, 20.0)
-	colNr, _ = excelize.ColumnNameToNumber("U")
-	err = sw.SetColWidth(colNr, colNr, 35.0)
-	err = sw.SetColWidth(colNr+2, colNr+2, 8.0)
-	err = sw.SetColWidth(colNr+3, colNr+3, 20.0)
-	err = sw.SetColWidth(colNr+5, colNr+5, 20.0)
-	colNr, _ = excelize.ColumnNameToNumber("AC")
+	colNr, _ = excelize.ColumnNameToNumber("V")
+	err = sw.SetColWidth(colNr, colNr+1, 32.0)
+	err = sw.SetColWidth(colNr+3, colNr+3, 8.0)
+	err = sw.SetColWidth(colNr+4, colNr+4, 20.0)
+	err = sw.SetColWidth(colNr+6, colNr+6, 18.0)
+	colNr, _ = excelize.ColumnNameToNumber("AE")
 	err = sw.SetColWidth(colNr, colNr+1, 20.0)
-	err = sw.SetColWidth(colNr+3, colNr+5, 12.0)
+	err = sw.SetColWidth(colNr+3, colNr+4, 12.0)
+	err = sw.SetColWidth(colNr+5, colNr+5, 30.0)
 
 	line := 1
 	err = sw.SetRow(fmt.Sprintf("A%d", line),
@@ -239,6 +268,7 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 			excelize.Cell{Value: "Name 2"},
 			excelize.Cell{Value: "Titel"},
 			excelize.Cell{Value: "Status"},
+			excelize.Cell{Value: "Mitglied seit."},
 			excelize.Cell{Value: "E-Mail"},
 			excelize.Cell{Value: "Telefonnummer"},
 			excelize.Cell{Value: "SteuerNr."},
@@ -254,6 +284,7 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 			excelize.Cell{Value: "EEG-Role"},
 			excelize.Cell{Value: "teilnahme als"},
 			excelize.Cell{Value: "Status"},
+			excelize.Cell{Value: "Mitgliedstarif"},
 			excelize.Cell{Value: "Zählpunkt"},
 			excelize.Cell{Value: "ZP-Status"},
 			excelize.Cell{Value: "ZpNr."},
@@ -267,6 +298,7 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 			excelize.Cell{Value: "HausNr."},
 			excelize.Cell{Value: "aktiviert"},
 			excelize.Cell{Value: "deaktiviert"},
+			excelize.Cell{Value: "Zp. Tarifname"},
 			excelize.Cell{Value: "Umspannwerk"},
 		}, excelize.RowOpts{StyleID: styleIdHeader, Height: 0.42 * 72})
 	for _, c := range participants {
@@ -288,13 +320,14 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 						return strings.Join(titles, ",")
 					}()},
 					excelize.Cell{Value: c.Status},
+					excelize.Cell{Value: c.ParticipantSince, StyleID: styleIdDate},
 					excelize.Cell{Value: c.Contact.Email.String},
 					excelize.Cell{Value: c.Contact.Phone.String},
 					excelize.Cell{Value: c.TaxNumber},
 					excelize.Cell{Value: c.VatNumber},
 					excelize.Cell{Value: c.BankAccount.Iban.String},
 					excelize.Cell{Value: c.BankAccount.Owner.String},
-					excelize.Cell{Value: c.BankAccount.Name.String},
+					excelize.Cell{Value: c.BankAccount.BankName.String},
 					excelize.Cell{Value: c.BillingAddress.Zip},
 					excelize.Cell{Value: c.BillingAddress.City},
 					excelize.Cell{Value: c.BillingAddress.Street},
@@ -309,6 +342,7 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 						}
 					}()},
 					excelize.Cell{Value: c.Status},
+					excelize.Cell{Value: getTariffName(c.TariffId.String), StyleID: styleDateId},
 					excelize.Cell{Value: m.MeteringPoint},
 					excelize.Cell{Value: m.Status},
 					excelize.Cell{Value: m.EquipmentNumber.String},
@@ -322,11 +356,13 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 					excelize.Cell{Value: m.StreetNumber.String},
 					excelize.Cell{Value: m.State.ActiveSince, StyleID: styleDateId},
 					excelize.Cell{Value: m.State.InactiveSince, StyleID: styleDateId},
+					excelize.Cell{Value: getTariffName(m.TariffId.String), StyleID: styleDateId},
 					excelize.Cell{Value: m.Transformer.String},
 				}, excelize.RowOpts{StyleID: styleId})
 		}
 	}
 
+	err = f.AutoFilter(sheet, "A1:AH10", nil)
 	err = sw.Flush()
 	return err
 }
@@ -395,7 +431,7 @@ func parseExcelDate(cell string) time.Time {
 	return time.Now()
 }
 
-func transformExcelData(rows *excelize.Rows) []*model.EegParticipant {
+func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) string) []*model.EegParticipant {
 	colMap := map[string]int{}
 	participants := []*model.EegParticipant{}
 
@@ -437,6 +473,7 @@ func transformExcelData(rows *excelize.Rows) []*model.EegParticipant {
 			default:
 				switch {
 				case netOperatorMatch.MatchString(cols[0]):
+					netOperatorId := cols[0]
 					var firstname string
 					var lastname string
 
@@ -511,28 +548,36 @@ func transformExcelData(rows *excelize.Rows) []*model.EegParticipant {
 								ParticipantSince: participantSince,
 								MeteringPoint:    []*model.MeteringPoint{},
 								BankAccount: model.BankInfo{
-									Iban:  null.StringFrom(getColumValue(cols, colMap, "IBAN", "IBAN", nil)),
-									Owner: null.StringFrom(getColumValue(cols, colMap, "Kontoinhaber", "Accountname", nil))},
-								Contact:   model.ContactInfo{Email: null.StringFrom(getColumValue(cols, colMap, "email", "email", nil))},
+									Iban:     null.StringFrom(getColumValue(cols, colMap, "IBAN", "IBAN", nil)),
+									Owner:    null.StringFrom(getColumValue(cols, colMap, "Kontoinhaber", "Accountname", nil)),
+									BankName: null.StringFrom(getColumValue(cols, colMap, "Bankname", "Bankname", nil)),
+								},
+								Contact: model.ContactInfo{
+									Email: null.StringFrom(getColumValue(cols, colMap, "email", "email", nil)),
+									Phone: null.StringFrom(getColumValue(cols, colMap, "TelefonNr", "phonenr", nil)),
+								},
 								TaxNumber: getColumValue(cols, colMap, "SteuerNr", "taxNumber", nil),
+								VatNumber: getColumValue(cols, colMap, "UmsatzsteuerNr", "vatNumber", nil),
 								Version:   0,
 							}
 							participants = append(participants, participant)
 						}
 						participant.MeteringPoint = append(participant.MeteringPoint, &model.MeteringPoint{
-							MeteringPoint:   getColumValue(cols, colMap, "Zählpunkt", "MeteringPoint Id", nil),
-							Transformer:     null.String{},
-							Direction:       role,
-							Status:          model.ACTIVE,
-							TariffId:        null.String{},
-							EquipmentNumber: equipmentNumber(cols, colMap),
-							EquipmentName:   equipmentName(cols, colMap),
-							RegisteredSince: registeredSince,
-							InverterId:      null.String{},
-							Street:          null.StringFrom(getColumValue(cols, colMap, "Straße", "Street", nil)),
-							StreetNumber:    null.StringFrom(getColumValue(cols, colMap, "Hausnummer", "Street Number", nil)),
-							City:            null.StringFrom(getColumValue(cols, colMap, "Ort", "City", nil)),
-							Zip:             null.StringFrom(getColumValue(cols, colMap, "PLZ", "ZIP", nil)),
+							GridOperatorId:   null.StringFrom(netOperatorId),
+							GridOperatorName: null.StringFrom(gridOperatorName(netOperatorId)),
+							MeteringPoint:    getColumValue(cols, colMap, "Zählpunkt", "MeteringPoint Id", nil),
+							Transformer:      null.String{},
+							Direction:        role,
+							Status:           model.ACTIVE,
+							TariffId:         null.String{},
+							EquipmentNumber:  equipmentNumber(cols, colMap),
+							EquipmentName:    equipmentName(cols, colMap),
+							RegisteredSince:  registeredSince,
+							InverterId:       null.String{},
+							Street:           null.StringFrom(getColumValue(cols, colMap, "Straße", "Street", nil)),
+							StreetNumber:     null.StringFrom(getColumValue(cols, colMap, "Hausnummer", "Street Number", nil)),
+							City:             null.StringFrom(getColumValue(cols, colMap, "Ort", "City", nil)),
+							Zip:              null.StringFrom(getColumValue(cols, colMap, "PLZ", "ZIP", nil)),
 						})
 					}
 				}

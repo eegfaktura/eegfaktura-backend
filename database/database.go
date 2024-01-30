@@ -6,9 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/doug-martin/goqu/v9"
-	"github.com/golang/glog"
+	_ "github.com/jackc/pgx/v5"
 	"github.com/jmoiron/sqlx"
-	_ "github.com/lib/pq"
 	"github.com/pborman/uuid"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -23,7 +22,7 @@ var (
 func GetTx(db sqlx.DB) (*sqlx.Tx, error) {
 	tx, err := db.Beginx()
 	if err != nil {
-		glog.Error(err)
+		log.Error(err)
 		return nil, err
 	}
 	return tx, nil
@@ -65,6 +64,18 @@ func GetTariff(tenant string) ([]model.Tariff, error) {
 	return tariff, err
 }
 
+func GetTariffNameMap(tenant string) (map[string]string, error) {
+	tariffs, err := GetTariff(tenant)
+	if err != nil {
+		return nil, err
+	}
+	tariffMap := map[string]string{}
+	for _, t := range tariffs {
+		tariffMap[t.Id.String()] = t.Name
+	}
+	return tariffMap, nil
+}
+
 func ArchiveTariff(dbConn OpenDbXConnection, tenant string, id string) error {
 
 	db, err := dbConn()
@@ -82,7 +93,7 @@ func ArchiveTariff(dbConn OpenDbXConnection, tenant string, id string) error {
 		return ErrTariffUtilized
 	}
 
-	stmt, _, err = pgDialect.Select("id").From("base.meteringpoint").Where(goqu.Ex{"tariffId": id, "tenant": tenant}).ToSQL()
+	stmt, _, err = pgDialect.Select("metering_point_id").From("base.meteringpoint").Where(goqu.Ex{"tariff_id": id, "tenant": tenant}).ToSQL()
 	if err != nil {
 		return err
 	}

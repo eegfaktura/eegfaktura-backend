@@ -8,9 +8,12 @@ import (
 	"github.com/doug-martin/goqu/v9"
 	"github.com/jmoiron/sqlx"
 	"github.com/pborman/uuid"
+	log "github.com/sirupsen/logrus"
 	"strings"
 	"time"
 )
+
+const TABLE_PARTICIPANT = "base.participant"
 
 func GetParticipants(dbConn OpenDbXConnection, tenant string) ([]model.EegParticipant, error) {
 	var participants []model.EegParticipant = []model.EegParticipant{}
@@ -32,62 +35,66 @@ func GetParticipants(dbConn OpenDbXConnection, tenant string) ([]model.EegPartic
 		return []model.EegParticipant{}, err
 	}
 
-	for i, p := range participants {
-		stmt, _, err = pgDialect.From("base.contactdetail").Select(&p.Contact).Where(goqu.C("participant_id").Eq(p.Id.String())).ToSQL()
-		if err != nil {
-			return []model.EegParticipant{}, err
-		}
-		err = db.Get(&(participants[i].Contact), stmt)
-		if err != nil && err != dbsql.ErrNoRows {
-			return []model.EegParticipant{}, err
-		}
-
-		stmt, _, err = pgDialect.From("base.bankaccount").Select(&p.BankAccount).Where(goqu.C("participant_id").Eq(p.Id.String())).ToSQL()
-		if err != nil {
-			return []model.EegParticipant{}, err
-		}
-		err = db.Get(&(participants[i].BankAccount), stmt)
-		if err != nil && err != dbsql.ErrNoRows {
-			return []model.EegParticipant{}, err
-		}
-
-		stmt, _, err = pgDialect.From("base.address").Select(&p.BillingAddress).
-			Where(goqu.C("participant_id").Eq(p.Id.String()), goqu.C("type").Eq("BILLING")).ToSQL()
-		if err != nil {
-			return []model.EegParticipant{}, err
-		}
-		err = db.Get(&(participants[i].BillingAddress), stmt)
-		if err != nil && err != dbsql.ErrNoRows {
-			return []model.EegParticipant{}, err
-		}
-
-		stmt, _, err = pgDialect.From("base.address").Select(&p.ResidentAddress).
-			Where(goqu.C("participant_id").Eq(p.Id.String()), goqu.C("type").Eq("RESIDENCE")).ToSQL()
-		if err != nil {
-			return []model.EegParticipant{}, err
-		}
-		err = db.Get(&(participants[i].ResidentAddress), stmt)
-		if err != nil && err != dbsql.ErrNoRows {
-			return []model.EegParticipant{}, err
-		}
-
-		stmt, _, err = pgDialect.From("base.participant_meter_state").Select(&p.MeteringPoint).
-			LeftJoin(goqu.T("meteringpoint").Schema("base"), goqu.On(
-				goqu.S("base").Table("meteringpoint").Col("metering_point_id").
-					Eq(goqu.S("base").Table("participant_meter_state").Col("metering_point")),
-				goqu.S("base").Table("meteringpoint").Col("tenant").
-					Eq(goqu.S("base").Table("participant_meter_state").Col("tenant")))).
-			Where(goqu.C("participant_id").Table("participant_meter_state").Schema("base").Eq(p.Id.String())).ToSQL()
-		if err != nil {
-			return []model.EegParticipant{}, err
-		}
-		err = db.Select(&(participants[i].MeteringPoint), stmt)
-		if err != nil && err != dbsql.ErrNoRows {
-			return []model.EegParticipant{}, err
-		}
-		if participants[i].MeteringPoint == nil {
-			participants[i].MeteringPoint = []*model.MeteringPoint{}
-		}
+	for i, _ := range participants {
+		completeParticipant(db, &participants[i])
+		//stmt, _, err = pgDialect.From("base.contactdetail").Select(&p.Contact).Where(goqu.C("participant_id").Eq(p.Id.String())).ToSQL()
+		//if err != nil {
+		//	return []model.EegParticipant{}, err
+		//}
+		//err = db.Get(&(participants[i].Contact), stmt)
+		//if err != nil && err != dbsql.ErrNoRows {
+		//	return []model.EegParticipant{}, err
+		//}
+		//
+		//stmt, _, err = pgDialect.From("base.bankaccount").Select(&p.BankAccount).Where(goqu.C("participant_id").Eq(p.Id.String())).ToSQL()
+		//if err != nil {
+		//	return []model.EegParticipant{}, err
+		//}
+		//err = db.Get(&(participants[i].BankAccount), stmt)
+		//if err != nil && err != dbsql.ErrNoRows {
+		//	return []model.EegParticipant{}, err
+		//}
+		//
+		//stmt, _, err = pgDialect.From("base.address").Select(&p.BillingAddress).
+		//	Where(goqu.C("participant_id").Eq(p.Id.String()), goqu.C("type").Eq("BILLING")).ToSQL()
+		//if err != nil {
+		//	return []model.EegParticipant{}, err
+		//}
+		//err = db.Get(&(participants[i].BillingAddress), stmt)
+		//if err != nil && err != dbsql.ErrNoRows {
+		//	return []model.EegParticipant{}, err
+		//}
+		//
+		//stmt, _, err = pgDialect.From("base.address").Select(&p.ResidentAddress).
+		//	Where(goqu.C("participant_id").Eq(p.Id.String()), goqu.C("type").Eq("RESIDENCE")).ToSQL()
+		//if err != nil {
+		//	return []model.EegParticipant{}, err
+		//}
+		//err = db.Get(&(participants[i].ResidentAddress), stmt)
+		//if err != nil && err != dbsql.ErrNoRows {
+		//	return []model.EegParticipant{}, err
+		//}
+		//
+		//stmt, _, err = pgDialect.From("base.participant_meter_state").Select(&p.MeteringPoint).
+		//	LeftJoin(goqu.T("meteringpoint").Schema("base"), goqu.On(
+		//		goqu.S("base").Table("meteringpoint").Col("metering_point_id").
+		//			Eq(goqu.S("base").Table("participant_meter_state").Col("metering_point")),
+		//		goqu.S("base").Table("meteringpoint").Col("tenant").
+		//			Eq(goqu.S("base").Table("participant_meter_state").Col("tenant")))).
+		//	Where(
+		//		goqu.C("participant_id").Table("participant_meter_state").Schema("base").Eq(p.Id.String()),
+		//		goqu.C("tenant").Table("participant_meter_state").Schema("base").Eq(tenant)).ToSQL()
+		//if err != nil {
+		//	return []model.EegParticipant{}, err
+		//}
+		//err = db.Select(&(participants[i].MeteringPoint), stmt)
+		//if err != nil && err != dbsql.ErrNoRows {
+		//	log.WithField("SQL", "SELECT").Errorf("Select Meteringpoints: %s\n", stmt)
+		//	return []model.EegParticipant{}, err
+		//}
+		//if participants[i].MeteringPoint == nil {
+		//	participants[i].MeteringPoint = []*model.MeteringPoint{}
+		//}
 	}
 
 	return participants, nil
@@ -110,7 +117,7 @@ func QueryParticipant(participantId string) (*model.EegParticipant, error) {
 		return nil, err
 	}
 
-	err = CompleteParticipant(db, &participant)
+	err = completeParticipant(db, &participant)
 	if err != nil {
 		return nil, err
 	}
@@ -118,67 +125,67 @@ func QueryParticipant(participantId string) (*model.EegParticipant, error) {
 	return &participant, nil
 }
 
-func CompleteParticipant(db *sqlx.DB, p *model.EegParticipant) error {
-	sql, _, err := pgDialect.From("base.contactdetail").Select(&p.Contact).Where(goqu.C("participant_id").Eq(p.Id.String())).ToSQL()
-	if err != nil {
-		return err
-	}
-	err = db.Get(&(p.Contact), sql)
-	if err != nil && err != dbsql.ErrNoRows {
-		return err
-	}
-
-	sql, _, err = pgDialect.From("base.bankaccount").Select(&p.BankAccount).Where(goqu.C("participant_id").Eq(p.Id.String())).ToSQL()
-	if err != nil {
-		return err
-	}
-	err = db.Get(&(p.BankAccount), sql)
-	if err != nil && err != dbsql.ErrNoRows {
-		return err
-	}
-
-	sql, _, err = pgDialect.From("base.address").Select(&p.BillingAddress).
-		Where(goqu.C("participant_id").Eq(p.Id.String()), goqu.C("type").Eq("BILLING")).ToSQL()
-	if err != nil {
-		return err
-	}
-	err = db.Get(&(p.BillingAddress), sql)
-	if err != nil && err != dbsql.ErrNoRows {
-		return err
-	}
-
-	sql, _, err = pgDialect.From("base.address").Select(&p.ResidentAddress).
-		Where(goqu.C("participant_id").Eq(p.Id.String()), goqu.C("type").Eq("RESIDENCE")).ToSQL()
-	if err != nil {
-		return err
-	}
-	//fmt.Printf("SQL: %+v\n", sql)
-	err = db.Get(&(p.ResidentAddress), sql)
-	if err != nil && err != dbsql.ErrNoRows {
-		return err
-	}
-	//fmt.Printf("ADDRESS: %+v\n", p.ResidentAddress)
-
-	sql, _, err = pgDialect.From("base.meteringpoint").Select(&p.MeteringPoint).
-		LeftJoin(goqu.T("participant_meter_state").Schema("base"), goqu.On(
-			goqu.S("base").Table("meteringpoint").Col("metering_point_id").
-				Eq(goqu.S("base").Table("participant_meter_state").Col("metering_point")),
-			goqu.S("base").Table("meteringpoint").Col("tenant").
-				Eq(goqu.S("base").Table("participant_meter_state").Col("tenant")),
-			goqu.S("base").Table("meteringpoint").Col("participant_id").
-				Eq(goqu.S("base").Table("participant_meter_state").Col("participant_id")),
-		)).
-		Where(goqu.C("participant_id").Table("meteringpoint").Eq(p.Id.String())).ToSQL()
-	if err != nil {
-		return err
-	}
-	fmt.Printf("STMT: %+v\n", sql)
-	err = db.Select(&(p.MeteringPoint), sql)
-	if err != nil && err != dbsql.ErrNoRows {
-		return err
-	}
-	return nil
-}
+//func CompleteParticipant(db *sqlx.DB, p *model.EegParticipant) error {
+//	sql, _, err := pgDialect.From("base.contactdetail").Select(&p.Contact).Where(goqu.C("participant_id").Eq(p.Id.String())).ToSQL()
+//	if err != nil {
+//		return err
+//	}
+//	err = db.Get(&(p.Contact), sql)
+//	if err != nil && err != dbsql.ErrNoRows {
+//		return err
+//	}
+//
+//	sql, _, err = pgDialect.From("base.bankaccount").Select(&p.BankAccount).Where(goqu.C("participant_id").Eq(p.Id.String())).ToSQL()
+//	if err != nil {
+//		return err
+//	}
+//	err = db.Get(&(p.BankAccount), sql)
+//	if err != nil && err != dbsql.ErrNoRows {
+//		return err
+//	}
+//
+//	sql, _, err = pgDialect.From("base.address").Select(&p.BillingAddress).
+//		Where(goqu.C("participant_id").Eq(p.Id.String()), goqu.C("type").Eq("BILLING")).ToSQL()
+//	if err != nil {
+//		return err
+//	}
+//	err = db.Get(&(p.BillingAddress), sql)
+//	if err != nil && err != dbsql.ErrNoRows {
+//		return err
+//	}
+//
+//	sql, _, err = pgDialect.From("base.address").Select(&p.ResidentAddress).
+//		Where(goqu.C("participant_id").Eq(p.Id.String()), goqu.C("type").Eq("RESIDENCE")).ToSQL()
+//	if err != nil {
+//		return err
+//	}
+//	//fmt.Printf("SQL: %+v\n", sql)
+//	err = db.Get(&(p.ResidentAddress), sql)
+//	if err != nil && err != dbsql.ErrNoRows {
+//		return err
+//	}
+//	//fmt.Printf("ADDRESS: %+v\n", p.ResidentAddress)
+//
+//	sql, _, err = pgDialect.From("base.meteringpoint").Select(&p.MeteringPoint).
+//		LeftJoin(goqu.T("participant_meter_state").Schema("base"), goqu.On(
+//			goqu.S("base").Table("meteringpoint").Col("metering_point_id").
+//				Eq(goqu.S("base").Table("participant_meter_state").Col("metering_point")),
+//			goqu.S("base").Table("meteringpoint").Col("tenant").
+//				Eq(goqu.S("base").Table("participant_meter_state").Col("tenant")),
+//			goqu.S("base").Table("meteringpoint").Col("participant_id").
+//				Eq(goqu.S("base").Table("participant_meter_state").Col("participant_id")),
+//		)).
+//		Where(goqu.C("participant_id").Table("meteringpoint").Eq(p.Id.String())).ToSQL()
+//	if err != nil {
+//		return err
+//	}
+//	fmt.Printf("STMT: %+v\n", sql)
+//	err = db.Select(&(p.MeteringPoint), sql)
+//	if err != nil && err != dbsql.ErrNoRows {
+//		return err
+//	}
+//	return nil
+//}
 
 func UpdateParticipant(tenant, user string, participant *model.EegParticipant) error {
 	db, err := GetDBXConnection()
@@ -255,7 +262,7 @@ type ParticipantWithMeta struct {
 	LastmodifiedDate time.Time `db:"lastModifiedDate"`
 }
 
-// func RegisterParticipant(dbConn OpenDbXConnection, tenant, username string, participant *model.EegParticipant) error {
+// RegisterParticipant func RegisterParticipant(dbConn OpenDbXConnection, tenant, username string, participant *model.EegParticipant) error {
 func RegisterParticipant(tx *sqlx.Tx, tenant, username string, participant *model.EegParticipant) error {
 	//db, err := dbConn()
 	//if err != nil {
@@ -267,33 +274,26 @@ func RegisterParticipant(tx *sqlx.Tx, tenant, username string, participant *mode
 	participant.Id = uuid.NewUUID()
 	participant.ParticipantSince = time.Now()
 	participant.CreatedBy = username
-	return saveParticipant(tx, tenant, username, participant, RegisterMeteringPoints)
+	return saveParticipant(tx, tenant, username, participant, ImportMeteringPoints)
 }
 
-// func ImportParticipant(dbConn OpenDbXConnection, tenant, username string, participant *model.EegParticipant) error {
+// ImportParticipant func ImportParticipant(dbConn OpenDbXConnection, tenant, username string, participant *model.EegParticipant) error {
 func ImportParticipant(tx *sqlx.Tx, tenant, username string, participant *model.EegParticipant) error {
-	//db, err := dbConn()
-	//if err != nil {
-	//	return err
-	//}
-	//defer db.Close()
 
 	// check if User already exists
 	stmt, _, err := pgDialect.From("base.participant").
 		Select("id").
-		Where(goqu.C("firstname").Eq(participant.FirstName),
-			goqu.C("lastname").Eq(participant.LastName)).ToSQL()
+		Where(
+			goqu.C("firstname").Eq(participant.FirstName),
+			goqu.C("lastname").Eq(participant.LastName),
+			goqu.C("tenant").Eq(tenant)).ToSQL()
+	if err != nil {
+		return err
+	}
+	participantId := ""
+	err = tx.Get(&participantId, stmt)
 	if err == nil {
-		participantId := ""
-		err = tx.Get(&participantId, stmt)
-		if err == nil {
-			//tx, err := db.Begin()
-			//if err != nil {
-			//	return err
-			//}
-			//defer tx.Commit()
-			return ImportMeteringPoints(tx, tenant, participantId, participant.MeteringPoint)
-		}
+		return ImportMeteringPoints(tx, tenant, username, participantId, participant.MeteringPoint)
 	}
 
 	participant.Id = uuid.NewUUID()
@@ -313,23 +313,18 @@ func ConfirmParticipant(dbConn OpenDbXConnection, username, participantId string
 }
 
 func saveParticipant(tx *sqlx.Tx, tenant, username string, participant *model.EegParticipant,
-	registerMeteringPointsFunc func(*sqlx.Tx, string, string, []*model.MeteringPoint) error) error {
+	registerMeteringPointsFunc func(*sqlx.Tx, string, string, string, []*model.MeteringPoint) error) error {
 
 	registeringParticipant := ParticipantWithMeta{
 		participant, tenant, username, username, time.Now(),
 	}
 
-	//tx, err := db.Beginx()
-	//if err != nil {
-	//	return err
-	//}
-	//defer tx.Rollback()
+	if participant.ParticipantSince.IsZero() {
+		participant.ParticipantSince = time.Now()
+	}
 
 	participantId := ""
-	sql, _, _ := pgDialect.Insert("base.participant").Rows(registeringParticipant).Returning("id").
-		//OnConflict(goqu.DoUpdate("lastmodifieddate", goqu.L("NOW()"))).
-		ToSQL()
-
+	sql, _, _ := pgDialect.Insert("base.participant").Rows(registeringParticipant).Returning("id").ToSQL()
 	err := tx.QueryRow(sql).Scan(&participantId)
 	if err != nil {
 		return err
@@ -370,11 +365,7 @@ func saveParticipant(tx *sqlx.Tx, tenant, username string, participant *model.Ee
 		return err
 	}
 
-	err = registerMeteringPointsFunc(tx, tenant, participantId, participant.MeteringPoint)
-	//if err != nil {
-	//	return err
-	//}
-	//return tx.Commit()
+	err = registerMeteringPointsFunc(tx, tenant, username, participantId, participant.MeteringPoint)
 	return err
 }
 
@@ -394,10 +385,6 @@ func ArchiveParticipant(dbConn OpenDbXConnection, user string, id string) error 
 	}
 	_, err = db.Exec(stmt)
 	return err
-}
-
-func InsertParticipant(tenant string, participant *model.EegParticipant) error {
-	return nil
 }
 
 func UpdateParticipantPartial(dbConn OpenDbXConnection, participantId, name string, value interface{}) (*model.EegParticipant, error) {
@@ -551,13 +538,26 @@ func completeParticipant(db *sqlx.DB, participant *model.EegParticipant) error {
 		return err
 	}
 
-	stmt, _, err = pgDialect.From("base.participant_meter_state").Select(&participant.MeteringPoint).
-		LeftJoin(goqu.T("meteringpoint").Schema("base"), goqu.On(
-			goqu.S("base").Table("meteringpoint").Col("metering_point_id").
-				Eq(goqu.S("base").Table("participant_meter_state").Col("metering_point")),
-			goqu.S("base").Table("meteringpoint").Col("tenant").
-				Eq(goqu.S("base").Table("participant_meter_state").Col("tenant")))).
-		Where(goqu.C("participant_id").Table("participant_meter_state").Schema("base").Eq(participantId)).ToSQL()
+	//stmt, _, err = pgDialect.From("base.participant_meter_state").Select(&participant.MeteringPoint).
+	//	LeftJoin(goqu.T("meteringpoint").Schema("base"), goqu.On(
+	//		goqu.S("base").Table("meteringpoint").Col("metering_point_id").
+	//			Eq(goqu.S("base").Table("participant_meter_state").Col("metering_point")),
+	//		goqu.S("base").Table("meteringpoint").Col("tenant").
+	//			Eq(goqu.S("base").Table("participant_meter_state").Col("tenant")))).
+	//	Where(goqu.C("participant_id").Table("participant_meter_state").Schema("base").Eq(participantId)).ToSQL()
+
+	stateStmt := pgDialect.From("base.meteringpoint").
+		Select(
+			goqu.C("activesince"),
+			goqu.C("inactivesince"),
+			goqu.C("active"),
+			goqu.C("metering_point_id").As("mid"),
+			goqu.C("participant_id").As("pid"))
+	stmt, _, err = pgDialect.From("base.meteringpoint", stateStmt.As("state")).Select(&participant.MeteringPoint).
+		Where(
+			goqu.C("participant_id").Table("meteringpoint").Schema("base").Eq(participantId),
+			goqu.C("mid").Eq(goqu.C("metering_point_id")),
+			goqu.C("pid").Eq(goqu.C("participant_id"))).ToSQL()
 	if err != nil {
 		return err
 	}
@@ -570,4 +570,34 @@ func completeParticipant(db *sqlx.DB, participant *model.EegParticipant) error {
 	}
 
 	return nil
+}
+
+func FindParticipantByMeteringPoint(db *sqlx.DB, tenant, meteringPoint string) (*model.EegParticipant, error) {
+
+	participant := model.EegParticipant{}
+
+	participantIdStmt := pgDialect.From("base.meteringpoint").Select("participant_id").
+		Where(
+			goqu.C("metering_point_id").Eq(meteringPoint),
+			goqu.C("tenant").Eq(tenant),
+			goqu.C("inactivesince").Gte("now()"),
+			goqu.C("activesince").Lte("now()"))
+
+	stmt, _, err := pgDialect.From(TABLE_PARTICIPANT).Select(&participant).Where(goqu.C("id").Eq(participantIdStmt)).ToSQL()
+	if err != nil {
+		log.WithField("SQL", "SELECT").Infof("Create Stmt: %+v, %+v", participant, participantIdStmt)
+		return nil, err
+	}
+
+	err = db.Get(&(participant), stmt)
+	if err != nil {
+		log.WithField("SQL", "SELECT").Infof("Stmt: %s", stmt)
+		return nil, err
+	}
+
+	err = completeParticipant(db, &participant)
+	if err != nil {
+		return nil, err
+	}
+	return &participant, nil
 }
