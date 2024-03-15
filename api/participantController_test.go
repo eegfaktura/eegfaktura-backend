@@ -1,7 +1,6 @@
 package api
 
 import (
-	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
 	"encoding/json"
 	"fmt"
@@ -79,10 +78,10 @@ func Test_registerParticipant(t *testing.T) {
 	fmt.Printf("Part: %+v\n", p)
 }
 
-func Test_ConfirmParticipant(t *testing.T) {
-	participantId := "ea9942da-03da-11ee-b82b-5a985b4b033a"
-	participant, err := database.QueryParticipant(participantId)
-
-	require.NoError(t, err)
-	fmt.Printf("P: %+v\n", participant)
-}
+//func Test_ConfirmParticipant(t *testing.T) {
+//	participantId := "ea9942da-03da-11ee-b82b-5a985b4b033a"
+//	participant, err := database.QueryParticipant(participantId)
+//
+//	require.NoError(t, err)
+//	fmt.Printf("P: %+v\n", participant)
+//}

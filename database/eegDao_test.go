@@ -14,7 +14,10 @@ import (
 )
 
 func TestGetEeg(t *testing.T) {
-	eeg, err := GetEeg(openTestDb, "TE000001")
+	db, err := openTestDb()
+	require.NoError(t, err)
+
+	eeg, err := GetEeg(db, "TE000001")
 	assert.NoError(t, err)
 
 	expectedEeg := &model.Eeg{
@@ -129,10 +132,14 @@ func TestUpdateEeg(t *testing.T) {
 }
 
 func TestNotification(t *testing.T) {
-	err := SaveNotification(openTestDb, "TE000001", `{"msg":"hello world"}`, "NOTIFICATION", "ADMIN")
+	db, err := openTestDb()
+	require.NoError(t, err)
+	defer db.Close()
+
+	err = SaveNotification(openTestDb, "TE000001", `{"msg":"hello world"}`, "NOTIFICATION", "ADMIN")
 	assert.NoError(t, err)
 
-	not, err := GetNotification(openTestDb, "TE000001", 0, true)
+	not, err := GetNotification(db, "TE000001", 0, true)
 	assert.NoError(t, err)
 
 	assert.NotEmpty(t, not)

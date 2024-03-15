@@ -35,13 +35,14 @@ var (
 		185: "Zählpunkt befindet sich nicht im Bereich der Energiegemeinschaft",
 		37:  "Stornierung nicht möglich",
 
-		55: "Zählpunkt nicht dem Lieferanten zugeordnet",
-		70: "Änderung/Anforderung akzeptiert",
-		82: "Prozessdatum falsch",
-		90: "Kein Smart Meter",
-		94: "Keine Daten im angeforderten Zeitraum vorhanden",
+		55:  "Zählpunkt nicht dem Lieferanten zugeordnet",
+		70:  "Änderung/Anforderung akzeptiert",
+		82:  "Prozessdatum falsch",
+		90:  "Kein Smart Meter",
+		94:  "Keine Daten im angeforderten Zeitraum vorhanden",
+		176: "Zustimmung erfolgreich entzogen",
 	}
-	REJECTED_INVALID_CODES = []int16{56, 184, 177, 159, 158}
+	REJECTED_INVALID_CODES = []int16{56, 57, 90, 158, 159, 177, 184, 185}
 	REJECTED_VALID_CODES   = []int16{156, 86}
 )
 
@@ -82,11 +83,17 @@ func getSubsriptions() []model.Subscriptions {
 				protocolCmRevImpHandler(msg, recorder)
 			},
 		},
+		{
+			Protocol: model.CM_REV_SP,
+			Handler: func(msg model.SubscribeMessage) {
+				protocolCmRevImpHandler(msg, recorder)
+			},
+		},
 	}
 }
 
 func protocolCrMsgHandler(msg model.SubscribeMessage, recorder EdaRecording) {
-	logrus.Printf("Handle Subscriptions: %+v", msg.Protocol)
+	logrus.WithField("tenant", msg.Tenant).Printf("Handle Subscriptions: %+v-%v", msg.Protocol, msg.MessageCode)
 
 	if msg.Payload.Meter != nil && msg.Payload.Energy != nil {
 		historyValue := map[string]interface{}{"meter": msg.Payload.Meter.MeteringPoint, "from": msg.Payload.Energy.Start, "to": msg.Payload.Energy.End}
@@ -96,8 +103,8 @@ func protocolCrMsgHandler(msg model.SubscribeMessage, recorder EdaRecording) {
 }
 
 func protocolCrReqPtHandler(msg model.SubscribeMessage, recorder EdaRecording) {
-	var err error
-	logrus.Printf("Handle Subscriptions: %+v", msg.Protocol)
+	//var err error
+	logrus.WithField("tenant", msg.Tenant).Printf("Handle Subscriptions: %+v-%v", msg.Protocol, msg.MessageCode)
 
 	codes := []int16{}
 
@@ -108,19 +115,19 @@ func protocolCrReqPtHandler(msg model.SubscribeMessage, recorder EdaRecording) {
 		return
 	}
 
-	if err = recorder.saveNotification(map[string]interface{}{
+	if err := recorder.saveNotification(map[string]interface{}{
 		"type":           msg.MessageCode,
 		"meteringPoints": msg.Payload.Meters(),
 		"responseCodes":  convertCodes2Strings(codes),
-	}, msg.Tenant, "NOTIFICATION", "ADMIN"); err != nil {
+	}, msg.Tenant, "EDA_PROCESS", "ADMIN"); err != nil {
 		logrus.WithField("PROTOCOL", msg.Protocol).Error(err)
 	}
 	_ = recorder.saveHistory(msg.Tenant, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
 }
 
 func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) {
-	var err error
-	logrus.WithField("tenant", msg.Tenant).Printf("Handle Subscriptions: %+v", msg.Protocol)
+	//var err error
+	logrus.WithField("tenant", msg.Tenant).Printf("Handle Subscriptions: %+v-%v", msg.Protocol, msg.MessageCode)
 
 	codes, meters, _ := extractResponseCodeAndMeteringPoint(&msg.Payload)
 	var status model.StatusType
@@ -135,6 +142,8 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 			status = model.INVALID
 		} else if codesContains(REJECTED_VALID_CODES, codes) {
 			status = ""
+		} else if codesContains([]int16{156}, codes) {
+			status = model.ACTIVE
 		} else {
 			status = model.REJECTED
 		}
@@ -162,38 +171,48 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 	}
 
 	if len(meters) > 0 && len(status) > 0 {
-		if err := database.MeteringPointsSetStatus(recorder.databaseConnectFunc(), msg.Tenant, status, meters); err != nil {
+		db, err := recorder.databaseConnection()
+		if err != nil {
+			logrus.WithField("tenant", msg.Tenant).Error(err)
+			return
+		}
+		defer func() { _ = db.Close() }()
+
+		if err := database.MeteringPointsSetStatus(db, msg.Tenant, status, meters); err != nil {
 			logrus.WithField("error", err.Error()).Errorf("can not change metering point status %+v", meters)
 			return
 		}
-
-		switch status {
-		case model.ACTIVE:
-
-		}
-
 	}
 
-	if err = recorder.saveNotification(map[string]interface{}{
+	if err := recorder.saveNotification(map[string]interface{}{
 		"type":           msg.MessageCode,
 		"meteringPoints": meters,
 		"responseCodes":  convertCodes2Strings(codes),
-	}, msg.Tenant, "NOTIFICATION", "ADMIN"); err != nil {
+	}, msg.Tenant, "EDA_PROCESS", "ADMIN"); err != nil {
 		logrus.WithField("PROTOCOL", msg.Protocol).Error(err)
 	}
 	_ = recorder.saveHistory(msg.Tenant, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
 }
 
 func protocolCmRevImpHandler(msg model.SubscribeMessage, recorder EdaRecording) {
-	var err error
-	logrus.Printf("Handle Subscriptions: %+v Code: %s", msg.Protocol, msg.MessageCode)
+	//var err error
+	logrus.WithField("tenant", msg.Tenant).Printf("Handle Subscriptions: %+v Code: %s", msg.Protocol, msg.MessageCode)
 
 	meters, _ := extractResponseCodeAndMeteringPointV2(&msg.Payload)
 	var status model.StatusType
 
 	switch msg.MessageCode {
-	case model.EBMS_AUFHEBUNG_CCMI, model.EBMS_AUFHEBUNG_CCMS, model.EBMS_AUFHEBUNG_CCMC:
+	case model.EBMS_AUFHEBUNG_CCMI, model.EBMS_AUFHEBUNG_CCMC:
 		status = model.INACTIVE
+	case model.EBMS_ANTWORT_CCMS:
+		if len(meters) > 0 {
+			if codesContains([]int16{176}, meters[0].codes) {
+				meters[0].consentEnd = msg.Payload.ConsentEnd
+				status = model.INACTIVE
+			}
+		}
+	case model.EBMS_AUFHEBUNG_CCMS, model.EBMS_ABLEHNUNG_CCMS:
+		status = ""
 	default:
 		return
 	}
@@ -205,18 +224,22 @@ func protocolCmRevImpHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 			logrus.WithField("tenant", msg.Tenant).Error(err)
 			return
 		}
+		defer func() { _ = db.Close() }()
+
 		if err := database.MeteringPointRevoke(db, msg.Tenant, meters[0].meter, status, consentEnd); err != nil {
 			logrus.WithField("tenant", msg.Tenant).Errorf("can not revoke metering point %+v - %+v", meters, err)
 			return
 		}
 	}
 
-	if err = recorder.saveNotification(map[string]interface{}{
-		"type":           msg.MessageCode,
-		"meteringPoints": msg.Payload.Meters(),
-		"responseCodes":  convertCodes2Strings(meters[0].codes),
-	}, msg.Tenant, "NOTIFICATION", "ADMIN"); err != nil {
-		logrus.WithField("PROTOCOL", msg.Protocol).Error(err)
+	if len(meters) > 0 {
+		if err := recorder.saveNotification(map[string]interface{}{
+			"type":           msg.MessageCode,
+			"meteringPoints": meters,
+			"responseCodes":  convertCodes2Strings(meters[0].codes),
+		}, msg.Tenant, "EDA_PROCESS", "ADMIN"); err != nil {
+			logrus.WithField("PROTOCOL", msg.Protocol).Error(err)
+		}
 	}
 	_ = recorder.saveHistory(msg.Tenant, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
 }

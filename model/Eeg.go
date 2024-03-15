@@ -49,10 +49,10 @@ const (
 
 type Address struct {
 	Type         AddressType `json:"type, omitempty" goqu:"skipupdate"`
-	Street       string      `json:"street,omitempty"`
-	StreetNumber string      `json:"streetNumber,omitempty" db:"streetNumber"`
-	Zip          string      `json:"zip,omitempty"`
-	City         string      `json:"city,omitempty"`
+	Street       null.String `json:"street,omitempty"`
+	StreetNumber null.String `json:"streetNumber,omitempty" db:"streetNumber"`
+	Zip          null.String `json:"zip,omitempty"`
+	City         null.String `json:"city,omitempty"`
 }
 
 type EegAddress struct {

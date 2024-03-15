@@ -1,10 +1,12 @@
 {
-  "realm": "VFEEG",
-  "auth-server-url": "https://login.ourproject.at/auth/",
-  "ssl-required": "external",
-  "resource": "at.ourproject.vfeeg.app",
-  "public-client": true,
-  "verify-token-audience": true,
-  "use-resource-role-mappings": true,
-  "confidential-port": 0
+  "app" : {
+    "realm": "EEGFaktura",
+    "auth-server-url": "https://login.eegfaktura.at/",
+    "ssl-required": "external",
+    "resource": "at.ourproject.vfeeg.app",
+    "public-client": true,
+    "verify-token-audience": true,
+    "use-resource-role-mappings": true,
+    "confidential-port": 0
+  }
 }

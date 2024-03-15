@@ -11,16 +11,9 @@ import (
 const TABLE_EEG = "base.eeg"
 const TABLE_EEG_ADDRESS = "base.address"
 
-func GetEeg(dbOpen OpenDbXConnection, tenant string) (*model.Eeg, error) {
-
-	db, err := dbOpen()
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-
+func GetEeg(tx *sqlx.DB, tenant string) (*model.Eeg, error) {
 	var eeg model.Eeg
-	err = db.QueryRow(""+
+	err := tx.QueryRow(""+
 		"SELECT name, description, \"businessNr\", legal, gridoperator_name, \"communityId\", gridoperator_code, \"rcNumber\", area, \"allocationMode\", "+
 		"\"settlementInterval\", \"providerBusinessNr\", street, \"streetNumber\", zip, city, phone, email, website, iban, owner, sepa, \"bankName\", "+
 		"\"taxNumber\", \"vatNumber\", online, \"contactPerson\" FROM base.eeg WHERE tenant = $1", tenant).
@@ -32,7 +25,7 @@ func GetEeg(dbOpen OpenDbXConnection, tenant string) (*model.Eeg, error) {
 			&eeg.TaxNumber, &eeg.VatNumber, &eeg.Online, &eeg.ContactPerson,
 		)
 	if err == dbsql.ErrNoRows {
-		return &eeg, nil
+		return nil, nil
 	}
 	eeg.Id = tenant
 	return &eeg, err
@@ -50,35 +43,29 @@ func InsertEeg(db *sqlx.DB, tenant string, eeg *model.Eeg) error {
 	return err
 }
 
-func UpdateEegPartial(tenant string, fields map[string]interface{}) error {
-	db, err := GetDBXConnection()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
+func UpdateEegPartial(db *sqlx.DB, tenant string, fields map[string]interface{}) error {
 	statement, _, _ := pgDialect.Update(TABLE_EEG).Set(fields).Where(goqu.Ex{"tenant": goqu.V(tenant)}).ToSQL()
 
 	log.Debugf("Update EEG VALUES: %s\n", statement)
 
-	_, err = db.Exec(statement)
+	_, err := db.Exec(statement)
 	return err
 }
 
-func UpdateEegAddressPartial(tenant string, fields map[string]interface{}) error {
-	db, err := GetDBXConnection()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	statement, _, _ := pgDialect.Update(TABLE_EEG_ADDRESS).Set(fields).Where(goqu.Ex{"tenant": goqu.V(tenant)}).ToSQL()
-
-	log.Debugf("Update EEG VALUES: %s\n", statement)
-
-	_, err = db.Exec(statement)
-	return err
-}
+//func UpdateEegAddressPartial(tenant string, fields map[string]interface{}) error {
+//	db, err := GetDBXConnection()
+//	if err != nil {
+//		return err
+//	}
+//	defer db.Close()
+//
+//	statement, _, _ := pgDialect.Update(TABLE_EEG_ADDRESS).Set(fields).Where(goqu.Ex{"tenant": goqu.V(tenant)}).ToSQL()
+//
+//	log.Debugf("Update EEG VALUES: %s\n", statement)
+//
+//	_, err = db.Exec(statement)
+//	return err
+//}
 
 func SaveNotification(dbOpen OpenDbXConnection, tenant string, notification string, msgType, role string) error {
 	db, err := dbOpen()
@@ -93,13 +80,7 @@ func SaveNotification(dbOpen OpenDbXConnection, tenant string, notification stri
 	return err
 }
 
-func GetNotification(dbOpen OpenDbXConnection, tenant string, start int64, isAdmin bool) ([]model.EegNotification, error) {
-	db, err := dbOpen()
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-
+func GetNotification(db *sqlx.DB, tenant string, start int64, isAdmin bool) ([]model.EegNotification, error) {
 	n := []model.EegNotification{}
 
 	statement := pgDialect.From("base.notification").Select(&n).

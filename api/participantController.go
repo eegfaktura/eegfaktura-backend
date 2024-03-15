@@ -26,10 +26,16 @@ func InitParticipantRouter(r *mux.Router, jwtWrapper middleware.JWTWrapperFunc) 
 
 func fetchParticipant() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
-		participant, err := database.GetParticipants(database.GetDBXConnection, tenant)
+		db, err := database.ConnectToDatabase()
 		if err != nil {
-			log.WithField("tenant", tenant).WithField("error", "SQLQuery").Error(err.Error())
-			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1200, err.Error()))
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
+			return
+		}
+		defer func() { _ = db.Close() }()
+
+		participant, err := database.GetParticipants(db, tenant)
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
 		respondWithJSON(w, 200, participant)
@@ -44,11 +50,18 @@ func updateParticipant() middleware.JWTHandlerFunc {
 		var t model.EegParticipant
 		err := json.NewDecoder(r.Body).Decode(&t)
 		if err != nil {
-			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1299, err.Error()))
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
 
-		err = database.UpdateParticipant(tenant, claims.Username, &t)
+		db, err := database.ConnectToDatabase()
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
+			return
+		}
+		defer func() { _ = db.Close() }()
+
+		err = database.UpdateParticipant(db, tenant, claims.Username, &t)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -65,29 +78,30 @@ func updateParticipantPartial() middleware.JWTHandlerFunc {
 		var p map[string]interface{}
 		err := json.NewDecoder(r.Body).Decode(&p)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
+		db, err := database.ConnectToDatabase()
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
+			return
+		}
+		defer func() { _ = db.Close() }()
 
 		name := p["path"].(string)
 		value := p["value"]
 
-		_, err = database.UpdateParticipantPartial(database.GetDBXConnection, participantId, name, value)
+		err = database.UpdateParticipantPartial(db, participantId, name, value)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondWith(w, http.StatusInternalServerError, tenant, err)
 			return
 		}
 
-		participant, err := database.GetParticipant(database.GetDBXConnection, participantId)
-		//names := strings.Split(name, ".")
-		//ret := map[string]interface{}{}
-		//rr := ret
-		//for _, n := range names[:len(names)-1] {
-		//	rr[n] = make(map[string]interface{})
-		//	rr = rr[n].(map[string]interface{})
-		//}
-		//rr[names[len(names)-1]] = value
-		//fmt.Printf("ret: %+v\n", ret)
+		participant, err := database.GetParticipant(db, participantId)
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, err)
+			return
+		}
 		respondWithJSON(w, http.StatusAccepted, participant)
 	}
 }
@@ -97,32 +111,35 @@ func registerParticipant() middleware.JWTHandlerFunc {
 		var t model.EegParticipant
 		err := json.NewDecoder(r.Body).Decode(&t)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
 
-		db, err := database.GetDBXConnection()
+		db, err := database.ConnectToDatabase()
 		if err != nil {
-			log.Error(err)
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
 			return
 		}
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 
 		tx, err := db.Beginx()
 		if err != nil {
-			log.Error(err)
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondWith(w, http.StatusInternalServerError, tenant, model.ErrOpenTx(err))
 			return
 		}
-		defer tx.Rollback()
+		defer func() {
+			if err != nil {
+				_ = tx.Rollback()
+			} else {
+				_ = tx.Commit()
+			}
+		}()
 
 		err = database.RegisterParticipant(tx, tenant, claims.Username, &t)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
-		tx.Commit()
 		respondWithJSON(w, http.StatusCreated, t)
 	}
 }
@@ -133,21 +150,26 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 		vars := mux.Vars(r)
 		participantId := vars["id"]
 
-		eeg, err := database.GetEeg(database.GetDBXConnection, tenant)
+		db, err := database.ConnectToDatabase()
 		if err != nil {
-			log.WithField("tenant", tenant).Error(err)
-			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(500, err.Error()))
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
 			return
 		}
-		participant, err := database.QueryParticipant(participantId)
+		defer func() { _ = db.Close() }()
+
+		eeg, err := database.GetEeg(db, tenant)
 		if err != nil {
-			log.WithField("tenant", tenant).WithField("SQL", "QUERY Participant").Error(err)
-			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(500, err.Error()))
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
+			return
+		}
+		participant, err := database.QueryParticipant(db, participantId)
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
 
-		if err = database.ConfirmParticipant(database.GetDBXConnection, claims.Username, participantId); err != nil {
-			log.WithField("tenant", tenant).Error(err)
+		if err = database.ConfirmParticipant(db, claims.Username, participantId); err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
 		participant.Status = model.ACTIVE
@@ -156,7 +178,7 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 			for _, m := range participant.MeteringPoint {
 				log.WithField("tenant", tenant).Infof("Start Meteringpoint %s registration", m.MeteringPoint)
 				if err = mqttclient.RegistrationForParticipation(tenant, eeg, m); err != nil {
-					respondWithError(w, http.StatusInternalServerError, err.Error())
+					respondWith(w, http.StatusInternalServerError, tenant, err)
 					return
 				}
 			}
@@ -166,10 +188,9 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 				meterIds = append(meterIds, m.MeteringPoint)
 				m.Status = model.ACTIVE
 			}
-			err := database.MeteringPointsSetStatus(database.GetDBXConnection, tenant, model.ACTIVE, meterIds)
+			err := database.MeteringPointsSetStatus(db, tenant, model.ACTIVE, meterIds)
 			if err != nil {
-				log.Errorf("Error SET PARTICIPANT ACTIVE: %+v", err.Error())
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				respondWith(w, http.StatusBadRequest, tenant, err)
 				return
 			}
 		}
@@ -182,8 +203,15 @@ func archiveParticipant() middleware.JWTHandlerFunc {
 		vars := mux.Vars(r)
 		idStr := vars["id"]
 
-		if err := database.ArchiveParticipant(database.GetDBXConnection, claims.Username, idStr); err != nil {
-			respondWithJSON(w, http.StatusBadRequest, map[string]interface{}{"id": 500, "error": err.Error()})
+		db, err := database.ConnectToDatabase()
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
+			return
+		}
+		defer func() { _ = db.Close() }()
+
+		if err := database.ArchiveParticipant(db, claims.Username, idStr); err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
 		respondWithJSON(w, http.StatusAccepted, map[string]interface{}{"status": "ok"})

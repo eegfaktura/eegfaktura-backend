@@ -71,6 +71,8 @@ func createContainer(ctx context.Context) (testcontainers.Container, string, str
 		"POSTGRES_PASSWORD": DbPass,
 		"POSTGRES_USER":     DbUser,
 		"POSTGRES_DB":       DbName,
+		"TZ":                "Europe/Berlin",
+		"PGTZ":              "Europe/Berlin",
 	}
 	var port = "5432/tcp"
 

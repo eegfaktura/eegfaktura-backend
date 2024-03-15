@@ -1,7 +1,6 @@
 package mqttclient
 
 import (
-	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
 	"errors"
 	log "github.com/sirupsen/logrus"
@@ -20,12 +19,12 @@ func RegistrationForParticipation(tenant string, eeg *model.Eeg, meter *model.Me
 
 	log.WithField("tenant", tenant).Infof("Start Meteringpoint %s registration", meter.MeteringPoint)
 	if err := SendEbmsMessage(ebmsMessage); err != nil {
-		return err
+		return model.ErrEdaCommunication(err)
 	}
 	return nil
 }
 
-func RequestingEnergyData(tenant string, eeg *model.Eeg, meter *model.MeteringPoint, fromDate, toDate int64) error {
+var RequestingEnergyData = func(tenant string, eeg *model.Eeg, meter *model.MeteringPoint, fromDate, toDate int64) error {
 	ebmsMessage := model.EbmsMessage{
 		Sender:      strings.ToUpper(tenant),
 		Receiver:    strings.ToUpper(getReceiverFrom(eeg, meter)),
@@ -38,6 +37,31 @@ func RequestingEnergyData(tenant string, eeg *model.Eeg, meter *model.MeteringPo
 	}
 
 	log.WithField("tenant", tenant).Info("Start Metering sync")
+	if err := SendEbmsMessage(ebmsMessage); err != nil {
+		return err
+	}
+	return nil
+}
+
+func RevokeMeteringPoint(tenant string, eeg *model.Eeg, meter *model.MeteringPoint, consentEnd int64, reason *string) error {
+
+	var reasonMsg string
+	if reason != nil {
+		reasonMsg = *reason
+	}
+
+	ebmsMessage := model.EbmsMessage{
+		Sender:   strings.ToUpper(tenant),
+		Receiver: strings.ToUpper(getReceiverFrom(eeg, meter)),
+		//Sender:      "sepp.gaug",
+		//Receiver:    "obermueller.peter",
+		MessageCode: model.EBMS_AUFHEBUNG_CCMS,
+		Meter:       &model.Meter{MeteringPoint: meter.MeteringPoint},
+		ConsentEnd:  consentEnd,
+		Reason:      reasonMsg,
+	}
+
+	log.WithField("tenant", tenant).Info("Revoke Meteringpoint")
 	if err := SendEbmsMessage(ebmsMessage); err != nil {
 		return err
 	}
@@ -79,14 +103,14 @@ func getReceiverFrom(eeg *model.Eeg, meter *model.MeteringPoint) string {
 	return eeg.GridOperator
 }
 
-func getReceiver(eeg model.Eeg, meterId string) string {
-	if eeg.Area == model.BEG {
-		gridOperatorId, err := database.FindGridOperatorId(database.GetDBXConnection, meterId)
-		if err != nil {
-			log.WithField("tenant", eeg.Id).Errorf("Cannot find Grid Operator in Metering Point: %s", err.Error())
-			return eeg.GridOperator
-		}
-		return gridOperatorId
-	}
-	return eeg.GridOperator
-}
+//func getReceiver(eeg model.Eeg, meterId string) string {
+//	if eeg.Area == model.BEG {
+//		gridOperatorId, err := database.FindGridOperatorId(database.GetDBXConnection, meterId)
+//		if err != nil {
+//			log.WithField("tenant", eeg.Id).Errorf("Cannot find Grid Operator in Metering Point: %s", err.Error())
+//			return eeg.GridOperator
+//		}
+//		return gridOperatorId
+//	}
+//	return eeg.GridOperator
+//}

@@ -27,7 +27,7 @@ type EdaRecorder struct {
 }
 
 func NewEdaRecorder() *EdaRecorder {
-	return &EdaRecorder{dbOpen: database.GetDBXConnection}
+	return &EdaRecorder{dbOpen: database.ConnectToDatabase}
 }
 
 func (r *EdaRecorder) databaseConnectFunc() database.OpenDbXConnection {
@@ -75,11 +75,6 @@ func (r *EdaRecorder) saveHistory(tenant string, messageCode model.EbMsMessageTy
 
 func (r *EdaRecorder) meteringPointPerformAnswerMsg(tenant string, meterId []string) error {
 
-	eeg, err := database.GetEeg(database.GetDBXConnection, tenant)
-	if err != nil {
-		return err
-	}
-
 	db, err := r.dbOpen()
 	if err != nil {
 		return err
@@ -90,6 +85,11 @@ func (r *EdaRecorder) meteringPointPerformAnswerMsg(tenant string, meterId []str
 			logrus.Errorf("Error Close Database: %v", err)
 		}
 	}()
+
+	eeg, err := database.GetEeg(db, tenant)
+	if err != nil {
+		return err
+	}
 
 	tx, err := db.Beginx()
 	if err != nil {

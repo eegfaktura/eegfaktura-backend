@@ -4,6 +4,7 @@ import (
 	"at.ourproject/vfeeg-backend/model"
 	"bytes"
 	"fmt"
+	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
 	"github.com/xuri/excelize/v2"
 	"gopkg.in/guregu/null.v4"
@@ -25,7 +26,7 @@ func openReader(r io.Reader, filename string, opt ...excelize.Options) (*exceliz
 	return f, nil
 }
 
-func ImportMasterdataFromExcel(dbConn OpenDbXConnection, r io.Reader, filename, sheet, tenant string) error {
+func ImportMasterdataFromExcel(db *sqlx.DB, r io.Reader, filename, sheet, tenant string) error {
 	var f *excelize.File
 	var err error
 
@@ -41,13 +42,7 @@ func ImportMasterdataFromExcel(dbConn OpenDbXConnection, r io.Reader, filename, 
 		log.Error(err)
 		return err
 	}
-
-	db, err := dbConn()
-	if err != nil {
-		log.Error(err)
-		return err
-	}
-	defer db.Close()
+	defer rows.Close()
 
 	gridOperators, err := GetGridOperators(db)
 	if err != nil {
@@ -328,10 +323,10 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 					excelize.Cell{Value: c.BankAccount.Iban.String},
 					excelize.Cell{Value: c.BankAccount.Owner.String},
 					excelize.Cell{Value: c.BankAccount.BankName.String},
-					excelize.Cell{Value: c.BillingAddress.Zip},
-					excelize.Cell{Value: c.BillingAddress.City},
-					excelize.Cell{Value: c.BillingAddress.Street},
-					excelize.Cell{Value: c.BillingAddress.StreetNumber},
+					excelize.Cell{Value: c.BillingAddress.Zip.String},
+					excelize.Cell{Value: c.BillingAddress.City.String},
+					excelize.Cell{Value: c.BillingAddress.Street.String},
+					excelize.Cell{Value: c.BillingAddress.StreetNumber.String},
 					excelize.Cell{Value: c.CompanyRegisterNumber},
 					excelize.Cell{Value: c.Role},
 					excelize.Cell{Value: func() string {
@@ -514,7 +509,7 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 					if len(regDateAt) > 0 {
 						registeredSince = parseExcelDate(regDateAt)
 					} else {
-						registeredSince = time.Date(time.Now().Year(), 1, 1, 0, 0, 0, 0, time.UTC)
+						registeredSince = time.Date(time.Now().Year(), 1, 1, 0, 0, 0, 0, time.Local)
 					}
 
 					cpStatus := getColumValue(cols, colMap, "Zählpunktstatus", "Metering Point State", nil)
@@ -532,17 +527,17 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 								BusinessRole:      businessRole(cols, colMap),
 								ResidentAddress: model.Address{
 									Type:         model.RESIDENCE,
-									Street:       getColumValue(cols, colMap, "Straße", "Street", nil),
-									StreetNumber: streetNumber,
-									Zip:          getColumValue(cols, colMap, "PLZ", "ZIP", nil),
-									City:         getColumValue(cols, colMap, "Ort", "City", nil),
+									Street:       null.StringFrom(getColumValue(cols, colMap, "Straße", "Street", nil)),
+									StreetNumber: null.StringFrom(streetNumber),
+									Zip:          null.StringFrom(getColumValue(cols, colMap, "PLZ", "ZIP", nil)),
+									City:         null.StringFrom(getColumValue(cols, colMap, "Ort", "City", nil)),
 								},
 								BillingAddress: model.Address{
 									Type:         model.BILLING,
-									Street:       getColumValue(cols, colMap, "Straße", "Street", nil),
-									StreetNumber: streetNumber,
-									Zip:          getColumValue(cols, colMap, "PLZ", "ZIP", nil),
-									City:         getColumValue(cols, colMap, "Ort", "City", nil),
+									Street:       null.StringFrom(getColumValue(cols, colMap, "Straße", "Street", nil)),
+									StreetNumber: null.StringFrom(streetNumber),
+									Zip:          null.StringFrom(getColumValue(cols, colMap, "PLZ", "ZIP", nil)),
+									City:         null.StringFrom(getColumValue(cols, colMap, "Ort", "City", nil)),
 								},
 								Status:           model.ACTIVE,
 								ParticipantSince: participantSince,

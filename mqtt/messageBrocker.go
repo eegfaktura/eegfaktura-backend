@@ -183,7 +183,14 @@ func (mb *MessageBroker) command(cmd CommandMessage) {
 		online, ok := msg["online"]
 		if ok {
 			log.Infof("Update EEG Online State to %v", online)
-			if err := database.UpdateEegPartial(strings.ToUpper(cmd.tenant), map[string]interface{}{"online": online}); err != nil {
+			db, err := database.ConnectToDatabase()
+			if err != nil {
+				log.WithField("tenant", cmd.tenant).Error(err.Error())
+				return
+			}
+			defer func() { _ = db.Close() }()
+
+			if err := database.UpdateEegPartial(db, strings.ToUpper(cmd.tenant), map[string]interface{}{"online": online}); err != nil {
 				log.Errorf("Error Command: %+v", err)
 			}
 		}

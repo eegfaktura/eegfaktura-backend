@@ -19,13 +19,13 @@ func InitEegRouter(r *mux.Router, jwtWrapper middleware.JWTWrapperFunc) *mux.Rou
 	s := r.PathPrefix("/eeg").Subrouter()
 
 	s.HandleFunc("", middleware.Protect(getEEG())).Methods("GET")
-	s.HandleFunc("", jwtWrapper(updateEEG())).Methods("POST")
+	s.HandleFunc("", middleware.Protect(updateEEG())).Methods("POST")
 	s.HandleFunc("/tariff", middleware.Protect(getTariff())).Methods("GET")
-	s.HandleFunc("/tariff", jwtWrapper(addTariff())).Methods("POST")
-	s.HandleFunc("/tariff/{id}", jwtWrapper(archiveTariff())).Methods("DELETE")
-	s.HandleFunc("/sync/participants", jwtWrapper(syncParticipantsEda())).Methods("POST")
-	s.HandleFunc("/import/masterdata", jwtWrapper(uploadMasterData())).Methods("POST")
-	s.HandleFunc("/export/masterdata", jwtWrapper(exportMasterData())).Methods("GET")
+	s.HandleFunc("/tariff", middleware.Protect(addTariff())).Methods("POST")
+	s.HandleFunc("/tariff/{id}", middleware.Protect(archiveTariff())).Methods("DELETE")
+	s.HandleFunc("/sync/participants", middleware.Protect(syncParticipantsEda())).Methods("POST")
+	s.HandleFunc("/import/masterdata", middleware.Protect(uploadMasterData())).Methods("POST")
+	s.HandleFunc("/export/masterdata", middleware.Protect(exportMasterData())).Methods("GET")
 	s.HandleFunc("/notifications/{id}", middleware.Protect(notifications())).Methods("GET")
 
 	return r
@@ -34,9 +34,21 @@ func InitEegRouter(r *mux.Router, jwtWrapper middleware.JWTWrapperFunc) *mux.Rou
 func getEEG() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
 		log.Infof("Query EEG with TENANT: %s", tenant)
-		eeg, err := database.GetEeg(database.GetDBXConnection, tenant)
+
+		db, err := database.ConnectToDatabase()
 		if err != nil {
-			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1000, err.Error()))
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
+			return
+		}
+		defer func() { _ = db.Close() }()
+
+		eeg, err := database.GetEeg(db, tenant)
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
+			return
+		}
+		if eeg == nil {
+			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1001, fmt.Sprintf("EEG %s is not existing yet!", tenant)))
 			return
 		}
 		respondWithJSON(w, 200, eeg)
@@ -48,17 +60,24 @@ func updateEEG() middleware.JWTHandlerFunc {
 		var e map[string]interface{}
 		err := json.NewDecoder(r.Body).Decode(&e)
 		if err != nil {
-			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1001, err.Error()))
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
 
-		if err = database.UpdateEegPartial(tenant, e); err != nil {
+		db, err := database.ConnectToDatabase()
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
+			return
+		}
+		defer func() { _ = db.Close() }()
+
+		if err = database.UpdateEegPartial(db, tenant, e); err != nil {
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1002, err.Error()))
 			return
 		}
-		eeg, err := database.GetEeg(database.GetDBXConnection, tenant)
+		eeg, err := database.GetEeg(db, tenant)
 		if err != nil {
-			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1003, err.Error()))
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
 			return
 		}
 		respondWithJSON(w, 200, eeg)
@@ -67,7 +86,15 @@ func updateEEG() middleware.JWTHandlerFunc {
 
 func getTariff() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
-		tariff, err := database.GetTariff(tenant)
+		db, err := database.ConnectToDatabase()
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
+			return
+		}
+		defer func() { _ = db.Close() }()
+
+		tariff, err := database.GetTariff(db, tenant)
+		log.WithField("tenant", tenant).Infof("Query Tariff %v", err)
 		if err != nil {
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1010, err.Error()))
 			return
@@ -83,12 +110,18 @@ func addTariff() middleware.JWTHandlerFunc {
 		var t model.Tariff
 		err := json.NewDecoder(r.Body).Decode(&t)
 		if err != nil {
-			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1020, err.Error()))
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
 		log.Printf("ADD TARIF: %+v Tenant: %+v", t, tenant)
+		db, err := database.ConnectToDatabase()
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
+			return
+		}
+		defer func() { _ = db.Close() }()
 
-		if err = database.AddTariff(database.GetDBXConnection, tenant, &t); err != nil {
+		if err = database.AddTariff(db, tenant, claims.Username, &t); err != nil {
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1021, err.Error()))
 			return
 		}
@@ -101,7 +134,14 @@ func archiveTariff() middleware.JWTHandlerFunc {
 		vars := mux.Vars(r)
 		idStr := vars["id"]
 
-		if err := database.ArchiveTariff(database.GetDBXConnection, tenant, idStr); err != nil {
+		db, err := database.ConnectToDatabase()
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
+			return
+		}
+		defer func() { _ = db.Close() }()
+
+		if err := database.ArchiveTariff(db, tenant, idStr); err != nil {
 			if errors.Is(err, database.ErrTariffUtilized) {
 				respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1022, err.Error()))
 				return
@@ -115,10 +155,16 @@ func archiveTariff() middleware.JWTHandlerFunc {
 
 func syncParticipantsEda() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
-		eeg, err := database.GetEeg(database.GetDBXConnection, tenant)
+		db, err := database.ConnectToDatabase()
 		if err != nil {
-			log.WithField("error", err).Error("Query EEG")
-			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1030, err.Error()))
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
+			return
+		}
+		defer func() { _ = db.Close() }()
+
+		eeg, err := database.GetEeg(db, tenant)
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
 			return
 		}
 
@@ -155,7 +201,14 @@ func uploadMasterData() middleware.JWTHandlerFunc {
 		defer file.Close()
 		log.Infof("--- Upload File: %s, %s, %s\n", sheet, handler.Filename, tenant)
 
-		if err = database.ImportMasterdataFromExcel(database.GetDBXConnection, file, handler.Filename, sheet, tenant); err != nil {
+		db, err := database.ConnectToDatabase()
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
+			return
+		}
+		defer func() { _ = db.Close() }()
+
+		if err = database.ImportMasterdataFromExcel(db, file, handler.Filename, sheet, tenant); err != nil {
 			log.WithField("tanant", tenant).Error(err)
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1052, err.Error()))
 		} else {
@@ -167,19 +220,26 @@ func uploadMasterData() middleware.JWTHandlerFunc {
 
 func exportMasterData() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
-		eeg, err := database.GetEeg(database.GetDBXConnection, tenant)
+		db, err := database.ConnectToDatabase()
 		if err != nil {
-			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1000, err.Error()))
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
+			return
+		}
+		defer func() { _ = db.Close() }()
+
+		eeg, err := database.GetEeg(db, tenant)
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
 			return
 		}
 
-		participants, err := database.GetParticipants(database.GetDBXConnection, tenant)
+		participants, err := database.GetParticipants(db, tenant)
 		if err != nil {
-			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1050, err.Error()))
+			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
 
-		tariffMap, err := database.GetTariffNameMap(tenant)
+		tariffMap, err := database.GetTariffNameMap(db, tenant)
 		if err != nil {
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1059, err.Error()))
 			return
@@ -226,7 +286,15 @@ func notifications() middleware.JWTHandlerFunc {
 			}
 			return false
 		}
-		notifications, err := database.GetNotification(database.GetDBXConnection, tenant, id, isAdmin())
+
+		db, err := database.ConnectToDatabase()
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
+			return
+		}
+		defer func() { _ = db.Close() }()
+
+		notifications, err := database.GetNotification(db, tenant, id, isAdmin())
 		if err != nil {
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1055, err.Error()))
 			return

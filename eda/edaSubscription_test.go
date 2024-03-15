@@ -5,6 +5,7 @@ import (
 	"at.ourproject/vfeeg-backend/model"
 	"encoding/json"
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"testing"
@@ -16,7 +17,7 @@ type RecorderMock struct {
 }
 
 func (_m *RecorderMock) saveNotification(notificationValue map[string]interface{}, tenant, notificationType, role string) error {
-	_ = _m.Called(notificationValue, tenant, notificationType, role)
+	args := _m.Called(notificationValue, tenant, notificationType, role)
 	//var r0 error
 	//if rf, ok := ret.Get(0).(func(string, string) error); ok {
 	//	r0 = rf(paperSize, content)
@@ -26,10 +27,10 @@ func (_m *RecorderMock) saveNotification(notificationValue map[string]interface{
 	//
 	//return r0
 
-	return nil
+	return args.Error(0)
 }
 func (_m *RecorderMock) saveHistory(tenant string, messageCode model.EbMsMessageType, conversationId, role, dir string, protocol model.EdaProtocol, msg interface{}) error {
-	_ = _m.Called(tenant, messageCode, conversationId, role, dir, protocol, msg)
+	args := _m.Called(tenant, messageCode, conversationId, role, dir, protocol, msg)
 	//var r0 error
 	//if rf, ok := ret.Get(0).(func(string, string) error); ok {
 	//	r0 = rf(paperSize, content)
@@ -38,11 +39,19 @@ func (_m *RecorderMock) saveHistory(tenant string, messageCode model.EbMsMessage
 	//}
 	//
 	//return r0
-	return nil
+	return args.Error(0)
 }
 
 func (_m *RecorderMock) databaseConnectFunc() database.OpenDbXConnection {
 	return _m.dbOpen
+}
+
+func (_m *RecorderMock) databaseConnection() (*sqlx.DB, error) {
+	return _m.dbOpen()
+}
+
+func (_m *RecorderMock) meteringPointPerformAnswerMsg(tenant string, meterId []string) error {
+	return nil
 }
 
 func TestProtcolCrMsgHandler(t *testing.T) {
@@ -61,7 +70,8 @@ func TestProtcolCrMsgHandler(t *testing.T) {
 	require.NoError(t, err)
 
 	historyValue := map[string]interface{}{"meter": msg.Payload.Meter.MeteringPoint, "from": msg.Payload.Energy.Start, "to": msg.Payload.Energy.End}
-	recorder.Mock.On("saveHistory", "TE1000001", model.EBMS_ENERGY_FILE_RESPONSE, "AT003000202208191420233640008300242", "ADMIN", "IN", model.CR_MSG, historyValue)
+	recorder.Mock.On(
+		"saveHistory", "TE1000001", model.EBMS_ENERGY_FILE_RESPONSE, "AT003000202208191420233640008300242", "ADMIN", "IN", model.CR_MSG, historyValue).Return(nil)
 
 	protocolCrMsgHandler(msg, recorder)
 	recorder.AssertExpectations(t)
@@ -115,8 +125,8 @@ func TestProtocolCrReqPtHandler(t *testing.T) {
 				"type":           msg.MessageCode,
 				"meteringPoints": msg.Payload.Meters(),
 				"responseCodes":  m.codes,
-			}, msg.Tenant, "NOTIFICATION", "ADMIN")
-			recorder.Mock.On("saveHistory", "TE1000001", msg.MessageCode, "AT003000202208191420233640008300242", "ADMIN", "IN", msg.Protocol, msg.Payload)
+			}, msg.Tenant, "EDA_PROCESS", "ADMIN").Return(nil)
+			recorder.Mock.On("saveHistory", "TE1000001", msg.MessageCode, "AT003000202208191420233640008300242", "ADMIN", "IN", msg.Protocol, msg.Payload).Return(nil)
 
 			protocolCrReqPtHandler(msg, recorder)
 			recorder.AssertExpectations(t)
@@ -187,9 +197,9 @@ func TestProtocolEcReqOnlHandler(t *testing.T) {
 				"type":           msg.MessageCode,
 				"meteringPoints": extractMeters(msg.Payload, m.messageType),
 				"responseCodes":  m.codes,
-			}, msg.Tenant, "NOTIFICATION", "ADMIN")
+			}, msg.Tenant, "EDA_PROCESS", "ADMIN").Return(nil)
 
-			recorder.Mock.On("saveHistory", "TE1000001", msg.MessageCode, "RC100298202308171692252620000000321", "ADMIN", "IN", model.EC_REQ_ONL, msg.Payload)
+			recorder.Mock.On("saveHistory", "TE1000001", msg.MessageCode, "RC100298202308171692252620000000321", "ADMIN", "IN", model.EC_REQ_ONL, msg.Payload).Return(nil)
 
 			protocolEcReqOnlHandler(msg, recorder)
 			recorder.AssertExpectations(t)

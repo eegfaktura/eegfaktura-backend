@@ -3,9 +3,8 @@ package database
 import (
 	"at.ourproject/vfeeg-backend/model"
 	"errors"
-
-	//"at.ourproject/vfeeg-backend/util"
 	"fmt"
+
 	"github.com/doug-martin/goqu/v9"
 	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
@@ -21,9 +20,9 @@ type meteringEntryType struct {
 	*model.MeteringPoint
 	Participant_id string    `goqu:"skipupdate"`
 	Tenant         string    `goqu:"skipupdate"`
-	ActiveSince    time.Time `goqu:"skipupdate"`
-	Active         int       `goqu:"skipupdate"`
-	Flag           null.Int  `goqu:"skipupdate"`
+	ActiveSince    time.Time `db:"activesince"`
+	Active         int       `db:"active"`
+	Flag           null.Int  `goqu:"skipupdate,omitempty"`
 }
 
 func createMeteringEntries(tenant, username, participantId string, points []*model.MeteringPoint, state *model.StatusType) []*meteringEntryType {
@@ -42,7 +41,8 @@ func createMeteringEntries(tenant, username, participantId string, points []*mod
 			p.Status = model.NEW
 		}
 		meteringEntries = append(meteringEntries,
-			&meteringEntryType{p, participantId, tenant, p.RegisteredSince, calcActive(p.Status), null.IntFrom(int64(calcFlag(p.Status)))})
+			&meteringEntryType{p, participantId, tenant,
+				p.RegisteredSince, int(calcActive(p.Status)), null.IntFrom(int64(calcFlag(p.Status)))})
 	}
 	return meteringEntries
 }
@@ -109,30 +109,24 @@ func saveMeteringPoint(tx *sqlx.Tx, meteringEntry []*meteringEntryType) error {
 	return err
 }
 
-func calcFlag(status model.StatusType) int {
+func calcFlag(status model.StatusType) model.ProcessFlag {
 	switch status {
 	case model.ACTIVE:
-		return 0
+		return model.F_IDLE
 	default:
-		return 1
+		return model.F_WAITING
 	}
 }
 
-func calcActive(status model.StatusType) int {
+func calcActive(status model.StatusType) model.ProcessStatus {
 	switch status {
 	case model.INACTIVE:
-		return 0
+		return model.P_INACTIVE
 	default:
-		return 1
+		return model.P_ACTIVE
 	}
 }
-func RegisterMeteringPoint(openDb OpenDbXConnection, tenant, username, participantId string, point *model.MeteringPoint) error {
-	db, err := openDb()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
+func RegisterMeteringPoint(db *sqlx.DB, tenant, username, participantId string, point *model.MeteringPoint) error {
 	tx, err := db.Beginx()
 	if err != nil {
 		log.Errorf("Not able to open a transaction. %s", err.Error())
@@ -148,22 +142,16 @@ func RegisterMeteringPoint(openDb OpenDbXConnection, tenant, username, participa
 	return saveMeteringPoint(tx, createMeteringEntries(tenant, username, participantId, []*model.MeteringPoint{point}, &point.Status))
 }
 
-func UpdateMeteringPoint(openDb OpenDbXConnection, tenant, username, participantId, meterId string, meteringPoint *model.MeteringPoint) error {
-	db, err := openDb()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
+func UpdateMeteringPoint(db *sqlx.DB, tenant, username, participantId, meterId string, meteringPoint *model.MeteringPoint) error {
 	updateObject := *meteringPoint
 	updateObject.State = nil
 	updateObject.ModifiedBy = null.StringFrom(username)
 	updateObject.ModifiedAt = time.Now()
 
 	updateEntry := meteringEntryType{
-		MeteringPoint: &updateObject, ActiveSince: meteringPoint.State.ActiveSince, Active: calcActive(updateObject.Status),
+		MeteringPoint: &updateObject, ActiveSince: meteringPoint.State.ActiveSince, Active: int(calcActive(updateObject.Status)),
 	}
-	statement, _, _ := goqu.Update(TABLE_METERINGPOINT).
+	statement, _, err := goqu.Update(TABLE_METERINGPOINT).
 		Set(updateEntry).
 		Where(goqu.Ex{
 			"tenant":            goqu.Op{"eq": tenant},
@@ -171,23 +159,20 @@ func UpdateMeteringPoint(openDb OpenDbXConnection, tenant, username, participant
 			"participant_id":    goqu.Op{"eq": participantId},
 		}).
 		ToSQL()
+	if err != nil {
+		return model.ErrUpdateMeter(err)
+	}
 
 	_, err = db.Exec(statement)
 	if err != nil {
 		log.WithField("SQL", "UPDATE").Errorf("Stmt: %v", statement)
-		return err
+		return model.ErrUpdateMeter(err)
 	}
 	return nil
 }
 
-func RemoveMeteringPoint(dbOpen OpenDbXConnection, tenant, participantId, meterId string) error {
-	db, err := dbOpen()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	statement, _, _ := goqu.Delete(TABLE_METERINGPOINT).
+func RemoveMeteringPoint(db *sqlx.DB, tenant, participantId, meterId string) error {
+	statement, _, err := goqu.Delete(TABLE_METERINGPOINT).
 		Where(goqu.Ex{
 			"tenant":            goqu.Op{"eq": tenant},
 			"metering_point_id": goqu.Op{"eq": meterId},
@@ -195,58 +180,90 @@ func RemoveMeteringPoint(dbOpen OpenDbXConnection, tenant, participantId, meterI
 			"status":            goqu.Op{"eq": "INVALID"},
 		}).
 		ToSQL()
-	_, err = db.Exec(statement)
+	if err != nil {
+		return model.ErrRemoveMeteringPoint(err)
+	}
 
+	_, err = db.Exec(statement)
+	if err != nil {
+		return model.ErrRemoveMeteringPoint(err)
+	}
 	return err
 }
 
-func ActivateMeteringPoints(tenant string, meterId []string) error {
-	db, err := GetDBXConnection()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
+//func ActivateMeteringPoints(tenant string, meterId []string) error {
+//	db, err := GetDBXConnection()
+//	if err != nil {
+//		return err
+//	}
+//	defer db.Close()
+//
+//	statement, _, _ := goqu.Update(TABLE_METERINGPOINT).
+//		Set(goqu.Record{"status": "ACTIVE"}).
+//		Where(goqu.Ex{
+//			"tenant":            goqu.Op{"eq": tenant},
+//			"metering_point_id": goqu.Op{"eq": meterId},
+//		}).
+//		ToSQL()
+//	_, err = db.Exec(statement)
+//
+//	return err
+//}
 
-	statement, _, _ := goqu.Update(TABLE_METERINGPOINT).
-		Set(goqu.Record{"status": "ACTIVE"}).
+func MeteringPointsSetStatus(db *sqlx.DB, tenant string, status model.StatusType, meterId []string) error {
+	updateSet := struct {
+		Status          model.StatusType `db:"status"`
+		ModifiedAt      time.Time        `db:"modifiedAt"`
+		ModifiedBy      string           `db:"modifiedBy"`
+		RegisteredSince time.Time        `db:"registeredSince" goqu:"omitempty"`
+		Inactivesince   time.Time        `db:"inactivesince" goqu:"omitempty"`
+		Flag            model.ProcessFlag
+		Active          model.ProcessStatus
+	}{
+		Status:     status,
+		ModifiedAt: time.Now(),
+		ModifiedBy: "EVU",
+		Flag:       calcFlag(status),
+		Active:     calcActive(status),
+	}
+
+	/**
+	Consider in case reactivating the metering point for the same participant, the inactivesince time must be adjusted to the very end time period.
+	The activesince time must be left alone as it controls the visibility of the time period in the user client.
+	Therefore, the activesince time is only set at creation time.
+
+	IMPROVE: Check the context of the meteringpoint while activating.
+	*/
+	flag := model.F_WAITING
+	if status == model.ACTIVE {
+		t := time.Date(2999, 12, 31, 23, 59, 59, 0, time.UTC)
+		updateSet.Inactivesince = t
+	} else if status == model.NEW || status == model.PENDING {
+		t := time.Now()
+		updateSet.RegisteredSince = t
+	}
+
+	statement, _, err := goqu.Update(TABLE_METERINGPOINT).
+		Set(updateSet).
 		Where(goqu.Ex{
 			"tenant":            goqu.Op{"eq": tenant},
 			"metering_point_id": goqu.Op{"eq": meterId},
-		}).
-		ToSQL()
-	_, err = db.Exec(statement)
-
-	return err
-}
-
-func MeteringPointsSetStatus(dbOpen OpenDbXConnection, tenant string, status model.StatusType, meterId []string) error {
-	db, err := dbOpen()
+			"flag":              goqu.Op{"eq": flag},
+		}).ToSQL()
 	if err != nil {
-		return err
+		return model.ErrStatusMeter(err)
 	}
-	defer db.Close()
-
-	statement, _, _ := goqu.Update(TABLE_METERINGPOINT).
-		Set(goqu.Record{"status": status, "registeredSince": time.Now(), "modifiedAt": time.Now(), "modifiedBy": "EVU"}).
-		Where(goqu.Ex{
-			"tenant":            goqu.Op{"eq": tenant},
-			"metering_point_id": goqu.Op{"eq": meterId},
-		}).
-		ToSQL()
 	_, err = db.Exec(statement)
-
-	return err
+	if err != nil {
+		log.WithField("SQL", "UPDATE").Errorf("Stmt: %v", statement)
+		return model.ErrStatusMeter(err)
+	}
+	return nil
 }
 
 func MeteringPointRevoke(db *sqlx.DB, tenant, meterId string, status model.StatusType, consentEnd time.Time) error {
 
-	fmt.Printf("Revoke Meter: %s at %v\n", meterId, consentEnd)
-
-	//db, err := dbOpen()
-	//if err != nil {
-	//	return err
-	//}
-	//defer db.Close()
+	log.Debugf("Revoke Meter: %s at %v\n", meterId, consentEnd)
 
 	participant, err := FindParticipantByMeteringPoint(db, tenant, meterId)
 	if err != nil {
@@ -264,15 +281,6 @@ func MeteringPointRevoke(db *sqlx.DB, tenant, meterId string, status model.Statu
 		}
 	}()
 
-	//var participantId string
-	//stmt, _, _ := pgDialect.From(TABLE_METERINGPOINT_STATE).Select("participant_id").
-	//	Where(
-	//		goqu.C("metering_point").Eq(meterId),
-	//		goqu.C("tenant").Eq(tenant),
-	//		goqu.C("inactivesince").Gt(consentEnd),
-	//		goqu.C("activesince").Lt(consentEnd)).ToSQL()
-	//err = tx.Get(&participantId, stmt)
-
 	statement, _, _ := goqu.Update(TABLE_METERINGPOINT).
 		Set(goqu.Record{
 			"status":          status,
@@ -280,7 +288,7 @@ func MeteringPointRevoke(db *sqlx.DB, tenant, meterId string, status model.Statu
 			"modifiedAt":      time.Now(),
 			"modifiedBy":      "EVU",
 			"active":          calcActive(status),
-			"inactivesince":   consentEnd}).
+			"inactivesince":   consentEnd.Local()}).
 		Where(goqu.Ex{
 			"tenant":            goqu.Op{"eq": tenant},
 			"metering_point_id": goqu.Op{"eq": meterId},
@@ -387,28 +395,26 @@ func FindGridOperatorId(dbOpen OpenDbXConnection, meterId string) (string, error
 	return gridOperatorId, nil
 }
 
-func FindInactiveMeteringById(dbOpen OpenDbXConnection, meterId string) ([]*model.MeteringPoint, error) {
-	return findMeteringByIdAndState(dbOpen, meterId, 0)
+func FindInactiveMeteringById(db *sqlx.DB, meterId string) ([]*model.MeteringPoint, error) {
+	return findMeteringByIdAndState(db, []string{meterId}, model.P_INACTIVE)
 }
 
-func FindMeteringById(dbOpen OpenDbXConnection, meterId string) (*model.MeteringPoint, error) {
-	m, err := findMeteringByIdAndState(dbOpen, meterId, 1)
+func GetMeteringByIds(db *sqlx.DB, meterIds []string) ([]*model.MeteringPoint, error) {
+	return findMeteringByIdAndState(db, meterIds, model.P_ACTIVE)
+}
+
+func FindMeteringById(tx *sqlx.DB, meterId string) (*model.MeteringPoint, error) {
+	m, err := findMeteringByIdAndState(tx, []string{meterId}, model.P_ACTIVE)
 	if err != nil {
 		return nil, err
 	}
 	if len(m) == 1 {
 		return m[0], nil
 	}
-	return nil, errors.New("More as one active Meteringpoint was found")
+	return nil, model.ErrFindMeter(errors.New("More as one active Meteringpoint was found"))
 }
 
-func findMeteringByIdAndState(dbOpen OpenDbXConnection, meterId string, active int) ([]*model.MeteringPoint, error) {
-	db, err := dbOpen()
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-
+func findMeteringByIdAndState(db *sqlx.DB, meterIds []string, active model.ProcessStatus) ([]*model.MeteringPoint, error) {
 	var m []*model.MeteringPoint
 
 	stateStmt := pgDialect.From(TABLE_METERINGPOINT).
@@ -419,67 +425,20 @@ func findMeteringByIdAndState(dbOpen OpenDbXConnection, meterId string, active i
 			goqu.C("metering_point_id").As("mid"))
 	stmt, _, err := pgDialect.From(TABLE_METERINGPOINT, stateStmt.As("state")).Select(&model.MeteringPoint{}).
 		Where(
-			goqu.C("metering_point_id").Eq(meterId),
+			goqu.C("metering_point_id").In(meterIds),
 			goqu.I("state.active").Eq(active),
 			goqu.C("mid").Eq(goqu.C("metering_point_id")),
 		).ToSQL()
 
-	//stmt, _, err := pgDialect.From(TABLE_METERINGPOINT).Select(&m).
-	//	InnerJoin(goqu.T("participant_meter_state").Schema("base"),
-	//		goqu.On(
-	//			goqu.Ex{"base.meteringpoint.participant_id": goqu.I("participant_meter_state.participant_id")},
-	//			goqu.Ex{"base.meteringpoint.metering_point_id": goqu.I("participant_meter_state.metering_point")})).
-	//	Where(goqu.C("metering_point_id").Eq(meterId)).ToSQL()
 	if err != nil {
-		return nil, err
+		return nil, model.ErrFindMeter(err)
 	}
+
+	fmt.Printf("SQL-Stmt: %s\n", stmt)
 	err = db.Select(&m, stmt)
 	if err != nil {
 		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", stmt)
-		return nil, err
+		return nil, model.ErrFindMeter(err)
 	}
 	return m, nil
 }
-
-//func MeteringPointPerformAnswerMsg(dbOpen OpenDbXConnection, tenant string, meterId []string) error {
-//	eeg, err := GetEeg(tenant)
-//	if err != nil {
-//		return err
-//	}
-//
-//	db, err := dbOpen()
-//	if err != nil {
-//		return err
-//	}
-//	defer func() {
-//		err = db.Close()
-//		if err != nil {
-//			log.Errorf("Error Close Database: %v", err)
-//		}
-//	}()
-//
-//	tx, err := db.Beginx()
-//	if err != nil {
-//		return err
-//	}
-//	defer func() {
-//		err := tx.Rollback()
-//		if err != nil {
-//			log.Errorf("Rollback Error: %v", err)
-//		}
-//	}()
-//
-//	for _, mid := range meterId {
-//		participant, err := FindParticipantByMeteringPoint(tx, tenant, mid)
-//		if err != nil {
-//			return err
-//		}
-//		if participant.Contact.Email.Valid {
-//			if err = parser.SendActivationMailFromTemplate(services.SendMail,
-//				tenant, "Aktivierung im Serviceportal", eeg, participant); err != nil {
-//				log.Errorf("Error Sending Mail: %+v", err.Error())
-//			}
-//		}
-//	}
-//	return tx.Commit()
-//}

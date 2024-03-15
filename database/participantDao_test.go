@@ -76,6 +76,7 @@ func TestRegisterParticipant(t *testing.T) {
 
 func TestGetParticipant(t *testing.T) {
 	mockDb, err := GetDatabaseMock()
+	dbx := sqlx.NewDb(mockDb.db, "mock")
 
 	participantRows := sqlmock.NewRows([]string{
 		"id", "firstname", "lastname", "role", "businessRole", "titleBefore", "titleAfter", "participantSince",
@@ -106,7 +107,7 @@ func TestGetParticipant(t *testing.T) {
 			time.Now(), "admin", time.Now(), "NEW", "Energieweg", "12a", uuid.New(), "", "1234")
 	mockDb.Mock.ExpectQuery("SELECT (.+) FROM \"base\".\"participant_meter_state\" (.+)").WillReturnRows(meterRows)
 
-	participants, err := GetParticipants(mockDb.OpenMockDb, "RC100298")
+	participants, err := GetParticipants(dbx, "RC100298")
 	assert.NoError(t, err)
 
 	assert.NotEmpty(t, participants)
@@ -114,7 +115,11 @@ func TestGetParticipant(t *testing.T) {
 }
 
 func Test_GetParticipants(t *testing.T) {
-	participants, err := GetParticipants(openTestDb, "TE000002")
+	db, err := openTestDb()
+	require.NoError(t, err)
+	defer db.Close()
+
+	participants, err := GetParticipants(db, "TE000002")
 	require.NoError(t, err)
 
 	require.Equal(t, 1, len(participants))
@@ -237,17 +242,17 @@ func TestImportParticipant(t *testing.T) {
 				Contact:           model.ContactInfo{},
 				BillingAddress: model.Address{
 					Type:         model.BILLING,
-					Street:       "Solargasse",
-					StreetNumber: "11a",
-					Zip:          "1111",
-					City:         "Solarcity",
+					Street:       null.StringFrom("Solargasse"),
+					StreetNumber: null.StringFrom("11a"),
+					Zip:          null.StringFrom("1111"),
+					City:         null.StringFrom("Solarcity"),
 				},
 				ResidentAddress: model.Address{
 					Type:         model.RESIDENCE,
-					Street:       "Solargasse",
-					StreetNumber: "11a",
-					Zip:          "1111",
-					City:         "Solarcity",
+					Street:       null.StringFrom("Solargasse"),
+					StreetNumber: null.StringFrom("11a"),
+					Zip:          null.StringFrom("1111"),
+					City:         null.StringFrom("Solarcity"),
 				},
 				BankAccount: model.BankInfo{},
 				MeteringPoint: []*model.MeteringPoint{&model.MeteringPoint{
@@ -289,17 +294,17 @@ func TestImportParticipant(t *testing.T) {
 				Contact:           model.ContactInfo{},
 				BillingAddress: model.Address{
 					Type:         model.BILLING,
-					Street:       "Solargasse",
-					StreetNumber: "11a",
-					Zip:          "1111",
-					City:         "Solarcity",
+					Street:       null.StringFrom("Solargasse"),
+					StreetNumber: null.StringFrom("11a"),
+					Zip:          null.StringFrom("1111"),
+					City:         null.StringFrom("Solarcity"),
 				},
 				ResidentAddress: model.Address{
 					Type:         model.RESIDENCE,
-					Street:       "Solargasse",
-					StreetNumber: "11a",
-					Zip:          "1111",
-					City:         "Solarcity",
+					Street:       null.StringFrom("Solargasse"),
+					StreetNumber: null.StringFrom("11a"),
+					Zip:          null.StringFrom("1111"),
+					City:         null.StringFrom("Solarcity"),
 				},
 				BankAccount:      model.BankInfo{},
 				ParticipantSince: time.Date(2023, 10, 6, 0, 0, 0, 0, time.UTC).Local(),
@@ -344,17 +349,17 @@ func TestImportParticipant(t *testing.T) {
 				Contact:           model.ContactInfo{},
 				BillingAddress: model.Address{
 					Type:         model.BILLING,
-					Street:       "Solargasse",
-					StreetNumber: "11a",
-					Zip:          "1111",
-					City:         "Solarcity",
+					Street:       null.StringFrom("Solargasse"),
+					StreetNumber: null.StringFrom("11a"),
+					Zip:          null.StringFrom("1111"),
+					City:         null.StringFrom("Solarcity"),
 				},
 				ResidentAddress: model.Address{
 					Type:         model.RESIDENCE,
-					Street:       "Solargasse",
-					StreetNumber: "11a",
-					Zip:          "1111",
-					City:         "Solarcity",
+					Street:       null.StringFrom("Solargasse"),
+					StreetNumber: null.StringFrom("11a"),
+					Zip:          null.StringFrom("1111"),
+					City:         null.StringFrom("Solarcity"),
 				},
 				BankAccount: model.BankInfo{},
 				MeteringPoint: []*model.MeteringPoint{&model.MeteringPoint{

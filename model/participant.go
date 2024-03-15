@@ -22,10 +22,10 @@ import (
 //}
 
 type MeterState struct {
-	ActiveSince   time.Time `json:"activeSince" goqu:"skipinsert"`
-	InactiveSince time.Time `json:"inactiveSince" goqu:"skipinsert"`
-	Active        int       `json:"-" goqu:"skipinsert"`
-	Flag          int       `json:"-" db:"-" goqu:"skipinsert"`
+	ActiveSince   time.Time     `json:"activeSince" goqu:"skipinsert"`
+	InactiveSince time.Time     `json:"inactiveSince" goqu:"skipinsert"`
+	Active        ProcessStatus `json:"-" goqu:"skipinsert"`
+	Flag          int           `json:"-" db:"-" goqu:"skipinsert"`
 }
 
 type EegParticipant struct {
@@ -83,6 +83,21 @@ const (
 	REVOKED  StatusType = "REVOKED"
 	INVALID  StatusType = "INVALID"
 	ARCHIVED StatusType = "ARCHIVED"
+)
+
+type ProcessStatus int
+
+const (
+	P_INACTIVE ProcessStatus = iota
+	P_ACTIVE
+	P_ERROR
+)
+
+type ProcessFlag int
+
+const (
+	F_IDLE ProcessFlag = iota
+	F_WAITING
 )
 
 type MeteringPoint struct {

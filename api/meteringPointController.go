@@ -7,6 +7,7 @@ import (
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
 	"at.ourproject/vfeeg-backend/util"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
@@ -19,12 +20,13 @@ import (
 func InitMeteringRouter(r *mux.Router, jwtWrapper middleware.JWTWrapperFunc) *mux.Router {
 	s := r.PathPrefix("/meteringpoint").Subrouter()
 
-	s.HandleFunc("/{pid}/update/{mid}", jwtWrapper(updateMeteringPoint())).Methods("PUT")
-	s.HandleFunc("/{pid}/remove/{mid}", jwtWrapper(removeMeteringPoint())).Methods("DELETE")
-	s.HandleFunc("/{pid}/archive/{mid}", jwtWrapper(archiveMeteringPoint())).Methods("PUT")
-	s.HandleFunc("/{pid}/create", jwtWrapper(createMeteringPoint())).Methods("PUT")
-	s.HandleFunc("/{pid}/register", jwtWrapper(registerMeteringPoint())).Methods("POST")
-	s.HandleFunc("/{pid}/syncenergy", jwtWrapper(requestMeteringPointValues())).Methods("POST")
+	s.HandleFunc("/{pid}/update/{mid}", middleware.Protect(updateMeteringPoint())).Methods("PUT")
+	s.HandleFunc("/{pid}/remove/{mid}", middleware.Protect(removeMeteringPoint())).Methods("DELETE")
+	s.HandleFunc("/{pid}/archive/{mid}", middleware.Protect(archiveMeteringPoint())).Methods("PUT")
+	s.HandleFunc("/{pid}/create", middleware.Protect(createMeteringPoint())).Methods("PUT")
+	s.HandleFunc("/{pid}/register", middleware.Protect(registerMeteringPoint())).Methods("POST")
+	s.HandleFunc("/{pid}/revokemeters", middleware.Protect(requestRevokeMeteringPoint())).Methods("POST")
+	s.HandleFunc("/syncenergy", middleware.Protect(requestMeteringPointValues())).Methods("POST")
 
 	return r
 }
@@ -37,7 +39,7 @@ func createMeteringPoint() middleware.JWTHandlerFunc {
 		var m model.MeteringPoint
 		err := json.NewDecoder(r.Body).Decode(&m)
 		if err != nil {
-			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1110, err.Error()))
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
 
@@ -47,7 +49,14 @@ func createMeteringPoint() middleware.JWTHandlerFunc {
 		}
 		m.ModifiedBy = null.StringFrom(claims.Username)
 
-		err = database.RegisterMeteringPoint(database.GetDBXConnection, tenant, claims.Username, participantId, &m)
+		db, err := database.ConnectToDatabase()
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
+			return
+		}
+		defer func() { _ = db.Close() }()
+
+		err = database.RegisterMeteringPoint(db, tenant, claims.Username, participantId, &m)
 		if err != nil {
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1111, err.Error()))
 			return
@@ -55,23 +64,15 @@ func createMeteringPoint() middleware.JWTHandlerFunc {
 
 		if m.Status == model.NEW {
 			log.WithField("tenant", tenant).Infof("register Meter:  %v ", m)
-			eeg, err := database.GetEeg(database.GetDBXConnection, tenant)
+			eeg, err := database.GetEeg(db, tenant)
 			if err != nil {
-				log.WithField("error", "SQLQuery").Error(err.Error())
-				respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1112, err.Error()))
+				respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
 				return
 			}
 
-			//participant, err := database.QueryParticipant(participantId)
-			//if err != nil {
-			//	log.WithField("error", err).Error("Query Participant")
-			//	http.Error(w, err.Error(), http.StatusBadRequest)
-			//	return
-			//}
-
 			if eeg.Online {
 				if err = mqttclient.RegistrationForParticipation(tenant, eeg, &m); err != nil {
-					respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1113, err.Error()))
+					respondWith(w, http.StatusBadRequest, tenant, err)
 					return
 				}
 			}
@@ -89,17 +90,21 @@ func updateMeteringPoint() middleware.JWTHandlerFunc {
 		m := model.MeteringPoint{}
 		err := json.NewDecoder(r.Body).Decode(&m)
 		if err != nil {
-			log.WithField("error", "DecodeJson").Error(err.Error())
-			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1114, err.Error()))
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
+		db, err := database.ConnectToDatabase()
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
+			return
+		}
+		defer func() { _ = db.Close() }()
 
 		m.ModifiedAt = time.Now()
 		m.ModifiedBy = null.StringFrom(claims.Username)
-		err = database.UpdateMeteringPoint(database.GetDBXConnection, tenant, claims.Username, participantId, meterId, &m)
+		err = database.UpdateMeteringPoint(db, tenant, claims.Username, participantId, meterId, &m)
 		if err != nil {
-			log.WithField("error", "SQLUpdate").Error(err.Error())
-			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1115, err.Error()))
+			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
 		respondWithJSON(w, http.StatusAccepted, m)
@@ -124,21 +129,25 @@ func registerMeteringPoint() middleware.JWTHandlerFunc {
 		request := registerMeterRequestType{}
 		err := json.NewDecoder(r.Body).Decode(&request)
 		if err != nil {
-			log.WithField("error", "DecodeJson").Error(err.Error())
-			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1130, err.Error()))
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
 
-		eeg, err := database.GetEeg(database.GetDBXConnection, tenant)
+		db, err := database.ConnectToDatabase()
 		if err != nil {
-			log.WithField("error", "SQLQuery").Error(err.Error())
-			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1131, err.Error()))
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
 			return
 		}
-		participant, err := database.QueryParticipant(participantId)
+		defer func() { _ = db.Close() }()
+
+		eeg, err := database.GetEeg(db, tenant)
 		if err != nil {
-			log.WithField("error", "SQLQuery").Error(err.Error())
-			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1132, err.Error()))
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
+			return
+		}
+		participant, err := database.QueryParticipant(db, participantId)
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
 
@@ -152,10 +161,9 @@ func registerMeteringPoint() middleware.JWTHandlerFunc {
 		}
 
 		log.WithField("tenant", tenant).Infof("register Meter:  %v ", request)
-
 		if eeg.Online && meter != nil {
 			if err = mqttclient.RegistrationForParticipation(tenant, eeg, meter); err != nil {
-				respondWithHttpError(w, http.StatusInternalServerError, BadProcessError(1140, err.Error()))
+				respondWith(w, http.StatusInternalServerError, tenant, err)
 				return
 			}
 		}
@@ -165,9 +173,6 @@ func registerMeteringPoint() middleware.JWTHandlerFunc {
 
 func requestMeteringPointValues() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
-		vars := mux.Vars(r)
-		participantId := vars["pid"]
-		log.WithField("tenant", tenant).Infof("Synchronize meteringpoint in participant %s", participantId)
 
 		request := struct {
 			MeteringPoints []struct {
@@ -179,43 +184,132 @@ func requestMeteringPointValues() middleware.JWTHandlerFunc {
 		}{}
 		err := json.NewDecoder(r.Body).Decode(&request)
 		if err != nil {
-			log.WithField("tenant", tenant).WithField("error", "DecodeJson").Error(err.Error())
-			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1103, err.Error()))
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
 
-		eeg, err := database.GetEeg(database.GetDBXConnection, tenant)
+		db, err := database.ConnectToDatabase()
 		if err != nil {
-			log.WithField("tenant", tenant).WithField("error", "SQLQuery").Error(err.Error())
-			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1000, err.Error()))
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
 			return
 		}
-		participant, err := database.QueryParticipant(participantId)
+		defer func() { _ = db.Close() }()
+
+		eeg, err := database.GetEeg(db, tenant)
 		if err != nil {
-			log.WithField("error", "Query").Error(err.Error())
-			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1101, err.Error()))
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
 			return
 		}
 
 		fromDate := util.TruncateToStartOfDay(time.UnixMilli(request.From)).UnixMilli()
 		toDate := util.TruncateToEndOfDay(time.UnixMilli(request.To)).UnixMilli()
 
+		var meters []string
+		for _, m := range request.MeteringPoints {
+			meters = append(meters, m.Meter)
+		}
+
+		if meters == nil {
+			respondWith(w, http.StatusInternalServerError, tenant, model.Wrap(errors.New("no Meter selected"), 3100))
+			return
+		}
+
 		log.WithField("tenant", tenant).Infof("request Metering values %v (%d - %d)", request, fromDate, toDate)
 		if eeg.Online {
 			var errorList []string
-			for _, m := range request.MeteringPoints {
-				if meter, err := database.FindMeteringById(database.GetDBXConnection, m.Meter); err == nil {
-					if err = mqttclient.RequestingEnergyData(tenant, eeg, meter, fromDate, toDate); err != nil {
-						log.WithField("tenant", tenant).Errorf("request Metering values %v (%d - %d)", m, fromDate, toDate)
-						errorList = append(errorList, fmt.Sprintf("%s: %s", meter.MeteringPoint, err.Error()))
-					}
-				} else {
+			meters, err := database.GetMeteringByIds(db, meters)
+			if err != nil {
+				respondWith(w, http.StatusInternalServerError, tenant, err)
+				return
+			}
+			for _, m := range meters {
+				if m.Status != model.ACTIVE || m.State.Active != model.P_ACTIVE {
+					continue
+				}
+				if err = mqttclient.RequestingEnergyData(tenant, eeg, m, fromDate, toDate); err != nil {
 					log.WithField("tenant", tenant).Errorf("request Metering values %v (%d - %d)", m, fromDate, toDate)
-					errorList = append(errorList, fmt.Sprintf("%s: %s", meter.MeteringPoint, err.Error()))
+					errorList = append(errorList, fmt.Sprintf("%s: %s", m.MeteringPoint, err.Error()))
 				}
 			}
 			if errorList != nil && len(errorList) > 0 {
-				respondWithHttpError(w, http.StatusInternalServerError, BadProcessError(1100, strings.Join(errorList, "; ")))
+				respondWith(w, http.StatusInternalServerError, tenant, model.ErrRequestEnergyData(errors.New(strings.Join(errorList, "; "))))
+				return
+			}
+		}
+		respondWithStatus(w, http.StatusCreated)
+	}
+}
+
+func requestRevokeMeteringPoint() middleware.JWTHandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
+		vars := mux.Vars(r)
+		participantId := vars["pid"]
+		log.WithField("tenant", tenant).Infof("Synchronize meteringpoint in participant %s", participantId)
+
+		request := struct {
+			MeteringPoints []struct {
+				Meter     string              `json:"meter"`
+				Direction model.DirectionType `json:"direction"`
+			} `json:"meteringPoints"`
+			From   int64  `json:"from"`
+			Reason string `json:"to"`
+		}{}
+		err := json.NewDecoder(r.Body).Decode(&request)
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
+			return
+		}
+
+		db, err := database.ConnectToDatabase()
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
+			return
+		}
+		defer func() { _ = db.Close() }()
+
+		eeg, err := database.GetEeg(db, tenant)
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
+			return
+		}
+		participant, err := database.QueryParticipant(db, participantId)
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, err)
+			return
+		}
+
+		fromDate := util.TruncateToStartOfDay(time.UnixMilli(request.From)).UnixMilli()
+		var reason *string
+		if len(strings.TrimSpace(request.Reason)) > 0 {
+			reason = &request.Reason
+		}
+
+		var meters []string
+		for _, m := range request.MeteringPoints {
+			meters = append(meters, m.Meter)
+		}
+
+		if meters == nil {
+			respondWith(w, http.StatusInternalServerError, tenant, model.Wrap(errors.New("no Meter selected"), 3100))
+			return
+		}
+
+		log.WithField("tenant", tenant).Infof("revoke Metering %v (%d - %s)", request, fromDate, *reason)
+		if eeg.Online {
+			errorList := []string{}
+			meters, err := database.GetMeteringByIds(db, meters)
+			if err != nil {
+				respondWith(w, http.StatusInternalServerError, tenant, err)
+				return
+			}
+			for _, m := range meters {
+				if err = mqttclient.RevokeMeteringPoint(tenant, eeg, m, fromDate, reason); err != nil {
+					log.WithField("tenant", tenant).Errorf("request revoke Metering %v (%d)", m, fromDate)
+					errorList = append(errorList, fmt.Sprintf("%s: %s", m.MeteringPoint, err.Error()))
+				}
+			}
+			if errorList != nil && len(errorList) > 0 {
+				respondWith(w, http.StatusInternalServerError, tenant, model.ErrRevokeMeter(errors.New(strings.Join(errorList, "; "))))
 				return
 			}
 		}
@@ -229,10 +323,16 @@ func removeMeteringPoint() middleware.JWTHandlerFunc {
 		participantId := vars["pid"]
 		meterId := vars["mid"]
 
-		err := database.RemoveMeteringPoint(database.GetDBXConnection, tenant, participantId, meterId)
+		db, err := database.ConnectToDatabase()
 		if err != nil {
-			log.WithField("tenant", tenant).WithField("error", "SQLDelete").Errorf("Remove Meteringpoint %s - %s", meterId, err.Error())
-			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1155, err.Error()))
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
+			return
+		}
+		defer func() { _ = db.Close() }()
+
+		err = database.RemoveMeteringPoint(db, tenant, participantId, meterId)
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
 		respondWithJSON(w, http.StatusAccepted, map[string]interface{}{"meteringpoint": meterId})
@@ -245,10 +345,16 @@ func archiveMeteringPoint() middleware.JWTHandlerFunc {
 		meterId := vars["mid"]
 		//participantId := vars["pid"]
 
-		err := database.MeteringPointsSetStatus(database.GetDBXConnection, tenant, model.ARCHIVED, []string{meterId})
+		db, err := database.ConnectToDatabase()
 		if err != nil {
-			log.WithField("tenant", tenant).WithField("error", "SQLUpdate").Errorf("Remove Meteringpoint %s - %s", meterId, err.Error())
-			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1156, err.Error()))
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
+			return
+		}
+		defer func() { _ = db.Close() }()
+
+		err = database.MeteringPointsSetStatus(db, tenant, model.ARCHIVED, []string{meterId})
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
 		respondWithJSON(w, http.StatusAccepted, map[string]interface{}{"meteringpoint": meterId})

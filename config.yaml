@@ -7,7 +7,7 @@ database:
   dbname: "postgresdb"
 
 jwt:
-  pubKeyFile: "./zertifikat-pub.pem"
+  pubKeyFile: "./zertifikat-pub-1.pem"
 
 clientId: "at.ourproject.vfeeg.app"
 keycloak:

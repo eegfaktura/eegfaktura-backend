@@ -68,6 +68,7 @@ const (
 	EC_REQ_ONL EdaProtocol = "EC_REQ_ONL"
 	CM_REV_IMP EdaProtocol = "CM_REV_IMP"
 	CM_REV_CUS EdaProtocol = "CM_REV_CUS"
+	CM_REV_SP  EdaProtocol = "CM_REV_SP"
 	ERROR      EdaProtocol = "ERROR"
 )
 
@@ -129,6 +130,8 @@ type EbmsMessage struct {
 	Timeline       *Timeline       `json:"timeline,omitempty"`
 	MeterList      []Meter         `json:"meterList,omitempty"`
 	ErrorMessage   string          `json:"errorMessage,omitempty"`
+	ConsentEnd     int64           `json:"consentEnd,omitempty"`
+	Reason         string          `json:"reason,omitempty"`
 }
 
 func (ebms EbmsMessage) Meters() []string {

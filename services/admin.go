@@ -171,12 +171,12 @@ func (r *RegisterService) Register(ctx context.Context, eeg *protobuf.RegisterEe
 	}
 
 	log.Printf("Register EEG: %+v", newEeg)
-	db, err := database.GetDBXConnection()
+	db, err := database.ConnectToDatabase()
 	if err != nil {
 		log.Errorf("Database Error: %v", err)
 		return &protobuf.RegisteredEegReply{Status: 500}, err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	err = database.InsertEeg(db, eeg.RcNumber, &newEeg)
 	if err != nil {

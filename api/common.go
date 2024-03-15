@@ -1,7 +1,9 @@
 package api
 
 import (
+	"at.ourproject/vfeeg-backend/model"
 	"encoding/json"
+	log "github.com/sirupsen/logrus"
 	"net/http"
 )
 
@@ -66,4 +68,15 @@ func respondWithStatus(w http.ResponseWriter, code int) {
 
 func respondWithHttpError(w http.ResponseWriter, httpCode int, error *HttpError) {
 	respondWithJSON(w, httpCode, map[string]interface{}{"error": error})
+}
+
+func respondWith(w http.ResponseWriter, httpCode int, tenant string, data interface{}) {
+	switch e := data.(type) {
+	case *model.VfeegError:
+		log.WithField("tenant", tenant).Error(e.Error())
+		respondWithHttpError(w, httpCode, &HttpError{Error: e.Error(), Code: e.Code, Message: e.Error()})
+		return
+	default:
+		respondWithJSON(w, httpCode, data)
+	}
 }

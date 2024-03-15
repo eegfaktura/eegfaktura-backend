@@ -40,6 +40,8 @@ func InitRouters() *mux.Router {
 
 	jwtWrapper := middleware.JWTMiddleware(viper.GetString("jwt.pubKeyFile"))
 
+	middleware.InitKeycloak()
+
 	//r := mux.NewRouter().PathPrefix("/api").Subrouter()
 	r := mux.NewRouter()
 	s := r.PathPrefix("/").Subrouter()
@@ -69,7 +71,8 @@ func main() {
 	gqlSrv := handler.NewDefaultServer(generated.NewExecutableSchema(generated.Config{Resolvers: &graph.Resolver{}}))
 	r := InitRouters()
 	r.Handle("/query", gqlSrv)
-	r.Use(middleware.GQLMiddleware(viper.GetString("jwt.pubKeyFile")))
+	//r.Use(middleware.GQLMiddleware(viper.GetString("jwt.pubKeyFile")))
+	r.Use(middleware.GQLProtect)
 
 	//messageBroker.Subscribe(mqttclient.GetSubsriptions()...)
 

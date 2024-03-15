@@ -2,9 +2,13 @@ package database
 
 import (
 	"at.ourproject/vfeeg-backend/model"
+	"bytes"
+	"fmt"
+	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/xuri/excelize/v2"
 	"gopkg.in/guregu/null.v4"
 	"io"
 	"os"
@@ -64,8 +68,12 @@ func TestImportMasterdataFromExcel(t *testing.T) {
 	require.NoError(t, err)
 	defer reader.Close()
 
+	dbx, err := openTestDb()
+	require.NoError(t, err)
+	defer dbx.Close()
+
 	type args struct {
-		dbConn   OpenDbXConnection
+		db       *sqlx.DB
 		r        io.Reader
 		filename string
 		sheet    string
@@ -80,7 +88,7 @@ func TestImportMasterdataFromExcel(t *testing.T) {
 		{
 			name: "import file",
 			args: args{
-				dbConn:   openTestDb,
+				db:       dbx,
 				r:        reader,
 				filename: "TE100200-Muster-Stammdatenimport.xlsx",
 				sheet:    "EEG Stammdaten",
@@ -90,8 +98,8 @@ func TestImportMasterdataFromExcel(t *testing.T) {
 
 			},
 			test: func(t *testing.T, args args) {
-				require.NoError(t, ImportMasterdataFromExcel(args.dbConn, args.r, args.filename, args.sheet, args.tenant))
-				ps, err := GetParticipants(args.dbConn, args.tenant)
+				require.NoError(t, ImportMasterdataFromExcel(args.db, args.r, args.filename, args.sheet, args.tenant))
+				ps, err := GetParticipants(args.db, args.tenant)
 				require.NoError(t, err)
 				assert.Equal(t, 5, len(ps))
 
@@ -172,3 +180,67 @@ func TestImportMasterdataFromExcel(t *testing.T) {
 //		})
 //	}
 //}
+
+func TestExportMasterdataToExcel(t *testing.T) {
+	db, err := openTestDb()
+	require.NoError(t, err)
+	defer db.Close()
+
+	tenant := "TE000002"
+	eeg, err := GetEeg(db, tenant)
+	require.NoError(t, err)
+
+	participants, err := GetParticipants(db, tenant)
+	require.NoError(t, err)
+
+	tariffMap, err := GetTariffNameMap(db, tenant)
+	require.NoError(t, err)
+
+	type args struct {
+		participants []model.EegParticipant
+		eeg          *model.Eeg
+		tariffMap    map[string]string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		check   func(t *testing.T, bytes *bytes.Buffer)
+		wantErr assert.ErrorAssertionFunc
+	}{
+		{
+			name: "Export Tenant",
+			args: args{participants: participants, eeg: eeg, tariffMap: tariffMap},
+			check: func(t *testing.T, buff *bytes.Buffer) {
+				r := bytes.NewReader(buff.Bytes())
+				f, err := openReader(r, "test")
+				require.NoError(t, err)
+
+				rows, err := f.Rows("Mitglieder")
+				require.NoError(t, err)
+				defer rows.Close()
+
+				var cols [][]string
+				for rows.Next() {
+					c, err := rows.Columns(excelize.Options{RawCellValue: true})
+					require.NoError(t, err)
+					cols = append(cols, c)
+					fmt.Printf("Col: %+v\n", c)
+				}
+
+				fmt.Printf("Street %v\n", cols[1][16])
+				assert.Equal(t, 5, len(cols))
+				assert.Equal(t, "6", cols[1][16])
+			},
+			wantErr: assert.NoError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ExportMasterdataToExcel(tt.args.participants, tt.args.eeg, tt.args.tariffMap)
+			if !tt.wantErr(t, err, fmt.Sprintf("ExportMasterdataToExcel(%v, %v, %v)", tt.args.participants, tt.args.eeg, tt.args.tariffMap)) {
+				return
+			}
+			tt.check(t, got)
+		})
+	}
+}
