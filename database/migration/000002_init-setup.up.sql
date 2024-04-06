@@ -51,6 +51,9 @@ VALUES ('AT0030000000000000000000000003011', 'ea9942dc-03da-11ee-b82b-5a985b4b03
 INSERT INTO base.meteringpoint (metering_point_id, participant_id, tenant, transformer, direction, status, tariff_id, inverterid, "equipmentName", street, "streetNumber", city, zip, "equipmentNumber", "modifiedAt", "modifiedBy", "registeredSince", grid_operator_id, grid_operator_name, activesince, inactivesince)
 VALUES ('AT0030000000000000000000000003012', 'ea9942dc-03da-11ee-b82b-5a985b4b033a', 'TE000003', null, 'CONSUMPTION', 'NEW', 'dd54d509-d159-11ed-a05d-5ab455bae278', null, null, 'Vormarkt', '31', 'Neumarkt am Hausruck', '4720', 'GABN11', '2023-11-15 17:43:34.091375', 'petero', '2023-10-09', null, null, '2023-01-01', '2999-12-31');
 
+
+INSERT INTO base.metering_partition_factor (metering_point_id, tenant, participant_id, "partFact", "createdBy") SELECT metering_point_id, tenant, participant_id, 100, 'system' FROM base.meteringpoint;
+
 -- INSERT INTO base.participant_meter_state (participant_id, tenant, metering_point, activesince, inactivesince, changed_at, changed_by, flag) VALUES ('ea9942da-03da-11ee-b82b-5a985b4b033a', 'TE000001', 'AT0030000000000000000000030041724', '2023-01-01', '2999-12-31', '2023-10-05 14:52:58.233583', 'system', 0);
 -- INSERT INTO base.participant_meter_state (participant_id, tenant, metering_point, activesince, inactivesince, changed_at, changed_by, flag) VALUES ('ea9942da-03da-11ee-b82b-5a985b4b033a', 'TE000001', 'AT0030000000000000000000000902309', '2023-01-01', '2999-12-31', '2023-10-05 14:52:58.233583', 'system', 0);
 -- INSERT INTO base.participant_meter_state (participant_id, tenant, metering_point, activesince, inactivesince, changed_at, changed_by, flag) VALUES ('ea9942da-03da-11ee-b82b-5a985b4b033a', 'TE000001', 'AT0030000000000000000000000533083', '2023-01-01', '2999-12-31', '2023-10-09 15:04:44.418628', 'SYSTEM', 0);

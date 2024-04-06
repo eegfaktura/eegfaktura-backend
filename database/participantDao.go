@@ -468,15 +468,25 @@ func completeParticipant(db *sqlx.DB, participant *model.EegParticipant) error {
 			goqu.C("active"),
 			goqu.C("metering_point_id").As("mid"),
 			goqu.C("participant_id").As("pid"))
-	stmt, _, err = pgDialect.From("base.meteringpoint", stateStmt.As("state")).Select(&participant.MeteringPoint).
+
+	partFactStmt := pgDialect.From(TABLE_PARTITION_FACT_VIEW).
+		Select(
+			goqu.C("partFact"),
+			goqu.C("metering_point_id").As("mpfmid"),
+			goqu.C("participant_id").As("mpfpid"))
+
+	stmt, _, err = pgDialect.From("base.meteringpoint", stateStmt.As("state"), partFactStmt.As("mpfpF")).Select(&participant.MeteringPoint).
 		Where(
 			goqu.C("participant_id").Table("meteringpoint").Schema("base").Eq(participantId),
 			goqu.C("mid").Eq(goqu.C("metering_point_id")),
-			goqu.C("pid").Eq(goqu.C("participant_id"))).ToSQL()
+			goqu.C("pid").Eq(goqu.C("participant_id")),
+			goqu.C("mpfmid").Eq(goqu.C("metering_point_id")),
+			goqu.C("mpfpid").Eq(goqu.C("participant_id")),
+		).ToSQL()
 	if err != nil {
 		return model.ErrCompleteParticipant(err)
 	}
-	//fmt.Printf("QUERY METERING POINT: %s\n", stmt)
+	fmt.Printf("QUERY METERING POINT: %s\n", stmt)
 	err = db.Select(&participant.MeteringPoint, stmt)
 	if err != nil && !errors.Is(err, dbsql.ErrNoRows) {
 		return model.ErrCompleteParticipant(err)

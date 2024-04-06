@@ -140,7 +140,8 @@ CREATE TABLE IF NOT EXISTS base.meteringpoint
     grid_operator_id   VARCHAR,
     transformer        TEXT,
     direction          TEXT      NOT NULL DEFAULT 'CONSUMPTION', /* 'GENERATION' | 'CONSUMPTION' */
-    status             TEXT      NOT NULL DEFAULT 'NEW', /* "NEW" | "PENDING" | "ACCEPTED" | "ACTIVE" | "INACTIVE" */
+    status             TEXT      NOT NULL DEFAULT 'NEW', /* "NEW" | "PENDING" | "ACCEPTED" | "ACTIVE" | "INACTIVE" | "REJECTED" */
+    "statusCode"         INTEGER,
     tariff_id          UUID,
     inverterid         TEXT,
     "equipmentNumber"  TEXT,
@@ -163,6 +164,18 @@ CREATE TABLE IF NOT EXISTS base.meteringpoint
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_meteringpoint_active ON base.meteringpoint (metering_point_id, tenant, active) where active = 1;
 
+CREATE TABLE IF NOT EXISTS base.metering_partition_factor
+(
+    metering_point_id TEXT    NOT NULL,
+    version           SERIAL,
+    participant_id    UUID    NOT NULL,
+    tenant            TEXT    NOT NULL,
+    "partFact"        INTEGER NOT NULL,
+    "createdAt"       DATE    NOT NULL DEFAULT now(),
+    "createdBy"       VARCHAR NOT NULL,
+    CONSTRAINT meteringpointPartitionPK PRIMARY KEY (metering_point_id, version),
+    CONSTRAINT FK_MeteringpointPartition FOREIGN KEY (metering_point_id, tenant, participant_id) REFERENCES base.meteringpoint (metering_point_id, tenant, participant_id) ON DELETE CASCADE
+);
 -- CREATE TABLE IF NOT EXISTS base.participant_meter_state
 -- (
 --     participant_id UUID      NOT NULL,
@@ -208,6 +221,15 @@ CREATE TABLE IF NOT EXISTS base.gridoperators
     name VARCHAR NOT NULL,
     CONSTRAINT PK_GridOperators PRIMARY KEY (id, name)
 );
+
+CREATE VIEW base.activeMeteringPartition AS
+SELECT * FROM (
+    SELECT *, ROW_NUMBER() OVER (
+    PARTITION BY "metering_point_id", "participant_id"
+    ORDER BY
+     version DESC
+    ) AS rowid
+    FROM base.metering_partition_factor) AS partp WHERE rowid = 1;
 
 CREATE VIEW base.activeTariff AS
 SELECT id,

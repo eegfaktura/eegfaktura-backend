@@ -2,9 +2,9 @@ package database
 
 import (
 	"at.ourproject/vfeeg-backend/model"
+	"encoding/json"
 	"errors"
 	"fmt"
-
 	"github.com/doug-martin/goqu/v9"
 	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
@@ -13,6 +13,8 @@ import (
 )
 
 const TABLE_METERINGPOINT = "base.meteringpoint"
+const TABLE_PARTITION_FACT = "base.metering_partition_factor"
+const TABLE_PARTITION_FACT_VIEW = "base.activemeteringpartition"
 
 //const TABLE_METERINGPOINT_STATE = "base.participant_meter_state"
 
@@ -25,8 +27,17 @@ type meteringEntryType struct {
 	Flag           null.Int  `goqu:"skipupdate,omitempty"`
 }
 
-func createMeteringEntries(tenant, username, participantId string, points []*model.MeteringPoint, state *model.StatusType) []*meteringEntryType {
-	meteringEntries := []*meteringEntryType{}
+type partitionFactorRecord struct {
+	MeteringPoint  string `db:"metering_point_id"`
+	Participant_id string `goqu:"skipupdate"`
+	Tenant         string `goqu:"skipupdate"`
+	PartFact       int    `db:"partFact"`
+	CreatedBy      string `db:"createdBy"`
+}
+
+func createMeteringEntries(tenant, username, participantId string, points []*model.MeteringPoint, state *model.StatusType) ([]*meteringEntryType, []*partitionFactorRecord) {
+	var partFactEntries []*partitionFactorRecord
+	var meteringEntries []*meteringEntryType
 	now := time.Now().Local()
 	for _, p := range points {
 		if state != nil {
@@ -43,8 +54,16 @@ func createMeteringEntries(tenant, username, participantId string, points []*mod
 		meteringEntries = append(meteringEntries,
 			&meteringEntryType{p, participantId, tenant,
 				p.RegisteredSince, int(calcActive(p.Status)), null.IntFrom(int64(calcFlag(p.Status)))})
+
+		partFactEntries = append(partFactEntries, &partitionFactorRecord{
+			MeteringPoint:  p.MeteringPoint,
+			Participant_id: participantId,
+			Tenant:         tenant,
+			PartFact:       p.PartFact,
+			CreatedBy:      username,
+		})
 	}
-	return meteringEntries
+	return meteringEntries, partFactEntries
 }
 
 //func RegisterMeteringPoints(tx *sqlx.Tx, tenant, participantId string, point []*model.MeteringPoint) error {
@@ -53,58 +72,34 @@ func createMeteringEntries(tenant, username, participantId string, points []*mod
 //}
 
 func ImportMeteringPoints(tx *sqlx.Tx, tenant, username, participantId string, point []*model.MeteringPoint) error {
-	return saveMeteringPoint(tx, createMeteringEntries(tenant, username, participantId, point, nil))
+	meteringEntries, partFactEntries := createMeteringEntries(tenant, username, participantId, point, nil)
+	return saveMeteringPoint(tx, meteringEntries, partFactEntries)
 }
 
 // saveMeteringPoint creates new metering point in the database.
 // Accourding to the status of new metering point (ACTIVE when excel import; NEW otherwise) the flag of the meterstate will be adapted
-func saveMeteringPoint(tx *sqlx.Tx, meteringEntry []*meteringEntryType) error {
-
-	//m, err := FindMeteringById(OpenDbXConnection, meter)
-
-	statement, _, _ := pgDialect.Insert(TABLE_METERINGPOINT).Rows(meteringEntry). /*.OnConflict(goqu.DoNothing())*/ ToSQL()
-	log.Debugf("Register Meterings: %+v", statement)
+func saveMeteringPoint(tx *sqlx.Tx, meteringEntry []*meteringEntryType, partFactEntries []*partitionFactorRecord) error {
+	statement, _, err := pgDialect.Insert(TABLE_METERINGPOINT).Rows(meteringEntry). /*.OnConflict(goqu.DoNothing())*/ ToSQL()
+	if err != nil {
+		return model.ErrSaveMeteringPoint(err)
+	}
 	res, err := tx.Exec(statement)
 
 	if err != nil {
-		log.Errorf("Result: %v", res)
-		return err
+		log.Errorf("Stmt: %s - %v", statement, res)
+		return model.ErrSaveMeteringPoint(err)
 	}
 
-	//type participantMeterState struct {
-	//	Participant_id    string `db:"participant_id"`
-	//	Tenant            string
-	//	Metering_point_id string `db:"metering_point"`
-	//	Changed_by        string
-	//	ActiveSince       time.Time `db:"activesince"`
-	//	Flag              null.Int
-	//}
-	//
-	//stateEntries := []participantMeterState{}
-	//for _, e := range meteringEntry {
-	//	if e.State == nil {
-	//		e.State = &model.MeterState{
-	//			ActiveSince:   e.RegisteredSince,
-	//			InactiveSince: time.Date(2999, 12, 31, 0, 0, 0, 0, time.Local),
-	//		}
-	//	}
-	//
-	//	stateEntries = append(stateEntries, participantMeterState{
-	//		Participant_id:    e.Participant_id,
-	//		Tenant:            e.Tenant,
-	//		Metering_point_id: e.MeteringPoint.MeteringPoint,
-	//		Changed_by:        e.ModifiedBy.String,
-	//		ActiveSince:       e.RegisteredSince,
-	//
-	//		Flag: null.IntFrom(int64(calcFlag(e.Status))),
-	//	})
-	//}
-	//
-	//statement, _, _ = pgDialect.Insert(TABLE_METERINGPOINT_STATE).Rows(stateEntries).ToSQL()
-	//_, err = tx.Exec(statement)
-	//if err != nil {
-	//	log.WithField("SQL", "INSERT").Debugf("Stmt: %s", statement)
-	//}
+	statement, _, err = pgDialect.Insert(TABLE_PARTITION_FACT).Rows(partFactEntries). /*.OnConflict(goqu.DoNothing())*/ ToSQL()
+	if err != nil {
+		return model.ErrSaveMeteringPoint(err)
+	}
+	res, err = tx.Exec(statement)
+
+	if err != nil {
+		log.Errorf("Stmt: %s - %v", statement, res)
+		return model.ErrSaveMeteringPoint(err)
+	}
 
 	return err
 }
@@ -134,12 +129,17 @@ func RegisterMeteringPoint(db *sqlx.DB, tenant, username, participantId string, 
 	}
 
 	defer func() {
-		if err = tx.Commit(); err != nil {
-			log.Errorf("Not able to commit the transaction. %s", err.Error())
+		switch err {
+		case nil:
+			err = tx.Commit()
+		default:
+			err = tx.Rollback()
 		}
 	}()
 
-	return saveMeteringPoint(tx, createMeteringEntries(tenant, username, participantId, []*model.MeteringPoint{point}, &point.Status))
+	meteringEntries, partFactEntries := createMeteringEntries(tenant, username, participantId, []*model.MeteringPoint{point}, &point.Status)
+	err = saveMeteringPoint(tx, meteringEntries, partFactEntries)
+	return err
 }
 
 func UpdateMeteringPoint(db *sqlx.DB, tenant, username, participantId, meterId string, meteringPoint *model.MeteringPoint) error {
@@ -210,17 +210,20 @@ func RemoveMeteringPoint(db *sqlx.DB, tenant, participantId, meterId string) err
 //	return err
 //}
 
-func MeteringPointsSetStatus(db *sqlx.DB, tenant string, status model.StatusType, meterId []string) error {
+func MeteringPointsSetStatus(db *sqlx.DB, tenant string, status model.StatusType, statusCode int16, meterId []string) error {
 	updateSet := struct {
 		Status          model.StatusType `db:"status"`
+		StatusCode      int16            `db:"statusCode" goqu:"omitempty"`
 		ModifiedAt      time.Time        `db:"modifiedAt"`
 		ModifiedBy      string           `db:"modifiedBy"`
 		RegisteredSince time.Time        `db:"registeredSince" goqu:"omitempty"`
 		Inactivesince   time.Time        `db:"inactivesince" goqu:"omitempty"`
+		Activesince     time.Time        `db:"activesince" goqu:"omitempty"`
 		Flag            model.ProcessFlag
 		Active          model.ProcessStatus
 	}{
 		Status:     status,
+		StatusCode: statusCode,
 		ModifiedAt: time.Now(),
 		ModifiedBy: "EVU",
 		Flag:       calcFlag(status),
@@ -238,6 +241,7 @@ func MeteringPointsSetStatus(db *sqlx.DB, tenant string, status model.StatusType
 	if status == model.ACTIVE {
 		t := time.Date(2999, 12, 31, 23, 59, 59, 0, time.UTC)
 		updateSet.Inactivesince = t
+		updateSet.Activesince = time.Now().UTC()
 	} else if status == model.NEW || status == model.PENDING {
 		t := time.Now()
 		updateSet.RegisteredSince = t
@@ -267,12 +271,12 @@ func MeteringPointRevoke(db *sqlx.DB, tenant, meterId string, status model.Statu
 
 	participant, err := FindParticipantByMeteringPoint(db, tenant, meterId)
 	if err != nil {
-		return err
+		return model.ErrFindParticipant(err)
 	}
 
 	tx, err := db.Beginx()
 	if err != nil {
-		return err
+		return model.ErrOpenTx(err)
 	}
 	defer func() {
 		err := tx.Rollback()
@@ -298,7 +302,7 @@ func MeteringPointRevoke(db *sqlx.DB, tenant, meterId string, status model.Statu
 	_, err = tx.Exec(statement)
 
 	if err != nil {
-		return err
+		return model.ErrUpdateMeter(err)
 	}
 
 	//statement, _, _ = goqu.Update(TABLE_METERINGPOINT_STATE).
@@ -316,6 +320,53 @@ func MeteringPointRevoke(db *sqlx.DB, tenant, meterId string, status model.Statu
 	//	return err
 	//}
 	//fmt.Printf("Finish Revoke Meter: %s at %v on participant %v\n", meterId, consentEnd, participant)
+	return tx.Commit()
+}
+
+func MeteringPointChangePartFactor(db *sqlx.DB, tenant string, meters []model.Meter) error {
+
+	log.Debug("Change Partition Factor")
+
+	tx, err := db.Beginx()
+	if err != nil {
+		return model.ErrOpenTx(err)
+	}
+	defer func() {
+		err := tx.Rollback()
+		if err != nil {
+			//log.Error(err)
+		}
+	}()
+
+	//insert into base.metering_partition_factor (metering_point_id, participant_id, "partFact", tenant, "createdBy")
+	//						select metering_point_id, participant_id, 10 as "partFact", tenant, 'system' as "createdBy" from base.meteringpoint where metering_point_id in ('AT0030000000000000000000000060061', 'AT0030000000000000000000000433950') and tenant = 'CC100392';
+
+	//inMeters := []string{"AT111111111111111", "AT222222222222"}
+
+	metersJson, err := json.Marshal(meters)
+	if err != nil {
+		return model.ErrUpdateMeter(err)
+	}
+
+	withClause := goqu.L(
+		fmt.Sprintf(`(SELECT * FROM json_to_recordset('%s') AS cols("meteringPoint" TEXT, direction TEXT, activation INT, "partFact" INT))`, metersJson))
+	insertQuery := goqu.From(TABLE_METERINGPOINT, withClause.As("ma")).
+		Select(
+			goqu.C("metering_point_id"),
+			goqu.C("participant_id"),
+			goqu.C("tenant"),
+			goqu.C("partFact"),
+			goqu.V("system").As("createdBy"),
+		).Where(goqu.C("metering_point_id").Eq(goqu.I("ma.meteringPoint")))
+	stmt, _, err := goqu.Insert(TABLE_PARTITION_FACT).
+		Cols("metering_point_id", "participant_id", "tenant", "partFact", "createdBy").
+		FromQuery(insertQuery).ToSQL()
+
+	fmt.Printf("Stmt Insert PactChange: %s - %v\n", stmt, err)
+	_, err = tx.Exec(stmt)
+	if err != nil {
+		return model.ErrUpdateMeter(err)
+	}
 	return tx.Commit()
 }
 
@@ -423,11 +474,20 @@ func findMeteringByIdAndState(db *sqlx.DB, meterIds []string, active model.Proce
 			goqu.C("inactivesince"),
 			goqu.C("active"),
 			goqu.C("metering_point_id").As("mid"))
-	stmt, _, err := pgDialect.From(TABLE_METERINGPOINT, stateStmt.As("state")).Select(&model.MeteringPoint{}).
+
+	partFactStmt := pgDialect.From(TABLE_PARTITION_FACT_VIEW).
+		Select(
+			goqu.C("partFact"),
+			goqu.C("metering_point_id").As("mpfmid"),
+			goqu.C("participant_id").As("mpfpid"))
+
+	stmt, _, err := pgDialect.From(TABLE_METERINGPOINT, stateStmt.As("state"), partFactStmt.As("mpfpF")).Select(&model.MeteringPoint{}).
 		Where(
 			goqu.C("metering_point_id").In(meterIds),
 			goqu.I("state.active").Eq(active),
 			goqu.C("mid").Eq(goqu.C("metering_point_id")),
+			goqu.C("mpfmid").Eq(goqu.C("metering_point_id")),
+			goqu.C("mpfpid").Eq(goqu.C("participant_id")),
 		).ToSQL()
 
 	if err != nil {

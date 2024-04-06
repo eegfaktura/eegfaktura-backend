@@ -177,7 +177,7 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 		if eeg.Online {
 			for _, m := range participant.MeteringPoint {
 				log.WithField("tenant", tenant).Infof("Start Meteringpoint %s registration", m.MeteringPoint)
-				if err = mqttclient.RegistrationForParticipation(tenant, eeg, m); err != nil {
+				if err = mqttclient.RegistrationForParticipation(eeg, m); err != nil {
 					respondWith(w, http.StatusInternalServerError, tenant, err)
 					return
 				}
@@ -188,7 +188,7 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 				meterIds = append(meterIds, m.MeteringPoint)
 				m.Status = model.ACTIVE
 			}
-			err := database.MeteringPointsSetStatus(db, tenant, model.ACTIVE, meterIds)
+			err := database.MeteringPointsSetStatus(db, tenant, model.ACTIVE, 0, meterIds)
 			if err != nil {
 				respondWith(w, http.StatusBadRequest, tenant, err)
 				return

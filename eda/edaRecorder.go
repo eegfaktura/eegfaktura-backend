@@ -17,7 +17,7 @@ import (
 type EdaRecording interface {
 	saveNotification(notificationValue map[string]interface{}, tenant, notificationType, role string) error
 	saveHistory(tenant string, messageCode model.EbMsMessageType, conversationId, role, dir string, protocol model.EdaProtocol, msg interface{}) error
-	meteringPointPerformAnswerMsg(tenant string, meterId []string) error
+	meteringPointPerformAnswerMsg(ecId string, meterId []string) error
 	databaseConnectFunc() database.OpenDbXConnection
 	databaseConnection() (*sqlx.DB, error)
 }
@@ -73,7 +73,7 @@ func (r *EdaRecorder) saveHistory(tenant string, messageCode model.EbMsMessageTy
 	return nil
 }
 
-func (r *EdaRecorder) meteringPointPerformAnswerMsg(tenant string, meterId []string) error {
+func (r *EdaRecorder) meteringPointPerformAnswerMsg(ecId string, meterId []string) error {
 
 	db, err := r.dbOpen()
 	if err != nil {
@@ -86,7 +86,7 @@ func (r *EdaRecorder) meteringPointPerformAnswerMsg(tenant string, meterId []str
 		}
 	}()
 
-	eeg, err := database.GetEeg(db, tenant)
+	eeg, err := database.GetEegByEcId(db, ecId)
 	if err != nil {
 		return err
 	}
@@ -100,17 +100,17 @@ func (r *EdaRecorder) meteringPointPerformAnswerMsg(tenant string, meterId []str
 	}()
 
 	for _, mid := range meterId {
-		participant, err := database.FindParticipantByMeteringPoint(db, tenant, mid)
+		participant, err := database.FindParticipantByMeteringPoint(db, eeg.Id, mid)
 		if err != nil {
 			if !errors.Is(err, sql.ErrNoRows) {
 				return err
 			} else {
-				logrus.WithField("tenant", tenant).Warn(err)
+				logrus.WithField("tenant", eeg.Id).Warn(err)
 			}
 		}
 		if participant != nil && participant.Contact.Email.Valid {
 			if err = parser.SendActivationMailFromTemplate(services.SendMail,
-				tenant, "Aktivierung im Serviceportal", eeg, participant); err != nil {
+				eeg.Id, "Aktivierung im Serviceportal", eeg, participant); err != nil {
 				logrus.Errorf("Error Sending Mail: %+v", err.Error())
 			}
 		}

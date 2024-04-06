@@ -38,9 +38,11 @@ var ErrUpdateParticipant = PartialWrap(1102)
 var ErrInsertParticipant = PartialWrap(1103)
 var ErrRegisterParticipant = PartialWrap(1104)
 var ErrArchiveParticipant = PartialWrap(1105)
+var ErrFindParticipant = PartialWrap(1106)
 
 var ErrRemoveMeteringPoint = PartialWrap(1201)
 var ErrStatusMeter = PartialWrap(1202)
+var ErrSaveMeteringPoint = PartialWrap(1203)
 
 var ErrEdaCommunication = PartialWrap(5000)
 var ErrRequestEnergyData = PartialWrap(5100)
@@ -48,3 +50,7 @@ var ErrRevokeMeter = PartialWrap(5010)
 
 var ErrFindMeter = PartialWrap(3100)
 var ErrUpdateMeter = PartialWrap(3101)
+
+var ErrGetTariff = PartialWrap(4000)
+var ErrUpdateTariff = PartialWrap(4001)
+var ErrTariffUtilized = PartialWrap(4002)

@@ -27,9 +27,16 @@ type Eeg struct {
 	AccountInfo        `json:"accountInfo,omitempty"`
 	Contact            `json:"contact,omitempty"`
 	Optionals          `json:"optionals,omitempty"`
-	Periods            []int16 `json:"periods" goqu:"skipinsert,defaultifempty"`
-	Online             bool    `json:"online"`
+	//Periods            []int16 `json:"periods" goqu:"skipinsert,defaultifempty"`
+	Online bool `json:"online"`
 }
+
+type AllocationModeType string
+
+const (
+	STATIC  AllocationModeType = "STATIC"
+	DYNAMIC AllocationModeType = "DYNAMIC"
+)
 
 type AreaType string
 

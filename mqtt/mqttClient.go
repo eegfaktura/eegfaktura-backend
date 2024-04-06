@@ -3,6 +3,7 @@ package mqttclient
 import (
 	"at.ourproject/vfeeg-backend/model"
 	"errors"
+	"fmt"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -77,6 +78,12 @@ func Unsubscribe(subscriptions ...model.Subscriptions) error {
 }
 
 func SendEbmsMessage(msg model.EbmsMessage) error {
+
+	version := viper.GetString(fmt.Sprintf("eda-process-versions.%s", msg.MessageCode))
+	if len(version) > 0 {
+		msg.MessageCodeVersion = version
+	}
+
 	if messageBroker != nil {
 		messageBroker.Outbound <- msg
 

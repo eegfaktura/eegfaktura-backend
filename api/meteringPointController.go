@@ -27,6 +27,7 @@ func InitMeteringRouter(r *mux.Router, jwtWrapper middleware.JWTWrapperFunc) *mu
 	s.HandleFunc("/{pid}/register", middleware.Protect(registerMeteringPoint())).Methods("POST")
 	s.HandleFunc("/{pid}/revokemeters", middleware.Protect(requestRevokeMeteringPoint())).Methods("POST")
 	s.HandleFunc("/syncenergy", middleware.Protect(requestMeteringPointValues())).Methods("POST")
+	s.HandleFunc("/changepartitionfactor", middleware.Protect(requestChangePartitionFactor())).Methods("POST")
 
 	return r
 }
@@ -71,7 +72,7 @@ func createMeteringPoint() middleware.JWTHandlerFunc {
 			}
 
 			if eeg.Online {
-				if err = mqttclient.RegistrationForParticipation(tenant, eeg, &m); err != nil {
+				if err = mqttclient.RegistrationForParticipation(eeg, &m); err != nil {
 					respondWith(w, http.StatusBadRequest, tenant, err)
 					return
 				}
@@ -162,7 +163,7 @@ func registerMeteringPoint() middleware.JWTHandlerFunc {
 
 		log.WithField("tenant", tenant).Infof("register Meter:  %v ", request)
 		if eeg.Online && meter != nil {
-			if err = mqttclient.RegistrationForParticipation(tenant, eeg, meter); err != nil {
+			if err = mqttclient.RegistrationForParticipation(eeg, meter); err != nil {
 				respondWith(w, http.StatusInternalServerError, tenant, err)
 				return
 			}
@@ -226,7 +227,7 @@ func requestMeteringPointValues() middleware.JWTHandlerFunc {
 				if m.Status != model.ACTIVE || m.State.Active != model.P_ACTIVE {
 					continue
 				}
-				if err = mqttclient.RequestingEnergyData(tenant, eeg, m, fromDate, toDate); err != nil {
+				if err = mqttclient.RequestingEnergyData(eeg, m, fromDate, toDate); err != nil {
 					log.WithField("tenant", tenant).Errorf("request Metering values %v (%d - %d)", m, fromDate, toDate)
 					errorList = append(errorList, fmt.Sprintf("%s: %s", m.MeteringPoint, err.Error()))
 				}
@@ -303,7 +304,7 @@ func requestRevokeMeteringPoint() middleware.JWTHandlerFunc {
 				return
 			}
 			for _, m := range meters {
-				if err = mqttclient.RevokeMeteringPoint(tenant, eeg, m, fromDate, reason); err != nil {
+				if err = mqttclient.RevokeMeteringPoint(eeg, m, fromDate, reason); err != nil {
 					log.WithField("tenant", tenant).Errorf("request revoke Metering %v (%d)", m, fromDate)
 					errorList = append(errorList, fmt.Sprintf("%s: %s", m.MeteringPoint, err.Error()))
 				}
@@ -352,11 +353,49 @@ func archiveMeteringPoint() middleware.JWTHandlerFunc {
 		}
 		defer func() { _ = db.Close() }()
 
-		err = database.MeteringPointsSetStatus(db, tenant, model.ARCHIVED, []string{meterId})
+		err = database.MeteringPointsSetStatus(db, tenant, model.ARCHIVED, 0, []string{meterId})
 		if err != nil {
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
 		respondWithJSON(w, http.StatusAccepted, map[string]interface{}{"meteringpoint": meterId})
+	}
+}
+
+func requestChangePartitionFactor() middleware.JWTHandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
+		var request struct {
+			MeteringPoints []*model.ChangePartitionFactorRequest `json:"meteringPoints"`
+		}
+		err := json.NewDecoder(r.Body).Decode(&request)
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
+			return
+		}
+
+		db, err := database.ConnectToDatabase()
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
+			return
+		}
+		defer func() { _ = db.Close() }()
+
+		eeg, err := database.GetEeg(db, tenant)
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
+			return
+		}
+
+		if eeg.Online {
+			if err = mqttclient.ChangePartitionFactor(eeg, request.MeteringPoints); err != nil {
+				log.WithField("tenant", tenant).Errorf("Change Partition failes %+v", request)
+				respondWith(w, http.StatusInternalServerError, tenant, err)
+			}
+		} else {
+			log.WithField("tenant", tenant).Warnf("Offline EEG want to change partitions of %+v", request)
+			respondWithStatus(w, http.StatusNotFound)
+			return
+		}
+		respondWithStatus(w, http.StatusCreated)
 	}
 }

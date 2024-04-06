@@ -79,9 +79,9 @@ func GetTariff(db *sqlx.DB, tenant string) ([]model.Tariff, error) {
 
 	if err != nil {
 		log.WithField("tenant", tenant).Errorf("Error Query Tariff! %s", err.Error())
+		return tariff, model.ErrGetTariff(err)
 	}
-
-	return tariff, err
+	return tariff, nil
 }
 
 func GetTariffNameMap(db *sqlx.DB, tenant string) (map[string]string, error) {
@@ -99,11 +99,11 @@ func GetTariffNameMap(db *sqlx.DB, tenant string) (map[string]string, error) {
 func ArchiveTariff(db *sqlx.DB, tenant string, id string) error {
 	stmt, _, err := pgDialect.Select("id").From("base.participant").Where(goqu.Ex{"tariffId": id}).ToSQL()
 	if err != nil {
-		return err
+		return model.ErrGetTariff(err)
 	}
 	_, err = db.Query(stmt)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return ErrTariffUtilized
+		return model.ErrTariffUtilized(ErrTariffUtilized)
 	}
 
 	stmt, _, err = pgDialect.Select("metering_point_id").From("base.meteringpoint").Where(goqu.Ex{"tariff_id": id, "tenant": tenant}).ToSQL()
@@ -112,11 +112,14 @@ func ArchiveTariff(db *sqlx.DB, tenant string, id string) error {
 	}
 	_, err = db.Query(stmt)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return ErrTariffUtilized
+		return model.ErrTariffUtilized(ErrTariffUtilized)
 	}
 
 	_, err = db.Exec("UPDATE base.tariff SET status = 'ARCHIVED', \"lastModifiedDate\" = 'now()' WHERE tenant = $1 AND id = $2", tenant, id)
-	return err
+	if err != nil {
+		return model.ErrUpdateTariff(err)
+	}
+	return nil
 }
 
 func AddTariff(db *sqlx.DB, tenant, user string, tariff *model.Tariff) error {
@@ -152,11 +155,12 @@ func AddTariff(db *sqlx.DB, tenant, user string, tariff *model.Tariff) error {
 	var stmt string
 	stmt, _, err = goqu.Insert("base.tariff").Rows(update).ToSQL()
 	if err != nil {
-		return err
+		return model.ErrUpdateTariff(err)
 	}
 	_, err = tx.Exec(stmt)
 	if err != nil {
 		log.WithField("SQL", "INSERT").Errorf("Stmt: %v", stmt)
+		return model.ErrUpdateTariff(err)
 	}
 
 	if tariff.Version > 0 {
@@ -167,9 +171,12 @@ func AddTariff(db *sqlx.DB, tenant, user string, tariff *model.Tariff) error {
 		}).ToSQL()
 		if err != nil {
 			log.WithField("tenant", tenant).Errorf("Update previous entry: %v", err)
-			return err
+			return model.ErrUpdateTariff(err)
 		}
 		_, err = tx.Exec(stmt)
+	}
+	if err != nil {
+		return model.ErrUpdateTariff(err)
 	}
 	return err
 }

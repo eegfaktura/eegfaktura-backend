@@ -61,6 +61,10 @@ func extractMeterList(ebmsMessage *model.EbmsMessage) []string {
 }
 
 func codesContains(expected, codes []int16) bool {
+	return len(intersectCodes(expected, codes)) > 0
+}
+
+func intersectCodes(expected, codes []int16) []int16 {
 	var intersect []int16
 	for _, element1 := range codes {
 		for _, element2 := range expected {
@@ -69,7 +73,7 @@ func codesContains(expected, codes []int16) bool {
 			}
 		}
 	}
-	return len(intersect) > 0
+	return intersect
 }
 
 func convertCodes2Strings(codes []int16) []string {

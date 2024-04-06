@@ -6,7 +6,6 @@ import (
 	"at.ourproject/vfeeg-backend/model"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
@@ -94,9 +93,8 @@ func getTariff() middleware.JWTHandlerFunc {
 		defer func() { _ = db.Close() }()
 
 		tariff, err := database.GetTariff(db, tenant)
-		log.WithField("tenant", tenant).Infof("Query Tariff %v", err)
 		if err != nil {
-			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1010, err.Error()))
+			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
 		respondWithJSON(w, 200, tariff)
@@ -122,7 +120,7 @@ func addTariff() middleware.JWTHandlerFunc {
 		defer func() { _ = db.Close() }()
 
 		if err = database.AddTariff(db, tenant, claims.Username, &t); err != nil {
-			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1021, err.Error()))
+			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
 		respondWithJSON(w, http.StatusCreated, t)
@@ -142,11 +140,7 @@ func archiveTariff() middleware.JWTHandlerFunc {
 		defer func() { _ = db.Close() }()
 
 		if err := database.ArchiveTariff(db, tenant, idStr); err != nil {
-			if errors.Is(err, database.ErrTariffUtilized) {
-				respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1022, err.Error()))
-				return
-			}
-			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1023, err.Error()))
+			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
 		respondWithJSON(w, http.StatusAccepted, map[string]interface{}{"status": "ok"})
@@ -172,8 +166,8 @@ func syncParticipantsEda() middleware.JWTHandlerFunc {
 		from := time.Date(day.Year(), day.Month(), day.Day()-1, 0, 0, 0, 0, day.Location()).UnixMilli()
 		to := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location()).UnixMilli()
 
-		if err = mqttclient.RequestingMeteringPointList(tenant, eeg, from, to); err != nil {
-			respondWithHttpError(w, http.StatusInternalServerError, BadProcessError(1031, err.Error()))
+		if err = mqttclient.RequestingMeteringPointList(eeg, from, to); err != nil {
+			respondWith(w, http.StatusInternalServerError, tenant, err)
 			return
 		}
 		respondWithStatus(w, http.StatusNoContent)

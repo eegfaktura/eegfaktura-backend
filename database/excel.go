@@ -551,8 +551,8 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 									Email: null.StringFrom(getColumValue(cols, colMap, "email", "email", nil)),
 									Phone: null.StringFrom(getColumValue(cols, colMap, "TelefonNr", "phonenr", nil)),
 								},
-								TaxNumber: getColumValue(cols, colMap, "SteuerNr", "taxNumber", nil),
-								VatNumber: getColumValue(cols, colMap, "UmsatzsteuerNr", "vatNumber", nil),
+								TaxNumber: null.StringFrom(getColumValue(cols, colMap, "SteuerNr", "taxNumber", nil)),
+								VatNumber: null.StringFrom(getColumValue(cols, colMap, "UmsatzsteuerNr", "vatNumber", nil)),
 								Version:   0,
 							}
 							participants = append(participants, participant)

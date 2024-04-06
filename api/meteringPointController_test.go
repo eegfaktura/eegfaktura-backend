@@ -59,7 +59,7 @@ func TestRequestMeteringPointValues(t *testing.T) {
 	req, _ := http.NewRequest("POST", "/meteringpoint/syncenergy", strings.NewReader(request))
 	w := httptest.NewRecorder()
 
-	mqttclient.RequestingEnergyData = func(tenant string, eeg *model.Eeg, meter *model.MeteringPoint, fromDate, toDate int64) error {
+	mqttclient.RequestingEnergyData = func(eeg *model.Eeg, meter *model.MeteringPoint, fromDate, toDate int64) error {
 		return nil
 	}
 

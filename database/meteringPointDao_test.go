@@ -62,7 +62,8 @@ func Test_RegisterMeteringPoint(t *testing.T) {
 
 			mock.Mock.ExpectBegin()
 			mock.Mock.ExpectExec("INSERT (.+) \"base\".\"meteringpoint\"").WillReturnResult(sqlmock.NewResult(1, 1))
-			mock.Mock.ExpectExec("INSERT INTO \"base\".\"participant_meter_state\" (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
+			//mock.Mock.ExpectExec("INSERT INTO \"base\".\"participant_meter_state\" (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
+			mock.Mock.ExpectExec("INSERT INTO \"base\".\"metering_partition_factor\" (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
 
 			assert.NoError(t, RegisterMeteringPoint(dbx, tt.args.tenant, "userId", tt.args.participantId, tt.args.point))
 		})
@@ -235,7 +236,7 @@ func Test_ActivateRevokedMeteringPoint(t *testing.T) {
 	assert.Equal(t, consentEnd.Add(1*time.Hour).Local(), p[0].MeteringPoint[0].State.InactiveSince.Local())
 	assert.Equal(t, time.Now().Add(1*time.Hour).Local().Truncate(time.Hour), p[0].MeteringPoint[0].State.ActiveSince.Local().Truncate(time.Hour))
 
-	err = MeteringPointsSetStatus(db, "TE000004", model.ACTIVE, []string{meter.MeteringPoint})
+	err = MeteringPointsSetStatus(db, "TE000004", model.ACTIVE, 0, []string{meter.MeteringPoint})
 	require.NoError(t, err)
 
 	p, err = GetParticipants(db, "TE000004")
@@ -314,20 +315,20 @@ func Test_RegistrationProcess(t *testing.T) {
 	require.Equal(t, expectedRegistrationDate.Truncate(24*time.Hour).UTC(), pUnderTest.MeteringPoint[0].RegisteredSince.UTC())
 	require.Equal(t, expectedRegistrationDate.Truncate(1*time.Hour).Add(1*time.Hour).UTC(), pUnderTest.MeteringPoint[0].State.ActiveSince.Truncate(1*time.Hour).UTC())
 
-	err = MeteringPointsSetStatus(db, "TE000004", model.PENDING, []string{meter.MeteringPoint})
+	err = MeteringPointsSetStatus(db, "TE000004", model.PENDING, 0, []string{meter.MeteringPoint})
 	require.NoError(t, err)
 
 	m, err := FindMeteringById(db, meter.MeteringPoint)
 	require.NoError(t, err)
 	assert.Equal(t, model.PENDING, m.Status)
 
-	err = MeteringPointsSetStatus(db, "TE000004", model.APPROVED, []string{meter.MeteringPoint})
+	err = MeteringPointsSetStatus(db, "TE000004", model.APPROVED, 0, []string{meter.MeteringPoint})
 	require.NoError(t, err)
 	m, err = FindMeteringById(db, meter.MeteringPoint)
 	require.NoError(t, err)
 	assert.Equal(t, model.APPROVED, m.Status)
 
-	err = MeteringPointsSetStatus(db, "TE000004", model.ACTIVE, []string{meter.MeteringPoint})
+	err = MeteringPointsSetStatus(db, "TE000004", model.ACTIVE, 0, []string{meter.MeteringPoint})
 	require.NoError(t, err)
 	m, err = FindMeteringById(db, meter.MeteringPoint)
 	require.NoError(t, err)
@@ -357,4 +358,33 @@ func Test_UpdateMeteringPoint(t *testing.T) {
 
 	require.Equal(t, expectedRegistrationDate.Truncate(24*time.Hour).UTC(), mUnderTest.RegisteredSince.UTC())
 	require.Equal(t, expectedactiveDate.Truncate(1*time.Hour).UTC(), mUnderTest.State.ActiveSince.Truncate(1*time.Hour).UTC())
+}
+
+func TestMeteringPointChangePartFact(t *testing.T) {
+	db, err := openTestDb()
+	require.NoError(t, err)
+	type args struct {
+		db     *sqlx.DB
+		tenant string
+		meters []model.Meter
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr assert.ErrorAssertionFunc
+	}{
+		{name: "test1", args: args{db: db, tenant: "testrc", meters: []model.Meter{
+			{
+				MeteringPoint: "AT11111111111111111111",
+				Direction:     model.GENERATOR,
+				Activation:    0,
+				PartFact:      20,
+			},
+		}}, wantErr: assert.NoError},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.wantErr(t, MeteringPointChangePartFactor(tt.args.db, tt.args.tenant, tt.args.meters), fmt.Sprintf("MeteringPointChangePartFact(%v, %v, %v)", tt.args.db, tt.args.tenant, tt.args.meters))
+		})
+	}
 }

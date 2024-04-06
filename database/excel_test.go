@@ -42,7 +42,7 @@ func Test_transformExcelData(t *testing.T) {
 
 	assert.Equal(t, 5, len(participants))
 	assert.Equal(t, 2, len(findParticipant("Finnegan", participants).MeteringPoint))
-	assert.Equal(t, "001-3456", findParticipant("Finnegan", participants).TaxNumber)
+	assert.Equal(t, null.StringFrom("001-3456"), findParticipant("Finnegan", participants).TaxNumber)
 
 	assert.Equal(t, null.StringFrom("003"), findParticipant("Finnegan", participants).ParticipantNumber)
 	assert.Equal(t, null.StringFrom("005"), findParticipant("Beckett", participants).ParticipantNumber)
@@ -105,7 +105,7 @@ func TestImportMasterdataFromExcel(t *testing.T) {
 
 				p := findParticipant(ps, "Max", "Mustermann")
 				require.NotNil(t, p)
-				assert.Equal(t, 1, len(p.MeteringPoint))
+				require.Equal(t, 1, len(p.MeteringPoint))
 
 				assert.Equal(t, "Test Operator", p.MeteringPoint[0].GridOperatorName.String)
 				assert.Equal(t, time.Date(time.Now().Year(), 1, 1, 0, 0, 0, 0, time.UTC).Local(), p.MeteringPoint[0].State.ActiveSince.Local())

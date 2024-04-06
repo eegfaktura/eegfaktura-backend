@@ -81,8 +81,8 @@ func TestParseTemplate(t *testing.T) {
 			Phone: null.StringFrom("123456789"),
 		},
 		Optionals: model.Optionals{},
-		Periods:   nil,
-		Online:    false,
+		//Periods:   nil,
+		Online: false,
 	}
 
 	participant := &model.EegParticipant{
@@ -94,8 +94,8 @@ func TestParseTemplate(t *testing.T) {
 		TitleBefore:           "",
 		TitleAfter:            "",
 		ParticipantSince:      time.Time{},
-		VatNumber:             "",
-		TaxNumber:             "",
+		VatNumber:             null.String{},
+		TaxNumber:             null.String{},
 		CompanyRegisterNumber: "",
 		Contact: model.ContactInfo{
 			Phone: null.String{},
@@ -200,7 +200,6 @@ func TestParseTemplate2(t *testing.T) {
 			Phone: null.StringFrom("123456789"),
 		},
 		Optionals: model.Optionals{},
-		Periods:   nil,
 		Online:    false,
 	}
 
@@ -213,8 +212,8 @@ func TestParseTemplate2(t *testing.T) {
 		TitleBefore:           "",
 		TitleAfter:            "",
 		ParticipantSince:      time.Time{},
-		VatNumber:             "",
-		TaxNumber:             "",
+		VatNumber:             null.String{},
+		TaxNumber:             null.String{},
 		CompanyRegisterNumber: "",
 		Contact: model.ContactInfo{
 			Phone: null.String{},

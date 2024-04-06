@@ -42,41 +42,55 @@ type CommandMessage struct {
 	msg    []byte
 }
 
+type ErrorMessage struct {
+	msg []byte
+}
+
 type MessageBroker struct {
 	callbackStore map[model.EdaProtocol]model.SubscribeHandler
 	Inbound       chan InboundMessage
 	Command       chan CommandMessage
+	ErrorC        chan ErrorMessage
 	Outbound      chan model.EbmsMessage
 	*MQTTStreamer
-}
-
-func StartMessageBroker() error {
-	in := make(chan InboundMessage)
-	out := make(chan model.EbmsMessage)
-	cmd := make(chan CommandMessage)
-
-	streamer, err := NewMqttStreamer()
-	if err != nil {
-		return err
-	}
-	messageBroker = &MessageBroker{make(map[model.EdaProtocol]model.SubscribeHandler), in, cmd, out, streamer}
-
-	go messageBroker.Listen()
-
-	return nil
 }
 
 func NewMessageBroker() (*MessageBroker, error) {
 	in := make(chan InboundMessage)
 	out := make(chan model.EbmsMessage)
 	cmd := make(chan CommandMessage)
+	errC := make(chan ErrorMessage)
 
 	streamer, err := NewMqttStreamer()
 	if err != nil {
 		return nil, err
 	}
-	return &MessageBroker{make(map[model.EdaProtocol]model.SubscribeHandler), in, cmd, out, streamer}, nil
+	messageBroker = &MessageBroker{
+		make(map[model.EdaProtocol]model.SubscribeHandler),
+		in,
+		cmd,
+		errC,
+		out,
+		streamer}
+
+	return messageBroker, nil
 }
+
+func (mb *MessageBroker) Start() {
+	go mb.Listen()
+}
+
+//func NewMessageBroker() (*MessageBroker, error) {
+//	in := make(chan InboundMessage)
+//	out := make(chan model.EbmsMessage)
+//	cmd := make(chan CommandMessage)
+//
+//	streamer, err := NewMqttStreamer()
+//	if err != nil {
+//		return nil, err
+//	}
+//	return &MessageBroker{make(map[model.EdaProtocol]model.SubscribeHandler), in, cmd, out, streamer}, nil
+//}
 
 func (mb *MessageBroker) SendMessage(m model.EbmsMessage, callback func(m string) error) {
 	log.WithField("tenant", m.Sender).WithField("MSG", m.MessageCode).Info("Send Message to MQTT")
@@ -124,6 +138,17 @@ func (mb *MessageBroker) Listen() {
 	}
 	log.Info("Broker listening on protocol messages")
 
+	errorToken := mb.client.Subscribe("eda/response/error", byte(qos), func(client mqtt.Client, msg mqtt.Message) {
+		log.Infof("Error Message from MQTT: %s [%+v]", TopicType(msg.Topic()).Tenant(), msg.Topic())
+		mb.ErrorC <- ErrorMessage{
+			msg.Payload()}
+	})
+	errorToken.Wait()
+	if token.Error() != nil {
+		panic(token.Error())
+	}
+	log.Info("Broker listening on protocol messages")
+
 	for {
 		select {
 		case msg := <-mb.Inbound:
@@ -131,6 +156,8 @@ func (mb *MessageBroker) Listen() {
 			mb.received(msg)
 		case cmd := <-mb.Command:
 			mb.command(cmd)
+		case err := <-mb.ErrorC:
+			log.Errorf("Error from Broker. %v", string(err.msg))
 		case send := <-mb.Outbound:
 			mb.SendMessage(send, func(m string) error {
 				fmt.Printf("Callback called: %+v\n", m)

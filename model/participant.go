@@ -38,8 +38,8 @@ type EegParticipant struct {
 	TitleBefore           string           `json:"titleBefore" db:"titleBefore"`
 	TitleAfter            string           `json:"titleAfter" db:"titleAfter"`
 	ParticipantSince      time.Time        `json:"participantSince" db:"participantSince" goqu:"defaultifempty"`
-	VatNumber             string           `json:"vatNumber" db:"vatNumber"`
-	TaxNumber             string           `json:"taxNumber" db:"taxNumber"`
+	VatNumber             null.String      `json:"vatNumber" db:"vatNumber"`
+	TaxNumber             null.String      `json:"taxNumber" db:"taxNumber"`
 	CompanyRegisterNumber string           `json:"companyRegisterNumber" db:"companyRegisterNumber"`
 	Contact               ContactInfo      `json:"contact" db:"-" goqu:"skipinsert"`
 	BillingAddress        Address          `json:"billingAddress" db:"-" goqu:"skipinsert"`
@@ -105,6 +105,7 @@ type MeteringPoint struct {
 	Transformer      null.String   `json:"transformer,omitempty"`
 	Direction        DirectionType `json:"direction,omitempty"`
 	Status           StatusType    `json:"status,omitempty"`
+	StatusCode       null.Int      `json:"statusCode,omitempty" db:"statusCode" goqu:"omitempty"`
 	TariffId         null.String   `json:"tariff_id,omitempty" db:"tariff_id"`
 	EquipmentNumber  null.String   `json:"equipmentNumber,omitempty" db:"equipmentNumber"`
 	EquipmentName    null.String   `json:"equipmentName,omitempty" db:"equipmentName"`
@@ -119,4 +120,12 @@ type MeteringPoint struct {
 	GridOperatorId   null.String   `json:"gridOperatorId,omitempty" db:"grid_operator_id"`
 	GridOperatorName null.String   `json:"gridOperatorName,omitempty" db:"grid_operator_name"`
 	State            *MeterState   `json:"participantState" goqu:"skipupdate"`
+	PartFact         int           `json:"partFact,omitempty" db:"partFact" goqu:"skipupdate,skipinsert"`
+}
+
+type ChangePartitionFactorRequest struct {
+	MeteringPoint string        `json:"meter"`
+	Direction     DirectionType `json:"direction"`
+	Activation    time.Time     `json:"activation"`
+	PartFact      int           `json:"partFact"`
 }

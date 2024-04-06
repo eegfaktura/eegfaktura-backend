@@ -57,6 +57,8 @@ func SendMail(tenant, to, subject string, cc *string, body *bytes.Buffer, attach
 	//	request.Body = body.Bytes()
 	//}
 
+	log.WithField("tenant", tenant).Infof("Send Mail: from:%s to:%s sub: %s, cc: %s, body: %s, att: %v", tenant, to, subject, *cc, body, attachments)
+
 	//if attachments != nil {
 	return sendHtmlInlineAttachment(tenant, to, subject, cc, body, attachments)
 	//}
@@ -165,7 +167,7 @@ func (r *RegisterService) Register(ctx context.Context, eeg *protobuf.RegisterEe
 		Optionals: model.Optionals{
 			Website: getOptionalField(eeg.Web),
 		},
-		Periods:       nil,
+		//Periods:       nil,
 		Online:        eeg.Online,
 		ContactPerson: null.StringFrom(eeg.EegOwner),
 	}

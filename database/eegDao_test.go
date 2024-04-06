@@ -54,8 +54,8 @@ func TestGetEeg(t *testing.T) {
 			Email: null.StringFrom("test-eeg@gmx.at"),
 		},
 		Optionals: model.Optionals{Website: null.StringFrom("test-eeg.at")},
-		Periods:   nil,
-		Online:    false,
+		//Periods:   nil,
+		Online: false,
 	}
 	assert.Equal(t, expectedEeg, eeg)
 }

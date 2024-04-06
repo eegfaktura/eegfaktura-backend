@@ -62,7 +62,7 @@ func TestRegisterParticipant(t *testing.T) {
 	mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
 	mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
 	mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
-	//	mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
+	mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
 	mockDb.Mock.ExpectCommit()
 
 	db, _ := mockDb.OpenMockDb()
@@ -161,6 +161,7 @@ func Test_GetParticipants(t *testing.T) {
 			Active:        1,
 			Flag:          0,
 		},
+		PartFact: 100,
 	}
 	m := findMeter(p.MeteringPoint, expectedMeter.MeteringPoint)
 	assert.NotNil(t, m)
@@ -194,7 +195,7 @@ func Test_saveParticipant(t *testing.T) {
 	mock.ExpectExec("INSERT (.+) \"base\".\"bankaccount\"").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec("INSERT (.+) \"base\".\"address\"").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec("INSERT (.+) \"base\".\"meteringpoint\"").WillReturnResult(sqlmock.NewResult(1, 1))
-	//	mock.ExpectExec("INSERT (.+) \"base\".\"participant_meter_state\"").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("INSERT (.+) \"base\".\"metering_partition_factor\"").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
 	tests := []struct {

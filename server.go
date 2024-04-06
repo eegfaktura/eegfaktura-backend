@@ -58,10 +58,11 @@ func main() {
 	flag.Parse()
 	config.ReadConfig(*configPath)
 
-	err := mqttclient.StartMessageBroker()
+	mb, err := mqttclient.NewMessageBroker()
 	if err != nil {
 		panic(err)
 	}
+	mb.Start()
 
 	log.SetReportCaller(true)
 
