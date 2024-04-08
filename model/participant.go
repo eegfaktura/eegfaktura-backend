@@ -75,6 +75,7 @@ type StatusType string
 
 const (
 	NEW      StatusType = "NEW"
+	INIT     StatusType = "INIT"
 	PENDING  StatusType = "PENDING"
 	APPROVED StatusType = "APPROVED"
 	ACTIVE   StatusType = "ACTIVE"

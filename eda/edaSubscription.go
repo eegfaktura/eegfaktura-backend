@@ -42,7 +42,7 @@ var (
 		188: "Teilnahmefaktor von 100 % würde überschritten werden",
 		196: "Teilnahme-Limit wird überschritten",
 	}
-	REJECTED_INVALID_CODES = []int16{57, 104, 158, 159, 172, 173, 177, 184, 185, 196}
+	REJECTED_INVALID_CODES = []int16{56, 57, 76, 104, 156, 157, 158, 159, 172, 173, 177, 181, 184, 185, 196}
 	REJECTED_VALID_CODES   = []int16{156, 86}
 )
 
@@ -200,7 +200,8 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 			status = model.INVALID
 			statusCode = intersectCodes(REJECTED_INVALID_CODES, codes)[0]
 		} else if codesContains(REJECTED_VALID_CODES, codes) {
-			status = ""
+			status = model.REJECTED
+			statusCode = intersectCodes(REJECTED_VALID_CODES, codes)[0]
 		} else {
 			status = model.REJECTED
 			if len(codes) > 0 {
@@ -221,12 +222,14 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 					logrus.WithField("error", err.Error()).Errorf("Perform Answer Message %+v", meters)
 					return
 				}
+			} else if c == 182 || c == 183 {
+				status = model.INVALID
 			}
 		}
 	case model.EBMS_ONLINE_REG_INIT:
 		meters = msg.Payload.Meters()
-		codes = []int16{}
-		status = model.NEW
+		codes = []int16{0}
+		status = model.INIT
 	default:
 		return
 	}
@@ -268,7 +271,7 @@ func protocolCmRevImpHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 	var status model.StatusType
 
 	switch msg.MessageCode {
-	case model.EBMS_AUFHEBUNG_CCMI, model.EBMS_AUFHEBUNG_CCMC:
+	case model.EBMS_AUFHEBUNG_CCMS, model.EBMS_AUFHEBUNG_CCMI, model.EBMS_AUFHEBUNG_CCMC:
 		status = model.INACTIVE
 	case model.EBMS_ANTWORT_CCMS:
 		if len(meters) > 0 {
@@ -277,7 +280,7 @@ func protocolCmRevImpHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 				status = model.INACTIVE
 			}
 		}
-	case model.EBMS_AUFHEBUNG_CCMS, model.EBMS_ABLEHNUNG_CCMS:
+	case model.EBMS_ABLEHNUNG_CCMS:
 		status = ""
 	default:
 		return

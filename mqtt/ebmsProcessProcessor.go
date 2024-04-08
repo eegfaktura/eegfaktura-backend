@@ -160,12 +160,12 @@ func getReceiverFrom(eeg *model.Eeg, meter *model.MeteringPoint) string {
 }
 
 func createEbmsMessage(eeg *model.Eeg, meter *model.MeteringPoint, code model.EbMsMessageType) model.EbmsMessage {
-	sender := strings.ToUpper(eeg.RcNumber)
+	//sender := strings.ToUpper(eeg.RcNumber)
 	receiver := getReceiverFrom(eeg, meter)
 
 	return model.EbmsMessage{
-		Sender:   sender,
-		Receiver: receiver,
+		Sender:   strings.ToUpper(eeg.RcNumber),
+		Receiver: receiver, //getReceiverFrom(eeg, meter),
 		//Sender:      "sepp.gaug",
 		//Receiver:    "obermueller.peter",
 		MessageCode: code,

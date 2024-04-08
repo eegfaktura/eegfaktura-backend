@@ -486,7 +486,6 @@ func completeParticipant(db *sqlx.DB, participant *model.EegParticipant) error {
 	if err != nil {
 		return model.ErrCompleteParticipant(err)
 	}
-	fmt.Printf("QUERY METERING POINT: %s\n", stmt)
 	err = db.Select(&participant.MeteringPoint, stmt)
 	if err != nil && !errors.Is(err, dbsql.ErrNoRows) {
 		return model.ErrCompleteParticipant(err)
