@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-func InitEegRouter(r *mux.Router, jwtWrapper middleware.JWTWrapperFunc) *mux.Router {
+func InitEegRouter(r *mux.Router) *mux.Router {
 	s := r.PathPrefix("/eeg").Subrouter()
 
 	s.HandleFunc("", middleware.Protect(getEEG())).Methods("GET")

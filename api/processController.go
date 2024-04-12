@@ -9,7 +9,7 @@ import (
 	"strconv"
 )
 
-func InitProcessRouter(r *mux.Router, jwtWrapper middleware.JWTWrapperFunc) *mux.Router {
+func InitProcessRouter(r *mux.Router) *mux.Router {
 	s := r.PathPrefix("/process").Subrouter()
 
 	s.HandleFunc("/history", middleware.Protect(fetchProcessHistory())).Methods("GET")

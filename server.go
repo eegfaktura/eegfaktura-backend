@@ -38,17 +38,15 @@ func init() {
 
 func InitRouters() *mux.Router {
 
-	jwtWrapper := middleware.JWTMiddleware(viper.GetString("jwt.pubKeyFile"))
-
 	middleware.InitKeycloak()
 
 	//r := mux.NewRouter().PathPrefix("/api").Subrouter()
 	r := mux.NewRouter()
 	s := r.PathPrefix("/").Subrouter()
-	s = api.InitEegRouter(s, jwtWrapper)
-	s = api.InitParticipantRouter(s, jwtWrapper)
-	s = api.InitMeteringRouter(s, jwtWrapper)
-	s = api.InitProcessRouter(s, jwtWrapper)
+	s = api.InitEegRouter(s)
+	s = api.InitParticipantRouter(s)
+	s = api.InitMeteringRouter(s)
+	s = api.InitProcessRouter(s)
 
 	return s
 }

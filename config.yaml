@@ -6,15 +6,6 @@ database:
   password: "postgresPW"
   dbname: "postgresdb"
 
-jwt:
-  pubKeyFile: "./zertifikat-pub-1.pem"
-
-clientId: "at.ourproject.vfeeg.app"
-keycloak:
-  clientId: "at.ourproject.vfeeg.app"
-  realm: "VFEEG"
-  host: "https://login.ourproject.at/auth"
-
 mqtt:
   host: "tcp://localhost:1883"
   id: "edash-backend-2"

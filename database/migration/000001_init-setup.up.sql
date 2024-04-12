@@ -174,7 +174,8 @@ CREATE TABLE IF NOT EXISTS base.metering_partition_factor
     "createdAt"       DATE    NOT NULL DEFAULT now(),
     "createdBy"       VARCHAR NOT NULL,
     CONSTRAINT meteringpointPartitionPK PRIMARY KEY (metering_point_id, version),
-    CONSTRAINT FK_MeteringpointPartition FOREIGN KEY (metering_point_id, tenant, participant_id) REFERENCES base.meteringpoint (metering_point_id, tenant, participant_id) ON DELETE CASCADE
+    CONSTRAINT FK_MeteringpointPartition FOREIGN KEY (metering_point_id, tenant, participant_id)
+        REFERENCES base.meteringpoint (metering_point_id, tenant, participant_id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 -- CREATE TABLE IF NOT EXISTS base.participant_meter_state
 -- (

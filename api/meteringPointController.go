@@ -17,10 +17,11 @@ import (
 	"time"
 )
 
-func InitMeteringRouter(r *mux.Router, jwtWrapper middleware.JWTWrapperFunc) *mux.Router {
+func InitMeteringRouter(r *mux.Router) *mux.Router {
 	s := r.PathPrefix("/meteringpoint").Subrouter()
 
 	s.HandleFunc("/{pid}/update/{mid}", middleware.Protect(updateMeteringPoint())).Methods("PUT")
+	s.HandleFunc("/{spid}/{dpid}/move/{mid}", middleware.Protect(moveMeteringPoint())).Methods("PUT")
 	s.HandleFunc("/{pid}/remove/{mid}", middleware.Protect(removeMeteringPoint())).Methods("DELETE")
 	s.HandleFunc("/{pid}/archive/{mid}", middleware.Protect(archiveMeteringPoint())).Methods("PUT")
 	s.HandleFunc("/{pid}/create", middleware.Protect(createMeteringPoint())).Methods("PUT")
@@ -104,6 +105,37 @@ func updateMeteringPoint() middleware.JWTHandlerFunc {
 		m.ModifiedAt = time.Now()
 		m.ModifiedBy = null.StringFrom(claims.Username)
 		err = database.UpdateMeteringPoint(db, tenant, claims.Username, participantId, meterId, &m)
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, err)
+			return
+		}
+		respondWithJSON(w, http.StatusAccepted, m)
+	}
+
+}
+func moveMeteringPoint() middleware.JWTHandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
+		vars := mux.Vars(r)
+		sParticipantId := vars["spid"]
+		dParticipantId := vars["dpid"]
+		meterId := vars["mid"]
+
+		m := model.MeteringPoint{}
+		err := json.NewDecoder(r.Body).Decode(&m)
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
+			return
+		}
+		db, err := database.ConnectToDatabase()
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
+			return
+		}
+		defer func() { _ = db.Close() }()
+
+		m.ModifiedAt = time.Now()
+		m.ModifiedBy = null.StringFrom(claims.Username)
+		err = database.MoveMeteringPoint(db, tenant, claims.Username, sParticipantId, dParticipantId, meterId)
 		if err != nil {
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
@@ -211,11 +243,11 @@ func requestMeteringPointValues() middleware.JWTHandlerFunc {
 		}
 
 		if meters == nil {
+			log.WithField("tenant", tenant).Errorf("Request meter values - no Meter selected")
 			respondWith(w, http.StatusInternalServerError, tenant, model.Wrap(errors.New("no Meter selected"), 3100))
 			return
 		}
 
-		log.WithField("tenant", tenant).Infof("request Metering values %v (%d - %d)", request, fromDate, toDate)
 		if eeg.Online {
 			var errorList []string
 			meters, err := database.GetMeteringByIds(db, meters)

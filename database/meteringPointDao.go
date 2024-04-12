@@ -142,6 +142,84 @@ func RegisterMeteringPoint(db *sqlx.DB, tenant, username, participantId string, 
 	return err
 }
 
+func MoveMeteringPoint(db *sqlx.DB, tenant, username, sParticipantId, dParticipantId, meterId string) error {
+	tx, err := db.Beginx()
+	if err != nil {
+		log.Errorf("Not able to open a transaction. %s", err.Error())
+		return model.ErrOpenTx(err)
+	}
+
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		} else {
+			_ = tx.Commit()
+		}
+	}()
+
+	//var partFact partitionFactorRecord
+	//
+	//statement, _, err := goqu.Select(&partFact).From(TABLE_PARTITION_FACT).
+	//	Where(goqu.Ex{
+	//		"tenant":            goqu.Op{"eq": tenant},
+	//		"metering_point_id": goqu.Op{"eq": meterId},
+	//		"participant_id":    goqu.Op{"eq": sParticipantId},
+	//	}).
+	//	ToSQL()
+	//if err != nil {
+	//	return model.ErrUpdateMeter(err)
+	//}
+	//err = tx.Get(&partFact, statement)
+	//if err != nil {
+	//	log.WithField("SQL", "SELECT").Errorf("Stmt: %v", statement)
+	//	return model.ErrUpdateMeter(err)
+	//}
+
+	//statement, _, err = goqu.Delete(TABLE_PARTITION_FACT).
+	//	Where(goqu.Ex{
+	//		"tenant":            goqu.Op{"eq": tenant},
+	//		"metering_point_id": goqu.Op{"eq": meterId},
+	//		"participant_id":    goqu.Op{"eq": sParticipantId},
+	//	}).
+	//	ToSQL()
+	//if err != nil {
+	//	return model.ErrUpdateMeter(err)
+	//}
+	//_, err = tx.Exec(statement)
+	//if err != nil {
+	//	log.WithField("SQL", "DELETE").Errorf("Stmt: %v", statement)
+	//	return model.ErrUpdateMeter(err)
+	//}
+
+	statement, _, err := goqu.Update(TABLE_METERINGPOINT).
+		Set(goqu.Record{"participant_id": dParticipantId}).
+		Where(goqu.Ex{
+			"tenant":            goqu.Op{"eq": tenant},
+			"metering_point_id": goqu.Op{"eq": meterId},
+			"participant_id":    goqu.Op{"eq": sParticipantId},
+		}).
+		ToSQL()
+	if err != nil {
+		return model.ErrUpdateMeter(err)
+	}
+	_, err = tx.Exec(statement)
+	if err != nil {
+		log.WithField("SQL", "UPDATE").Errorf("Stmt: %v", statement)
+		return model.ErrUpdateMeter(err)
+	}
+
+	//partFact.Participant_id = dParticipantId
+	//statement, _, err = goqu.Insert(TABLE_PARTITION_FACT).Rows(&partFact).
+	//	ToSQL()
+	//_, err = tx.Exec(statement)
+	//if err != nil {
+	//	log.WithField("SQL", "INSERT").Errorf("Stmt: %v", statement)
+	//	return model.ErrUpdateMeter(err)
+	//}
+
+	return nil
+}
+
 func UpdateMeteringPoint(db *sqlx.DB, tenant, username, participantId, meterId string, meteringPoint *model.MeteringPoint) error {
 	updateObject := *meteringPoint
 	updateObject.State = nil

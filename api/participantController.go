@@ -11,7 +11,7 @@ import (
 	"net/http"
 )
 
-func InitParticipantRouter(r *mux.Router, jwtWrapper middleware.JWTWrapperFunc) *mux.Router {
+func InitParticipantRouter(r *mux.Router) *mux.Router {
 	s := r.PathPrefix("/participant").Subrouter()
 
 	s.HandleFunc("", middleware.Protect(fetchParticipant())).Methods("GET")

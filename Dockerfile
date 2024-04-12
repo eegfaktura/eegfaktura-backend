@@ -11,7 +11,6 @@ RUN go mod download && go mod verify
 COPY . .
 RUN go build -o /usr/local/bin/vfeeg-backend -ldflags="-s -w" server.go
 
-COPY zertifikat-pub-1.pem /usr/local/bin/
 COPY config.yaml /etc/backend/
 
 VOLUME /opt/public
