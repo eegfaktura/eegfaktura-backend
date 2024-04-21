@@ -9,6 +9,7 @@ import (
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
 	"net/http"
+	"time"
 )
 
 func InitParticipantRouter(r *mux.Router) *mux.Router {
@@ -18,6 +19,7 @@ func InitParticipantRouter(r *mux.Router) *mux.Router {
 	s.HandleFunc("", middleware.Protect(registerParticipant())).Methods("POST")
 	s.HandleFunc("/{id}", middleware.Protect(updateParticipant())).Methods("PUT")
 	s.HandleFunc("/{id}", middleware.Protect(archiveParticipant())).Methods("DELETE")
+	// Commit a participant to be a member of a EEG
 	s.HandleFunc("/{id}/confirm", middleware.Protect(confirmParticipant())).Methods("POST")
 	s.HandleFunc("/v2/{id}", middleware.Protect(updateParticipantPartial())).Methods("PUT")
 
@@ -178,9 +180,14 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 			for _, m := range participant.MeteringPoint {
 				log.WithField("tenant", tenant).Infof("Start Meteringpoint %s registration", m.MeteringPoint)
 				if err = mqttclient.RegistrationForParticipation(eeg, m); err != nil {
-					respondWith(w, http.StatusInternalServerError, tenant, err)
+					respondWith(w, http.StatusBadRequest, tenant, err)
 					return
 				}
+				//err = database.MeteringPointsSetStatus(db, tenant, model.INIT, 0, []string{m.MeteringPoint}, nil, nil)
+				//if err != nil {
+				//	respondWith(w, http.StatusBadRequest, tenant, err)
+				//	return
+				//}
 			}
 		} else {
 			meterIds := []string{}
@@ -188,7 +195,8 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 				meterIds = append(meterIds, m.MeteringPoint)
 				m.Status = model.ACTIVE
 			}
-			err := database.MeteringPointsSetStatus(db, tenant, model.ACTIVE, 0, meterIds)
+			now := time.Now()
+			err := database.MeteringPointsSetStatus(db, tenant, model.ACTIVE, 0, meterIds, &now, nil)
 			if err != nil {
 				respondWith(w, http.StatusBadRequest, tenant, err)
 				return

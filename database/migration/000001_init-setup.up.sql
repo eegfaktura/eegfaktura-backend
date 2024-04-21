@@ -318,7 +318,7 @@ SELECT p.id                                                      participant_id,
        COALESCE(b."bankName", '')                                participant_bank_name,
        b.iban                                                    participant_bank_iban,
        b.owner                                                   participant_bank_owner,
-       o.email                                                   participant_email,
+       SPLIT_PART(o.email, ';', 1)                               participant_email,
        COALESCE(c."bankName", '')                                eec_bank_name,
        c.iban                                                    eec_bank_iban,
        c.owner                                                   eec_bank_owner

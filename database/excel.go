@@ -429,6 +429,7 @@ func parseExcelDate(cell string) time.Time {
 func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) string) []*model.EegParticipant {
 	colMap := map[string]int{}
 	participants := []*model.EegParticipant{}
+	defaultPartFact := "100"
 
 	businessRole := func(cols []string, values map[string]int) string {
 		val := getColumValue(cols, colMap, "BusinessRole", "BusinessRole", nil)
@@ -454,6 +455,15 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 		return null.String{}
 	}
 
+	partFact := func(cols []string, values map[string]int) int {
+		val := getColumValue(cols, colMap, "Teilnehmerfaktor", "PartFact", &defaultPartFact)
+		s, err := strconv.Atoi(val)
+		if err != nil {
+			return 100
+		}
+		return s
+	}
+
 	for rows.Next() {
 		if cols, err := rows.Columns(excelize.Options{RawCellValue: true}); err == nil && len(cols) > 0 {
 			switch cols[0] {
@@ -463,7 +473,6 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 				for i, c := range cols {
 					colMap[strings.ToLower(c)] = i
 				}
-
 				continue
 			default:
 				switch {
@@ -569,6 +578,7 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 							EquipmentName:    equipmentName(cols, colMap),
 							RegisteredSince:  registeredSince,
 							InverterId:       null.String{},
+							PartFact:         partFact(cols, colMap),
 							Street:           null.StringFrom(getColumValue(cols, colMap, "Straße", "Street", nil)),
 							StreetNumber:     null.StringFrom(getColumValue(cols, colMap, "Hausnummer", "Street Number", nil)),
 							City:             null.StringFrom(getColumValue(cols, colMap, "Ort", "City", nil)),
@@ -580,4 +590,85 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 		}
 	}
 	return participants
+}
+
+func ExportZPListToExcel(ebmsMsg *model.EbmsMessage) (*bytes.Buffer, error) {
+	f := excelize.NewFile()
+	defer func() {
+		if err := f.Close(); err != nil {
+			fmt.Println(err)
+		}
+	}()
+
+	err := generateZPListMastersheet(f, ebmsMsg)
+	if err != nil {
+		return nil, err
+	}
+
+	_ = f.DeleteSheet("Sheet1")
+	return f.WriteToBuffer()
+}
+
+func generateZPListMastersheet(f *excelize.File, ebmsMsg *model.EbmsMessage) error {
+	styleId, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Size: 10.0}})
+	//styleDateId, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Size: 10.0}, NumFmt: 14})
+	styleIdHeader, err := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Bold: true, Size: 10.0},
+		Alignment: &excelize.Alignment{Vertical: "top", WrapText: true},
+	})
+	styleIdDate, err := f.NewStyle(&excelize.Style{
+		Font:   &excelize.Font{Size: 10.0},
+		NumFmt: 14,
+	})
+
+	sheet := "ZP-List"
+	_, err = f.NewSheet(sheet)
+	if err != nil {
+		return err
+	}
+
+	sw, err := f.NewStreamWriter(sheet)
+	if err != nil {
+		return err
+	}
+
+	err = sw.SetColWidth(1, 1, 5.0)
+	err = sw.SetColWidth(2, 2, 30.0)
+	err = sw.SetColWidth(3, 3, 20.0)
+	err = sw.SetColWidth(4, 4, 9.5)
+	colNr, _ := excelize.ColumnNameToNumber("F")
+	err = sw.SetColWidth(colNr, colNr+3, 12.0)
+
+	line := 1
+	err = sw.SetRow(fmt.Sprintf("A%d", line),
+		[]interface{}{
+			excelize.Cell{Value: "Nr."},
+			excelize.Cell{Value: "Zählpunktname"},
+			excelize.Cell{Value: "Bezugsrichtung"},
+			excelize.Cell{Value: "Teilnahme-faktor"},
+			excelize.Cell{Value: "statische Aufteilung"},
+			excelize.Cell{Value: "aktiviert"},
+			excelize.Cell{Value: "aktiv seit"},
+			excelize.Cell{Value: "aktiv bis"},
+		}, excelize.RowOpts{StyleID: styleIdHeader, Height: 0.42 * 72})
+	idx := 0
+	for _, m := range ebmsMsg.MeterList {
+		line = line + 1
+		idx += 1
+		err = sw.SetRow(fmt.Sprintf("A%d", line),
+			[]interface{}{
+				excelize.Cell{Value: idx},
+				excelize.Cell{Value: m.MeteringPoint},
+				excelize.Cell{Value: m.Direction},
+				excelize.Cell{Value: m.PartFact},
+				excelize.Cell{Value: m.Share},
+				excelize.Cell{Value: time.UnixMilli(m.Activation), StyleID: styleIdDate},
+				excelize.Cell{Value: time.UnixMilli(m.From), StyleID: styleIdDate},
+				excelize.Cell{Value: time.UnixMilli(m.To), StyleID: styleIdDate},
+			}, excelize.RowOpts{StyleID: styleId})
+	}
+
+	err = f.AutoFilter(sheet, "A1:AH10", nil)
+	err = sw.Flush()
+	return err
 }

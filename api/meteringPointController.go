@@ -21,6 +21,7 @@ func InitMeteringRouter(r *mux.Router) *mux.Router {
 	s := r.PathPrefix("/meteringpoint").Subrouter()
 
 	s.HandleFunc("/{pid}/update/{mid}", middleware.Protect(updateMeteringPoint())).Methods("PUT")
+	s.HandleFunc("/{pid}/update/{mid}/partfact", middleware.Protect(updateMeteringPointPartFact())).Methods("PUT")
 	s.HandleFunc("/{spid}/{dpid}/move/{mid}", middleware.Protect(moveMeteringPoint())).Methods("PUT")
 	s.HandleFunc("/{pid}/remove/{mid}", middleware.Protect(removeMeteringPoint())).Methods("DELETE")
 	s.HandleFunc("/{pid}/archive/{mid}", middleware.Protect(archiveMeteringPoint())).Methods("PUT")
@@ -113,6 +114,57 @@ func updateMeteringPoint() middleware.JWTHandlerFunc {
 	}
 
 }
+
+func updateMeteringPointPartFact() middleware.JWTHandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
+		vars := mux.Vars(r)
+		participantId := vars["pid"]
+		meterId := vars["mid"]
+
+		pf := struct {
+			PartFact int `json:"partFact"`
+		}{}
+		err := json.NewDecoder(r.Body).Decode(&pf)
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
+			return
+		}
+		db, err := database.ConnectToDatabase()
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
+			return
+		}
+		defer func() { _ = db.Close() }()
+
+		ms, err := database.FindAllMeteringByTenant(db, tenant, participantId, []string{meterId})
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, err)
+			return
+		}
+
+		var meters []model.Meter
+		for _, m := range ms {
+			meters = append(meters, model.Meter{
+				MeteringPoint: m.MeteringPoint,
+				Direction:     m.Direction,
+				PartFact:      pf.PartFact,
+			})
+		}
+
+		if len(meters) == 1 {
+			err = database.MeteringPointChangePartFactor(db, tenant, meters)
+			if err != nil {
+				respondWith(w, http.StatusBadRequest, tenant, err)
+				return
+			}
+			ms[0].PartFact = pf.PartFact
+			respondWithJSON(w, http.StatusAccepted, ms[0])
+		} else {
+			respondWith(w, http.StatusBadRequest, tenant, &model.VfeegError{999, errors.New(fmt.Sprintf("No metering factor found N:%d", len(meters)))})
+		}
+	}
+}
+
 func moveMeteringPoint() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
 		vars := mux.Vars(r)
@@ -277,7 +329,7 @@ func requestRevokeMeteringPoint() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
 		vars := mux.Vars(r)
 		participantId := vars["pid"]
-		log.WithField("tenant", tenant).Infof("Synchronize meteringpoint in participant %s", participantId)
+		log.WithField("tenant", tenant).Infof("Revoke meteringpoint in participant %s", participantId)
 
 		request := struct {
 			MeteringPoints []struct {
@@ -327,7 +379,14 @@ func requestRevokeMeteringPoint() middleware.JWTHandlerFunc {
 			return
 		}
 
-		log.WithField("tenant", tenant).Infof("revoke Metering %v (%d - %s)", request, fromDate, *reason)
+		getReason := func(r *string) string {
+			if r != nil {
+				return *r
+			}
+			return ""
+		}
+
+		log.WithField("tenant", tenant).Infof("revoke Metering %v (%d - %s)", request, fromDate, getReason(reason))
 		if eeg.Online {
 			errorList := []string{}
 			meters, err := database.GetMeteringByIds(db, meters)
@@ -385,7 +444,7 @@ func archiveMeteringPoint() middleware.JWTHandlerFunc {
 		}
 		defer func() { _ = db.Close() }()
 
-		err = database.MeteringPointsSetStatus(db, tenant, model.ARCHIVED, 0, []string{meterId})
+		err = database.MeteringPointsSetStatus(db, tenant, model.ARCHIVED, 0, []string{meterId}, nil, nil)
 		if err != nil {
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return

@@ -20,14 +20,14 @@ var (
 	ErrTariffUtilized = errors.New("Tariff is currently used")
 )
 
-func init() {
-	loc, err := time.LoadLocation("Europe/Berlin")
-	if err != nil {
-		panic(err)
-	}
-
-	goqu.SetTimeLocation(loc)
-}
+//func init() {
+//	loc, err := time.LoadLocation("Europe/Berlin")
+//	if err != nil {
+//		panic(err)
+//	}
+//
+//	goqu.SetTimeLocation(loc)
+//}
 
 var OpenTransaction = func() (*sqlx.Tx, error) {
 	return GetTx()

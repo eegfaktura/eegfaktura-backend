@@ -71,7 +71,7 @@ func Test_RegisterMeteringPoint(t *testing.T) {
 }
 
 func Test_MeteringPointRevoke(t *testing.T) {
-	consentEnd := time.Now().Truncate(24 * time.Hour)
+	consentEnd := time.Now().Truncate(24 * time.Hour).Local()
 	db, err := openTestDb()
 	require.NoError(t, err)
 	err = MeteringPointRevoke(db, "TE000003", "AT0030000000000000000000030003010", "INACTIVE", consentEnd)
@@ -84,7 +84,7 @@ func Test_MeteringPointRevoke(t *testing.T) {
 
 	meter := meters[0]
 
-	assert.Equal(t, consentEnd.Add(1*time.Hour).Local(), meter.State.InactiveSince.Local())
+	assert.Equal(t, consentEnd, meter.State.InactiveSince.Local())
 	assert.Equal(t, model.INACTIVE, meter.Status)
 }
 
@@ -233,10 +233,11 @@ func Test_ActivateRevokedMeteringPoint(t *testing.T) {
 	require.Equal(t, 1, len(p))
 	require.Equal(t, 1, len(p[0].MeteringPoint))
 	assert.Equal(t, model.INACTIVE, p[0].MeteringPoint[0].Status)
-	assert.Equal(t, consentEnd.Add(1*time.Hour).Local(), p[0].MeteringPoint[0].State.InactiveSince.Local())
-	assert.Equal(t, time.Now().Add(1*time.Hour).Local().Truncate(time.Hour), p[0].MeteringPoint[0].State.ActiveSince.Local().Truncate(time.Hour))
+	assert.Equal(t, consentEnd.Local(), p[0].MeteringPoint[0].State.InactiveSince.Local())
+	assert.Equal(t, time.Now().Local().Truncate(time.Hour), p[0].MeteringPoint[0].State.ActiveSince.Local().Truncate(time.Hour))
 
-	err = MeteringPointsSetStatus(db, "TE000004", model.ACTIVE, 0, []string{meter.MeteringPoint})
+	now := time.Now().Truncate(time.Hour)
+	err = MeteringPointsSetStatus(db, "TE000004", model.ACTIVE, 0, []string{meter.MeteringPoint}, &now, nil)
 	require.NoError(t, err)
 
 	p, err = GetParticipants(db, "TE000004")
@@ -245,8 +246,8 @@ func Test_ActivateRevokedMeteringPoint(t *testing.T) {
 	require.Equal(t, 1, len(p))
 	require.Equal(t, 1, len(p[0].MeteringPoint))
 	assert.Equal(t, model.ACTIVE, p[0].MeteringPoint[0].Status)
-	assert.Equal(t, time.Date(2999, 12, 31, 23, 59, 59, 0, time.UTC), p[0].MeteringPoint[0].State.InactiveSince.Add(-1*time.Hour).UTC())
-	assert.Equal(t, time.Now().Local().Truncate(time.Hour), p[0].MeteringPoint[0].State.ActiveSince.Add(-1*time.Hour).Local().Truncate(time.Hour))
+	assert.Equal(t, time.Date(2999, 12, 31, 23, 59, 59, 0, time.UTC), p[0].MeteringPoint[0].State.InactiveSince.UTC())
+	assert.Equal(t, time.Now().Local().Truncate(time.Hour), p[0].MeteringPoint[0].State.ActiveSince.Local().Truncate(time.Hour))
 }
 
 func Test_RegistrationProcess(t *testing.T) {
@@ -313,22 +314,23 @@ func Test_RegistrationProcess(t *testing.T) {
 	require.Equal(t, 1, len(pUnderTest.MeteringPoint))
 	require.Equal(t, model.NEW, pUnderTest.MeteringPoint[0].Status)
 	require.Equal(t, expectedRegistrationDate.Truncate(24*time.Hour).UTC(), pUnderTest.MeteringPoint[0].RegisteredSince.UTC())
-	require.Equal(t, expectedRegistrationDate.Truncate(1*time.Hour).Add(1*time.Hour).UTC(), pUnderTest.MeteringPoint[0].State.ActiveSince.Truncate(1*time.Hour).UTC())
+	require.Equal(t, expectedRegistrationDate.Truncate(1*time.Hour).UTC(), pUnderTest.MeteringPoint[0].State.ActiveSince.Truncate(1*time.Hour).UTC())
 
-	err = MeteringPointsSetStatus(db, "TE000004", model.PENDING, 0, []string{meter.MeteringPoint})
+	now := time.Now().Truncate(time.Hour)
+	err = MeteringPointsSetStatus(db, "TE000004", model.PENDING, 0, []string{meter.MeteringPoint}, &now, nil)
 	require.NoError(t, err)
 
 	m, err := FindMeteringById(db, meter.MeteringPoint)
 	require.NoError(t, err)
 	assert.Equal(t, model.PENDING, m.Status)
 
-	err = MeteringPointsSetStatus(db, "TE000004", model.APPROVED, 0, []string{meter.MeteringPoint})
+	err = MeteringPointsSetStatus(db, "TE000004", model.APPROVED, 0, []string{meter.MeteringPoint}, &now, nil)
 	require.NoError(t, err)
 	m, err = FindMeteringById(db, meter.MeteringPoint)
 	require.NoError(t, err)
 	assert.Equal(t, model.APPROVED, m.Status)
 
-	err = MeteringPointsSetStatus(db, "TE000004", model.ACTIVE, 0, []string{meter.MeteringPoint})
+	err = MeteringPointsSetStatus(db, "TE000004", model.ACTIVE, 0, []string{meter.MeteringPoint}, &now, nil)
 	require.NoError(t, err)
 	m, err = FindMeteringById(db, meter.MeteringPoint)
 	require.NoError(t, err)

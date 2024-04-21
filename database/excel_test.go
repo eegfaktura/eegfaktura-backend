@@ -3,6 +3,7 @@ package database
 import (
 	"at.ourproject/vfeeg-backend/model"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
@@ -108,7 +109,7 @@ func TestImportMasterdataFromExcel(t *testing.T) {
 				require.Equal(t, 1, len(p.MeteringPoint))
 
 				assert.Equal(t, "Test Operator", p.MeteringPoint[0].GridOperatorName.String)
-				assert.Equal(t, time.Date(time.Now().Year(), 1, 1, 0, 0, 0, 0, time.UTC).Local(), p.MeteringPoint[0].State.ActiveSince.Local())
+				assert.Equal(t, time.Date(time.Now().Year(), 1, 1, 0, 0, 0, 0, time.Local), p.MeteringPoint[0].State.ActiveSince.Local())
 				assert.Equal(t, time.Date(2999, 12, 31, 0, 0, 0, 0, time.UTC).Local(), p.MeteringPoint[0].State.InactiveSince.Local())
 				assert.Equal(t, 0, p.MeteringPoint[0].State.Flag)
 				assert.Equal(t, model.ACTIVE, p.MeteringPoint[0].Status)
@@ -243,4 +244,16 @@ func TestExportMasterdataToExcel(t *testing.T) {
 			tt.check(t, got)
 		})
 	}
+}
+
+func TestExportZPListToExcel(t *testing.T) {
+	testMsg := `{"conversationId":"RC100417202404151713192460000008393","messageId":"AT002000202404151647464796647733092","sender":"AT002000","receiver":"RC100417","messageCode":"SENDEN_ECP","messageCodeVersion":"04.10","meterList":[{"meteringPoint":"AT0020000000000000000000100326383","direction":"GENERATION","activation":1708383600000,"partFact":100,"from":1708383600000,"to":253402210800000,"plantCategory":"SONNE"},{"meteringPoint":"AT0020000000000000000000100341356","direction":"GENERATION","activation":1673910000000,"partFact":100,"from":1673910000000,"to":253402210800000,"plantCategory":"SONNE"},{"meteringPoint":"AT0020000000000000000000100346220","direction":"GENERATION","activation":1673910000000,"partFact":100,"from":1673910000000,"to":253402210800000,"plantCategory":"SONNE"},{"meteringPoint":"AT0020000000000000000000100356673","direction":"GENERATION","activation":1700780400000,"partFact":100,"from":1700780400000,"to":253402210800000,"plantCategory":"SONNE"},{"meteringPoint":"AT0020000000000000000000100369058","direction":"GENERATION","activation":1700780400000,"partFact":100,"from":1700780400000,"to":253402210800000,"plantCategory":"SONNE"},{"meteringPoint":"AT0020000000000000000000020363290","direction":"CONSUMPTION","activation":1713132000000,"partFact":100,"from":1713132000000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000020368382","direction":"CONSUMPTION","activation":1710457200000,"partFact":100,"from":1710457200000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000020368542","direction":"CONSUMPTION","activation":1700780400000,"partFact":100,"from":1700780400000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000020370978","direction":"CONSUMPTION","activation":1687384800000,"partFact":100,"from":1687384800000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000020371090","direction":"CONSUMPTION","activation":1708038000000,"partFact":100,"from":1708038000000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000020371275","direction":"CONSUMPTION","activation":1690149600000,"partFact":100,"from":1690149600000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000020396712","direction":"CONSUMPTION","activation":1712527200000,"partFact":100,"from":1712527200000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000020397012","direction":"CONSUMPTION","activation":1690149600000,"partFact":100,"from":1690149600000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000021078996","direction":"CONSUMPTION","activation":1674687600000,"partFact":100,"from":1674687600000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000021124147","direction":"CONSUMPTION","activation":1713132000000,"partFact":100,"from":1713132000000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000021296887","direction":"CONSUMPTION","activation":1700780400000,"partFact":100,"from":1700780400000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000100058953","direction":"CONSUMPTION","activation":1712008800000,"partFact":100,"from":1712008800000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000100078028","direction":"CONSUMPTION","activation":1710457200000,"partFact":100,"from":1710457200000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000100097123","direction":"CONSUMPTION","activation":1708383600000,"partFact":100,"from":1708383600000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000100111690","direction":"CONSUMPTION","activation":1712527200000,"partFact":100,"from":1712527200000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000100125540","direction":"CONSUMPTION","activation":1689026400000,"partFact":100,"from":1689026400000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000100138318","direction":"CONSUMPTION","activation":1689026400000,"partFact":100,"from":1689026400000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000100251848","direction":"CONSUMPTION","activation":1713132000000,"partFact":100,"from":1713132000000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000100251849","direction":"CONSUMPTION","activation":1673910000000,"partFact":100,"from":1673910000000,"to":253402210800000}]}`
+	var ebmsMsgTest model.EbmsMessage
+
+	err := json.Unmarshal([]byte(testMsg), &ebmsMsgTest)
+	require.NoError(t, err)
+
+	buf, err := ExportZPListToExcel(&ebmsMsgTest)
+	err = os.WriteFile("./test.xlsx", buf.Bytes(), 0644)
+	require.NoError(t, err)
 }

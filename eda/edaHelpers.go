@@ -4,12 +4,19 @@ import (
 	"at.ourproject/vfeeg-backend/model"
 	"errors"
 	"fmt"
+	"time"
 )
 
 type responseCodesPerMeter struct {
 	meter      string
 	codes      []int16
 	consentEnd int64
+}
+
+type completionMeters struct {
+	meter       string
+	activeSince time.Time
+	partFact    int16
 }
 
 func extractResponseCodeAndMeteringPoint(ebmsMessage *model.EbmsMessage) ([]int16, []string, error) {
@@ -52,10 +59,10 @@ func extractResponseCodeAndMeteringPointV2(ebmsMessage *model.EbmsMessage) ([]re
 	return response, nil
 }
 
-func extractMeterList(ebmsMessage *model.EbmsMessage) []string {
-	meters := []string{}
+func extractMeterList(ebmsMessage *model.EbmsMessage) []*completionMeters {
+	meters := []*completionMeters{}
 	for _, m := range ebmsMessage.MeterList {
-		meters = append(meters, m.MeteringPoint)
+		meters = append(meters, &completionMeters{meter: m.MeteringPoint, activeSince: time.UnixMilli(m.Activation), partFact: int16(m.PartFact)})
 	}
 	return meters
 }

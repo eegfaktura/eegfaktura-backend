@@ -119,6 +119,45 @@ func sendHtmlInlineAttachment(sender, recipient, subject string, cc *string, htm
 	return err
 }
 
+func SendMailWithAttachment(sender, recipient, subject string, cc *string, htmlBody *bytes.Buffer, attachment *Attachment) error {
+	conn, err := grpc.Dial(viper.GetString("services.mail-server"), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	c := protobuf.NewSendMailServiceClient(conn)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
+	request := &protobuf.SendMailRequest{
+		Sender:    sender,
+		Recipient: recipient,
+		Subject:   subject,
+		Body:      htmlBody.Bytes(),
+		Attachment: &protobuf.Attachement{
+			MimeType:  attachment.MimeType,
+			Filename:  attachment.Filename,
+			Content:   attachment.Filecontent.Bytes(),
+			ContentId: attachment.ContentId,
+		},
+	}
+
+	if cc != nil {
+		request.Cc = cc
+	}
+
+	r, err := c.SendMail(ctx, request)
+	log.Infof("Response from MAIL-SERVER: %v", r)
+	if r == nil {
+		return errors.New("error Send Mail")
+	}
+	if r.Status != 200 {
+		return errors.New(*r.Message)
+	}
+	return err
+}
+
 type RegisterService struct {
 	protobuf.UnimplementedRegisterEegServiceServer
 }

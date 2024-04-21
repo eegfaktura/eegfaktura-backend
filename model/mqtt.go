@@ -109,6 +109,10 @@ type Meter struct {
 	Direction     DirectionType `json:"direction,omitempty"`
 	Activation    int64         `json:"activation,omitempty"`
 	PartFact      int           `json:"partFact,omitempty"`
+	From          int64         `json:"from,omitempty"`
+	To            int64         `json:"to,omitempty"`
+	PlantCategory string        `json:"plantCategory,omitempty"`
+	Share         float64       `json:"share,omitempty"`
 }
 
 type ResponseData struct {

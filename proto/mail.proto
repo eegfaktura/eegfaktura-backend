@@ -26,10 +26,9 @@ message SendMailRequest {
   string sender = 1;
   string recipient = 2;
   string subject = 3;
-  optional string filename = 4;
-  optional bytes content = 5;
-  optional bytes body = 6;
-  optional string cc = 7;
+  optional string cc = 4;
+  optional bytes body = 5;
+  optional Attachement attachment = 6;
 }
 
 // The response status for sending emails

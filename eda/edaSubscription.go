@@ -4,6 +4,9 @@ import (
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
+	"at.ourproject/vfeeg-backend/services"
+	"bytes"
+	"fmt"
 	"github.com/sirupsen/logrus"
 	"time"
 )
@@ -188,13 +191,24 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 	codes, meters, _ := extractResponseCodeAndMeteringPoint(&msg.Payload)
 	var status model.StatusType
 	var statusCode int16 = 0
+	var activeSince *time.Time
+	var partFact *int16
 
 	switch msg.MessageCode {
 	case model.EBMS_ONLINE_REG_COMPLETION:
 		codes = []int16{}
-		meters = extractMeterList(&msg.Payload)
-		status = model.ACTIVE
-		statusCode = 0
+		completeMeters := extractMeterList(&msg.Payload)
+		if len(completeMeters) == 1 {
+			meters = []string{completeMeters[0].meter}
+			activeSince = &completeMeters[0].activeSince
+			partFact = &completeMeters[0].partFact
+			status = model.ACTIVE
+			statusCode = 0
+		} else {
+			status = ""
+			meters = []string{}
+		}
+
 	case model.EBMS_ONLINE_REG_REJECTION:
 		if codesContains(REJECTED_INVALID_CODES, codes) {
 			status = model.INVALID
@@ -248,7 +262,7 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 	}
 
 	if len(meters) > 0 && len(status) > 0 {
-		if err := database.MeteringPointsSetStatus(db, eeg.Id, status, statusCode, meters); err != nil {
+		if err := database.MeteringPointsSetStatus(db, eeg.Id, status, statusCode, meters, activeSince, partFact); err != nil {
 			logrus.WithField("error", err.Error()).Errorf("can not change metering point status %+v", meters)
 		}
 	}
@@ -358,7 +372,7 @@ func protocolEcPrtChangeHandler(msg model.SubscribeMessage, recorder EdaRecordin
 		return
 	}
 
-	if len(meters) > 0 && errCode > 0 {
+	if len(meters) > 0 && errCode == 0 {
 		if err := database.MeteringPointChangePartFactor(db, eeg.Id, meters); err != nil {
 			logrus.WithField("tenant", eeg.Id).Errorf("can not change partition factor. %v", err)
 			return
@@ -383,6 +397,41 @@ func protocolEcPodListHandler(msg model.SubscribeMessage, recorder EdaRecording)
 	switch msg.MessageCode {
 	case model.EBMS_ZP_LIST:
 	case model.EBMS_ZP_LIST_RESPONSE:
+		buf, err := database.ExportZPListToExcel(&msg.Payload)
+		if err != nil {
+			return
+		}
+
+		db, err := recorder.databaseConnection()
+		if err != nil {
+			logrus.Error(err)
+			return
+		}
+		defer func() { _ = db.Close() }()
+
+		eeg, err := database.GetEegByEcId(db, msg.Payload.EcId)
+		if err != nil {
+			logrus.Errorf("can not fetch eeg by ecid %s (change metering point status)", msg.Payload.EcId)
+			return
+		}
+
+		if eeg.Email.Valid {
+			now := time.Now()
+			attm := &services.Attachment{
+				Type:        "DEFAULT",
+				Filename:    fmt.Sprintf("%s_%.4d%.2d%.2d-%.2d%.2d_ZP_LIST.xlsx", eeg.RcNumber, now.Year(), int(now.Month()), now.Day(), now.Hour(), now.Minute()),
+				Filecontent: buf,
+				MimeType:    "application/vnd.ms-excel",
+				ContentId:   nil,
+			}
+			var b bytes.Buffer
+			b.WriteString(fmt.Sprintf("Zählpunktlist für EEG %s", eeg.RcNumber))
+			err = services.SendMailWithAttachment(fmt.Sprintf("%s@eegfaktura.at", msg.Payload.EcId),
+				eeg.Email.String, "ZP-Liste TEST", nil, &b, attm)
+			if err != nil {
+				logrus.WithField("tenant", msg.Tenant).Error(err)
+			}
+		}
 	case model.EBMS_ZP_LIST_REJECTION:
 	default:
 		logrus.WithField("tenant", msg.Tenant).Warnf("Unknown Messagecode: %v", msg)
