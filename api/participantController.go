@@ -152,6 +152,14 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 		vars := mux.Vars(r)
 		participantId := vars["id"]
 
+		var meters []*model.MeteringPoint
+
+		err := json.NewDecoder(r.Body).Decode(&meters)
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
+			return
+		}
+
 		db, err := database.ConnectToDatabase()
 		if err != nil {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
@@ -177,11 +185,19 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 		participant.Status = model.ACTIVE
 
 		if eeg.Online {
-			for _, m := range participant.MeteringPoint {
+			for _, m := range meters {
 				log.WithField("tenant", tenant).Infof("Start Meteringpoint %s registration", m.MeteringPoint)
-				if err = mqttclient.RegistrationForParticipation(eeg, m); err != nil {
-					respondWith(w, http.StatusBadRequest, tenant, err)
-					return
+
+				if m.ActivationMode == model.ONLINE {
+					if err = mqttclient.RegistrationForParticipation(eeg, m); err != nil {
+						respondWith(w, http.StatusBadRequest, tenant, err)
+						return
+					}
+				} else {
+					if err = mqttclient.OfflineRegistrationForParticipation(eeg, m); err != nil {
+						respondWith(w, http.StatusBadRequest, tenant, err)
+						return
+					}
 				}
 				//err = database.MeteringPointsSetStatus(db, tenant, model.INIT, 0, []string{m.MeteringPoint}, nil, nil)
 				//if err != nil {

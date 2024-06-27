@@ -16,7 +16,7 @@ type responseCodesPerMeter struct {
 type completionMeters struct {
 	meter       string
 	activeSince time.Time
-	partFact    int16
+	consentId   *string
 }
 
 func extractResponseCodeAndMeteringPoint(ebmsMessage *model.EbmsMessage) ([]int16, []string, error) {
@@ -62,7 +62,7 @@ func extractResponseCodeAndMeteringPointV2(ebmsMessage *model.EbmsMessage) ([]re
 func extractMeterList(ebmsMessage *model.EbmsMessage) []*completionMeters {
 	meters := []*completionMeters{}
 	for _, m := range ebmsMessage.MeterList {
-		meters = append(meters, &completionMeters{meter: m.MeteringPoint, activeSince: time.UnixMilli(m.Activation), partFact: int16(m.PartFact)})
+		meters = append(meters, &completionMeters{meter: m.MeteringPoint, activeSince: time.UnixMilli(m.Activation), consentId: &m.ConsentID})
 	}
 	return meters
 }

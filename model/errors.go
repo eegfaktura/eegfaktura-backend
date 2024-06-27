@@ -43,6 +43,7 @@ var ErrFindParticipant = PartialWrap(1106)
 var ErrRemoveMeteringPoint = PartialWrap(1201)
 var ErrStatusMeter = PartialWrap(1202)
 var ErrSaveMeteringPoint = PartialWrap(1203)
+var ErrWrongActivationCode = PartialWrap(1204)
 
 var ErrEdaCommunication = PartialWrap(5000)
 var ErrRequestEnergyData = PartialWrap(5100)

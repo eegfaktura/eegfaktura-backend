@@ -8,14 +8,14 @@ func NewMessageBrokerMock() (*MessageBroker, error) {
 	cmd := make(chan CommandMessage)
 	errC := make(chan ErrorMessage)
 
-	streamer := &MQTTStreamer{client: newMockClient()}
+	client := newMockClient()
 	messageBroker = &MessageBroker{
 		make(map[model.EdaProtocol]model.SubscribeHandler),
 		in,
 		cmd,
 		errC,
 		out,
-		streamer}
+		client}
 
 	return messageBroker, nil
 }

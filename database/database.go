@@ -71,7 +71,7 @@ var pgDialect = goqu.Dialect("postgres")
 
 func GetTariff(db *sqlx.DB, tenant string) ([]model.Tariff, error) {
 	var tariff []model.Tariff
-	err := db.Select(&tariff, `SELECT id, name, "billingPeriod", "useVat", "vatInPercent", "accountNetAmount", "accountGrossAmount", "participantFee", "baseFee", "businessNr", version, type, "centPerKWh", discount, "freeKWh", "meteringPointFee", "useMeteringPointFee", "vatSupplementaryText" `+
+	err := db.Select(&tariff, `SELECT id, name, "billingPeriod", "useVat", "vatInPercent", "accountNetAmount", "accountGrossAmount", "participantFee", "baseFee", "businessNr", version, type, "centPerKWh", discount, "freeKWh", "meteringPointFee", "meteringPointVat", "useMeteringPointFee", "vatSupplementaryText" `+
 		`FROM base.activetariff WHERE tenant = $1`, tenant)
 	if errors.Is(err, sql.ErrNoRows) || tariff == nil {
 		return []model.Tariff{}, nil

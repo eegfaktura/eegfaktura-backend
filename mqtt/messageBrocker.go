@@ -7,6 +7,7 @@ import (
 	"fmt"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 	"strings"
 )
 
@@ -52,45 +53,95 @@ type MessageBroker struct {
 	Command       chan CommandMessage
 	ErrorC        chan ErrorMessage
 	Outbound      chan model.EbmsMessage
-	*MQTTStreamer
+	client        mqtt.Client
 }
 
 func NewMessageBroker() (*MessageBroker, error) {
 	in := make(chan InboundMessage)
 	out := make(chan model.EbmsMessage)
 	cmd := make(chan CommandMessage)
-	errC := make(chan ErrorMessage)
+	errC := make(chan ErrorMessage, 10)
 
-	streamer, err := NewMqttStreamer()
+	client, err := NewMqttClient()
 	if err != nil {
 		return nil, err
 	}
+
 	messageBroker = &MessageBroker{
 		make(map[model.EdaProtocol]model.SubscribeHandler),
 		in,
 		cmd,
 		errC,
 		out,
-		streamer}
+		client}
+
+	messageBroker.ConfigRoutes()
 
 	return messageBroker, nil
 }
 
-func (mb *MessageBroker) Start() {
-	go mb.Listen()
+func (mb *MessageBroker) ConfigRoutes() {
+	log.Infof("Configure MQTT Routes")
+	client := mb.client
+	client.AddRoute("eda/response/+/command/#", func(client mqtt.Client, msg mqtt.Message) {
+		tenant, cmd := TopicType(msg.Topic()).TypeInfo()
+		log.Infof("Command from MQTT: %s [%+s]", tenant, cmd)
+		mb.Command <- CommandMessage{tenant: tenant, cmd: cmd, msg: msg.Payload()}
+	})
+
+	client.AddRoute("eda/response/+/protocol/#", func(client mqtt.Client, msg mqtt.Message) {
+		log.Infof("Message from MQTT: %s [%+v] %v", TopicType(msg.Topic()).Tenant(), msg.Topic(), msg.Qos())
+		tenant, protocol := TopicType(msg.Topic()).TypeInfo()
+		mb.Inbound <- InboundMessage{
+			strings.ToUpper(tenant),
+			model.EdaProtocol(strings.ToUpper(protocol)),
+			msg.Payload()}
+	})
+
+	client.AddRoute("eda/response/error", func(client mqtt.Client, msg mqtt.Message) {
+		log.Infof("Error Message from MQTT: [%+v] %d", msg.Topic(), msg.Qos())
+		mb.ErrorC <- ErrorMessage{
+			msg.Payload()}
+	})
 }
 
-//func NewMessageBroker() (*MessageBroker, error) {
-//	in := make(chan InboundMessage)
-//	out := make(chan model.EbmsMessage)
-//	cmd := make(chan CommandMessage)
-//
-//	streamer, err := NewMqttStreamer()
-//	if err != nil {
-//		return nil, err
-//	}
-//	return &MessageBroker{make(map[model.EdaProtocol]model.SubscribeHandler), in, cmd, out, streamer}, nil
-//}
+func (mb *MessageBroker) Connect() error {
+
+	client := mb.client
+
+	if token := client.Connect(); token.Wait() && token.Error() != nil {
+		return token.Error()
+	}
+
+	qos := viper.GetInt("mqtt.qos")
+	if token := client.Subscribe("eda/response/+/command/#", byte(qos), nil); token.Wait() && token.Error() != nil {
+		panic(token.Error())
+	}
+	log.Info("Broker subscribe to command messages")
+
+	if token := client.Subscribe("eda/response/+/protocol/#", byte(qos), nil); token.Wait() && token.Error() != nil {
+		panic(token.Error())
+	}
+	log.Info("Broker subscribe to protocol messages")
+
+	if token := client.Subscribe("eda/response/error", byte(qos), nil); token.Wait() && token.Error() != nil {
+		panic(token.Error())
+	}
+	log.Info("Broker subscribe to tenant error messages")
+
+	return nil
+}
+
+func (mb *MessageBroker) Start() {
+	go mb.Listen()
+	mb.Connect()
+}
+
+func (mb *MessageBroker) Stop() {
+	if token := mb.client.Unsubscribe("eda/response/+/protocol/#", "eda/response/error", "eda/response/+/command/#"); token.Wait() && token.Error() == nil {
+		mb.client.Disconnect(2000)
+	}
+}
 
 func (mb *MessageBroker) SendMessage(m model.EbmsMessage, callback func(m string) error) {
 	log.WithField("tenant", m.Sender).WithField("MSG", m.MessageCode).Info("Send Message to MQTT")
@@ -111,43 +162,6 @@ func (mb *MessageBroker) SendMessage(m model.EbmsMessage, callback func(m string
 
 func (mb *MessageBroker) Listen() {
 	log.Info("Broker start listening ...")
-	qos := 0
-	tokenCommand := mb.client.Subscribe("eda/response/+/command/#", byte(qos), func(client mqtt.Client, msg mqtt.Message) {
-		tenant, cmd := TopicType(msg.Topic()).TypeInfo()
-		log.Infof("Command from MQTT: %s [%+s]", tenant, cmd)
-		mb.Command <- CommandMessage{tenant: tenant, cmd: cmd, msg: msg.Payload()}
-	})
-
-	tokenCommand.Wait()
-	if tokenCommand.Error() != nil {
-		panic(tokenCommand.Error())
-	}
-	log.Info("Broker listening on command messages")
-
-	token := mb.client.Subscribe("eda/response/+/protocol/#", byte(qos), func(client mqtt.Client, msg mqtt.Message) {
-		log.Infof("Message from MQTT: %s [%+v]", TopicType(msg.Topic()).Tenant(), msg.Topic())
-		tenant, protocol := TopicType(msg.Topic()).TypeInfo()
-		mb.Inbound <- InboundMessage{
-			strings.ToUpper(tenant),
-			model.EdaProtocol(strings.ToUpper(protocol)),
-			msg.Payload()}
-	})
-	token.Wait()
-	if token.Error() != nil {
-		panic(token.Error())
-	}
-	log.Info("Broker listening on protocol messages")
-
-	errorToken := mb.client.Subscribe("eda/response/error", byte(qos), func(client mqtt.Client, msg mqtt.Message) {
-		log.Infof("Error Message from MQTT: %s [%+v]", TopicType(msg.Topic()).Tenant(), msg.Topic())
-		mb.ErrorC <- ErrorMessage{
-			msg.Payload()}
-	})
-	errorToken.Wait()
-	if token.Error() != nil {
-		panic(token.Error())
-	}
-	log.Info("Broker listening on protocol messages")
 
 	for {
 		select {

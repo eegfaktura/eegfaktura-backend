@@ -22,7 +22,7 @@ func InitEegRouter(r *mux.Router) *mux.Router {
 	s.HandleFunc("/tariff", middleware.Protect(getTariff())).Methods("GET")
 	s.HandleFunc("/tariff", middleware.Protect(addTariff())).Methods("POST")
 	s.HandleFunc("/tariff/{id}", middleware.Protect(archiveTariff())).Methods("DELETE")
-	s.HandleFunc("/sync/participants", middleware.Protect(syncParticipantsEda())).Methods("POST")
+	s.HandleFunc("/sync/participants/{oid}", middleware.Protect(syncParticipantsEda())).Methods("POST")
 	s.HandleFunc("/import/masterdata", middleware.Protect(uploadMasterData())).Methods("POST")
 	s.HandleFunc("/export/masterdata", middleware.Protect(exportMasterData())).Methods("GET")
 	s.HandleFunc("/notifications/{id}", middleware.Protect(notifications())).Methods("GET")
@@ -149,6 +149,9 @@ func archiveTariff() middleware.JWTHandlerFunc {
 
 func syncParticipantsEda() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
+		vars := mux.Vars(r)
+		operatorId := vars["oid"]
+
 		db, err := database.ConnectToDatabase()
 		if err != nil {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
@@ -166,7 +169,7 @@ func syncParticipantsEda() middleware.JWTHandlerFunc {
 		from := time.Date(day.Year(), day.Month(), day.Day()-1, 0, 0, 0, 0, day.Location()).UnixMilli()
 		to := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location()).UnixMilli()
 
-		if err = mqttclient.RequestingMeteringPointList(eeg, from, to); err != nil {
+		if err = mqttclient.RequestingMeteringPointList(eeg, operatorId, from, to); err != nil {
 			respondWith(w, http.StatusInternalServerError, tenant, err)
 			return
 		}

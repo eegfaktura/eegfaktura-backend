@@ -453,14 +453,6 @@ func completeParticipant(db *sqlx.DB, participant *model.EegParticipant) error {
 		return model.ErrCompleteParticipant(err)
 	}
 
-	//stmt, _, err = pgDialect.From("base.participant_meter_state").Select(&participant.MeteringPoint).
-	//	LeftJoin(goqu.T("meteringpoint").Schema("base"), goqu.On(
-	//		goqu.S("base").Table("meteringpoint").Col("metering_point_id").
-	//			Eq(goqu.S("base").Table("participant_meter_state").Col("metering_point")),
-	//		goqu.S("base").Table("meteringpoint").Col("tenant").
-	//			Eq(goqu.S("base").Table("participant_meter_state").Col("tenant")))).
-	//	Where(goqu.C("participant_id").Table("participant_meter_state").Schema("base").Eq(participantId)).ToSQL()
-
 	stateStmt := pgDialect.From("base.meteringpoint").
 		Select(
 			goqu.C("activesince"),

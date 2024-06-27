@@ -39,28 +39,33 @@ var (
 type EbMsMessageType string
 
 const (
-	EBMS_ENERGY_FILE_RESPONSE  EbMsMessageType = "DATEN_CRMSG"
-	EBMS_ONLINE_REG_INIT       EbMsMessageType = "ANFORDERUNG_ECON"
-	EBMS_ONLINE_REG_ANSWER     EbMsMessageType = "ANTWORT_ECON"
-	EBMS_ONLINE_REG_REJECTION  EbMsMessageType = "ABLEHNUNG_ECON"
-	EBMS_ONLINE_REG_APPROVAL   EbMsMessageType = "ZUSTIMMUNG_ECON"
-	EBMS_ONLINE_REG_COMPLETION EbMsMessageType = "ABSCHLUSS_ECON"
-	EBMS_ZP_LIST               EbMsMessageType = "ANFORDERUNG_ECP"
-	EBMS_ZP_LIST_RESPONSE      EbMsMessageType = "SENDEN_ECP"
-	EBMS_ZP_LIST_REJECTION     EbMsMessageType = "ABLEHNUNG_ECP"
-	EBMS_ZP_SYNC               EbMsMessageType = "ANFORDERUNG_PT"
-	EBMS_ZP_RES                EbMsMessageType = "ANTWORT_PT"
-	EBMS_ZP_REJ                EbMsMessageType = "ABLEHNUNG_PT"
-	EBMS_AUFHEBUNG_CCMI        EbMsMessageType = "AUFHEBUNG_CCMI"
-	EBMS_AUFHEBUNG_CCMS        EbMsMessageType = "AUFHEBUNG_CCMS"
-	EBMS_AUFHEBUNG_CCMC        EbMsMessageType = "AUFHEBUNG_CCMC"
-	EBMS_ABLEHNUNG_CCMS        EbMsMessageType = "ABLEHNUNG_CCMS"
-	EBMS_ANTWORT_CCMS          EbMsMessageType = "ANTWORT_CCMS"
-	EBMS_REQ_CHANGE_PARTFACT   EbMsMessageType = "ANFORDERUNG_CPF"
-	EBMS_ANS_CHANGE_PARTFACT   EbMsMessageType = "ANTWORT_CPF"
-	EBMS_REJ_CHANGE_PARTFACT   EbMsMessageType = "ABLEHNUNG_CPF"
-	EBMS_EEG_BASE_DATA         EbMsMessageType = "ANFORDERUNG_GN"
-	EBMS_ERROR_MESSAGE         EbMsMessageType = "ERROR_MESSAGE"
+	EBMS_ENERGY_FILE_RESPONSE   EbMsMessageType = "DATEN_CRMSG"
+	EBMS_ONLINE_REG_INIT        EbMsMessageType = "ANFORDERUNG_ECON"
+	EBMS_ONLINE_REG_ANSWER      EbMsMessageType = "ANTWORT_ECON"
+	EBMS_ONLINE_REG_REJECTION   EbMsMessageType = "ABLEHNUNG_ECON"
+	EBMS_ONLINE_REG_APPROVAL    EbMsMessageType = "ZUSTIMMUNG_ECON"
+	EBMS_ONLINE_REG_COMPLETION  EbMsMessageType = "ABSCHLUSS_ECON"
+	EBMS_ZP_LIST                EbMsMessageType = "ANFORDERUNG_ECP"
+	EBMS_ZP_LIST_RESPONSE       EbMsMessageType = "SENDEN_ECP"
+	EBMS_ZP_LIST_REJECTION      EbMsMessageType = "ABLEHNUNG_ECP"
+	EBMS_ZP_SYNC                EbMsMessageType = "ANFORDERUNG_PT"
+	EBMS_ZP_RES                 EbMsMessageType = "ANTWORT_PT"
+	EBMS_ZP_REJ                 EbMsMessageType = "ABLEHNUNG_PT"
+	EBMS_AUFHEBUNG_CCMI         EbMsMessageType = "AUFHEBUNG_CCMI"
+	EBMS_AUFHEBUNG_CCMS         EbMsMessageType = "AUFHEBUNG_CCMS"
+	EBMS_AUFHEBUNG_CCMC         EbMsMessageType = "AUFHEBUNG_CCMC"
+	EBMS_ABLEHNUNG_CCMS         EbMsMessageType = "ABLEHNUNG_CCMS"
+	EBMS_ANTWORT_CCMS           EbMsMessageType = "ANTWORT_CCMS"
+	EBMS_REQ_CHANGE_PARTFACT    EbMsMessageType = "ANFORDERUNG_CPF"
+	EBMS_ANS_CHANGE_PARTFACT    EbMsMessageType = "ANTWORT_CPF"
+	EBMS_REJ_CHANGE_PARTFACT    EbMsMessageType = "ABLEHNUNG_CPF"
+	EBMS_OFFLINE_REG_INIT       EbMsMessageType = "ANFORDERUNG_ECOF"
+	EBMS_OFFLINE_REG_ANSWER     EbMsMessageType = "ANTWORT_ECOF"
+	EBMS_OFFLINE_REG_REJECTION  EbMsMessageType = "ABLEHNUNG_ECOF"
+	EBMS_OFFLINE_REG_APPROVAL   EbMsMessageType = "ZUSTIMMUNG_ECOF"
+	EBMS_OFFLINE_REG_COMPLETION EbMsMessageType = "ABSCHLUSS_ECOF"
+	EBMS_EEG_BASE_DATA          EbMsMessageType = "ANFORDERUNG_GN"
+	EBMS_ERROR_MESSAGE          EbMsMessageType = "ERROR_MESSAGE"
 )
 
 type EdaProtocol string
@@ -70,12 +75,12 @@ const (
 	CR_REQ_PT         EdaProtocol = "CR_REQ_PT"
 	EC_PODLIST        EdaProtocol = "EC_PODLIST"
 	EC_REQ_ONL        EdaProtocol = "EC_REQ_ONL"
+	EC_REQ_OFF        EdaProtocol = "EC_REQ_OFF"
 	CM_REV_IMP        EdaProtocol = "CM_REV_IMP"
 	CM_REV_CUS        EdaProtocol = "CM_REV_CUS"
 	CM_REV_SP         EdaProtocol = "CM_REV_SP"
 	EC_PRT_CHANGE     EdaProtocol = "EC_PRT_CHANGE"
 	EC_PRTFACT_CHANGE EdaProtocol = "EC_PRTFACT_CHANGE"
-	EC_REQ_OFF        EdaProtocol = "EC_REQ_OFF"
 	ERROR             EdaProtocol = "ERROR"
 )
 
@@ -113,6 +118,7 @@ type Meter struct {
 	To            int64         `json:"to,omitempty"`
 	PlantCategory string        `json:"plantCategory,omitempty"`
 	Share         float64       `json:"share,omitempty"`
+	ConsentID     string        `json:"consentId,omitempty"`
 }
 
 type ResponseData struct {

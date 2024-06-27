@@ -9,6 +9,8 @@ import (
 	"at.ourproject/vfeeg-backend/graph/generated"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
 	"at.ourproject/vfeeg-backend/services"
+	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"github.com/99designs/gqlgen/graphql/handler"
@@ -18,6 +20,8 @@ import (
 	"github.com/spf13/viper"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 )
 
@@ -56,16 +60,21 @@ func main() {
 	flag.Parse()
 	config.ReadConfig(*configPath)
 
+	log.SetReportCaller(true)
+
 	mb, err := mqttclient.NewMessageBroker()
 	if err != nil {
 		panic(err)
 	}
-	mb.Start()
-
-	log.SetReportCaller(true)
 
 	eda.InitEdaSubscription()
 	mqttclient.InitErrorSubscriptions()
+
+	mb.Start()
+	err = mb.Connect()
+	if err != nil {
+		panic(err)
+	}
 
 	gqlSrv := handler.NewDefaultServer(generated.NewExecutableSchema(generated.Config{Resolvers: &graph.Resolver{}}))
 	r := InitRouters()
@@ -117,5 +126,26 @@ func main() {
 		WriteTimeout: 180 * time.Second,
 		ReadTimeout:  180 * time.Second,
 	}
-	log.Fatal(srv.ListenAndServe())
+	//log.Fatal(srv.ListenAndServe())
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("listen and serve returned err: %v", err)
+		}
+	}()
+
+	<-ctx.Done()
+	log.Println("got interruption signal")
+	if err := srv.Shutdown(context.TODO()); err != nil {
+		log.Printf("server shutdown returned an err: %v\n", err)
+	}
+
+	//mb.Stop()
+
+	log.Println("final")
+
+	fmt.Println("STOP PROGRAM")
 }

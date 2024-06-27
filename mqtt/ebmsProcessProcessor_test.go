@@ -20,8 +20,10 @@ func TestRegistrationForParticipation(t *testing.T) {
 	messageBroker.Start()
 
 	token := messageBroker.client.Connect()
-	token.Wait()
-	require.NoError(t, token.Error())
+	if token != nil {
+		token.Wait()
+		require.NoError(t, token.Error())
+	}
 
 	var wg sync.WaitGroup
 	wg.Add(1)

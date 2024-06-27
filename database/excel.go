@@ -633,10 +633,10 @@ func generateZPListMastersheet(f *excelize.File, ebmsMsg *model.EbmsMessage) err
 	}
 
 	err = sw.SetColWidth(1, 1, 5.0)
-	err = sw.SetColWidth(2, 2, 30.0)
-	err = sw.SetColWidth(3, 3, 20.0)
-	err = sw.SetColWidth(4, 4, 9.5)
-	colNr, _ := excelize.ColumnNameToNumber("F")
+	err = sw.SetColWidth(2, 3, 30.0)
+	err = sw.SetColWidth(4, 4, 20.0)
+	err = sw.SetColWidth(5, 5, 9.5)
+	colNr, _ := excelize.ColumnNameToNumber("G")
 	err = sw.SetColWidth(colNr, colNr+3, 12.0)
 
 	line := 1
@@ -644,6 +644,7 @@ func generateZPListMastersheet(f *excelize.File, ebmsMsg *model.EbmsMessage) err
 		[]interface{}{
 			excelize.Cell{Value: "Nr."},
 			excelize.Cell{Value: "Zählpunktname"},
+			excelize.Cell{Value: "ConsentID"},
 			excelize.Cell{Value: "Bezugsrichtung"},
 			excelize.Cell{Value: "Teilnahme-faktor"},
 			excelize.Cell{Value: "statische Aufteilung"},
@@ -659,6 +660,7 @@ func generateZPListMastersheet(f *excelize.File, ebmsMsg *model.EbmsMessage) err
 			[]interface{}{
 				excelize.Cell{Value: idx},
 				excelize.Cell{Value: m.MeteringPoint},
+				excelize.Cell{Value: m.ConsentID},
 				excelize.Cell{Value: m.Direction},
 				excelize.Cell{Value: m.PartFact},
 				excelize.Cell{Value: m.Share},

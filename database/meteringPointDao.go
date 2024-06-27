@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/doug-martin/goqu/v9"
+	"github.com/jjeffery/civil"
 	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/guregu/null.v4"
@@ -20,11 +21,11 @@ const TABLE_PARTITION_FACT_VIEW = "base.activemeteringpartition"
 
 type meteringEntryType struct {
 	*model.MeteringPoint
-	Participant_id string    `goqu:"skipupdate"`
-	Tenant         string    `goqu:"skipupdate"`
-	ActiveSince    time.Time `db:"activesince"`
-	Active         int       `db:"active"`
-	Flag           null.Int  `goqu:"skipupdate,omitempty"`
+	Participant_id string     `goqu:"skipupdate"`
+	Tenant         string     `goqu:"skipupdate"`
+	ActiveSince    civil.Date `db:"activesince"`
+	Active         int        `db:"active"`
+	Flag           null.Int   `goqu:"skipupdate,omitempty"`
 }
 
 type partitionFactorRecord struct {
@@ -287,7 +288,7 @@ func RemoveMeteringPoint(db *sqlx.DB, tenant, participantId, meterId string) err
 //	return err
 //}
 
-func MeteringPointsSetStatus(db *sqlx.DB, tenant string, status model.StatusType, statusCode int16, meterId []string, activeSince *time.Time, partFact *int16) error {
+func MeteringPointsSetStatus(db *sqlx.DB, tenant string, status model.StatusType, statusCode int16, meterId []string, activeSince *time.Time, consentId *string) error {
 	updateSet := struct {
 		Status          model.StatusType `db:"status"`
 		StatusCode      int16            `db:"statusCode" goqu:"omitempty"`
@@ -296,6 +297,7 @@ func MeteringPointsSetStatus(db *sqlx.DB, tenant string, status model.StatusType
 		RegisteredSince time.Time        `db:"registeredSince" goqu:"omitempty"`
 		Inactivesince   time.Time        `db:"inactivesince" goqu:"omitempty"`
 		Activesince     time.Time        `db:"activesince" goqu:"omitempty"`
+		ConsentId       *string          `db:"consentId" goqu:"omitnil"`
 		Flag            model.ProcessFlag
 		Active          model.ProcessStatus
 	}{
@@ -303,6 +305,7 @@ func MeteringPointsSetStatus(db *sqlx.DB, tenant string, status model.StatusType
 		StatusCode: statusCode,
 		ModifiedAt: time.Now(),
 		ModifiedBy: "EVU",
+		ConsentId:  consentId,
 		Flag:       calcFlag(status),
 		Active:     calcActive(status),
 	}
@@ -337,10 +340,16 @@ func MeteringPointsSetStatus(db *sqlx.DB, tenant string, status model.StatusType
 	if err != nil {
 		return model.ErrStatusMeter(err)
 	}
-	_, err = db.Exec(statement)
+
+	result, err := db.Exec(statement)
 	if err != nil {
 		log.WithField("SQL", "UPDATE").Errorf("Stmt: %v", statement)
 		return model.ErrStatusMeter(err)
+	}
+	if rows, err := result.RowsAffected(); err != nil || rows == 0 {
+		log.WithField("SQL", "UPDATE").Errorf("No Rows Affected. Stmt: %v", statement)
+	} else {
+
 	}
 	return nil
 }
@@ -622,4 +631,22 @@ func findMeteringByIdAndState(db *sqlx.DB, meterIds []string, active model.Proce
 		return nil, model.ErrFindMeter(err)
 	}
 	return m, nil
+}
+
+func UpdateMeteringPoints(tx *sqlx.Tx, tenant string, meteringPoints []*model.MeteringPointDBModel) error {
+	for _, m := range meteringPoints {
+		sql, _, _ := goqu.Update(TABLE_METERINGPOINT).
+			Set(m).
+			Where(goqu.Ex{
+				"tenant":            goqu.Op{"eq": tenant},
+				"metering_point_id": goqu.Op{"eq": m.MeteringPoint},
+			}).
+			ToSQL()
+		fmt.Printf("STMT: %s\n", sql)
+		_, err := tx.Exec(sql)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

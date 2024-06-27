@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS base.tariff
     status                 TEXT    NOT NULL DEFAULT 'ACTIVE', /* ACTIVE | INACTIVE */
     "inactiveSince"        DATE,
     "meteringPointFee"     FLOAT,
+    "meteringPointVat"     INTEGER,
     "useMeteringPointFee"  BOOLEAN NOT NULL DEFAULT FALSE,
     CONSTRAINT TariffPK PRIMARY KEY (id, version)
 );
@@ -134,6 +135,7 @@ CREATE TABLE IF NOT EXISTS base.bankaccount
 CREATE TABLE IF NOT EXISTS base.meteringpoint
 (
     metering_point_id  TEXT      NOT NULL,
+    consent_id         TEXT,
     participant_id     UUID      NOT NULL,
     tenant             TEXT      NOT NULL,
     grid_operator_name VARCHAR,
@@ -153,8 +155,8 @@ CREATE TABLE IF NOT EXISTS base.meteringpoint
     "registeredSince"  DATE      NOT NULL DEFAULT now(),
     "modifiedAt"       TIMESTAMP NOT NULL DEFAULT now(),
     "modifiedBy"       TEXT,
-    activeSince        TIMESTAMP NOT NULL DEFAULT now(),
-    inactiveSince      TIMESTAMP NOT NULL DEFAULT Date('2999-12-31'),
+    activeSince        DATE NOT NULL DEFAULT now(),
+    inactiveSince      DATE NOT NULL DEFAULT Date('2999-12-31'),
     active             INT       NOT NULL DEFAULT 1,
     flag               INT       NOT NULL DEFAULT 1,
     CONSTRAINT meteringpointPK PRIMARY KEY (metering_point_id, tenant, participant_id),
@@ -232,7 +234,7 @@ SELECT * FROM (
     ) AS rowid
     FROM base.metering_partition_factor) AS partp WHERE rowid = 1;
 
-CREATE VIEW base.activeTariff AS
+CREATE OR REPLACE VIEW base.activeTariff AS
 SELECT id,
        name,
        tenant,
@@ -251,6 +253,7 @@ SELECT id,
        discount,
        "freeKWh",
        "meteringPointFee",
+       "meteringPointVat",
        "useMeteringPointFee"
 FROM base.tariff,
      (SELECT id as tid, MAX(version) as tversion FROM base.tariff GROUP BY id) as x
@@ -299,6 +302,7 @@ SELECT p.id                                                      participant_id,
        t."vatInPercent"                                          tariff_vat_in_percent,
        t."useMeteringPointFee"                                   tariff_use_metering_point_fee,
        t."meteringPointFee"                                      tariff_metering_point_fee,
+       t."meteringPointVat"                                      tariff_metering_point_vat,
        ''                                                        tariff_metering_point_fee_text,
        ''                                                        tariff_participant_fee_text,
 --       COALESCE(tp.id, '')                                       tariff_participant_id,

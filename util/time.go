@@ -9,3 +9,10 @@ func TruncateToStartOfDay(t time.Time) time.Time {
 func TruncateToEndOfDay(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), 23, 45, 00, 0, t.Location())
 }
+
+func MaxTimeStamp(x, y int64) int64 {
+	if x < y {
+		return y
+	}
+	return x
+}

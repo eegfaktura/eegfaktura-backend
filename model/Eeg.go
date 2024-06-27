@@ -85,7 +85,7 @@ type Optionals struct {
 	Website null.String `json:"website,omitempty"`
 }
 type EegNotification struct {
-	Id      int16          `json:"id"`
+	Id      int64          `json:"id"`
 	MsgType string         `json:"type" db:"type"`
 	Message types.JSONText `json:"message" db:"notification"`
 	Date    time.Time      `json:"date"`

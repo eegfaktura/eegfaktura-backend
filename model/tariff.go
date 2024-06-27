@@ -41,5 +41,6 @@ type Tariff struct {
 	FreeKWh              int             `json:"freeKWh,string" db:"freeKWh"`
 	Discount             int             `json:"discount,string"`
 	UseMeteringFee       bool            `json:"useMeteringPointFee"  db:"useMeteringPointFee"`
-	MeteringFee          null.Float      `json:"meteringPointFee,omitempty" db:"meteringPointFee"`
+	MeteringFee          null.Float      `json:"meteringPointFee" db:"meteringPointFee"`
+	MeteringVat          null.Int        `json:"meteringPointVat" db:"meteringPointVat"`
 }

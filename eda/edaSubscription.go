@@ -45,8 +45,9 @@ var (
 		188: "Teilnahmefaktor von 100 % würde überschritten werden",
 		196: "Teilnahme-Limit wird überschritten",
 	}
-	REJECTED_INVALID_CODES = []int16{56, 57, 76, 104, 156, 157, 158, 159, 172, 173, 177, 181, 184, 185, 196}
-	REJECTED_VALID_CODES   = []int16{156, 86}
+	REJECTED_INVALID_CODES = []int16{56, 57, 76, 104, 157, 158, 159, 172, 173, 177, 181, 184, 185, 196}
+	REJECTED_VALID_CODES   = []int16{156}
+	REJECTED_IGNORE_CODES  = []int16{86}
 )
 
 func InitEdaSubscription() {
@@ -73,6 +74,12 @@ func getSubsriptions() []model.Subscriptions {
 		},
 		{
 			Protocol: model.EC_REQ_ONL,
+			Handler: func(msg model.SubscribeMessage) {
+				protocolEcReqOnlHandler(msg, recorder)
+			},
+		},
+		{
+			Protocol: model.EC_REQ_OFF,
 			Handler: func(msg model.SubscribeMessage) {
 				protocolEcReqOnlHandler(msg, recorder)
 			},
@@ -192,16 +199,16 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 	var status model.StatusType
 	var statusCode int16 = 0
 	var activeSince *time.Time
-	var partFact *int16
+	var consentId *string
 
 	switch msg.MessageCode {
-	case model.EBMS_ONLINE_REG_COMPLETION:
+	case model.EBMS_ONLINE_REG_COMPLETION, model.EBMS_OFFLINE_REG_COMPLETION:
 		codes = []int16{}
 		completeMeters := extractMeterList(&msg.Payload)
 		if len(completeMeters) == 1 {
 			meters = []string{completeMeters[0].meter}
 			activeSince = &completeMeters[0].activeSince
-			partFact = &completeMeters[0].partFact
+			consentId = completeMeters[0].consentId
 			status = model.ACTIVE
 			statusCode = 0
 		} else {
@@ -209,26 +216,29 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 			meters = []string{}
 		}
 
-	case model.EBMS_ONLINE_REG_REJECTION:
+	case model.EBMS_ONLINE_REG_REJECTION, model.EBMS_OFFLINE_REG_REJECTION:
 		if codesContains(REJECTED_INVALID_CODES, codes) {
 			status = model.INVALID
 			statusCode = intersectCodes(REJECTED_INVALID_CODES, codes)[0]
 		} else if codesContains(REJECTED_VALID_CODES, codes) {
-			status = model.REJECTED
-			statusCode = intersectCodes(REJECTED_VALID_CODES, codes)[0]
+			status = model.ACTIVE
+			codes = []int16{0}
+		} else if codesContains(REJECTED_IGNORE_CODES, codes) {
+			status = ""
+			codes = []int16{0}
 		} else {
 			status = model.REJECTED
 			if len(codes) > 0 {
 				statusCode = codes[0]
 			}
 		}
-	case model.EBMS_ONLINE_REG_APPROVAL:
+	case model.EBMS_ONLINE_REG_APPROVAL, model.EBMS_OFFLINE_REG_APPROVAL:
 		for _, c := range codes {
 			if c == 175 {
 				status = model.APPROVED
 			}
 		}
-	case model.EBMS_ONLINE_REG_ANSWER:
+	case model.EBMS_ONLINE_REG_ANSWER, model.EBMS_OFFLINE_REG_ANSWER:
 		for _, c := range codes {
 			if c == 99 {
 				status = model.PENDING
@@ -240,7 +250,7 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 				status = model.INVALID
 			}
 		}
-	case model.EBMS_ONLINE_REG_INIT:
+	case model.EBMS_ONLINE_REG_INIT, model.EBMS_OFFLINE_REG_INIT:
 		meters = msg.Payload.Meters()
 		codes = []int16{0}
 		status = model.INIT
@@ -262,7 +272,7 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 	}
 
 	if len(meters) > 0 && len(status) > 0 {
-		if err := database.MeteringPointsSetStatus(db, eeg.Id, status, statusCode, meters, activeSince, partFact); err != nil {
+		if err := database.MeteringPointsSetStatus(db, eeg.Id, status, statusCode, meters, activeSince, consentId); err != nil {
 			logrus.WithField("error", err.Error()).Errorf("can not change metering point status %+v", meters)
 		}
 	}
@@ -419,19 +429,22 @@ func protocolEcPodListHandler(msg model.SubscribeMessage, recorder EdaRecording)
 			now := time.Now()
 			attm := &services.Attachment{
 				Type:        "DEFAULT",
-				Filename:    fmt.Sprintf("%s_%.4d%.2d%.2d-%.2d%.2d_ZP_LIST.xlsx", eeg.RcNumber, now.Year(), int(now.Month()), now.Day(), now.Hour(), now.Minute()),
+				Filename:    fmt.Sprintf("%s_%.4d%.2d%.2d-%.2d%.2d_ZP_PODLIST.xlsx", eeg.RcNumber, now.Year(), int(now.Month()), now.Day(), now.Hour(), now.Minute()),
 				Filecontent: buf,
 				MimeType:    "application/vnd.ms-excel",
 				ContentId:   nil,
 			}
 			var b bytes.Buffer
-			b.WriteString(fmt.Sprintf("Zählpunktlist für EEG %s", eeg.RcNumber))
-			err = services.SendMailWithAttachment(fmt.Sprintf("%s@eegfaktura.at", msg.Payload.EcId),
-				eeg.Email.String, "ZP-Liste TEST", nil, &b, attm)
+			b.WriteString(fmt.Sprintf("Zählpunktlist für EEG - %s", eeg.RcNumber))
+			err = services.SendMailWithAttachment(fmt.Sprintf("%s@eegfaktura.at", eeg.RcNumber),
+				eeg.Email.String,
+				fmt.Sprintf("%s Zählpunktliste %.4d%.2d%.2d-%.2d%.2d", eeg.RcNumber, now.Year(), int(now.Month()), now.Day(), now.Hour(), now.Minute()), nil, &b, attm)
 			if err != nil {
 				logrus.WithField("tenant", msg.Tenant).Error(err)
 			}
 		}
+		services.SyncMeteringPoints(msg.Tenant, &msg.Payload)
+
 	case model.EBMS_ZP_LIST_REJECTION:
 	default:
 		logrus.WithField("tenant", msg.Tenant).Warnf("Unknown Messagecode: %v", msg)

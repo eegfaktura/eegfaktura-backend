@@ -314,7 +314,7 @@ func Test_RegistrationProcess(t *testing.T) {
 	require.Equal(t, 1, len(pUnderTest.MeteringPoint))
 	require.Equal(t, model.NEW, pUnderTest.MeteringPoint[0].Status)
 	require.Equal(t, expectedRegistrationDate.Truncate(24*time.Hour).UTC(), pUnderTest.MeteringPoint[0].RegisteredSince.UTC())
-	require.Equal(t, expectedRegistrationDate.Truncate(1*time.Hour).UTC(), pUnderTest.MeteringPoint[0].State.ActiveSince.Truncate(1*time.Hour).UTC())
+	require.Equal(t, expectedRegistrationDate.Truncate(1*time.Hour).UTC(), pUnderTest.MeteringPoint[0].State.ActiveSince.Local())
 
 	now := time.Now().Truncate(time.Hour)
 	err = MeteringPointsSetStatus(db, "TE000004", model.PENDING, 0, []string{meter.MeteringPoint}, &now, nil)
@@ -389,4 +389,32 @@ func TestMeteringPointChangePartFact(t *testing.T) {
 			tt.wantErr(t, MeteringPointChangePartFactor(tt.args.db, tt.args.tenant, tt.args.meters), fmt.Sprintf("MeteringPointChangePartFact(%v, %v, %v)", tt.args.db, tt.args.tenant, tt.args.meters))
 		})
 	}
+}
+
+func TestUpdateMeteringPoints(t *testing.T) {
+	embsTestObj := model.EbmsMessage{
+		MeterList: []model.Meter{model.Meter{
+			MeteringPoint: "AT0030000000000000000000000003013",
+			Direction:     "GENERATION",
+			ConsentID:     "AT00300020240617113044504B5ZO5IRS",
+		}},
+	}
+	db, err := openTestDb()
+	require.NoError(t, err)
+	defer db.Close()
+
+	tx, err := db.Beginx()
+	require.NoError(t, err)
+	defer tx.Rollback()
+
+	err = UpdateMeteringPoints(tx, "TE000005", model.ConvertFromMeterList(embsTestObj.MeterList))
+	require.NoError(t, err)
+	err = tx.Commit()
+	require.NoError(t, err)
+
+	mUnderTest, err := FindMeteringById(db, "AT0030000000000000000000000003013")
+	require.NoError(t, err)
+
+	fmt.Printf("New ZP: %+v\n", mUnderTest)
+	assert.Equal(t, mUnderTest.ConsentId.String, "AT00300020240617113044504B5ZO5IRS")
 }

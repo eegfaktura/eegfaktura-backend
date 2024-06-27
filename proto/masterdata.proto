@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "at.energydash.admin.masterdata";
+option java_outer_classname = "MasterdataProto";
+option go_package = "at.ourproject/vfeeg-backend/proto";
+
+package at.energydash;
+
+service ApiService {
+  // Sends a greeting
+  rpc MasterData_MeteringPoint (MeteringRequest) returns (MeteringPointReply) {}
+}
+
+message MeteringRequest {
+  string tenant = 1;
+  uint32 status = 2;
+  optional uint64 from = 3;
+  optional uint64 to = 4;
+}
+
+// The response message containing the greetings
+message MeteringPointReply {
+  string status = 1;
+  repeated MeteringPoint meteringPoints = 2;
+}
+
+message MeteringPoint {
+  string meteringPointId = 1;
+  string direction = 2;
+  string status = 3;
+  uint32 partFact = 4;
+  optional uint64 activeSince = 5;
+  optional uint64 inactiveSince = 6;
+  optional string transformer = 7;
+  optional string equipmentNumber = 8;
+  optional string equipmentName = 9;
+  optional string inverterId = 10;
+  optional string street = 11;
+  optional string streetNumber = 12;
+  optional string city = 13;
+  optional string zip = 14;
+  optional uint64 registeredSince = 15;
+}

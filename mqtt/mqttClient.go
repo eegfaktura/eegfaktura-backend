@@ -19,7 +19,7 @@ var (
 	MqttBrokerNotStarted = errors.New("Broker not running")
 )
 
-func NewMqttStreamer() (*MQTTStreamer, error) {
+func NewMqttClient() (mqtt.Client, error) {
 	opts := mqtt.NewClientOptions()
 
 	brokerHost := viper.GetString("mqtt.host")
@@ -30,16 +30,22 @@ func NewMqttStreamer() (*MQTTStreamer, error) {
 	opts.AddBroker(brokerHost)
 	opts.SetClientID(brokerId)
 
-	opts.SetOrderMatters(true)        // Allow out of order messages (use this option unless in order delivery is essential)
-	opts.ConnectTimeout = time.Second // Minimal delays on connect
-	opts.WriteTimeout = time.Second   // Minimal delays on writes
-	opts.KeepAlive = 10               // Keepalive every 10 seconds so we quickly detect network outages
-	opts.PingTimeout = time.Second    // local broker so response should be quick
+	opts.SetOrderMatters(true)            // Allow out of order messages (use this option unless in order delivery is essential)
+	opts.ConnectTimeout = 2 * time.Second // Minimal delays on connect
+	opts.WriteTimeout = 2 * time.Second   // Minimal delays on writes
+	opts.KeepAlive = 10                   // Keepalive every 10 seconds so we quickly detect network outages
+	opts.PingTimeout = 10 * time.Second   // local broker so response should be quick
 
 	// Automate connection management (will keep trying to connect and will reconnect if network drops)
 	opts.ConnectRetry = true
 	opts.AutoReconnect = true
 	opts.CleanSession = false
+	//opts.ProtocolVersion = 4
+	//opts.SetStore(mqtt.NewFileStore(":memory:"))
+
+	//opts.SetDefaultPublishHandler(func(client mqtt.Client, msg mqtt.Message) {
+	//	log.Infof("Default message handler: [%+v] %d", msg.Topic(), msg.Qos())
+	//})
 
 	// Log events
 	opts.OnConnectionLost = func(cl mqtt.Client, err error) {
@@ -48,17 +54,19 @@ func NewMqttStreamer() (*MQTTStreamer, error) {
 	opts.OnConnect = func(mqtt.Client) {
 		log.Info("MQTT connection established")
 	}
-	opts.OnReconnecting = func(mqtt.Client, *mqtt.ClientOptions) {
+	//opts.OnConnect = onConnect
+	opts.OnReconnecting = func(cl mqtt.Client, co *mqtt.ClientOptions) {
 		log.Info("attempting to reconnect")
 	}
 
+	//mqtt.ERROR = log.New()
+	//mqtt.CRITICAL = log.New()
+	//mqtt.WARN = log.New()
+	//mqtt.DEBUG = log.New()
+
 	client := mqtt.NewClient(opts)
 
-	if token := client.Connect(); token.Wait() && token.Error() != nil {
-		return nil, token.Error()
-	}
-
-	return &MQTTStreamer{client: client}, nil
+	return client, nil
 }
 
 func Subscribe(subscriptions ...model.Subscriptions) error {

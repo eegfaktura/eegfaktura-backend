@@ -74,8 +74,18 @@ func createMeteringPoint() middleware.JWTHandlerFunc {
 			}
 
 			if eeg.Online {
-				if err = mqttclient.RegistrationForParticipation(eeg, &m); err != nil {
-					respondWith(w, http.StatusBadRequest, tenant, err)
+				if m.ActivationMode == model.ONLINE {
+					if err = mqttclient.RegistrationForParticipation(eeg, &m); err != nil {
+						respondWith(w, http.StatusBadRequest, tenant, err)
+						return
+					}
+				} else if m.ActivationMode == model.OFFLINE {
+					if err = mqttclient.OfflineRegistrationForParticipation(eeg, &m); err != nil {
+						respondWith(w, http.StatusBadRequest, tenant, err)
+						return
+					}
+				} else {
+					respondWith(w, http.StatusBadRequest, tenant, model.ErrWrongActivationCode(errors.New("Wrong activation code")))
 					return
 				}
 			}
@@ -197,10 +207,12 @@ func moveMeteringPoint() middleware.JWTHandlerFunc {
 }
 
 type registerMeterRequestType struct {
-	MeteringPoint string              `json:"meteringPoint"`
-	Direction     model.DirectionType `json:"direction"`
-	From          int64               `json:"from"`
-	To            int64               `json:"to"`
+	MeteringPoint  string                 `json:"meteringPoint"`
+	Direction      model.DirectionType    `json:"direction"`
+	From           int64                  `json:"from"`
+	To             int64                  `json:"to"`
+	ActivationCode string                 `json:"activationCode,omitempty"`
+	ActivationMode model.RegistrationMode `json:"activationMode,omitempty"`
 }
 
 // registerMeteringPoint activates existing meter at the net operator
@@ -247,9 +259,16 @@ func registerMeteringPoint() middleware.JWTHandlerFunc {
 
 		log.WithField("tenant", tenant).Infof("register Meter:  %v ", request)
 		if eeg.Online && meter != nil {
-			if err = mqttclient.RegistrationForParticipation(eeg, meter); err != nil {
-				respondWith(w, http.StatusInternalServerError, tenant, err)
-				return
+			if request.ActivationMode == model.ONLINE {
+				if err = mqttclient.RegistrationForParticipation(eeg, meter); err != nil {
+					respondWith(w, http.StatusBadRequest, tenant, err)
+					return
+				}
+			} else {
+				if err = mqttclient.OfflineRegistrationForParticipation(eeg, meter); err != nil {
+					respondWith(w, http.StatusBadRequest, tenant, err)
+					return
+				}
 			}
 		}
 		respondWithJSON(w, http.StatusCreated, participant)
@@ -311,8 +330,10 @@ func requestMeteringPointValues() middleware.JWTHandlerFunc {
 				if m.Status != model.ACTIVE || m.State.Active != model.P_ACTIVE {
 					continue
 				}
-				if err = mqttclient.RequestingEnergyData(eeg, m, fromDate, toDate); err != nil {
-					log.WithField("tenant", tenant).Errorf("request Metering values %v (%d - %d)", m, fromDate, toDate)
+				from := util.MaxTimeStamp(m.State.ActiveSince.UnixMilli(), fromDate)
+				if err = mqttclient.RequestingEnergyData(eeg, m, from, toDate); err != nil {
+					log.WithField("tenant", tenant).Errorf("request Metering values %v (%s - %s)", m,
+						time.UnixMilli(from).String(), time.UnixMilli(toDate).String())
 					errorList = append(errorList, fmt.Sprintf("%s: %s", m.MeteringPoint, err.Error()))
 				}
 			}
@@ -335,6 +356,7 @@ func requestRevokeMeteringPoint() middleware.JWTHandlerFunc {
 			MeteringPoints []struct {
 				Meter     string              `json:"meter"`
 				Direction model.DirectionType `json:"direction"`
+				ConsentId string              `json:"consentId"`
 			} `json:"meteringPoints"`
 			From   int64  `json:"from"`
 			Reason string `json:"to"`
@@ -386,7 +408,7 @@ func requestRevokeMeteringPoint() middleware.JWTHandlerFunc {
 			return ""
 		}
 
-		log.WithField("tenant", tenant).Infof("revoke Metering %v (%d - %s)", request, fromDate, getReason(reason))
+		log.WithField("tenant", tenant).Infof("revoke Metering %v (%s - %s)", request, time.UnixMilli(fromDate).String(), getReason(reason))
 		if eeg.Online {
 			errorList := []string{}
 			meters, err := database.GetMeteringByIds(db, meters)
