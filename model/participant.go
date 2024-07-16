@@ -4,7 +4,6 @@ import (
 	"github.com/jjeffery/civil"
 	"github.com/pborman/uuid"
 	"gopkg.in/guregu/null.v4"
-	"time"
 )
 
 //func (ts EegParticipantState) MarshalJSON() ([]byte, error) {
@@ -38,7 +37,7 @@ type EegParticipant struct {
 	LastName              string           `json:"lastname"`
 	TitleBefore           string           `json:"titleBefore" db:"titleBefore"`
 	TitleAfter            string           `json:"titleAfter" db:"titleAfter"`
-	ParticipantSince      time.Time        `json:"participantSince" db:"participantSince" goqu:"defaultifempty"`
+	ParticipantSince      civil.NullDate   `json:"participantSince" db:"participantSince" goqu:"defaultifempty"`
 	VatNumber             null.String      `json:"vatNumber" db:"vatNumber"`
 	TaxNumber             null.String      `json:"taxNumber" db:"taxNumber"`
 	CompanyRegisterNumber string           `json:"companyRegisterNumber" db:"companyRegisterNumber"`
@@ -124,8 +123,8 @@ type MeteringPoint struct {
 	StreetNumber     null.String      `json:"streetNumber,omitempty" db:"streetNumber"`
 	City             null.String      `json:"city,omitempty"`
 	Zip              null.String      `json:"zip,omitempty"`
-	RegisteredSince  time.Time        `json:"registeredSince" db:"registeredSince"`
-	ModifiedAt       time.Time        `json:"modifiedAt" db:"modifiedAt"`
+	RegisteredSince  civil.Date       `json:"registeredSince" db:"registeredSince"`
+	ModifiedAt       civil.DateTime   `json:"modifiedAt" db:"modifiedAt"`
 	ModifiedBy       null.String      `json:"modifiedBy" db:"modifiedBy"`
 	GridOperatorId   null.String      `json:"gridOperatorId,omitempty" db:"grid_operator_id"`
 	GridOperatorName null.String      `json:"gridOperatorName,omitempty" db:"grid_operator_name"`
@@ -145,6 +144,6 @@ type MeteringPoint struct {
 type ChangePartitionFactorRequest struct {
 	MeteringPoint string        `json:"meter"`
 	Direction     DirectionType `json:"direction"`
-	Activation    time.Time     `json:"activation"`
+	Activation    civil.Date    `json:"activation"`
 	PartFact      int           `json:"partFact"`
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/doug-martin/goqu/v9"
+	"github.com/jjeffery/civil"
 	"github.com/jmoiron/sqlx"
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/assert"
@@ -150,14 +151,14 @@ func Test_GetParticipants(t *testing.T) {
 		StreetNumber:     null.StringFrom("9"),
 		City:             null.StringFrom("Waizenkirchen"),
 		Zip:              null.StringFrom("4730"),
-		RegisteredSince:  time.Date(2023, 8, 16, 0, 0, 0, 0, time.FixedZone("", 0)),
-		ModifiedAt:       time.Date(2023, 11, 15, 17, 42, 41, 335283000, time.FixedZone("", 0)),
+		RegisteredSince:  civil.DateFor(2023, 8, 16),
+		ModifiedAt:       civil.DateTimeFor(2023, 11, 15, 17, 42, 41),
 		ModifiedBy:       null.StringFrom("petero"),
 		GridOperatorId:   null.String{},
 		GridOperatorName: null.String{},
 		State: &model.MeterState{
-			ActiveSince:   time.Date(2023, 1, 1, 0, 0, 0, 0, time.FixedZone("", 0)),
-			InactiveSince: time.Date(2999, 12, 31, 0, 0, 0, 0, time.FixedZone("", 0)),
+			ActiveSince:   civil.DateOf(time.Date(2023, 1, 1, 0, 0, 0, 0, time.FixedZone("", 0))),
+			InactiveSince: civil.DateOf(time.Date(2999, 12, 31, 0, 0, 0, 0, time.FixedZone("", 0))),
 			Active:        1,
 			Flag:          0,
 		},
@@ -274,10 +275,10 @@ func TestImportParticipant(t *testing.T) {
 				fmt.Printf("P: %+v\n", p.ParticipantSince)
 				fmt.Printf("M: %+v\n", m)
 
-				assert.Equal(t, time.Now().Truncate(24*time.Hour), p.ParticipantSince.Local())
-				assert.Equal(t, time.Now().Truncate(24*time.Hour), m.RegisteredSince.Truncate(24*time.Hour).Local())
-				assert.Equal(t, time.Now().Truncate(24*time.Hour), m.State.ActiveSince.Truncate(24*time.Hour).Local())
-				assert.Equal(t, time.Date(2999, 12, 31, 1, 0, 0, 0, time.Local), m.State.InactiveSince.Local())
+				assert.Equal(t, civil.Today(), p.ParticipantSince.Date)
+				assert.Equal(t, civil.Today(), m.RegisteredSince)
+				assert.Equal(t, civil.Today(), m.State.ActiveSince)
+				assert.Equal(t, civil.DateFor(2999, 12, 31), m.State.InactiveSince)
 
 				assert.Equal(t, model.NEW, p.Status)
 				assert.Equal(t, model.NEW, m.Status)
@@ -308,7 +309,7 @@ func TestImportParticipant(t *testing.T) {
 					City:         null.StringFrom("Solarcity"),
 				},
 				BankAccount:      model.BankInfo{},
-				ParticipantSince: time.Date(2023, 10, 6, 0, 0, 0, 0, time.UTC).Local(),
+				ParticipantSince: civil.NullDate{},
 				MeteringPoint: []*model.MeteringPoint{&model.MeteringPoint{
 					MeteringPoint:   "AT00300000000000000000000000000002",
 					Transformer:     null.String{},
@@ -318,7 +319,7 @@ func TestImportParticipant(t *testing.T) {
 					City:            null.StringFrom("Solarcity"),
 					Zip:             null.StringFrom("1111"),
 					Status:          model.ACTIVE,
-					RegisteredSince: time.Date(2023, 10, 6, 0, 0, 0, 0, time.UTC),
+					RegisteredSince: civil.DateFor(2023, 10, 6),
 				}},
 				Status: model.ACTIVE,
 			},
@@ -329,10 +330,11 @@ func TestImportParticipant(t *testing.T) {
 				fmt.Printf("P: %+v\n", p.ParticipantSince)
 				fmt.Printf("M: %+v\n", m)
 
-				assert.Equal(t, time.Date(2023, 10, 6, 0, 0, 0, 0, time.UTC).Local(), p.ParticipantSince.Local())
-				assert.Equal(t, time.Date(2023, 10, 6, 0, 0, 0, 0, time.UTC).Local(), m.RegisteredSince.Truncate(24*time.Hour).Local())
-				assert.Equal(t, time.Date(2023, 10, 6, 0, 0, 0, 0, time.UTC).Local(), m.State.ActiveSince.Truncate(24*time.Hour).Local())
-				assert.Equal(t, time.Date(2999, 12, 31, 1, 0, 0, 0, time.Local), m.State.InactiveSince.Local())
+				require.NotNil(t, p.ParticipantSince.Ptr())
+				assert.Equal(t, civil.Today(), p.ParticipantSince.Date)
+				assert.Equal(t, civil.DateFor(2023, 10, 6), m.RegisteredSince)
+				assert.Equal(t, civil.DateFor(2023, 10, 6), m.State.ActiveSince)
+				assert.Equal(t, civil.DateFor(2999, 12, 31), m.State.InactiveSince)
 
 				assert.Equal(t, model.ACTIVE, p.Status)
 				assert.Equal(t, model.ACTIVE, m.Status)
@@ -380,10 +382,10 @@ func TestImportParticipant(t *testing.T) {
 				fmt.Printf("P: %+v\n", p.ParticipantSince)
 				fmt.Printf("M: %+v\n", m)
 
-				assert.Equal(t, time.Now().Truncate(24*time.Hour), p.ParticipantSince.Local())
-				assert.Equal(t, time.Now().Truncate(24*time.Hour), m.RegisteredSince.Truncate(24*time.Hour).Local())
-				assert.Equal(t, time.Now().Truncate(24*time.Hour), m.State.ActiveSince.Truncate(24*time.Hour).Local())
-				assert.Equal(t, time.Date(2999, 12, 31, 1, 0, 0, 0, time.Local), m.State.InactiveSince.Local())
+				assert.Equal(t, civil.Today(), p.ParticipantSince.Date)
+				assert.Equal(t, civil.Today(), m.RegisteredSince)
+				assert.Equal(t, civil.Today(), m.State.ActiveSince)
+				assert.Equal(t, civil.DateFor(2999, 12, 31), m.State.InactiveSince)
 
 				assert.Equal(t, model.NEW, p.Status)
 				assert.Equal(t, model.NEW, m.Status)
@@ -402,7 +404,8 @@ func TestImportParticipant(t *testing.T) {
 			err = ImportParticipant(tx, "TE000001", "test", tt.params)
 			assert.NoError(t, err)
 
-			tx.Commit()
+			err = tx.Commit()
+			require.NoError(t, err)
 
 			p, err := FindParticipantByMeteringPoint(db, "TE000001", tt.mp)
 			assert.NoError(t, err)

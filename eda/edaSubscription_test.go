@@ -49,7 +49,7 @@ var extractMeters = func(p model.EbmsMessage, proto model.EbMsMessageType) []str
 	meters := []string{}
 	switch proto {
 	case model.EBMS_ONLINE_REG_APPROVAL, model.EBMS_ONLINE_REG_ANSWER:
-		_, meters, _ = extractResponseCodeAndMeteringPoint(&p)
+		_, meters, _, _ = extractResponseCodeAndMeteringPoint(&p)
 	default:
 		meters = p.Meters()
 	}
@@ -288,7 +288,8 @@ func TestProtocolEcReqOnlHandler(t *testing.T) {
 					Tenant:      "TE1000001",
 					Payload:     model.EbmsMessage{},
 				}
-				message := `{"conversationId":"RC100298202308171692252620000000321","messageId":"AT003000202308180842215740187694787","sender":"AT003000","receiver":"RC100298","messageCode":"ABSCHLUSS_ECON","meterList":[{"meteringPoint":"AT0030000000000000000000000519928","direction":"CONSUMPTION"}]}`
+				//message := `{"conversationId":"RC100298202308171692252620000000321","messageId":"AT003000202308180842215740187694787","sender":"AT003000","receiver":"RC100298","messageCode":"ABSCHLUSS_ECON","meterList":[{"meteringPoint":"AT0030000000000000000000000519928","direction":"CONSUMPTION"}]}`
+				message := `{"conversationId":"RC100346202406091843475020000046464","messageId":"AT003300202406292044374080000009571","sender":"AT003300","receiver":"TE1000001","messageCode":"ABSCHLUSS_ECON","messageCodeVersion":"02.00","ecId":"AT00330004600RC100346000000000001","meterList":[{"meteringPoint":"AT0030000000000000000000000519928","direction":"CONSUMPTION","activation":1719612000000,"partFact":100}]}`
 				err = json.Unmarshal([]byte(message), &msg.Payload)
 				require.NoError(t, err)
 				codes := []string{}
@@ -308,7 +309,7 @@ func TestProtocolEcReqOnlHandler(t *testing.T) {
 					"responseCodes":  codes,
 				}, msg.Tenant, "EDA_PROCESS", "ADMIN").Return(nil)
 
-				recorder.Mock.On("saveHistory", "TE1000001", msg.MessageCode, "RC100298202308171692252620000000321", "ADMIN", "IN", model.EC_REQ_ONL, msg.Payload).Return(nil)
+				recorder.Mock.On("saveHistory", "TE1000001", msg.MessageCode, "RC100346202406091843475020000046464", "ADMIN", "IN", model.EC_REQ_ONL, msg.Payload).Return(nil)
 				return recorder, msg, mockDb.Mock
 			},
 		},

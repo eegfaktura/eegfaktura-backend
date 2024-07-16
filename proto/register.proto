@@ -49,32 +49,33 @@ message RegisterEegRequest {
     STATIC = 1;
   }
 
-  string rcNumber = 1;
-  string communityId = 2;
-  string name = 3;
-  string description = 4;
-  string iban = 5;
-  string owner = 6;
-  bool sepa = 7;
-  string bankName = 8;
-  EEG_LEGAL legal = 9;
-  string businessNr = 10;
-  string taxNumber = 11;
-  string vatNumber =12;
-  EEG_SETTELMENT settelmentInterval = 13;
-  string gridId = 14;
-  string gridName = 15;
-  GRID_AREA area = 16;
-  GRID_ALLOCATION allocation = 17;
-  string eegOwner = 18;
-  string street = 19;
-  string streetNumber = 20;
-  string city = 21;
-  string zip = 22;
-  string email = 23;
-  optional string web = 24;
-  optional string phone = 25;
-  bool online = 26;
+  string tenant = 1;
+  string rcNumber = 2;
+  string communityId = 3;
+  string name = 4;
+  string description = 5;
+  string iban = 6;
+  string owner = 7;
+  bool sepa = 8;
+  string bankName = 9;
+  EEG_LEGAL legal = 10;
+  string businessNr = 11;
+  string taxNumber = 12;
+  string vatNumber =13;
+  EEG_SETTELMENT settelmentInterval = 14;
+  string gridId = 15;
+  string gridName = 16;
+  GRID_AREA area = 17;
+  GRID_ALLOCATION allocation = 18;
+  string eegOwner = 19;
+  string street = 20;
+  string streetNumber = 21;
+  string city = 22;
+  string zip = 23;
+  string email = 24;
+  optional string web = 25;
+  optional string phone = 26;
+  bool online = 27;
 }
 
 // The response message containing the greetings

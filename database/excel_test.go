@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/jjeffery/civil"
 	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
@@ -109,8 +110,8 @@ func TestImportMasterdataFromExcel(t *testing.T) {
 				require.Equal(t, 1, len(p.MeteringPoint))
 
 				assert.Equal(t, "Test Operator", p.MeteringPoint[0].GridOperatorName.String)
-				assert.Equal(t, time.Date(time.Now().Year(), 1, 1, 0, 0, 0, 0, time.Local), p.MeteringPoint[0].State.ActiveSince.Local())
-				assert.Equal(t, time.Date(2999, 12, 31, 0, 0, 0, 0, time.UTC).Local(), p.MeteringPoint[0].State.InactiveSince.Local())
+				assert.Equal(t, civil.DateOf(time.Date(time.Now().Year(), 1, 1, 0, 0, 0, 0, time.Local)), p.MeteringPoint[0].State.ActiveSince)
+				assert.Equal(t, civil.DateOf(time.Date(2999, 12, 31, 0, 0, 0, 0, time.Local)), p.MeteringPoint[0].State.InactiveSince)
 				assert.Equal(t, 0, p.MeteringPoint[0].State.Flag)
 				assert.Equal(t, model.ACTIVE, p.MeteringPoint[0].Status)
 			},

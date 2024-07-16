@@ -32,11 +32,19 @@ type MeteringPointDBModel struct {
 }
 
 func ConvertFromMeterList(ml []Meter) []*MeteringPointDBModel {
+
+	getConsentId := func(consentId string) null.String {
+		if len(consentId) > 0 {
+			return null.StringFrom(consentId)
+		}
+		return null.String{}
+	}
+
 	converted := make([]*MeteringPointDBModel, len(ml))
 	for i := range ml {
 		converted[i] = &MeteringPointDBModel{
 			MeteringPoint: ml[i].MeteringPoint,
-			ConsentId:     null.StringFrom(ml[i].ConsentID),
+			ConsentId:     getConsentId(ml[i].ConsentID),
 			//Transformer:      null.String{},
 			Direction:        ml[i].Direction,
 			Status:           nil,

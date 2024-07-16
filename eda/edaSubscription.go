@@ -7,7 +7,9 @@ import (
 	"at.ourproject/vfeeg-backend/services"
 	"bytes"
 	"fmt"
+	"github.com/jjeffery/civil"
 	"github.com/sirupsen/logrus"
+	"strings"
 	"time"
 )
 
@@ -148,7 +150,7 @@ func protocolCrReqPtHandler(msg model.SubscribeMessage, recorder EdaRecording) {
 
 	switch msg.MessageCode {
 	case model.EBMS_ZP_RES, model.EBMS_ZP_REJ, model.EBMS_ZP_SYNC:
-		codes, _, _ = extractResponseCodeAndMeteringPoint(&msg.Payload)
+		codes, _, _, _ = extractResponseCodeAndMeteringPoint(&msg.Payload)
 	default:
 		return
 	}
@@ -194,8 +196,18 @@ func protocolCrReqPtHandler(msg model.SubscribeMessage, recorder EdaRecording) {
 func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) {
 	//var err error
 	logrus.WithField("tenant", msg.Tenant).Printf("Handle Subscriptions: %+v-%v", msg.Protocol, msg.MessageCode)
+	getConsentId := func(consentId *string) *string {
+		if consentId == nil {
+			return nil
+		}
+		cId := strings.TrimSpace(*consentId)
+		if len(cId) == 0 {
+			return nil
+		}
+		return &cId
+	}
 
-	codes, meters, _ := extractResponseCodeAndMeteringPoint(&msg.Payload)
+	codes, meters, consentIds, _ := extractResponseCodeAndMeteringPoint(&msg.Payload)
 	var status model.StatusType
 	var statusCode int16 = 0
 	var activeSince *time.Time
@@ -233,9 +245,10 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 			}
 		}
 	case model.EBMS_ONLINE_REG_APPROVAL, model.EBMS_OFFLINE_REG_APPROVAL:
-		for _, c := range codes {
+		for i, c := range codes {
 			if c == 175 {
 				status = model.APPROVED
+				consentId = &consentIds[i]
 			}
 		}
 	case model.EBMS_ONLINE_REG_ANSWER, model.EBMS_OFFLINE_REG_ANSWER:
@@ -272,7 +285,7 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 	}
 
 	if len(meters) > 0 && len(status) > 0 {
-		if err := database.MeteringPointsSetStatus(db, eeg.Id, status, statusCode, meters, activeSince, consentId); err != nil {
+		if err := database.MeteringPointsSetStatus(db, eeg.Id, status, statusCode, meters, activeSince, getConsentId(consentId)); err != nil {
 			logrus.WithField("error", err.Error()).Errorf("can not change metering point status %+v", meters)
 		}
 	}
@@ -294,22 +307,6 @@ func protocolCmRevImpHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 	meters, _ := extractResponseCodeAndMeteringPointV2(&msg.Payload)
 	var status model.StatusType
 
-	switch msg.MessageCode {
-	case model.EBMS_AUFHEBUNG_CCMS, model.EBMS_AUFHEBUNG_CCMI, model.EBMS_AUFHEBUNG_CCMC:
-		status = model.INACTIVE
-	case model.EBMS_ANTWORT_CCMS:
-		if len(meters) > 0 {
-			if codesContains([]int16{176}, meters[0].codes) {
-				meters[0].consentEnd = msg.Payload.ConsentEnd
-				status = model.INACTIVE
-			}
-		}
-	case model.EBMS_ABLEHNUNG_CCMS:
-		status = ""
-	default:
-		return
-	}
-
 	db, err := recorder.databaseConnection()
 	if err != nil {
 		logrus.WithField("tenant", msg.Tenant).Error(err)
@@ -317,31 +314,65 @@ func protocolCmRevImpHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 	}
 	defer func() { _ = db.Close() }()
 
-	eeg, err := database.GetEegByEcId(db, msg.Payload.EcId)
-	if err != nil {
-		logrus.WithField("error", err.Error()).Errorf("can not fetch eeg by ecid %s (change metering point status)", msg.Payload.EcId)
-		return
-	}
+	var eeg *model.Eeg
+	switch msg.MessageCode {
+	case model.EBMS_AUFHEBUNG_CCMS, model.EBMS_ABLEHNUNG_CCMS:
+		status = ""
+		eeg, err = database.GetEegByEcId(db, msg.Payload.EcId)
+		if err != nil {
+			logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg by ecid %s (change metering point status)", msg.Payload.EcId)
+			return
+		}
+	case model.EBMS_AUFHEBUNG_CCMC, model.EBMS_AUFHEBUNG_CCMI:
 
-	if len(meters) > 0 && len(status) > 0 && meters[0].consentEnd > 0 {
-		consentEnd := time.UnixMilli(meters[0].consentEnd).Local()
-
-		if err := database.MeteringPointRevoke(db, eeg.Id, meters[0].meter, status, consentEnd); err != nil {
+		var tenant *string
+		if tenant, err = database.MeteringPointRevokeByConsentId(db, meters[0].consentId, meters[0].meter, meters[0].consentEnd); err != nil {
 			logrus.WithField("tenant", msg.Tenant).Errorf("can not revoke metering point %+v - %+v", meters, err)
 			return
 		}
+
+		eeg, err = database.GetEegById(db, *tenant)
+		if err != nil {
+			logrus.WithField("tenant", *tenant).Errorf("can not fetch eeg by tenant %s (REVOKE metering point)", *tenant)
+			return
+		}
+
+	case model.EBMS_ANTWORT_CCMS:
+		if len(meters) > 0 {
+			if codesContains([]int16{176}, meters[0].codes) {
+				meters[0].consentEnd = civil.DateOf(time.UnixMilli(msg.Payload.ConsentEnd))
+				status = model.INACTIVE
+
+				eeg, err = database.GetEegByEcId(db, msg.Payload.EcId)
+				if err != nil {
+					logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg by ecid %s (change metering point status)", msg.Payload.EcId)
+					return
+				}
+
+				if err := database.MeteringPointRevoke(db, eeg.Id, meters[0].meter, status, meters[0].consentEnd); err != nil {
+					logrus.WithField("tenant", eeg.Id).Errorf("can not revoke metering point %+v - %+v", meters, err)
+					return
+				}
+			}
+		}
+	default:
+		return
 	}
 
-	if len(meters) > 0 {
-		if err := recorder.saveNotification(map[string]interface{}{
-			"type":           msg.MessageCode,
-			"meteringPoints": []string{meters[0].meter},
-			"responseCodes":  convertCodes2Strings(meters[0].codes),
-		}, eeg.Id, "EDA_PROCESS", "ADMIN"); err != nil {
-			logrus.WithField("PROTOCOL", msg.Protocol).Error(err)
+	if eeg != nil {
+		if len(meters) > 0 {
+			if err := recorder.saveNotification(map[string]interface{}{
+				"type":           msg.MessageCode,
+				"meteringPoints": []string{meters[0].meter},
+				"responseCodes":  convertCodes2Strings(meters[0].codes),
+			}, eeg.Id, "EDA_PROCESS", "ADMIN"); err != nil {
+				logrus.WithField("PROTOCOL", msg.Protocol).Error(err)
+			}
 		}
+		_ = recorder.saveHistory(eeg.Id, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
+	} else {
+		logrus.WithField("tenant", msg.Tenant).Errorf("%+v", msg.Payload)
 	}
-	_ = recorder.saveHistory(eeg.Id, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
 }
 
 func protocolEcPrtChangeHandler(msg model.SubscribeMessage, recorder EdaRecording) {

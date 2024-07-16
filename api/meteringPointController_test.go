@@ -6,6 +6,7 @@ import (
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
 	"fmt"
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/jjeffery/civil"
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -95,6 +96,7 @@ func TestRequestMeteringPointValues(t *testing.T) {
 				request: fmt.Sprintf(`{"meteringPoints": [{"meter": "AT000000000000000000001", "direction": "CONSUMPTION"}], "from": %d, "to": 23423434243234234}`, time.Date(2023, time.Month(11), 1, 0, 0, 0, 0, time.Local).UnixMilli()),
 				mqttReqFunc: func(eeg *model.Eeg, meter *model.MeteringPoint, fromDate, toDate int64) error {
 					fmt.Printf("FromDate %s\n", time.UnixMilli(fromDate).String())
+					assert.Equal(t, civil.DateFor(2024, 1, 1).Unix()*1000, fromDate)
 					return nil
 				},
 			},
@@ -142,4 +144,33 @@ func TestRequestMeteringPointValues(t *testing.T) {
 	}
 
 	//assert.Equal(t, http.StatusCreated, w.Code)
+}
+
+func TestRequestChangePartitionFactor(t *testing.T) {
+	var mockDb, err = database.GetDatabaseMock()
+	require.NoError(t, err)
+	defer mockDb.Close()
+
+	database.ConnectToDatabase = func() (*sqlx.DB, error) {
+		return mockDb.OpenMockDb()
+	}
+
+	rows := sqlmock.NewRows([]string{"name", "description", "\"businessNr\"", "legal", "gridoperator_name", "\"communityId\"", "gridoperator_code", "\"rcNumber\"", "area", "\"allocationMode\"",
+		"\"settlementInterval\"", "providerBusinessNr", "street", "\"streetNumber\"", "zip", "city", "phone", "email", "website", "iban", "owner", "sepa", "\"bankName\"",
+		"\"taxNumber\"", "\"vatNumber\"", "online", "\"contactPerson\""}).
+		AddRow("TEST_EEG", "Test EEG", "", "verein", "Netz Test", "AT000000000000000001", "AT009999", "RC000001", "LOCAL", "DYNAMIC", "", 0,
+			"Solargasse", "10", "1111", "Solarcity", "", "", "", "", "test", false, "", "", "", true, "")
+	mockDb.Mock.ExpectQuery("^SELECT (.+)").WillReturnRows(rows)
+
+	data := `{"meteringPoints":[{"meter":"AT0020000000000000000000020901172","direction":"GENERATION","activation":"2022-01-01","partFact":1}]}`
+	req, _ := http.NewRequest("POST", "/meteringpoint/changepartitionfactor", strings.NewReader(data))
+	w := httptest.NewRecorder()
+	mqttclient.ChangePartitionFactor = func(eeg *model.Eeg, meter []*model.ChangePartitionFactorRequest) error {
+		assert.Equal(t, "TE100100", eeg.Id)
+		return nil
+	}
+
+	requestChangePartitionFactor()(w, req, nil, "TE100100")
+
+	assert.Equal(t, http.StatusCreated, w.Code)
 }

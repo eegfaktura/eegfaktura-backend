@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/doug-martin/goqu/v9"
+	"github.com/jjeffery/civil"
 	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
@@ -44,8 +45,8 @@ func Test_RegisterMeteringPoint(t *testing.T) {
 				StreetNumber:    null.String{},
 				City:            null.String{},
 				Zip:             null.String{},
-				RegisteredSince: time.Time{},
-				ModifiedAt:      time.Time{},
+				RegisteredSince: civil.Date{},
+				ModifiedAt:      civil.DateTime{},
 				ModifiedBy:      null.String{},
 				State:           nil,
 			}},
@@ -84,7 +85,7 @@ func Test_MeteringPointRevoke(t *testing.T) {
 
 	meter := meters[0]
 
-	assert.Equal(t, consentEnd, meter.State.InactiveSince.Local())
+	assert.Equal(t, civil.DateOf(consentEnd), meter.State.InactiveSince)
 	assert.Equal(t, model.INACTIVE, meter.Status)
 }
 
@@ -233,8 +234,8 @@ func Test_ActivateRevokedMeteringPoint(t *testing.T) {
 	require.Equal(t, 1, len(p))
 	require.Equal(t, 1, len(p[0].MeteringPoint))
 	assert.Equal(t, model.INACTIVE, p[0].MeteringPoint[0].Status)
-	assert.Equal(t, consentEnd.Local(), p[0].MeteringPoint[0].State.InactiveSince.Local())
-	assert.Equal(t, time.Now().Local().Truncate(time.Hour), p[0].MeteringPoint[0].State.ActiveSince.Local().Truncate(time.Hour))
+	assert.Equal(t, civil.DateOf(consentEnd), p[0].MeteringPoint[0].State.InactiveSince)
+	assert.Equal(t, civil.Today(), p[0].MeteringPoint[0].State.ActiveSince)
 
 	now := time.Now().Truncate(time.Hour)
 	err = MeteringPointsSetStatus(db, "TE000004", model.ACTIVE, 0, []string{meter.MeteringPoint}, &now, nil)
@@ -246,8 +247,8 @@ func Test_ActivateRevokedMeteringPoint(t *testing.T) {
 	require.Equal(t, 1, len(p))
 	require.Equal(t, 1, len(p[0].MeteringPoint))
 	assert.Equal(t, model.ACTIVE, p[0].MeteringPoint[0].Status)
-	assert.Equal(t, time.Date(2999, 12, 31, 23, 59, 59, 0, time.UTC), p[0].MeteringPoint[0].State.InactiveSince.UTC())
-	assert.Equal(t, time.Now().Local().Truncate(time.Hour), p[0].MeteringPoint[0].State.ActiveSince.Local().Truncate(time.Hour))
+	assert.Equal(t, civil.DateOf(time.Date(2999, 12, 31, 23, 59, 59, 0, time.UTC)), p[0].MeteringPoint[0].State.InactiveSince)
+	assert.Equal(t, civil.Today(), p[0].MeteringPoint[0].State.ActiveSince)
 }
 
 func Test_RegistrationProcess(t *testing.T) {
@@ -313,8 +314,8 @@ func Test_RegistrationProcess(t *testing.T) {
 	require.Equal(t, model.ACTIVE, pUnderTest.Status)
 	require.Equal(t, 1, len(pUnderTest.MeteringPoint))
 	require.Equal(t, model.NEW, pUnderTest.MeteringPoint[0].Status)
-	require.Equal(t, expectedRegistrationDate.Truncate(24*time.Hour).UTC(), pUnderTest.MeteringPoint[0].RegisteredSince.UTC())
-	require.Equal(t, expectedRegistrationDate.Truncate(1*time.Hour).UTC(), pUnderTest.MeteringPoint[0].State.ActiveSince.Local())
+	require.Equal(t, civil.Today(), pUnderTest.MeteringPoint[0].RegisteredSince)
+	require.Equal(t, civil.DateOf(expectedRegistrationDate), pUnderTest.MeteringPoint[0].State.ActiveSince)
 
 	now := time.Now().Truncate(time.Hour)
 	err = MeteringPointsSetStatus(db, "TE000004", model.PENDING, 0, []string{meter.MeteringPoint}, &now, nil)
@@ -335,12 +336,12 @@ func Test_RegistrationProcess(t *testing.T) {
 	m, err = FindMeteringById(db, meter.MeteringPoint)
 	require.NoError(t, err)
 	assert.Equal(t, model.ACTIVE, m.Status)
-	assert.Equal(t, time.Now().Truncate(24*time.Hour), m.RegisteredSince.Local())
+	assert.Equal(t, civil.Today(), m.RegisteredSince)
 
 }
 
 func Test_UpdateMeteringPoint(t *testing.T) {
-	jsonObj := `{"meteringPoint":"AT0030000000000000000000030041724","transformer":null,"direction":"GENERATION","status":"ACTIVE","tariff_id":"f9b640dc-efe3-11ed-9f81-6ad19f4af00f","equipmentNumber":null,"equipmentName":"HARI PV","inverterid":null,"street":"Fellingerstraße","streetNumber":"9","city":"Waizenkirchen","zip":"4730","registeredSince":"2023-08-16T00:00:00Z","modifiedAt":"2023-08-16T16:36:09.076145Z","modifiedBy":null,"gridOperatorId":null,"gridOperatorName":null,"participantState":{"activeSince":"2022-01-01T00:00:00Z","inactiveSince":"2999-12-31T00:00:00Z"}}`
+	jsonObj := `{"meteringPoint":"AT0030000000000000000000030041724","transformer":null,"direction":"GENERATION","status":"ACTIVE","tariff_id":"f9b640dc-efe3-11ed-9f81-6ad19f4af00f","equipmentNumber":null,"equipmentName":"HARI PV","inverterid":null,"street":"Fellingerstraße","streetNumber":"9","city":"Waizenkirchen","zip":"4730","registeredSince":"2023-08-16","modifiedAt":"2023-08-16T16:36:09","modifiedBy":null,"gridOperatorId":null,"gridOperatorName":null,"participantState":{"activeSince":"2022-01-01","inactiveSince":"2999-12-31"}}`
 
 	m := model.MeteringPoint{}
 	err := json.NewDecoder(strings.NewReader(jsonObj)).Decode(&m)
@@ -350,16 +351,16 @@ func Test_UpdateMeteringPoint(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	expectedRegistrationDate := time.Date(2023, 8, 16, 0, 0, 0, 0, time.UTC)
-	expectedactiveDate := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
+	expectedRegistrationDate := civil.DateFor(2023, 8, 16)
+	expectedactiveDate := civil.DateFor(2023, 1, 1)
 	err = UpdateMeteringPoint(db, "TE000001", "test", "ea9942db-03da-11ee-b82b-5a985b4b033a", m.MeteringPoint, &m)
 	require.NoError(t, err)
 
 	mUnderTest, err := FindMeteringById(db, "AT0030000000000000000000030041724")
 	require.NoError(t, err)
 
-	require.Equal(t, expectedRegistrationDate.Truncate(24*time.Hour).UTC(), mUnderTest.RegisteredSince.UTC())
-	require.Equal(t, expectedactiveDate.Truncate(1*time.Hour).UTC(), mUnderTest.State.ActiveSince.Truncate(1*time.Hour).UTC())
+	require.Equal(t, expectedRegistrationDate, mUnderTest.RegisteredSince)
+	require.Equal(t, expectedactiveDate, mUnderTest.State.ActiveSince)
 }
 
 func TestMeteringPointChangePartFact(t *testing.T) {

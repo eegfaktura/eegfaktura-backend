@@ -30,6 +30,7 @@ func fetchParticipant() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
 		db, err := database.ConnectToDatabase()
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to fetch participant.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
 			return
 		}
@@ -37,6 +38,7 @@ func fetchParticipant() middleware.JWTHandlerFunc {
 
 		participant, err := database.GetParticipants(db, tenant)
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to fetch participant.")
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
@@ -52,12 +54,14 @@ func updateParticipant() middleware.JWTHandlerFunc {
 		var t model.EegParticipant
 		err := json.NewDecoder(r.Body).Decode(&t)
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to update participant.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
 
 		db, err := database.ConnectToDatabase()
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to update participant.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
 			return
 		}
@@ -65,6 +69,7 @@ func updateParticipant() middleware.JWTHandlerFunc {
 
 		err = database.UpdateParticipant(db, tenant, claims.Username, &t)
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to update participant.")
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -80,11 +85,13 @@ func updateParticipantPartial() middleware.JWTHandlerFunc {
 		var p map[string]interface{}
 		err := json.NewDecoder(r.Body).Decode(&p)
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to update partial participant.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
 		db, err := database.ConnectToDatabase()
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to update partial participant.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
 			return
 		}
@@ -95,12 +102,14 @@ func updateParticipantPartial() middleware.JWTHandlerFunc {
 
 		err = database.UpdateParticipantPartial(db, participantId, name, value)
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to update partial participant.")
 			respondWith(w, http.StatusInternalServerError, tenant, err)
 			return
 		}
 
 		participant, err := database.GetParticipant(db, participantId)
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to update partial participant.")
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
@@ -113,12 +122,14 @@ func registerParticipant() middleware.JWTHandlerFunc {
 		var t model.EegParticipant
 		err := json.NewDecoder(r.Body).Decode(&t)
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to register participant.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
 
 		db, err := database.ConnectToDatabase()
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to register participant.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
 			return
 		}
@@ -126,6 +137,7 @@ func registerParticipant() middleware.JWTHandlerFunc {
 
 		tx, err := db.Beginx()
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to register participant.")
 			respondWith(w, http.StatusInternalServerError, tenant, model.ErrOpenTx(err))
 			return
 		}
@@ -139,6 +151,7 @@ func registerParticipant() middleware.JWTHandlerFunc {
 
 		err = database.RegisterParticipant(tx, tenant, claims.Username, &t)
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to register participant.")
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
@@ -156,12 +169,14 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 
 		err := json.NewDecoder(r.Body).Decode(&meters)
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to confirm participant.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
 
 		db, err := database.ConnectToDatabase()
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to confirm participant.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
 			return
 		}
@@ -169,16 +184,19 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 
 		eeg, err := database.GetEeg(db, tenant)
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to confirm participant.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
 			return
 		}
 		participant, err := database.QueryParticipant(db, participantId)
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to confirm participant.")
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
 
 		if err = database.ConfirmParticipant(db, claims.Username, participantId); err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to confirm participant.")
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
@@ -190,11 +208,13 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 
 				if m.ActivationMode == model.ONLINE {
 					if err = mqttclient.RegistrationForParticipation(eeg, m); err != nil {
+						log.WithField("tenant", tenant).WithError(err).Error("failed to confirm participant.")
 						respondWith(w, http.StatusBadRequest, tenant, err)
 						return
 					}
 				} else {
 					if err = mqttclient.OfflineRegistrationForParticipation(eeg, m); err != nil {
+						log.WithField("tenant", tenant).WithError(err).Error("failed to confirm participant.")
 						respondWith(w, http.StatusBadRequest, tenant, err)
 						return
 					}
@@ -214,6 +234,7 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 			now := time.Now()
 			err := database.MeteringPointsSetStatus(db, tenant, model.ACTIVE, 0, meterIds, &now, nil)
 			if err != nil {
+				log.WithField("tenant", tenant).WithError(err).Error("failed to confirm participant.")
 				respondWith(w, http.StatusBadRequest, tenant, err)
 				return
 			}
@@ -229,12 +250,14 @@ func archiveParticipant() middleware.JWTHandlerFunc {
 
 		db, err := database.ConnectToDatabase()
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to archive participant.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
 			return
 		}
 		defer func() { _ = db.Close() }()
 
 		if err := database.ArchiveParticipant(db, claims.Username, idStr); err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to archive participant.")
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}

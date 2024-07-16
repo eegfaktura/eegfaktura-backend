@@ -31,6 +31,21 @@ func GetEeg(tx *sqlx.DB, tenant string) (*model.Eeg, error) {
 	return &eeg, err
 }
 
+func GetEegById(tx *sqlx.DB, tenant string) (*model.Eeg, error) {
+
+	var eeg model.Eeg
+	stmt, _, err := pgDialect.From("base.eeg").Select(&eeg).Where(goqu.C("tenant").Eq(tenant)).ToSQL()
+	if err != nil {
+		return nil, model.ErrGetEeg(err)
+	}
+
+	err = tx.Get(&eeg, stmt)
+	if err != nil {
+		return nil, model.ErrGetEeg(err)
+	}
+	return &eeg, nil
+}
+
 func GetEegByEcId(tx *sqlx.DB, edId string) (*model.Eeg, error) {
 
 	var eeg model.Eeg

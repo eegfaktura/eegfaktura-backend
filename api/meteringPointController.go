@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/gorilla/mux"
+	"github.com/jjeffery/civil"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/guregu/null.v4"
 	"net/http"
@@ -42,18 +43,20 @@ func createMeteringPoint() middleware.JWTHandlerFunc {
 		var m model.MeteringPoint
 		err := json.NewDecoder(r.Body).Decode(&m)
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to register metering point.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
 
-		m.ModifiedAt = time.Now()
+		m.ModifiedAt = civil.Now()
 		if m.Status != model.ACTIVE {
-			m.RegisteredSince = time.Now()
+			m.RegisteredSince = civil.Today()
 		}
 		m.ModifiedBy = null.StringFrom(claims.Username)
 
 		db, err := database.ConnectToDatabase()
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to register metering point.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
 			return
 		}
@@ -61,6 +64,7 @@ func createMeteringPoint() middleware.JWTHandlerFunc {
 
 		err = database.RegisterMeteringPoint(db, tenant, claims.Username, participantId, &m)
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to register metering point.")
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1111, err.Error()))
 			return
 		}
@@ -85,6 +89,7 @@ func createMeteringPoint() middleware.JWTHandlerFunc {
 						return
 					}
 				} else {
+					log.WithField("tenant", tenant).Errorf("Wrong activation code! Meter: %+v", m)
 					respondWith(w, http.StatusBadRequest, tenant, model.ErrWrongActivationCode(errors.New("Wrong activation code")))
 					return
 				}
@@ -103,20 +108,23 @@ func updateMeteringPoint() middleware.JWTHandlerFunc {
 		m := model.MeteringPoint{}
 		err := json.NewDecoder(r.Body).Decode(&m)
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to update metering point.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
 		db, err := database.ConnectToDatabase()
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to update metering point.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
 			return
 		}
 		defer func() { _ = db.Close() }()
 
-		m.ModifiedAt = time.Now()
+		m.ModifiedAt = civil.Now()
 		m.ModifiedBy = null.StringFrom(claims.Username)
 		err = database.UpdateMeteringPoint(db, tenant, claims.Username, participantId, meterId, &m)
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to update metering point.")
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
@@ -136,11 +144,13 @@ func updateMeteringPointPartFact() middleware.JWTHandlerFunc {
 		}{}
 		err := json.NewDecoder(r.Body).Decode(&pf)
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to update metering point partition factor.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
 		db, err := database.ConnectToDatabase()
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to update metering point partition factor.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
 			return
 		}
@@ -148,6 +158,7 @@ func updateMeteringPointPartFact() middleware.JWTHandlerFunc {
 
 		ms, err := database.FindAllMeteringByTenant(db, tenant, participantId, []string{meterId})
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to update metering point partition factor.")
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
@@ -164,12 +175,14 @@ func updateMeteringPointPartFact() middleware.JWTHandlerFunc {
 		if len(meters) == 1 {
 			err = database.MeteringPointChangePartFactor(db, tenant, meters)
 			if err != nil {
+				log.WithField("tenant", tenant).WithError(err).Error("failed to update metering point partition factor.")
 				respondWith(w, http.StatusBadRequest, tenant, err)
 				return
 			}
 			ms[0].PartFact = pf.PartFact
 			respondWithJSON(w, http.StatusAccepted, ms[0])
 		} else {
+			log.WithField("tenant", tenant).Errorf("failed to update metering point partition factor. Err: No PRTFACT specified %v", ms)
 			respondWith(w, http.StatusBadRequest, tenant, &model.VfeegError{999, errors.New(fmt.Sprintf("No metering factor found N:%d", len(meters)))})
 		}
 	}
@@ -185,20 +198,23 @@ func moveMeteringPoint() middleware.JWTHandlerFunc {
 		m := model.MeteringPoint{}
 		err := json.NewDecoder(r.Body).Decode(&m)
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to move metering point.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
 		db, err := database.ConnectToDatabase()
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to move metering point.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
 			return
 		}
 		defer func() { _ = db.Close() }()
 
-		m.ModifiedAt = time.Now()
+		m.ModifiedAt = civil.Now()
 		m.ModifiedBy = null.StringFrom(claims.Username)
 		err = database.MoveMeteringPoint(db, tenant, claims.Username, sParticipantId, dParticipantId, meterId)
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to move metering point.")
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
@@ -226,12 +242,15 @@ func registerMeteringPoint() middleware.JWTHandlerFunc {
 		request := registerMeterRequestType{}
 		err := json.NewDecoder(r.Body).Decode(&request)
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to register metering point")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
+		log.WithField("tenant", tenant).Infof("register Meter:  %v ", request)
 
 		db, err := database.ConnectToDatabase()
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to register metering point.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
 			return
 		}
@@ -239,11 +258,13 @@ func registerMeteringPoint() middleware.JWTHandlerFunc {
 
 		eeg, err := database.GetEeg(db, tenant)
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to register metering point.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
 			return
 		}
 		participant, err := database.QueryParticipant(db, participantId)
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to register metering point.")
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
@@ -257,7 +278,6 @@ func registerMeteringPoint() middleware.JWTHandlerFunc {
 			}
 		}
 
-		log.WithField("tenant", tenant).Infof("register Meter:  %v ", request)
 		if eeg.Online && meter != nil {
 			if request.ActivationMode == model.ONLINE {
 				if err = mqttclient.RegistrationForParticipation(eeg, meter); err != nil {
@@ -271,6 +291,7 @@ func registerMeteringPoint() middleware.JWTHandlerFunc {
 				}
 			}
 		}
+		log.WithField("tenant", tenant).Errorf("failed to register metering point. P: %v", participant)
 		respondWithJSON(w, http.StatusCreated, participant)
 	}
 }
@@ -288,12 +309,14 @@ func requestMeteringPointValues() middleware.JWTHandlerFunc {
 		}{}
 		err := json.NewDecoder(r.Body).Decode(&request)
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to request metering point values.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
 
 		db, err := database.ConnectToDatabase()
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to request metering point values.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
 			return
 		}
@@ -301,6 +324,7 @@ func requestMeteringPointValues() middleware.JWTHandlerFunc {
 
 		eeg, err := database.GetEeg(db, tenant)
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to request metering point values.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
 			return
 		}
@@ -323,6 +347,7 @@ func requestMeteringPointValues() middleware.JWTHandlerFunc {
 			var errorList []string
 			meters, err := database.GetMeteringByIds(db, meters)
 			if err != nil {
+				log.WithField("tenant", tenant).WithError(err).Error("failed to request metering point values.")
 				respondWith(w, http.StatusInternalServerError, tenant, err)
 				return
 			}
@@ -330,7 +355,7 @@ func requestMeteringPointValues() middleware.JWTHandlerFunc {
 				if m.Status != model.ACTIVE || m.State.Active != model.P_ACTIVE {
 					continue
 				}
-				from := util.MaxTimeStamp(m.State.ActiveSince.UnixMilli(), fromDate)
+				from := util.MaxTimeStamp(m.State.ActiveSince.Unix()*1000, fromDate)
 				if err = mqttclient.RequestingEnergyData(eeg, m, from, toDate); err != nil {
 					log.WithField("tenant", tenant).Errorf("request Metering values %v (%s - %s)", m,
 						time.UnixMilli(from).String(), time.UnixMilli(toDate).String())
@@ -338,6 +363,7 @@ func requestMeteringPointValues() middleware.JWTHandlerFunc {
 				}
 			}
 			if errorList != nil && len(errorList) > 0 {
+				log.WithField("tenant", tenant).Errorf("failed to request metering point values. Err: %v", errorList)
 				respondWith(w, http.StatusInternalServerError, tenant, model.ErrRequestEnergyData(errors.New(strings.Join(errorList, "; "))))
 				return
 			}
@@ -363,12 +389,14 @@ func requestRevokeMeteringPoint() middleware.JWTHandlerFunc {
 		}{}
 		err := json.NewDecoder(r.Body).Decode(&request)
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to revoke metering point.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
 
 		db, err := database.ConnectToDatabase()
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to revoke metering point.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
 			return
 		}
@@ -376,11 +404,13 @@ func requestRevokeMeteringPoint() middleware.JWTHandlerFunc {
 
 		eeg, err := database.GetEeg(db, tenant)
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to revoke metering point.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
 			return
 		}
 		participant, err := database.QueryParticipant(db, participantId)
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to revoke metering point.")
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
@@ -397,6 +427,7 @@ func requestRevokeMeteringPoint() middleware.JWTHandlerFunc {
 		}
 
 		if meters == nil {
+			log.WithField("tenant", tenant).Error("failed to revoke metering point. Err: No Meter selected")
 			respondWith(w, http.StatusInternalServerError, tenant, model.Wrap(errors.New("no Meter selected"), 3100))
 			return
 		}
@@ -423,6 +454,7 @@ func requestRevokeMeteringPoint() middleware.JWTHandlerFunc {
 				}
 			}
 			if errorList != nil && len(errorList) > 0 {
+				log.WithField("tenant", tenant).Errorf("failed to revoke metering point. Err: %v", errorList)
 				respondWith(w, http.StatusInternalServerError, tenant, model.ErrRevokeMeter(errors.New(strings.Join(errorList, "; "))))
 				return
 			}
@@ -439,6 +471,7 @@ func removeMeteringPoint() middleware.JWTHandlerFunc {
 
 		db, err := database.ConnectToDatabase()
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to remove metering point.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
 			return
 		}
@@ -446,6 +479,7 @@ func removeMeteringPoint() middleware.JWTHandlerFunc {
 
 		err = database.RemoveMeteringPoint(db, tenant, participantId, meterId)
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to remove metering point.")
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
@@ -461,6 +495,7 @@ func archiveMeteringPoint() middleware.JWTHandlerFunc {
 
 		db, err := database.ConnectToDatabase()
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to archive metering point.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
 			return
 		}
@@ -468,6 +503,7 @@ func archiveMeteringPoint() middleware.JWTHandlerFunc {
 
 		err = database.MeteringPointsSetStatus(db, tenant, model.ARCHIVED, 0, []string{meterId}, nil, nil)
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to archive metering point.")
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
@@ -482,12 +518,14 @@ func requestChangePartitionFactor() middleware.JWTHandlerFunc {
 		}
 		err := json.NewDecoder(r.Body).Decode(&request)
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to request metering point PRTFACT")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
 
 		db, err := database.ConnectToDatabase()
 		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to request metering point PRTFACT")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
 			return
 		}
@@ -501,7 +539,7 @@ func requestChangePartitionFactor() middleware.JWTHandlerFunc {
 
 		if eeg.Online {
 			if err = mqttclient.ChangePartitionFactor(eeg, request.MeteringPoints); err != nil {
-				log.WithField("tenant", tenant).Errorf("Change Partition failes %+v", request)
+				log.WithField("tenant", tenant).WithError(err).Errorf("failed to request metering point PRTFACT. Err: %v", request)
 				respondWith(w, http.StatusInternalServerError, tenant, err)
 			}
 		} else {

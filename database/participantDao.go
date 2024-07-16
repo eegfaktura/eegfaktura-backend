@@ -198,7 +198,7 @@ type ParticipantWithMeta struct {
 func RegisterParticipant(tx *sqlx.Tx, tenant, username string, participant *model.EegParticipant) error {
 	participant.Status = model.PENDING
 	participant.Id = uuid.NewUUID()
-	participant.ParticipantSince = time.Now()
+	//participant.ParticipantSince = time.Now()
 	participant.CreatedBy = username
 	return saveParticipant(tx, tenant, username, participant, ImportMeteringPoints)
 }
@@ -241,9 +241,9 @@ func saveParticipant(tx *sqlx.Tx, tenant, username string, participant *model.Ee
 		participant, tenant, username, username, time.Now(),
 	}
 
-	if participant.ParticipantSince.IsZero() {
-		participant.ParticipantSince = time.Now()
-	}
+	//if participant.ParticipantSince.IsZero() {
+	//	participant.ParticipantSince = time.Now()
+	//}
 
 	participantId := ""
 	sql, _, _ := pgDialect.Insert("base.participant").Rows(registeringParticipant).Returning("id").ToSQL()

@@ -80,14 +80,14 @@ func RequestingMeteringPointList(eeg *model.Eeg, receiver string, from, to int64
 	return nil
 }
 
-func ChangePartitionFactor(eeg *model.Eeg, meter []*model.ChangePartitionFactorRequest) error {
+var ChangePartitionFactor = func(eeg *model.Eeg, meter []*model.ChangePartitionFactorRequest) error {
 	meterList := []model.Meter{}
 	for _, m := range meter {
 		meterList = append(meterList,
 			model.Meter{
 				MeteringPoint: m.MeteringPoint,
 				Direction:     m.Direction,
-				Activation:    m.Activation.UnixMilli(),
+				Activation:    m.Activation.Unix() * 1000,
 				PartFact:      m.PartFact,
 			})
 	}

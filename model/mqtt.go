@@ -125,6 +125,7 @@ type ResponseData struct {
 	MeteringPoint string  `json:"meteringPoint,omitempty"`
 	ResponseCode  []int16 `json:"responseCode"`
 	ConsentEnd    int64   `json:"consentEnd,omitempty"`
+	ConsentId     string  `json:"consentId,omitempty"`
 }
 
 type EdaHistoryData struct {

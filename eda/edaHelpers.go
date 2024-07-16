@@ -4,13 +4,15 @@ import (
 	"at.ourproject/vfeeg-backend/model"
 	"errors"
 	"fmt"
+	"github.com/jjeffery/civil"
 	"time"
 )
 
 type responseCodesPerMeter struct {
 	meter      string
 	codes      []int16
-	consentEnd int64
+	consentEnd civil.Date
+	consentId  *string
 }
 
 type completionMeters struct {
@@ -19,26 +21,35 @@ type completionMeters struct {
 	consentId   *string
 }
 
-func extractResponseCodeAndMeteringPoint(ebmsMessage *model.EbmsMessage) ([]int16, []string, error) {
+func extractResponseCodeAndMeteringPoint(ebmsMessage *model.EbmsMessage) ([]int16, []string, []string, error) {
 	meters := []string{}
+	consentIds := []string{}
 	codes := []int16{}
 	for _, rd := range ebmsMessage.ResponseData {
 		if len(rd.ResponseCode) > 0 {
 			meters = append(meters, rd.MeteringPoint)
 			codes = append(codes, rd.ResponseCode...)
+			consentIds = append(consentIds, rd.ConsentId)
 		}
 	}
 
 	if len(codes) == 0 {
-		return codes, meters, errors.New("wrong Response from EDA")
+		return codes, meters, consentIds, errors.New("wrong Response from EDA")
 	}
 
-	return codes, meters, nil
+	return codes, meters, consentIds, nil
 }
 
 func extractResponseCodeAndMeteringPointV2(ebmsMessage *model.EbmsMessage) ([]responseCodesPerMeter, error) {
 	codes := []int16{}
 	response := []responseCodesPerMeter{}
+
+	consentId := func(id string) *string {
+		if len(id) == 0 {
+			return nil
+		}
+		return &id
+	}
 
 	for _, rd := range ebmsMessage.ResponseData {
 		if len(rd.ResponseCode) > 0 {
@@ -48,7 +59,8 @@ func extractResponseCodeAndMeteringPointV2(ebmsMessage *model.EbmsMessage) ([]re
 		response = append(response, responseCodesPerMeter{
 			meter:      rd.MeteringPoint,
 			codes:      codes,
-			consentEnd: rd.ConsentEnd,
+			consentEnd: civil.DateOf(time.UnixMilli(rd.ConsentEnd)),
+			consentId:  consentId(rd.ConsentId),
 		})
 	}
 

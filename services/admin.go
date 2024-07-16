@@ -172,7 +172,7 @@ func (r *RegisterService) Register(ctx context.Context, eeg *protobuf.RegisterEe
 	}
 
 	newEeg := model.Eeg{
-		Id:                 eeg.RcNumber,
+		Id:                 eeg.Tenant,
 		Name:               eeg.Name,
 		Description:        eeg.Description,
 		BusinessNr:         null.String{},

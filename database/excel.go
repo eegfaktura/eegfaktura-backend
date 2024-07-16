@@ -4,6 +4,7 @@ import (
 	"at.ourproject/vfeeg-backend/model"
 	"bytes"
 	"fmt"
+	"github.com/jjeffery/civil"
 	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
 	"github.com/xuri/excelize/v2"
@@ -505,20 +506,22 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 					}
 
 					streetNumber := getColumValue(cols, colMap, "Hausnummer", "Street Number", nil)
-					var participantSince time.Time
+					var participantSince civil.NullDate
 					docSignedAt := getColumValue(cols, colMap, "Dokument unterschrieben", "Document Signature Date", nil)
 					if len(docSignedAt) > 0 {
-						participantSince = parseExcelDate(docSignedAt)
+						excelDate := civil.DateOf(parseExcelDate(docSignedAt))
+						participantSince = civil.NullDateFrom(&excelDate)
 					} else {
-						participantSince = time.Now()
+						today := civil.Today()
+						participantSince = civil.NullDateFrom(&today)
 					}
 
-					var registeredSince time.Time
+					var registeredSince civil.Date
 					regDateAt := getColumValue(cols, colMap, "registriert seit", "registred since", nil)
 					if len(regDateAt) > 0 {
-						registeredSince = parseExcelDate(regDateAt)
+						registeredSince = civil.DateOf(parseExcelDate(regDateAt))
 					} else {
-						registeredSince = time.Date(time.Now().Year(), 1, 1, 0, 0, 0, 0, time.Local)
+						registeredSince = civil.DateFor(time.Now().Year(), 1, 1)
 					}
 
 					cpStatus := getColumValue(cols, colMap, "Zählpunktstatus", "Metering Point State", nil)
