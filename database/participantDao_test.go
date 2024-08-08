@@ -127,7 +127,7 @@ func Test_GetParticipants(t *testing.T) {
 	p := participants[0]
 
 	assert.Equal(t, "Peter", p.FirstName)
-	assert.Equal(t, 4, len(p.MeteringPoint))
+	assert.Equal(t, 5, len(p.MeteringPoint))
 
 	findMeter := func(m []*model.MeteringPoint, mid string) *model.MeteringPoint {
 		for i := range m {
@@ -139,7 +139,7 @@ func Test_GetParticipants(t *testing.T) {
 	}
 
 	expectedMeter := &model.MeteringPoint{
-		MeteringPoint:    "AT0030000000000000000000030041724",
+		MeteringPoint:    "AT0030000000000000000000030041725",
 		Transformer:      null.String{},
 		Direction:        model.GENERATOR,
 		Status:           model.ACTIVE,

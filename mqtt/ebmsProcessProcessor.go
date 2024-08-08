@@ -80,10 +80,21 @@ func RequestingMeteringPointList(eeg *model.Eeg, receiver string, from, to int64
 	return nil
 }
 
-var ChangePartitionFactor = func(eeg *model.Eeg, meter []*model.ChangePartitionFactorRequest) error {
-	meterList := []model.Meter{}
-	for _, m := range meter {
-		meterList = append(meterList,
+var ChangePartitionFactor = func(eeg *model.Eeg, meterReq []*model.ChangePartitionFactorRequest) error {
+	operators := map[string][]model.Meter{}
+	var gridId string
+	//meterList := []model.Meter{}
+	for _, m := range meterReq {
+		gridId = eeg.GridOperator
+		if m.GridOperatorId.Valid && len(m.GridOperatorId.ValueOrZero()) > 0 {
+			gridId = m.GridOperatorId.String
+		}
+
+		if _, ok := operators[gridId]; !ok {
+			operators[gridId] = []model.Meter{}
+		}
+
+		operators[gridId] = append(operators[gridId],
 			model.Meter{
 				MeteringPoint: m.MeteringPoint,
 				Direction:     m.Direction,
@@ -92,14 +103,17 @@ var ChangePartitionFactor = func(eeg *model.Eeg, meter []*model.ChangePartitionF
 			})
 	}
 
-	ebmsMessage := createEbmsMessage(eeg, nil, model.EBMS_REQ_CHANGE_PARTFACT)
-	ebmsMessage.EcType = eeg.Area
-	ebmsMessage.EcDisModel = model.AllocationModeType(eeg.AllocationMode)
-	ebmsMessage.MeterList = meterList
+	for k, v := range operators {
+		ebmsMessage := createEbmsMessage(eeg, nil, model.EBMS_REQ_CHANGE_PARTFACT)
+		ebmsMessage.Receiver = k
+		ebmsMessage.EcType = eeg.Area
+		ebmsMessage.EcDisModel = model.AllocationModeType(eeg.AllocationMode)
+		ebmsMessage.MeterList = v
 
-	log.WithField("tenant", eeg.Id).Infof("Change Partition Factor. %+v", meterList)
-	if err := SendEbmsMessage(ebmsMessage); err != nil {
-		return model.ErrEdaCommunication(err)
+		log.WithField("tenant", eeg.Id).Infof("Change Partition Factor. %+v", v)
+		if err := SendEbmsMessage(ebmsMessage); err != nil {
+			return model.ErrEdaCommunication(err)
+		}
 	}
 	return nil
 }

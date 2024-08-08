@@ -111,7 +111,7 @@ func (r *EdaRecorder) meteringPointPerformAnswerMsg(ecId string, meterId []strin
 		if participant != nil && participant.Contact.Email.Valid {
 			if err = parser.SendActivationMailFromTemplate(services.SendMail,
 				eeg.Id, "Aktivierung im Serviceportal", eeg, participant); err != nil {
-				logrus.Errorf("Error Sending Mail: %+v", err.Error())
+				logrus.WithField("tenant", eeg.Id).WithError(err).Error("Error Sending Mail")
 			}
 		}
 	}

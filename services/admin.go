@@ -242,5 +242,6 @@ func StartGRPCServer() {
 	log.Infof("gRPC Server listen on %s", fmt.Sprintf(":%d", port))
 	grpcServer := grpc.NewServer()
 	protobuf.RegisterRegisterEegServiceServer(grpcServer, &RegisterService{})
+	protobuf.RegisterApiServiceServer(grpcServer, &ApiService{})
 	grpcServer.Serve(listener)
 }

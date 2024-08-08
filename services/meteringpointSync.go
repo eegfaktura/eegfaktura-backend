@@ -29,5 +29,5 @@ func SyncMeteringPoints(tenant string, ebms *model.EbmsMessage) error {
 		}
 	}()
 
-	return database.UpdateMeteringPoints(tx, tenant, model.ConvertFromMeterList(ebms.MeterList))
+	return database.UpdateActiveMeteringPoints(tx, tenant, ebms.MeterList)
 }

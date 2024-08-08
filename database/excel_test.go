@@ -230,7 +230,7 @@ func TestExportMasterdataToExcel(t *testing.T) {
 				}
 
 				fmt.Printf("Street %v\n", cols[1][16])
-				assert.Equal(t, 5, len(cols))
+				assert.Equal(t, 6, len(cols))
 				assert.Equal(t, "6", cols[1][16])
 			},
 			wantErr: assert.NoError,

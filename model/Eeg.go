@@ -13,9 +13,9 @@ type Eeg struct {
 	BusinessNr         null.String `json:"businessNr,omitempty" db:"businessNr"`
 	Area               AreaType    `json:"area"` /* LOCAL | REGIONAL | BEG | GEA */
 	Legal              string      `json:"legal,omitempty"`
+	GridOperator       string      `json:"gridOperator,omitempty" db:"gridoperator_code"`
 	OperatorName       string      `json:"operatorName,omitempty" db:"gridoperator_name"`
 	CommunityId        string      `json:"communityId,omitempty" db:"communityId"`
-	GridOperator       string      `json:"gridOperator,omitempty" db:"gridoperator_code"`
 	RcNumber           string      `json:"rcNumber" db:"rcNumber"`
 	AllocationMode     string      `json:"allocationMode,omitempty" db:"allocationMode"`
 	SettlementInterval string      `json:"settlementInterval,omitempty" db:"settlementInterval"`

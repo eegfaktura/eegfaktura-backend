@@ -34,8 +34,6 @@ func InitKeycloak() {
 	host := strings.TrimRight(kcConfig.Host, "/")
 
 	ctx := context.Background()
-	providerUri := fmt.Sprintf("%s/realms/%s", host, realm)
-	println(providerUri)
 	provider, err := oidc.NewProvider(ctx, fmt.Sprintf("%s/realms/%s", host, realm))
 	if err != nil {
 		logrus.Errorf("E: %v", err)

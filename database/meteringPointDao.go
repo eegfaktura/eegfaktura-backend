@@ -80,6 +80,10 @@ func ImportMeteringPoints(tx *sqlx.Tx, tenant, username, participantId string, p
 // saveMeteringPoint creates new metering point in the database.
 // Accourding to the status of new metering point (ACTIVE when excel import; NEW otherwise) the flag of the meterstate will be adapted
 func saveMeteringPoint(tx *sqlx.Tx, meteringEntry []*meteringEntryType, partFactEntries []*partitionFactorRecord) error {
+	if len(meteringEntry) == 0 || len(partFactEntries) == 0 {
+		log.Warn("Save Meteringpoints with empty list of partFact or partFact entries")
+		return nil
+	}
 	statement, _, err := pgDialect.Insert(TABLE_METERINGPOINT).Rows(meteringEntry). /*.OnConflict(goqu.DoNothing())*/ ToSQL()
 	if err != nil {
 		return model.ErrSaveMeteringPoint(err)
@@ -114,6 +118,14 @@ func calcFlag(status model.StatusType) model.ProcessFlag {
 	}
 }
 
+func calcFlagPtr(status *model.StatusType) *model.ProcessFlag {
+	if status == nil {
+		return nil
+	}
+	flag := calcFlag(*status)
+	return &flag
+}
+
 func calcActive(status model.StatusType) model.ProcessStatus {
 	switch status {
 	case model.INACTIVE:
@@ -122,6 +134,15 @@ func calcActive(status model.StatusType) model.ProcessStatus {
 		return model.P_ACTIVE
 	}
 }
+
+func calcActivePtr(status *model.StatusType) *model.ProcessStatus {
+	if status == nil {
+		return nil
+	}
+	state := calcActive(*status)
+	return &state
+}
+
 func RegisterMeteringPoint(db *sqlx.DB, tenant, username, participantId string, point *model.MeteringPoint) error {
 	tx, err := db.Beginx()
 	if err != nil {
@@ -288,22 +309,21 @@ func RemoveMeteringPoint(db *sqlx.DB, tenant, participantId, meterId string) err
 //	return err
 //}
 
-func MeteringPointsSetStatus(db *sqlx.DB, tenant string, status model.StatusType, statusCode int16, meterId []string, activeSince *time.Time, consentId *string) error {
+func MeteringPointsSetStatus(db *sqlx.DB, tenant string, status model.StatusType, statusCode int16, meterId []string, activeSince *civil.Date, consentId *string) error {
 	updateSet := struct {
-		Status          model.StatusType `db:"status"`
-		StatusCode      int16            `db:"statusCode" goqu:"omitempty"`
-		ModifiedAt      time.Time        `db:"modifiedAt"`
-		ModifiedBy      string           `db:"modifiedBy"`
-		RegisteredSince time.Time        `db:"registeredSince" goqu:"omitempty"`
-		Inactivesince   time.Time        `db:"inactivesince" goqu:"omitempty"`
-		Activesince     time.Time        `db:"activesince" goqu:"omitempty"`
-		ConsentId       *string          `db:"consent_id" goqu:"omitnil"`
+		Status          model.StatusType   `db:"status"`
+		StatusCode      int16              `db:"statusCode" goqu:"omitempty"`
+		ModifiedAt      civil.NullDateTime `db:"modifiedAt" goqu:"defaultifempty""`
+		ModifiedBy      string             `db:"modifiedBy"`
+		RegisteredSince civil.NullDate     `db:"registeredSince" goqu:"omitempty"`
+		Inactivesince   civil.NullDate     `db:"inactivesince" goqu:"omitempty"`
+		Activesince     civil.NullDate     `db:"activesince" goqu:"omitempty"`
+		ConsentId       *string            `db:"consent_id" goqu:"omitnil"`
 		Flag            model.ProcessFlag
 		Active          model.ProcessStatus
 	}{
 		Status:     status,
 		StatusCode: statusCode,
-		ModifiedAt: time.Now(),
 		ModifiedBy: "EVU",
 		ConsentId:  consentId,
 		Flag:       calcFlag(status),
@@ -320,14 +340,12 @@ func MeteringPointsSetStatus(db *sqlx.DB, tenant string, status model.StatusType
 	log.WithField("tenant", tenant).Infof("Change Status. Meters: %v activeSince: %v status: %v", meterId, activeSince, status)
 	flag := model.F_WAITING
 	if status == model.ACTIVE {
-		t := time.Date(2999, 12, 31, 23, 59, 59, 0, time.UTC)
-		updateSet.Inactivesince = t
-		if activeSince != nil {
-			updateSet.Activesince = (*activeSince).UTC()
-		}
+		t := civil.DateFor(2999, 12, 31)
+		updateSet.Inactivesince = civil.NullDateFrom(&t)
+		updateSet.Activesince = civil.NullDateFrom(activeSince)
 	} else if status == model.NEW || status == model.PENDING {
-		t := time.Now()
-		updateSet.RegisteredSince = t
+		t := civil.Today()
+		updateSet.RegisteredSince = civil.NullDateFrom(&t)
 	}
 
 	statement, _, err := goqu.Update(TABLE_METERINGPOINT).
@@ -347,9 +365,7 @@ func MeteringPointsSetStatus(db *sqlx.DB, tenant string, status model.StatusType
 		return model.ErrStatusMeter(err)
 	}
 	if rows, err := result.RowsAffected(); err != nil || rows == 0 {
-		log.WithField("SQL", "UPDATE").Errorf("No Rows Affected. Stmt: %v", statement)
-	} else {
-
+		log.WithField("SQL", "UPDATE").Infof("No Rows Affected. Stmt: %v", statement)
 	}
 	return nil
 }
@@ -589,12 +605,14 @@ func FindGridOperatorId(dbOpen OpenDbXConnection, meterId string) (string, error
 	return gridOperatorId, nil
 }
 
-func FindInactiveMeteringById(db *sqlx.DB, meterId string) ([]*model.MeteringPoint, error) {
-	return findMeteringByIdAndState(db, []string{meterId}, model.P_INACTIVE)
+func FindInactiveMeteringById(db *sqlx.DB, tenant string, meterId string) ([]*model.MeteringPoint, error) {
+	mode := model.P_INACTIVE
+	return findMeteringByIdAndState(db, tenant, []string{meterId}, &mode)
 }
 
-func GetMeteringByIds(db *sqlx.DB, meterIds []string) ([]*model.MeteringPoint, error) {
-	return findMeteringByIdAndState(db, meterIds, model.P_ACTIVE)
+func GetMeteringByIds(db *sqlx.DB, tenant string, meterIds []string) ([]*model.MeteringPoint, error) {
+	mode := model.P_ACTIVE
+	return findMeteringByIdAndState(db, tenant, meterIds, &mode)
 }
 
 func FindAllMeteringByTenant(tx *sqlx.DB, tenant, participantId string, meterIds []string) ([]*model.MeteringPoint, error) {
@@ -639,8 +657,9 @@ func FindAllMeteringByTenant(tx *sqlx.DB, tenant, participantId string, meterIds
 	return m, nil
 }
 
-func FindMeteringById(tx *sqlx.DB, meterId string) (*model.MeteringPoint, error) {
-	m, err := findMeteringByIdAndState(tx, []string{meterId}, model.P_ACTIVE)
+func FindMeteringById(tx *sqlx.DB, tenant string, meterId string) (*model.MeteringPoint, error) {
+	mode := model.P_ACTIVE
+	m, err := findMeteringByIdAndState(tx, tenant, []string{meterId}, &mode)
 	if err != nil {
 		return nil, err
 	}
@@ -650,7 +669,7 @@ func FindMeteringById(tx *sqlx.DB, meterId string) (*model.MeteringPoint, error)
 	return nil, model.ErrFindMeter(errors.New("More as one active Meteringpoint was found"))
 }
 
-func findMeteringByIdAndState(db *sqlx.DB, meterIds []string, active model.ProcessStatus) ([]*model.MeteringPoint, error) {
+func findMeteringByIdAndState(db *sqlx.DB, tenant string, meterIds []string, active *model.ProcessStatus) ([]*model.MeteringPoint, error) {
 	var m []*model.MeteringPoint
 
 	stateStmt := pgDialect.From(TABLE_METERINGPOINT).
@@ -658,24 +677,45 @@ func findMeteringByIdAndState(db *sqlx.DB, meterIds []string, active model.Proce
 			goqu.C("activesince"),
 			goqu.C("inactivesince"),
 			goqu.C("active"),
-			goqu.C("metering_point_id").As("mid"))
+			goqu.C("metering_point_id").As("mid")).
+		Where(goqu.C("tenant").Eq(tenant))
 
 	partFactStmt := pgDialect.From(TABLE_PARTITION_FACT_VIEW).
 		Select(
 			goqu.C("partFact"),
 			goqu.C("metering_point_id").As("mpfmid"),
-			goqu.C("participant_id").As("mpfpid"))
+			goqu.C("participant_id").As("mpfpid")).
+		Where(goqu.C("tenant").Eq(tenant))
+
+	//var activClause exp.BooleanExpression
+	//activClause := goqu.V(true).Eq(true)
+	//if active != nil {
+	//	activClause = goqu.I("state.active").Eq(*active)
+	//}
+
+	whereClause := goqu.Ex{
+		"metering_point_id": goqu.Op{"in": meterIds},
+		"tenant":            tenant,
+		"mid":               goqu.C("metering_point_id"),
+		"mpfmid":            goqu.C("metering_point_id"),
+		"mpfpid":            goqu.C("participant_id"),
+	}
+	if active != nil {
+		whereClause["state.active"] = *active
+	}
 
 	stmt, _, err := pgDialect.From(TABLE_METERINGPOINT, stateStmt.As("state"), partFactStmt.As("mpfpF")).Select(&model.MeteringPoint{}).
-		Where(
-			goqu.C("metering_point_id").In(meterIds),
-			goqu.I("state.active").Eq(active),
-			goqu.C("mid").Eq(goqu.C("metering_point_id")),
-			goqu.C("mpfmid").Eq(goqu.C("metering_point_id")),
-			goqu.C("mpfpid").Eq(goqu.C("participant_id")),
-		).ToSQL()
+		Where(whereClause). //goqu.C("metering_point_id").In(meterIds),
+		////goqu.I("state.active").Eq(active),
+		//goqu.C("tenant").Eq(tenant),
+		//goqu.C("mid").Eq(goqu.C("metering_point_id")),
+		//goqu.C("mpfmid").Eq(goqu.C("metering_point_id")),
+		//goqu.C("mpfpid").Eq(goqu.C("participant_id")),
+		//activClause,
+		ToSQL()
 
 	if err != nil {
+		log.WithField("tenant", tenant).Errorf("Stmt: %s", stmt)
 		return nil, model.ErrFindMeter(err)
 	}
 
@@ -687,20 +727,99 @@ func findMeteringByIdAndState(db *sqlx.DB, meterIds []string, active model.Proce
 	return m, nil
 }
 
-func UpdateMeteringPoints(tx *sqlx.Tx, tenant string, meteringPoints []*model.MeteringPointDBModel) error {
+func UpdateActiveMeteringPoints(tx *sqlx.Tx, tenant string, ml []model.Meter) error {
+	tml := model.StandardizeMeteringPointList(ml)
+
+	status := model.ACTIVE
+	meteringPoints := model.ConvertToDbMeterList(tml)
+	//partFacts := model.ConvertToDbMeterPartFactList(tml)
 	for _, m := range meteringPoints {
-		sql, _, _ := goqu.Update(TABLE_METERINGPOINT).
+		m.Status = &status
+		m.Active = calcActivePtr(m.Status)
+		m.Flag = calcFlagPtr(m.Status)
+		sql, _, err := goqu.Update(TABLE_METERINGPOINT).
 			Set(m).
 			Where(goqu.Ex{
 				"tenant":            goqu.Op{"eq": tenant},
 				"metering_point_id": goqu.Op{"eq": m.MeteringPoint},
+				"active":            goqu.Op{"eq": 1},
 			}).
 			ToSQL()
-		fmt.Printf("STMT: %s\n", sql)
-		_, err := tx.Exec(sql)
+
 		if err != nil {
-			return err
+			log.WithField("tenant", tenant).WithError(err).Error("Error while creating statement")
 		}
+
+		r, err := tx.Exec(sql)
+		if err != nil {
+			log.WithField("SQL", "UPDATE").Errorf("Stmt: %s", sql)
+			return model.ErrUpdateMeter(err)
+		}
+		rowsAffected, err := r.RowsAffected()
+		if err != nil || rowsAffected == 0 {
+			log.WithField("SQL", "UPDATE").Errorf("R: %d, E: %v, Stmt: %s", rowsAffected, err, sql)
+		}
+
+		// Todo:
+		// Redesign table schema. It is not possible to update partition factor if the metering point exist multiple time in one eeg.
+		// Exactly this behaviour exist when participant's mapping is changed or a new participant take over a metering point.
+
+		//partFact := partFacts[i]
+		//versionStmt := goqu.From(TABLE_PARTITION_FACT).Select(goqu.MAX("version")).Where(goqu.Ex{
+		//	"tenant":            goqu.Op{"eq": tenant},
+		//	"metering_point_id": goqu.Op{"eq": m.MeteringPoint},
+		//})
+		//sql, _, _ = goqu.Update(TABLE_PARTITION_FACT).
+		//	Set(partFact).
+		//	Where(goqu.Ex{
+		//		"tenant":            goqu.Op{"eq": tenant},
+		//		"metering_point_id": goqu.Op{"eq": m.MeteringPoint},
+		//		"version":           goqu.Op{"eq": versionStmt},
+		//	}).
+		//	ToSQL()
+		//
+		//r, err = tx.Exec(sql)
+		//if err != nil {
+		//	log.WithField("SQL", "UPDATE").Errorf("Stmt: %s", sql)
+		//	return model.ErrUpdateMeter(err)
+		//}
+		//rowsAffected, err = r.RowsAffected()
+		//if err != nil || rowsAffected == 0 {
+		//	log.WithField("SQL", "UPDATE").Errorf("R: %d, E: %v, Stmt: %s", rowsAffected, err, sql)
+		//}
 	}
+
 	return nil
+}
+
+func FindMeteringPointsForTenant(db *sqlx.DB, tenant string) ([]*model.MeteringPoint, error) {
+	stmt, _, _ := pgDialect.From(TABLE_METERINGPOINT).
+		Select("metering_point_id").
+		Where(goqu.C("tenant").Eq(tenant)).Order(goqu.I("direction").Asc()).ToSQL()
+
+	mIds := []string{}
+	err := db.Select(&mIds, stmt)
+	if err != nil {
+		log.WithField("tenant", tenant).WithError(err).Errorf("Stmt: %s", stmt)
+		return nil, err
+	}
+	return findMeteringByIdAndState(db, tenant, mIds, nil)
+}
+
+func FindMeteringPointsActivePeriod(db *sqlx.DB, tenant string, activeSince, inactiveSince int64) ([]*model.MeteringPoint, error) {
+	subStmt := pgDialect.From(TABLE_METERINGPOINT).Where(
+		goqu.C("activesince").Lte(civil.DateOf(time.UnixMilli(activeSince))),
+		goqu.C("tenant").Eq(tenant))
+
+	stmt, _, _ := pgDialect.From(subStmt.As("a")).Select("metering_point_id").
+		Where(goqu.I("inactivesince").Gte(civil.DateOf(time.UnixMilli(inactiveSince)))).
+		ToSQL()
+
+	mIds := []string{}
+	err := db.Select(&mIds, stmt)
+	if err != nil {
+		log.WithField("tenant", tenant).WithError(err).Errorf("Stmt: %s", stmt)
+		return nil, err
+	}
+	return findMeteringByIdAndState(db, tenant, mIds, nil)
 }

@@ -143,7 +143,7 @@ CREATE TABLE IF NOT EXISTS base.meteringpoint
     transformer        TEXT,
     direction          TEXT      NOT NULL DEFAULT 'CONSUMPTION', /* 'GENERATION' | 'CONSUMPTION' */
     status             TEXT      NOT NULL DEFAULT 'NEW', /* "NEW" | "PENDING" | "ACCEPTED" | "ACTIVE" | "INACTIVE" | "REJECTED" */
-    "statusCode"         INTEGER,
+    "statusCode"       INTEGER,
     tariff_id          UUID,
     inverterid         TEXT,
     "equipmentNumber"  TEXT,

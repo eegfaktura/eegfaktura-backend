@@ -9,7 +9,6 @@ import (
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
 	"net/http"
-	"time"
 )
 
 func InitParticipantRouter(r *mux.Router) *mux.Router {
@@ -231,8 +230,7 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 				meterIds = append(meterIds, m.MeteringPoint)
 				m.Status = model.ACTIVE
 			}
-			now := time.Now()
-			err := database.MeteringPointsSetStatus(db, tenant, model.ACTIVE, 0, meterIds, &now, nil)
+			err := database.MeteringPointsSetStatus(db, tenant, model.ACTIVE, 0, meterIds, nil, nil)
 			if err != nil {
 				log.WithField("tenant", tenant).WithError(err).Error("failed to confirm participant.")
 				respondWith(w, http.StatusBadRequest, tenant, err)

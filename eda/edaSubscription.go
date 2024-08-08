@@ -39,12 +39,15 @@ var (
 		176: "Zustimmung erfolgreich entzogen",
 		177: "Keine Datenfreigabe vorhanden",
 		178: "Consent existiert bereits",
+		180: "ConsentID abgelaufen",
 		181: "Gemeinschafts-ID nicht vorhanden",
 		182: "Noch kein fernauslesbarer Zähler eingebaut",
 		183: "Summe der gemeldeten Aufteilungsschlüssel übersteigt 100%",
 		184: "Kunde hat optiert",
 		185: "Zählpunkt befindet sich nicht im Bereich der Energiegemeinschaft",
+		187: "ConsentID und Zählpunkt passen nicht zusammen",
 		188: "Teilnahmefaktor von 100 % würde überschritten werden",
+		189: "Zählpunkt ist der Gemeinschafts-ID nicht zugeordnet",
 		196: "Teilnahme-Limit wird überschritten",
 	}
 	REJECTED_INVALID_CODES = []int16{56, 57, 76, 104, 157, 158, 159, 172, 173, 177, 181, 184, 185, 196}
@@ -131,7 +134,7 @@ func protocolCrMsgHandler(msg model.SubscribeMessage, recorder EdaRecording) {
 
 	eeg, err := database.GetEegByEcId(db, msg.Payload.EcId)
 	if err != nil {
-		logrus.WithField("error", err.Error()).Errorf("can not fetch eeg by ecid %s (change metering point status)", msg.Payload.EcId)
+		logrus.WithField("tenant", msg.Tenant).WithError(err).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
 		return
 	}
 
@@ -164,7 +167,7 @@ func protocolCrReqPtHandler(msg model.SubscribeMessage, recorder EdaRecording) {
 
 	eeg, err := database.GetEegByEcId(db, msg.Payload.EcId)
 	if err != nil {
-		logrus.WithField("error", err.Error()).Errorf("can not fetch eeg by ecid %s (change metering point status)", msg.Payload.EcId)
+		logrus.WithField("error", err.Error()).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
 		return
 	}
 
@@ -210,7 +213,7 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 	codes, meters, consentIds, _ := extractResponseCodeAndMeteringPoint(&msg.Payload)
 	var status model.StatusType
 	var statusCode int16 = 0
-	var activeSince *time.Time
+	var activeSince civil.NullDate
 	var consentId *string
 
 	switch msg.MessageCode {
@@ -219,7 +222,8 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 		completeMeters := extractMeterList(&msg.Payload)
 		if len(completeMeters) == 1 {
 			meters = []string{completeMeters[0].meter}
-			activeSince = &completeMeters[0].activeSince
+			ax := civil.DateOf(completeMeters[0].activeSince)
+			activeSince = civil.NullDateFrom(&ax)
 			consentId = completeMeters[0].consentId
 			status = model.ACTIVE
 			statusCode = 0
@@ -280,12 +284,12 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 
 	eeg, err := database.GetEegByEcId(db, msg.Payload.EcId)
 	if err != nil {
-		logrus.WithField("error", err.Error()).Errorf("can not fetch eeg by ecid %s (change metering point status)", msg.Payload.EcId)
+		logrus.WithField("error", err.Error()).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
 		return
 	}
 
 	if len(meters) > 0 && len(status) > 0 {
-		if err := database.MeteringPointsSetStatus(db, eeg.Id, status, statusCode, meters, activeSince, getConsentId(consentId)); err != nil {
+		if err := database.MeteringPointsSetStatus(db, eeg.Id, status, statusCode, meters, activeSince.Ptr(), getConsentId(consentId)); err != nil {
 			logrus.WithField("error", err.Error()).Errorf("can not change metering point status %+v", meters)
 		}
 	}
@@ -320,7 +324,7 @@ func protocolCmRevImpHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 		status = ""
 		eeg, err = database.GetEegByEcId(db, msg.Payload.EcId)
 		if err != nil {
-			logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg by ecid %s (change metering point status)", msg.Payload.EcId)
+			logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
 			return
 		}
 	case model.EBMS_AUFHEBUNG_CCMC, model.EBMS_AUFHEBUNG_CCMI:
@@ -345,7 +349,7 @@ func protocolCmRevImpHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 
 				eeg, err = database.GetEegByEcId(db, msg.Payload.EcId)
 				if err != nil {
-					logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg by ecid %s (change metering point status)", msg.Payload.EcId)
+					logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
 					return
 				}
 
@@ -409,7 +413,7 @@ func protocolEcPrtChangeHandler(msg model.SubscribeMessage, recorder EdaRecordin
 
 	eeg, err := database.GetEegByEcId(db, msg.Payload.EcId)
 	if err != nil {
-		logrus.Errorf("can not fetch eeg by ecid %s (change metering point status)", msg.Payload.EcId)
+		logrus.Errorf("can not fetch eeg with message -> %+v", msg.Payload)
 		return
 	}
 
@@ -452,7 +456,7 @@ func protocolEcPodListHandler(msg model.SubscribeMessage, recorder EdaRecording)
 
 		eeg, err := database.GetEegByEcId(db, msg.Payload.EcId)
 		if err != nil {
-			logrus.Errorf("can not fetch eeg by ecid %s (change metering point status)", msg.Payload.EcId)
+			logrus.Errorf("can not fetch eeg with message %+v", msg.Payload)
 			return
 		}
 

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/doug-martin/goqu/v9"
+	"github.com/jjeffery/civil"
 	"github.com/jmoiron/sqlx"
 	"github.com/pborman/uuid"
 	log "github.com/sirupsen/logrus"
@@ -484,7 +485,7 @@ func completeParticipant(db *sqlx.DB, participant *model.EegParticipant) error {
 	}
 
 	if participant.MeteringPoint == nil {
-		log.Infof("Participant (%+v) with zero Meteringpoints", participant.Id.String())
+		log.Debugf("Participant (%+v) with zero Meteringpoints", participant.Id.String())
 		participant.MeteringPoint = make([]*model.MeteringPoint, 0)
 	}
 
@@ -499,8 +500,11 @@ func FindParticipantByMeteringPoint(db *sqlx.DB, tenant, meteringPoint string) (
 		Where(
 			goqu.C("metering_point_id").Eq(meteringPoint),
 			goqu.C("tenant").Eq(tenant),
-			goqu.C("inactivesince").Gte("now()"),
-			goqu.C("activesince").Lte("now()"))
+			//goqu.C("inactivesince").Gte("now()"),
+			//goqu.C("activesince").Lte("now()"),
+			goqu.C("inactivesince").Gte(civil.Today()),
+			goqu.C("activesince").Lte(civil.Today()),
+		)
 
 	stmt, _, err := pgDialect.From(TABLE_PARTICIPANT).Select(&participant).Where(goqu.C("id").Eq(participantIdStmt)).ToSQL()
 	if err != nil {

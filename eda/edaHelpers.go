@@ -21,6 +21,13 @@ type completionMeters struct {
 	consentId   *string
 }
 
+func getConsentIdPtr(consentId string) *string {
+	if len(consentId) == 0 {
+		return nil
+	}
+	return &consentId
+}
+
 func extractResponseCodeAndMeteringPoint(ebmsMessage *model.EbmsMessage) ([]int16, []string, []string, error) {
 	meters := []string{}
 	consentIds := []string{}
@@ -74,7 +81,7 @@ func extractResponseCodeAndMeteringPointV2(ebmsMessage *model.EbmsMessage) ([]re
 func extractMeterList(ebmsMessage *model.EbmsMessage) []*completionMeters {
 	meters := []*completionMeters{}
 	for _, m := range ebmsMessage.MeterList {
-		meters = append(meters, &completionMeters{meter: m.MeteringPoint, activeSince: time.UnixMilli(m.Activation), consentId: &m.ConsentID})
+		meters = append(meters, &completionMeters{meter: m.MeteringPoint, activeSince: time.UnixMilli(m.Activation), consentId: getConsentIdPtr(m.ConsentID)})
 	}
 	return meters
 }

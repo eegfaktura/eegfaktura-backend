@@ -4,13 +4,14 @@ import (
 	"at.ourproject/vfeeg-backend/model"
 	"at.ourproject/vfeeg-backend/services"
 	"bytes"
+	"fmt"
+	"github.com/jjeffery/civil"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/guregu/null.v4"
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 )
 
 func init() {
@@ -93,7 +94,7 @@ func TestParseTemplate(t *testing.T) {
 		LastName:              "Mustermann",
 		TitleBefore:           "",
 		TitleAfter:            "",
-		ParticipantSince:      time.Time{},
+		ParticipantSince:      civil.NullDate{},
 		VatNumber:             null.String{},
 		TaxNumber:             null.String{},
 		CompanyRegisterNumber: "",
@@ -161,6 +162,134 @@ func TestParseTemplate(t *testing.T) {
         </html>`),
 			false,
 		},
+		{
+			name: "Parse RC100915 Template",
+			args: args{"../public/RC100915/templates/AktivierungsEmail-template.html", struct {
+				Eeg            *model.Eeg
+				Participant    *model.EegParticipant
+				Meteringpoints []string
+			}{eeg, participant, []string{"AT0010000000000000000000000111"}}},
+			want: bytes.NewBufferString(strings.Trim(`<!DOCTYPE html>
+        <html>
+        <head>
+          <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+          <style type="text/css" style="display:none;"> P {margin-top:0;margin-bottom:0;} </style>
+        </head>
+        <body dir="ltr">
+        <p><span style="font-family: Verdana, Geneva, sans-serif; font-size: 10pt">Liebe Mitglieder der EEG St.Florian &amp; Hofkirchen,</span></p>
+        <p><span style="font-family: Verdana, Geneva, sans-serif; font-size: 10pt"><br>
+            </span></p>
+        <p><span style="font-family: Verdana, Geneva, sans-serif; font-size: 10pt;">
+            Ich darf Ihnen hiermit mitteilen, dass wir Sie erfolgreich bei uns registrieren konnten. Die EEG ist ab sofort für Sie aktiv.</span></p>
+        <p><span style="font-family: Verdana, Geneva, sans-serif; font-size: 10pt">
+            Alle neuen Mitglieder benötigen dazu allerdings noch eine letzte (einmalige) Freigabe beim Netzbetreiber. Bitte öffnen Sie folgenden Link:
+            <a href="https://eeg-stflorian.jimdofree.com/die-weiteren-schritte-nach-der-anmeldung/" id="OWA5bd48a2b-81e0-0338-d18f-2f4c31144d23" data-auth="NotApplicable" data-loopstyle="linkonly" style="margin-top: 0px; margin-bottom: 0px;">
+                https://eeg-stflorian.jimdofree.com/die-weiteren-schritte-nach-der-anmeldung/
+            </a>
+            </span>
+        </p>
+        <p><span style="font-family: Verdana, Geneva, sans-serif; font-size: 10pt">
+            Sie haben dafür ab diesem Stichtag 14 Tage Zeit, die Freigabe zu best=E4tigen! (Danach verfällt der Link beim Netzbetreiber)
+        </span></p>
+        <p><span style="font-family: Verdana, Geneva, sans-serif; font-size: 10pt">
+            <br>
+        </span></p>
+        <p style="text-align: justify;"><span style="font-family: Verdana, Geneva, sans-serif; font-size: 10pt">
+            Bitte speichern Sie sich folgende beiden Adresse unter Ihren Kontakten im Mailprogramm ein, bzw. kontrollieren Sie zu Beginn Ihren Spam Ordner.
+            <a href="mailto:no-reply@eegfaktura.at" id="OWA3d34ab9b-f1b5-3f7e-e28f-27aaa7002c42" class="OWAAutoLink" title="no-reply@eegfaktura.at" data-loopstyle="linkonly" style="margin-top: 0px; margin-bottom: 0px;">
+        no-reply@eegfaktura.at</a>&nbsp;für automatisch generierte Rechnungen und Quartalsberichte unserer Software, sowie
+        <a href="mailto:info@schweitzerhirscher.com" id="OWA80c76bae-4426-6d8b-8838-f0cae21bd210" class="OWAAutoLink" data-loopstyle="linkonly" style="margin-top: 0px; margin-bottom: 0px;">
+        info@schweitzerhirscher.com</a>&nbsp;für individuelle Themen.</span></p>
+        <p style="text-align: justify;"><span style="font-family: Verdana, Geneva, sans-serif; font-size: 10pt">&nbsp;</span></p>
+        <p><span style="font-family: Verdana, Geneva, sans-serif; font-size: 10pt;">
+            Abschließend bedanke ich mich für Ihr Vertrauen in unseren gemeinnützigen Verein, sowie unsere Vision und verbleibe mit sonnigen Grüßen,<br>
+            <br>
+            Gregor Hirscher, LLM<br>
+            Geschäftsführung EEG St.Florian</span></p>
+        <p><span style="font-family: Verdana, Geneva, sans-serif; font-size: 10pt;">
+            +43 677 61458762<br>
+            info@schweitzerhirscher.com</span></p>
+        <p><span style="font-family: Verdana, Geneva, sans-serif; font-size: 10pt;">
+            Gemeinnütziger Verein<br>
+            ZVR 176739038<br>
+            <br>
+            <a href="https://eeg-stflorian.jimdofree.com/" id="OWAf90744b3-c086-3851-3626-9ebcedc5ee90" class="OWAAutoLink" data-auth="NotApplicable" data-loopstyle="linkonly"
+               style="margin-top: 0px; margin-bottom: 0px;">
+                https://eeg-stflorian.jimdofree.com/
+            </a><br>
+            <a href="https://www.facebook.com/profile.php?id=3D100092747569956" id="OWA65ff5825-9b1f-d3aa-06b5-f9b4610a0ff1" class="OWAAutoLink" data-auth="NotApplicable"
+               data-loopstyle="linkonly" style="margin-top: 0px; margin-bottom: 0px;">
+                https://www.facebook.com/profile.php?id=3D100092747569956</a>
+        </span></p>
+        
+        </body>
+        </html>`, " ")),
+			wantErr: false,
+		},
+		{
+			name: "Parse RC101370 Template",
+			args: args{"../public/RC101370/templates/AktivierungsEmail-template.html", struct {
+				Eeg            *model.Eeg
+				Participant    *model.EegParticipant
+				Meteringpoints []string
+			}{eeg, participant, []string{"AT0010000000000000000000000111"}}},
+			want: bytes.NewBufferString(strings.Trim(`<!DOCTYPE html>
+<html>
+        <head>
+          <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+          <style type="text/css" style="display:none;"> P {margin-top:0;margin-bottom:0;} </style>
+        </head>
+        <body dir="ltr">
+        <p><span style="font-family: Verdana, Geneva, sans-serif; font-size: 10pt">Liebe Mitglieder der EEG St.Florian &amp; Hofkirchen,</span></p>
+        <p><span style="font-family: Verdana, Geneva, sans-serif; font-size: 10pt"><br>
+            </span></p>
+        <p><span style="font-family: Verdana, Geneva, sans-serif; font-size: 10pt;">
+            Ich darf Ihnen hiermit mitteilen, dass wir Sie erfolgreich bei uns registrieren konnten. Die EEG ist ab sofort für Sie aktiv.</span></p>
+        <p><span style="font-family: Verdana, Geneva, sans-serif; font-size: 10pt">
+            Alle neuen Mitglieder benötigen dazu allerdings noch eine letzte (einmalige) Freigabe beim Netzbetreiber. Bitte öffnen Sie folgenden Link:
+            <a href="https://eeg-stflorian.jimdofree.com/die-weiteren-schritte-nach-der-anmeldung/" id="OWA5bd48a2b-81e0-0338-d18f-2f4c31144d23" data-auth="NotApplicable" data-loopstyle="linkonly" style="margin-top: 0px; margin-bottom: 0px;">
+                https://eeg-stflorian.jimdofree.com/die-weiteren-schritte-nach-der-anmeldung/
+            </a>
+            </span>
+        </p>
+        <p><span style="font-family: Verdana, Geneva, sans-serif; font-size: 10pt">
+            Sie haben dafür ab diesem Stichtag 14 Tage Zeit, die Freigabe zu best=E4tigen! (Danach verfällt der Link beim Netzbetreiber)
+        </span></p>
+        <p><span style="font-family: Verdana, Geneva, sans-serif; font-size: 10pt">
+            <br>
+        </span></p>
+        <p style="text-align: justify;"><span style="font-family: Verdana, Geneva, sans-serif; font-size: 10pt">
+            Bitte speichern Sie sich folgende beiden Adresse unter Ihren Kontakten im Mailprogramm ein, bzw. kontrollieren Sie zu Beginn Ihren Spam Ordner.
+            <a href="mailto:no-reply@eegfaktura.at" id="OWA3d34ab9b-f1b5-3f7e-e28f-27aaa7002c42" class="OWAAutoLink" title="no-reply@eegfaktura.at" data-loopstyle="linkonly" style="margin-top: 0px; margin-bottom: 0px;">
+        no-reply@eegfaktura.at</a>&nbsp;für automatisch generierte Rechnungen und Quartalsberichte unserer Software, sowie
+        <a href="mailto:info@schweitzerhirscher.com" id="OWA80c76bae-4426-6d8b-8838-f0cae21bd210" class="OWAAutoLink" data-loopstyle="linkonly" style="margin-top: 0px; margin-bottom: 0px;">
+        info@schweitzerhirscher.com</a>&nbsp;für individuelle Themen.</span></p>
+        <p style="text-align: justify;"><span style="font-family: Verdana, Geneva, sans-serif; font-size: 10pt">&nbsp;</span></p>
+        <p><span style="font-family: Verdana, Geneva, sans-serif; font-size: 10pt;">
+            Abschließend bedanke ich mich für Ihr Vertrauen in unseren gemeinnützigen Verein, sowie unsere Vision und verbleibe mit sonnigen Grüßen,<br>
+            <br>
+            Gregor Hirscher, LLM<br>
+            Geschäftsführung EEG St.Florian</span></p>
+        <p><span style="font-family: Verdana, Geneva, sans-serif; font-size: 10pt;">
+            +43 677 61458762<br>
+            info@schweitzerhirscher.com</span></p>
+        <p><span style="font-family: Verdana, Geneva, sans-serif; font-size: 10pt;">
+            Gemeinnütziger Verein<br>
+            ZVR 176739038<br>
+            <br>
+            <a href="https://eeg-stflorian.jimdofree.com/" id="OWAf90744b3-c086-3851-3626-9ebcedc5ee90" class="OWAAutoLink" data-auth="NotApplicable" data-loopstyle="linkonly"
+               style="margin-top: 0px; margin-bottom: 0px;">
+                https://eeg-stflorian.jimdofree.com/
+            </a><br>
+            <a href="https://www.facebook.com/profile.php?id=3D100092747569956" id="OWA65ff5825-9b1f-d3aa-06b5-f9b4610a0ff1" class="OWAAutoLink" data-auth="NotApplicable"
+               data-loopstyle="linkonly" style="margin-top: 0px; margin-bottom: 0px;">
+                https://www.facebook.com/profile.php?id=3D100092747569956</a>
+        </span></p>
+        
+        </body>
+        </html>`, " ")),
+			wantErr: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -211,7 +340,7 @@ func TestParseTemplate2(t *testing.T) {
 		LastName:              "Mustermann",
 		TitleBefore:           "",
 		TitleAfter:            "",
-		ParticipantSince:      time.Time{},
+		ParticipantSince:      civil.NullDate{},
 		VatNumber:             null.String{},
 		TaxNumber:             null.String{},
 		CompanyRegisterNumber: "",
@@ -229,7 +358,7 @@ func TestParseTemplate2(t *testing.T) {
 	}
 
 	sendMock := func(tenant, to, subject string, cc *string, body *bytes.Buffer, attachments []*services.Attachment) error {
-		println("SendMock")
+		fmt.Printf("Mail-Body: %s\n", body.String())
 		return nil
 	}
 

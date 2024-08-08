@@ -30,9 +30,9 @@ func FetchEdaHistory(db *sqlx.DB, tenant string, start, end int64) (map[string]m
 	stmt, _, err := pgDialect.From("base.processhistory").Select(&h).
 		Where(goqu.C("tenant").Eq(tenant), goqu.C("protocol").IsNotNull(), goqu.C("date").Between(goqu.Range(startDate, endDate))).ToSQL()
 
-	logrus.Printf("Query History: %+v", stmt)
 	err = db.Select(&h, stmt)
 	if err != nil && err != dbsql.ErrNoRows {
+		logrus.WithField("SQL", "SELECT").Errorf("Query History: %+v", stmt)
 		return nil, err
 	}
 
@@ -46,7 +46,6 @@ func FetchEdaHistory(db *sqlx.DB, tenant string, start, end int64) (map[string]m
 			ci[e.ConversationId] = []model.EdaProcessHistory{e}
 			out[e.Protocol.String] = ci
 		}
-		//fmt.Printf("R: %+v\n", e)
 	}
 
 	return out, err

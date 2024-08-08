@@ -77,23 +77,28 @@ func createMeteringPoint() middleware.JWTHandlerFunc {
 				return
 			}
 
-			if eeg.Online {
-				if m.ActivationMode == model.ONLINE {
-					if err = mqttclient.RegistrationForParticipation(eeg, &m); err != nil {
-						respondWith(w, http.StatusBadRequest, tenant, err)
-						return
-					}
-				} else if m.ActivationMode == model.OFFLINE {
-					if err = mqttclient.OfflineRegistrationForParticipation(eeg, &m); err != nil {
-						respondWith(w, http.StatusBadRequest, tenant, err)
-						return
-					}
-				} else {
-					log.WithField("tenant", tenant).Errorf("Wrong activation code! Meter: %+v", m)
-					respondWith(w, http.StatusBadRequest, tenant, model.ErrWrongActivationCode(errors.New("Wrong activation code")))
-					return
-				}
+			if err = edaRegisterMeteringpoint(eeg, m.ActivationMode, &m); err != nil {
+				respondWith(w, http.StatusBadRequest, tenant, err)
+				return
 			}
+
+			//if eeg.Online {
+			//	if m.ActivationMode == model.ONLINE {
+			//		if err = mqttclient.RegistrationForParticipation(eeg, &m); err != nil {
+			//			respondWith(w, http.StatusBadRequest, tenant, err)
+			//			return
+			//		}
+			//	} else if m.ActivationMode == model.OFFLINE {
+			//		if err = mqttclient.OfflineRegistrationForParticipation(eeg, &m); err != nil {
+			//			respondWith(w, http.StatusBadRequest, tenant, err)
+			//			return
+			//		}
+			//	} else {
+			//		log.WithField("tenant", tenant).Errorf("Wrong activation code! Meter: %+v", m)
+			//		respondWith(w, http.StatusBadRequest, tenant, model.ErrWrongActivationCode(errors.New("Wrong activation code")))
+			//		return
+			//	}
+			//}
 		}
 		respondWithJSON(w, http.StatusCreated, m)
 	}
@@ -246,7 +251,6 @@ func registerMeteringPoint() middleware.JWTHandlerFunc {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
-		log.WithField("tenant", tenant).Infof("register Meter:  %v ", request)
 
 		db, err := database.ConnectToDatabase()
 		if err != nil {
@@ -278,20 +282,26 @@ func registerMeteringPoint() middleware.JWTHandlerFunc {
 			}
 		}
 
-		if eeg.Online && meter != nil {
-			if request.ActivationMode == model.ONLINE {
-				if err = mqttclient.RegistrationForParticipation(eeg, meter); err != nil {
-					respondWith(w, http.StatusBadRequest, tenant, err)
-					return
-				}
-			} else {
-				if err = mqttclient.OfflineRegistrationForParticipation(eeg, meter); err != nil {
-					respondWith(w, http.StatusBadRequest, tenant, err)
-					return
-				}
-			}
+		if err = edaRegisterMeteringpoint(eeg, request.ActivationMode, meter); err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, err)
+			return
 		}
-		log.WithField("tenant", tenant).Errorf("failed to register metering point. P: %v", participant)
+
+		//if eeg.Online && meter != nil {
+		//	if request.ActivationMode == model.ONLINE {
+		//		if err = mqttclient.RegistrationForParticipation(eeg, meter); err != nil {
+		//			respondWith(w, http.StatusBadRequest, tenant, err)
+		//			return
+		//		}
+		//	} else {
+		//		meter.ActivationCode = request.ActivationCode
+		//		if err = mqttclient.OfflineRegistrationForParticipation(eeg, meter); err != nil {
+		//			respondWith(w, http.StatusBadRequest, tenant, err)
+		//			return
+		//		}
+		//	}
+		//}
+		log.WithField("tenant", tenant).Infof("register metering point. PID: %s, request: %+v", participantId, request)
 		respondWithJSON(w, http.StatusCreated, participant)
 	}
 }
@@ -345,7 +355,7 @@ func requestMeteringPointValues() middleware.JWTHandlerFunc {
 
 		if eeg.Online {
 			var errorList []string
-			meters, err := database.GetMeteringByIds(db, meters)
+			meters, err := database.GetMeteringByIds(db, tenant, meters)
 			if err != nil {
 				log.WithField("tenant", tenant).WithError(err).Error("failed to request metering point values.")
 				respondWith(w, http.StatusInternalServerError, tenant, err)
@@ -442,7 +452,7 @@ func requestRevokeMeteringPoint() middleware.JWTHandlerFunc {
 		log.WithField("tenant", tenant).Infof("revoke Metering %v (%s - %s)", request, time.UnixMilli(fromDate).String(), getReason(reason))
 		if eeg.Online {
 			errorList := []string{}
-			meters, err := database.GetMeteringByIds(db, meters)
+			meters, err := database.GetMeteringByIds(db, tenant, meters)
 			if err != nil {
 				respondWith(w, http.StatusInternalServerError, tenant, err)
 				return
@@ -538,6 +548,18 @@ func requestChangePartitionFactor() middleware.JWTHandlerFunc {
 		}
 
 		if eeg.Online {
+			//meterIds := []string{}
+			//for _, m := range request.MeteringPoints {
+			//	meterIds = append(meterIds, m.MeteringPoint)
+			//}
+			//
+			//meters, err := database.GetMeteringByIds(db, tenant, meterIds)
+			//if err != nil {
+			//	log.WithField("tenant", tenant).WithError(err).Errorf("failed to request metering point PRTFACT. Err: %v", request)
+			//	respondWith(w, http.StatusInternalServerError, tenant, err)
+			//	return
+			//}
+
 			if err = mqttclient.ChangePartitionFactor(eeg, request.MeteringPoints); err != nil {
 				log.WithField("tenant", tenant).WithError(err).Errorf("failed to request metering point PRTFACT. Err: %v", request)
 				respondWith(w, http.StatusInternalServerError, tenant, err)
@@ -549,4 +571,22 @@ func requestChangePartitionFactor() middleware.JWTHandlerFunc {
 		}
 		respondWithStatus(w, http.StatusCreated)
 	}
+}
+
+func edaRegisterMeteringpoint(eeg *model.Eeg, mode model.RegistrationMode, meter *model.MeteringPoint) error {
+	var err error
+	if eeg.Online && meter != nil {
+		if mode == model.ONLINE {
+			if err = mqttclient.RegistrationForParticipation(eeg, meter); err != nil {
+				return err
+			}
+		} else if mode == model.OFFLINE {
+			if err = mqttclient.OfflineRegistrationForParticipation(eeg, meter); err != nil {
+				return err
+			}
+		} else {
+			return model.ErrWrongActivationCode(errors.New("Wrong activation code"))
+		}
+	}
+	return nil
 }

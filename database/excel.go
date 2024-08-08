@@ -84,7 +84,7 @@ func ExportMasterdataToExcel(participants []model.EegParticipant, eeg *model.Eeg
 	f := excelize.NewFile()
 	defer func() {
 		if err := f.Close(); err != nil {
-			fmt.Println(err)
+			log.WithField("tenant", eeg.Id).WithError(err).Error("Error while closing file")
 		}
 	}()
 
@@ -599,7 +599,7 @@ func ExportZPListToExcel(ebmsMsg *model.EbmsMessage) (*bytes.Buffer, error) {
 	f := excelize.NewFile()
 	defer func() {
 		if err := f.Close(); err != nil {
-			fmt.Println(err)
+			log.WithError(err).Error("Error closing file")
 		}
 	}()
 

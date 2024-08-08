@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
+	"github.com/jjeffery/civil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/guregu/null.v4"
 	"sync"
 	"testing"
-	"time"
 )
 
 func TestRegistrationForParticipation(t *testing.T) {
@@ -80,8 +80,8 @@ func TestRegistrationForParticipation(t *testing.T) {
 		StreetNumber:     null.String{},
 		City:             null.String{},
 		Zip:              null.String{},
-		RegisteredSince:  time.Time{},
-		ModifiedAt:       time.Time{},
+		RegisteredSince:  civil.Today(),
+		ModifiedAt:       civil.Now(),
 		ModifiedBy:       null.String{},
 		GridOperatorId:   null.String{},
 		GridOperatorName: null.String{},
@@ -90,5 +90,73 @@ func TestRegistrationForParticipation(t *testing.T) {
 	}
 
 	require.NoError(t, RegistrationForParticipation(eeg, meter))
+	wg.Wait()
+}
+
+func TestChangePartitionFactor(t *testing.T) {
+	_, err := NewMessageBrokerMock()
+	require.NoError(t, err)
+
+	messageBroker.Start()
+
+	token := messageBroker.client.Connect()
+	if token != nil {
+		token.Wait()
+		require.NoError(t, token.Error())
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	messageBroker.client.Subscribe("eda/request", 1, func(c mqtt.Client, m mqtt.Message) {
+		var msg model.EbmsMessage
+		require.NoError(t, json.Unmarshal(m.Payload(), &msg))
+		fmt.Printf("M: %+v\n", msg)
+
+		assert.Equal(t, "RC100130", msg.Sender)
+		assert.Equal(t, "TT009999", msg.Receiver)
+		assert.Equal(t, "TE00000001212000012121", msg.EcId)
+
+		require.Equal(t, 1, len(msg.MeterList))
+		assert.Equal(t, "AT00000000000000000000000000122121", msg.MeterList[0].MeteringPoint)
+		assert.Equal(t, model.CONSUMPTION, msg.MeterList[0].Direction)
+		assert.Equal(t, 10, msg.MeterList[0].PartFact)
+		wg.Done()
+	})
+
+	eeg := &model.Eeg{
+		Id:                 "TE000001",
+		Name:               "Test-EEG",
+		Description:        "",
+		BusinessNr:         null.String{},
+		Area:               "BEG",
+		Legal:              "verein",
+		OperatorName:       "Test-Netz",
+		CommunityId:        "TE00000001212000012121",
+		GridOperator:       "TT009999",
+		RcNumber:           "RC100130",
+		AllocationMode:     "DYNAMIC",
+		SettlementInterval: "MONTHLY",
+		ProviderBusinessNr: null.Int{},
+		TaxNumber:          null.String{},
+		VatNumber:          null.String{},
+		ContactPerson:      null.String{},
+		EegAddress:         model.EegAddress{},
+		AccountInfo:        model.AccountInfo{},
+		Contact:            model.Contact{},
+		Optionals:          model.Optionals{},
+		Online:             false,
+	}
+
+	meters := []*model.ChangePartitionFactorRequest{
+		&model.ChangePartitionFactorRequest{
+			MeteringPoint:  "AT00000000000000000000000000122121",
+			Direction:      "CONSUMPTION",
+			GridOperatorId: null.StringFrom("TT009999"),
+			Activation:     civil.Today(),
+			PartFact:       10,
+		},
+	}
+
+	require.NoError(t, ChangePartitionFactor(eeg, meters))
 	wg.Wait()
 }

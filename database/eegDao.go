@@ -41,6 +41,7 @@ func GetEegById(tx *sqlx.DB, tenant string) (*model.Eeg, error) {
 
 	err = tx.Get(&eeg, stmt)
 	if err != nil {
+		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", stmt)
 		return nil, model.ErrGetEeg(err)
 	}
 	return &eeg, nil
@@ -56,6 +57,7 @@ func GetEegByEcId(tx *sqlx.DB, edId string) (*model.Eeg, error) {
 
 	err = tx.Get(&eeg, stmt)
 	if err != nil {
+		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", stmt)
 		return nil, model.ErrGetEeg(err)
 	}
 	return &eeg, nil
@@ -67,6 +69,7 @@ func InsertEeg(db *sqlx.DB, tenant string, eeg *model.Eeg) error {
 	log.Printf("Stmt: %s", sql)
 	_, err = db.Exec(sql)
 	if err != nil {
+		log.WithField("SQL", "INSERT").Errorf("Stmt: %s", sql)
 		return err
 	}
 

@@ -4,7 +4,6 @@ import (
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
 	"encoding/json"
-	"fmt"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -174,7 +173,6 @@ func (mb *MessageBroker) Listen() {
 			log.Errorf("Error from Broker. %v", string(err.msg))
 		case send := <-mb.Outbound:
 			mb.SendMessage(send, func(m string) error {
-				fmt.Printf("Callback called: %+v\n", m)
 				return nil
 			})
 		}
@@ -197,7 +195,7 @@ func (mb *MessageBroker) received(inbound InboundMessage) {
 	msg := model.EbmsMessage{}
 	err := json.Unmarshal(inbound.msg, &msg)
 	if err != nil {
-		log.Errorf("Error from MQTT: (%s) %v - %v", inbound.tenant, inbound.protocol, err)
+		log.WithField("tenant", inbound.tenant).WithError(err).Errorf("Error from MQTT: %v", inbound.protocol)
 		return
 	}
 	c, ok := mb.callbackStore[inbound.protocol]

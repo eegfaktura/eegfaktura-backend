@@ -142,8 +142,9 @@ type MeteringPoint struct {
 //}
 
 type ChangePartitionFactorRequest struct {
-	MeteringPoint string        `json:"meter"`
-	Direction     DirectionType `json:"direction"`
-	Activation    civil.Date    `json:"activation"`
-	PartFact      int           `json:"partFact"`
+	MeteringPoint  string        `json:"meter"`
+	Direction      DirectionType `json:"direction"`
+	GridOperatorId null.String   `json:"gridOperatorId"`
+	Activation     civil.Date    `json:"activation"`
+	PartFact       int           `json:"partFact"`
 }
