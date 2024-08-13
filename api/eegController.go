@@ -26,6 +26,7 @@ func InitEegRouter(r *mux.Router) *mux.Router {
 	s.HandleFunc("/import/masterdata", middleware.Protect(uploadMasterData())).Methods("POST")
 	s.HandleFunc("/export/masterdata", middleware.Protect(exportMasterData())).Methods("GET")
 	s.HandleFunc("/notifications/{id}", middleware.Protect(notifications())).Methods("GET")
+	s.HandleFunc("/gridoperators", middleware.Protect(gridOperators())).Methods("GET")
 
 	return r
 }
@@ -297,5 +298,24 @@ func notifications() middleware.JWTHandlerFunc {
 			return
 		}
 		respondWithJSON(w, 200, notifications)
+	}
+}
+
+func gridOperators() middleware.JWTHandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
+
+		db, err := database.ConnectToDatabase()
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
+			return
+		}
+		defer func() { _ = db.Close() }()
+
+		o, err := database.GetGridOperators(db)
+		if err != nil {
+			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1055, err.Error()))
+			return
+		}
+		respondWithJSON(w, 200, o)
 	}
 }

@@ -451,7 +451,7 @@ func TestUpdateMeteringPoints(t *testing.T) {
 	require.NoError(t, err)
 	defer tx.Rollback()
 
-	err = UpdateMeteringPoints(tx, "TE000005", embsTestObj.MeterList)
+	err = UpdateActiveMeteringPoints(tx, "TE000005", embsTestObj.MeterList)
 	require.NoError(t, err)
 	err = tx.Commit()
 	require.NoError(t, err)
@@ -489,5 +489,36 @@ func TestFindMeteringPointsActivePeriod(t *testing.T) {
 	require.Equal(t, 4, len(meters))
 
 	fmt.Printf("MeteringPoints: %+v\n", meters)
+}
+
+func TestMeteringPointRevokeByConsentId(t *testing.T) {
+	jsonStr := `{"conversationId":"RC100130202407121427323390000087827","messageId":"RC100130202407121427323390000087826","sender":"RC100130","receiver":"AT003000","messageCode":"AUFHEBUNG_CCMS","messageCodeVersion":"","requestId":"MILNITLK","meter":{"meteringPoint":"AT0030000000000000000000000200822","consentId":"AT00300020221001105609115"},"ecId":"AT00300000000RC100130000000952832","consentEnd":1720994400000}`
+
+	m := model.EbmsMessage{}
+	err := json.NewDecoder(strings.NewReader(jsonStr)).Decode(&m)
+	require.NoError(t, err)
+
+	db, err := openTestDb()
+	require.NoError(t, err)
+	defer db.Close()
+
+	meterId := m.Meter.MeteringPoint
+	consentId := m.Meter.ConsentID
+	consentEnd := civil.DateOf(time.UnixMilli(m.ConsentEnd))
+	fmt.Printf("Consent-End: %+s\n", consentEnd)
+
+	tenant, err := MeteringPointRevokeByConsentId(db, &consentId, meterId, consentEnd)
+	require.NoError(t, err)
+	require.NotNil(t, tenant)
+	require.Equal(t, "TE100201", *tenant)
+
+	meters, err := FindInactiveMeteringById(db, "TE100201", meterId)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(meters))
+
+	mUnderTest := meters[0]
+	assert.Equal(t, mUnderTest.ConsentId.String, "AT00300020221001105609115")
+	assert.Equal(t, mUnderTest.State.InactiveSince, civil.DateFor(2024, 7, 15))
+	assert.Equal(t, mUnderTest.PartFact, 100)
 
 }

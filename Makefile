@@ -6,7 +6,7 @@ GOTEST=$(GOCMD) test
 GOGET=$(GOCMD) get
 BINARY_NAME=vfeeg-backend
 DOCKER=docker
-VERSION=v0.2.11
+VERSION=v0.2.12
 
 GOPATH := ${PWD}/..:${GOPATH}
 export GOPATH
