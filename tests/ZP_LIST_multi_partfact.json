@@ -1,0 +1,65 @@
+{
+    "conversationId": "RC102271202407171055409960000097389",
+    "ecId": "AT00310000000RC102271EGR000320001",
+    "messageCode": "SENDEN_ECP",
+    "messageCodeVersion": "04.10",
+    "messageId": "AT003100202407171055425390111933068",
+    "meterList": [
+        {
+            "activation": 1716760800000,
+            "direction": "GENERATION",
+            "from": 1716760800000,
+            "meteringPoint": "AT0031000000099000000000000017580",
+            "partFact": 100,
+            "plantCategory": "SONNE",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1719525600000,
+            "direction": "GENERATION",
+            "from": 1719525600000,
+            "meteringPoint": "AT0031000000099000000000000018107",
+            "partFact": 100,
+            "plantCategory": "SONNE",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1714600800000,
+            "direction": "GENERATION",
+            "from": 1714600800000,
+            "meteringPoint": "AT0031000000099000000000000018287",
+            "partFact": 100,
+            "plantCategory": "SONNE",
+            "to": 1715983200000
+        },
+        {
+            "activation": 1714600800000,
+            "direction": "GENERATION",
+            "from": 1716069600000,
+            "meteringPoint": "AT0031000000099000000000000018287",
+            "partFact": 25,
+            "plantCategory": "SONNE",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1717365600000,
+            "direction": "GENERATION",
+            "from": 1717365600000,
+            "meteringPoint": "AT0031000000099000000000000018389",
+            "partFact": 100,
+            "plantCategory": "SONNE",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1719439200000,
+            "direction": "GENERATION",
+            "from": 1719439200000,
+            "meteringPoint": "AT0031000000099000000000000018822",
+            "partFact": 100,
+            "plantCategory": "SONNE",
+            "to": 253402210800000
+        }
+    ],
+    "receiver": "RC102271",
+    "sender": "AT003100"
+}

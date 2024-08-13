@@ -1,0 +1,1582 @@
+{
+    "conversationId": "RC100181202407162137262490000096466",
+    "ecId": "AT00300000000RC100181000000956509",
+    "messageCode": "SENDEN_ECP",
+    "messageCodeVersion": "04.10",
+    "messageId": "AT003000202407162137289370291935160",
+    "meterList": [
+        {
+            "activation": 1694815200000,
+            "direction": "GENERATION",
+            "from": 1694815200000,
+            "meteringPoint": "AT0030000000000000000000030000977",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1713477600000,
+            "direction": "GENERATION",
+            "from": 1713477600000,
+            "meteringPoint": "AT0030000000000000000000030001072",
+            "partFact": 100,
+            "plantCategory": "Windkraft",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1712008800000,
+            "direction": "GENERATION",
+            "from": 1712008800000,
+            "meteringPoint": "AT0030000000000000000000030003011",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1712613600000,
+            "direction": "GENERATION",
+            "from": 1712613600000,
+            "meteringPoint": "AT0030000000000000000000030003594",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1712008800000,
+            "direction": "GENERATION",
+            "from": 1712008800000,
+            "meteringPoint": "AT0030000000000000000000030003701",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1711666800000,
+            "direction": "GENERATION",
+            "from": 1711666800000,
+            "meteringPoint": "AT0030000000000000000000030010167",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1711666800000,
+            "direction": "GENERATION",
+            "from": 1711666800000,
+            "meteringPoint": "AT0030000000000000000000030010248",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1709766000000,
+            "direction": "GENERATION",
+            "from": 1709766000000,
+            "meteringPoint": "AT0030000000000000000000030017927",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1709506800000,
+            "direction": "GENERATION",
+            "from": 1709506800000,
+            "meteringPoint": "AT0030000000000000000000030024880",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1713477600000,
+            "direction": "GENERATION",
+            "from": 1713477600000,
+            "meteringPoint": "AT0030000000000000000000030025562",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1715119200000,
+            "direction": "GENERATION",
+            "from": 1715119200000,
+            "meteringPoint": "AT0030000000000000000000030025740",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1709161200000,
+            "direction": "GENERATION",
+            "from": 1709161200000,
+            "meteringPoint": "AT0030000000000000000000030026318",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1710889200000,
+            "direction": "GENERATION",
+            "from": 1710889200000,
+            "meteringPoint": "AT0030000000000000000000030026334",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1716847200000,
+            "direction": "GENERATION",
+            "from": 1716847200000,
+            "meteringPoint": "AT0030000000000000000000030027510",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 1718575200000
+        },
+        {
+            "activation": 1716847200000,
+            "direction": "GENERATION",
+            "from": 1718661600000,
+            "meteringPoint": "AT0030000000000000000000030027510",
+            "partFact": 25,
+            "plantCategory": "Photovoltaik",
+            "to": 1720994400000
+        },
+        {
+            "activation": 1716847200000,
+            "direction": "GENERATION",
+            "from": 1721080800000,
+            "meteringPoint": "AT0030000000000000000000030027510",
+            "partFact": 15,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1712527200000,
+            "direction": "GENERATION",
+            "from": 1712527200000,
+            "meteringPoint": "AT0030000000000000000000030030557",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1713477600000,
+            "direction": "GENERATION",
+            "from": 1713477600000,
+            "meteringPoint": "AT0030000000000000000000030030914",
+            "partFact": 6,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1716760800000,
+            "direction": "GENERATION",
+            "from": 1716760800000,
+            "meteringPoint": "AT0030000000000000000000030034546",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1686520800000,
+            "direction": "GENERATION",
+            "from": 1686520800000,
+            "meteringPoint": "AT0030000000000000000000030041724",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1716847200000,
+            "direction": "GENERATION",
+            "from": 1716847200000,
+            "meteringPoint": "AT0030000000000000000000030042081",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1719525600000,
+            "direction": "GENERATION",
+            "from": 1719525600000,
+            "meteringPoint": "AT0030000000000000000000030042666",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1663192800000,
+            "consentId": "AT00300020221001105619036",
+            "direction": "GENERATION",
+            "from": 1663192800000,
+            "meteringPoint": "AT0030000000000000000000030043080",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1709766000000,
+            "consentId": "AT00300020221001105619036",
+            "direction": "GENERATION",
+            "from": 1709766000000,
+            "meteringPoint": "AT0030000000000000000000030050112",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1713218400000,
+            "consentId": "AT00300020221001105619036",
+            "direction": "GENERATION",
+            "from": 1713218400000,
+            "meteringPoint": "AT0030000000000000000000030054635",
+            "partFact": 50,
+            "plantCategory": "Photovoltaik",
+            "to": 1713909600000
+        },
+        {
+            "activation": 1713218400000,
+            "consentId": "AT00300020221001105619036",
+            "direction": "GENERATION",
+            "from": 1713996000000,
+            "meteringPoint": "AT0030000000000000000000030054635",
+            "partFact": 60,
+            "plantCategory": "Photovoltaik",
+            "to": 1719266400000
+        },
+        {
+            "activation": 1713218400000,
+            "consentId": "AT00300020221001105619036",
+            "direction": "GENERATION",
+            "from": 1719352800000,
+            "meteringPoint": "AT0030000000000000000000030054635",
+            "partFact": 1,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1711321200000,
+            "consentId": "AT00300020221001105619036",
+            "direction": "GENERATION",
+            "from": 1711321200000,
+            "meteringPoint": "AT0030000000000000000000030055070",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1711321200000,
+            "consentId": "AT00300020221001105619036",
+            "direction": "GENERATION",
+            "from": 1711321200000,
+            "meteringPoint": "AT0030000000000000000000030056219",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1708297200000,
+            "consentId": "AT00300020221001105619036",
+            "direction": "GENERATION",
+            "from": 1708297200000,
+            "meteringPoint": "AT0030000000000000000000030058490",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1704322800000,
+            "consentId": "AT00300020221001105619036",
+            "direction": "GENERATION",
+            "from": 1704322800000,
+            "meteringPoint": "AT0030000000000000000000030058529",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1717970400000,
+            "consentId": "AT00300020221001105619036",
+            "direction": "GENERATION",
+            "from": 1717970400000,
+            "meteringPoint": "AT0030000000000000000000030058891",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1713132000000,
+            "consentId": "AT00300020221001105619036",
+            "direction": "GENERATION",
+            "from": 1713132000000,
+            "meteringPoint": "AT0030000000000000000000030060572",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1713477600000,
+            "consentId": "AT00300020221001105619036",
+            "direction": "GENERATION",
+            "from": 1713477600000,
+            "meteringPoint": "AT0030000000000000000000030064991",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1701039600000,
+            "consentId": "AT00300020221001105619036",
+            "direction": "GENERATION",
+            "from": 1701039600000,
+            "meteringPoint": "AT0030000000000000000000030071202",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1701039600000,
+            "consentId": "AT00300020221001105619036",
+            "direction": "GENERATION",
+            "from": 1701039600000,
+            "meteringPoint": "AT0030000000000000000000030071203",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1713218400000,
+            "consentId": "AT00300020221001105619036",
+            "direction": "GENERATION",
+            "from": 1713218400000,
+            "meteringPoint": "AT0030000000000000000000030071987",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1714946400000,
+            "consentId": "AT00300020221001105619036",
+            "direction": "GENERATION",
+            "from": 1714946400000,
+            "meteringPoint": "AT0030000000000000000000030072427",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1713477600000,
+            "consentId": "AT00300020221001105619036",
+            "direction": "GENERATION",
+            "from": 1713477600000,
+            "meteringPoint": "AT0030000000000000000000030073186",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1709766000000,
+            "consentId": "AT00300020221001105619036",
+            "direction": "GENERATION",
+            "from": 1709766000000,
+            "meteringPoint": "AT0030000000000000000000030077547",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1713391200000,
+            "consentId": "AT00300020221001105619036",
+            "direction": "GENERATION",
+            "from": 1713391200000,
+            "meteringPoint": "AT0030000000000000000000030078892",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1714687200000,
+            "consentId": "AT00300020221001105619036",
+            "direction": "GENERATION",
+            "from": 1714687200000,
+            "meteringPoint": "AT0030000000000000000000030078924",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1714082400000,
+            "consentId": "AT00300020221001105619036",
+            "direction": "GENERATION",
+            "from": 1714082400000,
+            "meteringPoint": "AT0030000000000000000000030089403",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1715551200000,
+            "consentId": "AT00300020221001105619036",
+            "direction": "GENERATION",
+            "from": 1715551200000,
+            "meteringPoint": "AT0030000000000000000000030093998",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1714428000000,
+            "consentId": "AT00300020221001105619036",
+            "direction": "GENERATION",
+            "from": 1714428000000,
+            "meteringPoint": "AT0030000000000000000000030094754",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1716242400000,
+            "consentId": "AT00300020221001105619036",
+            "direction": "GENERATION",
+            "from": 1716242400000,
+            "meteringPoint": "AT0030000000000000000000030099481",
+            "partFact": 100,
+            "plantCategory": "Photovoltaik",
+            "to": 253402210800000
+        },
+        {
+            "activation": 1720994400000,
+            "consentId": "AT00300020221001105619036",
+            "direction": "CONSUMPTION",
+            "from": 1720994400000,
+            "meteringPoint": "AT0030000000000000000000000010422",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1710198000000,
+            "direction": "CONSUMPTION",
+            "from": 1710198000000,
+            "meteringPoint": "AT0030000000000000000000000016668",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1718575200000,
+            "direction": "CONSUMPTION",
+            "from": 1718575200000,
+            "meteringPoint": "AT0030000000000000000000000020434",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1720389600000,
+            "direction": "CONSUMPTION",
+            "from": 1720389600000,
+            "meteringPoint": "AT0030000000000000000000000023470",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1720044000000,
+            "direction": "CONSUMPTION",
+            "from": 1720044000000,
+            "meteringPoint": "AT0030000000000000000000000034833",
+            "partFact": 20,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1716242400000,
+            "direction": "CONSUMPTION",
+            "from": 1716242400000,
+            "meteringPoint": "AT0030000000000000000000000038742",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1711321200000,
+            "direction": "CONSUMPTION",
+            "from": 1711321200000,
+            "meteringPoint": "AT0030000000000000000000000049976",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1716328800000,
+            "direction": "CONSUMPTION",
+            "from": 1716328800000,
+            "meteringPoint": "AT0030000000000000000000000051042",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1717106400000,
+            "direction": "CONSUMPTION",
+            "from": 1717106400000,
+            "meteringPoint": "AT0030000000000000000000000051361",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1708297200000,
+            "direction": "CONSUMPTION",
+            "from": 1708297200000,
+            "meteringPoint": "AT0030000000000000000000000060845",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1718834400000,
+            "direction": "CONSUMPTION",
+            "from": 1718834400000,
+            "meteringPoint": "AT0030000000000000000000000062741",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1717452000000,
+            "direction": "CONSUMPTION",
+            "from": 1717452000000,
+            "meteringPoint": "AT0030000000000000000000000067980",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1716847200000,
+            "direction": "CONSUMPTION",
+            "from": 1716847200000,
+            "meteringPoint": "AT0030000000000000000000000068436",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1719871200000,
+            "direction": "CONSUMPTION",
+            "from": 1719871200000,
+            "meteringPoint": "AT0030000000000000000000000103930",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1718575200000,
+            "direction": "CONSUMPTION",
+            "from": 1718575200000,
+            "meteringPoint": "AT0030000000000000000000000104157",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1709766000000,
+            "direction": "CONSUMPTION",
+            "from": 1709766000000,
+            "meteringPoint": "AT0030000000000000000000000188413",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1701039600000,
+            "direction": "CONSUMPTION",
+            "from": 1701039600000,
+            "meteringPoint": "AT0030000000000000000000000189901",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1715119200000,
+            "direction": "CONSUMPTION",
+            "from": 1715119200000,
+            "meteringPoint": "AT0030000000000000000000000192718",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1717970400000,
+            "direction": "CONSUMPTION",
+            "from": 1717970400000,
+            "meteringPoint": "AT0030000000000000000000000193534",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1720735200000,
+            "direction": "CONSUMPTION",
+            "from": 1720735200000,
+            "meteringPoint": "AT0030000000000000000000000193561",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1711321200000,
+            "direction": "CONSUMPTION",
+            "from": 1711321200000,
+            "meteringPoint": "AT0030000000000000000000000193734",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1711666800000,
+            "direction": "CONSUMPTION",
+            "from": 1711666800000,
+            "meteringPoint": "AT0030000000000000000000000193737",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1717538400000,
+            "direction": "CONSUMPTION",
+            "from": 1717538400000,
+            "meteringPoint": "AT0030000000000000000000000193797",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1717538400000,
+            "direction": "CONSUMPTION",
+            "from": 1717538400000,
+            "meteringPoint": "AT0030000000000000000000000193799",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1712008800000,
+            "direction": "CONSUMPTION",
+            "from": 1712008800000,
+            "meteringPoint": "AT0030000000000000000000000193830",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1712008800000,
+            "direction": "CONSUMPTION",
+            "from": 1712008800000,
+            "meteringPoint": "AT0030000000000000000000000193877",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1713736800000,
+            "direction": "CONSUMPTION",
+            "from": 1713736800000,
+            "meteringPoint": "AT0030000000000000000000000193878",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1717970400000,
+            "direction": "CONSUMPTION",
+            "from": 1717970400000,
+            "meteringPoint": "AT0030000000000000000000000194199",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1712527200000,
+            "direction": "CONSUMPTION",
+            "from": 1712527200000,
+            "meteringPoint": "AT0030000000000000000000000194317",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1713736800000,
+            "direction": "CONSUMPTION",
+            "from": 1713736800000,
+            "meteringPoint": "AT0030000000000000000000000194319",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1707087600000,
+            "direction": "CONSUMPTION",
+            "from": 1707087600000,
+            "meteringPoint": "AT0030000000000000000000000194576",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1717624800000,
+            "direction": "CONSUMPTION",
+            "from": 1717624800000,
+            "meteringPoint": "AT0030000000000000000000000195591",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1716847200000,
+            "direction": "CONSUMPTION",
+            "from": 1716847200000,
+            "meteringPoint": "AT0030000000000000000000000197267",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1718575200000,
+            "direction": "CONSUMPTION",
+            "from": 1718575200000,
+            "meteringPoint": "AT0030000000000000000000000197550",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1709766000000,
+            "direction": "CONSUMPTION",
+            "from": 1709766000000,
+            "meteringPoint": "AT0030000000000000000000000197659",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1705878000000,
+            "direction": "CONSUMPTION",
+            "from": 1705878000000,
+            "meteringPoint": "AT0030000000000000000000000199357",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1705878000000,
+            "direction": "CONSUMPTION",
+            "from": 1705878000000,
+            "meteringPoint": "AT0030000000000000000000000199358",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1707865200000,
+            "direction": "CONSUMPTION",
+            "from": 1707865200000,
+            "meteringPoint": "AT0030000000000000000000000199980",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1707692400000,
+            "direction": "CONSUMPTION",
+            "from": 1707692400000,
+            "meteringPoint": "AT0030000000000000000000000199987",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1710457200000,
+            "direction": "CONSUMPTION",
+            "from": 1710457200000,
+            "meteringPoint": "AT0030000000000000000000000200353",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1710457200000,
+            "direction": "CONSUMPTION",
+            "from": 1710457200000,
+            "meteringPoint": "AT0030000000000000000000000200354",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1710457200000,
+            "direction": "CONSUMPTION",
+            "from": 1710457200000,
+            "meteringPoint": "AT0030000000000000000000000200355",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1704322800000,
+            "direction": "CONSUMPTION",
+            "from": 1704322800000,
+            "meteringPoint": "AT0030000000000000000000000200380",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1714082400000,
+            "direction": "CONSUMPTION",
+            "from": 1714082400000,
+            "meteringPoint": "AT0030000000000000000000000200398",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1711321200000,
+            "direction": "CONSUMPTION",
+            "from": 1711321200000,
+            "meteringPoint": "AT0030000000000000000000000200461",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1711321200000,
+            "direction": "CONSUMPTION",
+            "from": 1711321200000,
+            "meteringPoint": "AT0030000000000000000000000200462",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1716415200000,
+            "direction": "CONSUMPTION",
+            "from": 1716415200000,
+            "meteringPoint": "AT0030000000000000000000000200649",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1716415200000,
+            "direction": "CONSUMPTION",
+            "from": 1716415200000,
+            "meteringPoint": "AT0030000000000000000000000200650",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1716760800000,
+            "direction": "CONSUMPTION",
+            "from": 1716760800000,
+            "meteringPoint": "AT0030000000000000000000000200687",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1716760800000,
+            "direction": "CONSUMPTION",
+            "from": 1716760800000,
+            "meteringPoint": "AT0030000000000000000000000200688",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1696802400000,
+            "direction": "CONSUMPTION",
+            "from": 1696802400000,
+            "meteringPoint": "AT0030000000000000000000000201018",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1718575200000,
+            "direction": "CONSUMPTION",
+            "from": 1718575200000,
+            "meteringPoint": "AT0030000000000000000000000201112",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1715292000000,
+            "direction": "CONSUMPTION",
+            "from": 1715292000000,
+            "meteringPoint": "AT0030000000000000000000000204530",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1716760800000,
+            "direction": "CONSUMPTION",
+            "from": 1716760800000,
+            "meteringPoint": "AT0030000000000000000000000205136",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1716760800000,
+            "direction": "CONSUMPTION",
+            "from": 1716760800000,
+            "meteringPoint": "AT0030000000000000000000000205137",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1716760800000,
+            "direction": "CONSUMPTION",
+            "from": 1716760800000,
+            "meteringPoint": "AT0030000000000000000000000205138",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1712613600000,
+            "direction": "CONSUMPTION",
+            "from": 1712613600000,
+            "meteringPoint": "AT0030000000000000000000000205422",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1712613600000,
+            "direction": "CONSUMPTION",
+            "from": 1712613600000,
+            "meteringPoint": "AT0030000000000000000000000205423",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1720389600000,
+            "direction": "CONSUMPTION",
+            "from": 1720389600000,
+            "meteringPoint": "AT0030000000000000000000000205637",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1719871200000,
+            "direction": "CONSUMPTION",
+            "from": 1719871200000,
+            "meteringPoint": "AT0030000000000000000000000205783",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1713477600000,
+            "direction": "CONSUMPTION",
+            "from": 1713477600000,
+            "meteringPoint": "AT0030000000000000000000000205784",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1710370800000,
+            "direction": "CONSUMPTION",
+            "from": 1710370800000,
+            "meteringPoint": "AT0030000000000000000000000205807",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1711666800000,
+            "direction": "CONSUMPTION",
+            "from": 1711666800000,
+            "meteringPoint": "AT0030000000000000000000000205834",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1711666800000,
+            "direction": "CONSUMPTION",
+            "from": 1711666800000,
+            "meteringPoint": "AT0030000000000000000000000205835",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1715810400000,
+            "direction": "CONSUMPTION",
+            "from": 1715810400000,
+            "meteringPoint": "AT0030000000000000000000000205840",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1716501600000,
+            "direction": "CONSUMPTION",
+            "from": 1716501600000,
+            "meteringPoint": "AT0030000000000000000000000205849",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1663192800000,
+            "consentId": "AT00300020221001105619075",
+            "direction": "CONSUMPTION",
+            "from": 1663192800000,
+            "meteringPoint": "AT0030000000000000000000000351391",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1702335600000,
+            "direction": "CONSUMPTION",
+            "from": 1702335600000,
+            "meteringPoint": "AT0030000000000000000000000364594",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1715637600000,
+            "direction": "CONSUMPTION",
+            "from": 1715637600000,
+            "meteringPoint": "AT0030000000000000000000000366116",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1712268000000,
+            "direction": "CONSUMPTION",
+            "from": 1712268000000,
+            "meteringPoint": "AT0030000000000000000000000369813",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1719871200000,
+            "direction": "CONSUMPTION",
+            "from": 1719871200000,
+            "meteringPoint": "AT0030000000000000000000000370614",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1720735200000,
+            "direction": "CONSUMPTION",
+            "from": 1720735200000,
+            "meteringPoint": "AT0030000000000000000000000373153",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1716760800000,
+            "direction": "CONSUMPTION",
+            "from": 1716760800000,
+            "meteringPoint": "AT0030000000000000000000000379474",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1716760800000,
+            "direction": "CONSUMPTION",
+            "from": 1716760800000,
+            "meteringPoint": "AT0030000000000000000000000379475",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1663192800000,
+            "consentId": "AT00300020221001105619094",
+            "direction": "CONSUMPTION",
+            "from": 1663192800000,
+            "meteringPoint": "AT0030000000000000000000000379812",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1720735200000,
+            "direction": "CONSUMPTION",
+            "from": 1720735200000,
+            "meteringPoint": "AT0030000000000000000000000380845",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1663192800000,
+            "consentId": "AT00300020221001105619057",
+            "direction": "CONSUMPTION",
+            "from": 1663192800000,
+            "meteringPoint": "AT0030000000000000000000000381701",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1709506800000,
+            "direction": "CONSUMPTION",
+            "from": 1709506800000,
+            "meteringPoint": "AT0030000000000000000000000383545",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1720994400000,
+            "direction": "CONSUMPTION",
+            "from": 1720994400000,
+            "meteringPoint": "AT0030000000000000000000000393371",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1694988000000,
+            "direction": "CONSUMPTION",
+            "from": 1694988000000,
+            "meteringPoint": "AT0030000000000000000000000402230",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1717538400000,
+            "direction": "CONSUMPTION",
+            "from": 1717538400000,
+            "meteringPoint": "AT0030000000000000000000000403853",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1717538400000,
+            "direction": "CONSUMPTION",
+            "from": 1717538400000,
+            "meteringPoint": "AT0030000000000000000000000403854",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1716328800000,
+            "direction": "CONSUMPTION",
+            "from": 1716328800000,
+            "meteringPoint": "AT0030000000000000000000000404829",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1720994400000,
+            "direction": "CONSUMPTION",
+            "from": 1720994400000,
+            "meteringPoint": "AT0030000000000000000000000405609",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1719871200000,
+            "direction": "CONSUMPTION",
+            "from": 1719871200000,
+            "meteringPoint": "AT0030000000000000000000000406717",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1701039600000,
+            "direction": "CONSUMPTION",
+            "from": 1701039600000,
+            "meteringPoint": "AT0030000000000000000000000407917",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1710370800000,
+            "direction": "CONSUMPTION",
+            "from": 1710370800000,
+            "meteringPoint": "AT0030000000000000000000000412173",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1700694000000,
+            "direction": "CONSUMPTION",
+            "from": 1700694000000,
+            "meteringPoint": "AT0030000000000000000000000412364",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1719871200000,
+            "direction": "CONSUMPTION",
+            "from": 1719871200000,
+            "meteringPoint": "AT0030000000000000000000000432739",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1720994400000,
+            "direction": "CONSUMPTION",
+            "from": 1720994400000,
+            "meteringPoint": "AT0030000000000000000000000435932",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1719266400000,
+            "direction": "CONSUMPTION",
+            "from": 1719266400000,
+            "meteringPoint": "AT0030000000000000000000000437895",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1710198000000,
+            "direction": "CONSUMPTION",
+            "from": 1710198000000,
+            "meteringPoint": "AT0030000000000000000000000439799",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1693778400000,
+            "direction": "CONSUMPTION",
+            "from": 1693778400000,
+            "meteringPoint": "AT0030000000000000000000000449821",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1710457200000,
+            "direction": "CONSUMPTION",
+            "from": 1710457200000,
+            "meteringPoint": "AT0030000000000000000000000472028",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1710457200000,
+            "direction": "CONSUMPTION",
+            "from": 1710457200000,
+            "meteringPoint": "AT0030000000000000000000000472029",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1719871200000,
+            "direction": "CONSUMPTION",
+            "from": 1719871200000,
+            "meteringPoint": "AT0030000000000000000000000474127",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1714687200000,
+            "direction": "CONSUMPTION",
+            "from": 1714687200000,
+            "meteringPoint": "AT0030000000000000000000000477842",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1713823200000,
+            "direction": "CONSUMPTION",
+            "from": 1713823200000,
+            "meteringPoint": "AT0030000000000000000000000486694",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1717624800000,
+            "direction": "CONSUMPTION",
+            "from": 1717624800000,
+            "meteringPoint": "AT0030000000000000000000000490931",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1720994400000,
+            "direction": "CONSUMPTION",
+            "from": 1720994400000,
+            "meteringPoint": "AT0030000000000000000000000504384",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1718575200000,
+            "direction": "CONSUMPTION",
+            "from": 1718575200000,
+            "meteringPoint": "AT0030000000000000000000000505230",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1711666800000,
+            "direction": "CONSUMPTION",
+            "from": 1711666800000,
+            "meteringPoint": "AT0030000000000000000000000510624",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1714341600000,
+            "direction": "CONSUMPTION",
+            "from": 1714341600000,
+            "meteringPoint": "AT0030000000000000000000000515865",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1713391200000,
+            "direction": "CONSUMPTION",
+            "from": 1713391200000,
+            "meteringPoint": "AT0030000000000000000000000521933",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1692655200000,
+            "direction": "CONSUMPTION",
+            "from": 1692655200000,
+            "meteringPoint": "AT0030000000000000000000000561234",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1715119200000,
+            "direction": "CONSUMPTION",
+            "from": 1715119200000,
+            "meteringPoint": "AT0030000000000000000000000567839",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1709161200000,
+            "direction": "CONSUMPTION",
+            "from": 1709161200000,
+            "meteringPoint": "AT0030000000000000000000000570367",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1717106400000,
+            "direction": "CONSUMPTION",
+            "from": 1717106400000,
+            "meteringPoint": "AT0030000000000000000000000570794",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1713736800000,
+            "direction": "CONSUMPTION",
+            "from": 1713736800000,
+            "meteringPoint": "AT0030000000000000000000000586160",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1717365600000,
+            "direction": "CONSUMPTION",
+            "from": 1717365600000,
+            "meteringPoint": "AT0030000000000000000000000590590",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1707692400000,
+            "direction": "CONSUMPTION",
+            "from": 1707692400000,
+            "meteringPoint": "AT0030000000000000000000000598525",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1712527200000,
+            "direction": "CONSUMPTION",
+            "from": 1712527200000,
+            "meteringPoint": "AT0030000000000000000000000652049",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1678057200000,
+            "consentId": "AT003000202303041618541945JWLV5Z3",
+            "direction": "CONSUMPTION",
+            "from": 1678057200000,
+            "meteringPoint": "AT0030000000000000000000000655856",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1713477600000,
+            "direction": "CONSUMPTION",
+            "from": 1713477600000,
+            "meteringPoint": "AT0030000000000000000000000658123",
+            "partFact": 6,
+            "to": 1713736800000
+        },
+        {
+            "activation": 1713477600000,
+            "direction": "CONSUMPTION",
+            "from": 1713823200000,
+            "meteringPoint": "AT0030000000000000000000000658123",
+            "partFact": 10,
+            "to": 1718056800000
+        },
+        {
+            "activation": 1713477600000,
+            "direction": "CONSUMPTION",
+            "from": 1718143200000,
+            "meteringPoint": "AT0030000000000000000000000658123",
+            "partFact": 20,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1716760800000,
+            "direction": "CONSUMPTION",
+            "from": 1716760800000,
+            "meteringPoint": "AT0030000000000000000000000660154",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1713477600000,
+            "direction": "CONSUMPTION",
+            "from": 1713477600000,
+            "meteringPoint": "AT0030000000000000000000000679982",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1713477600000,
+            "direction": "CONSUMPTION",
+            "from": 1713477600000,
+            "meteringPoint": "AT0030000000000000000000000686757",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1717452000000,
+            "direction": "CONSUMPTION",
+            "from": 1717452000000,
+            "meteringPoint": "AT0030000000000000000000000701351",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1720735200000,
+            "direction": "CONSUMPTION",
+            "from": 1720735200000,
+            "meteringPoint": "AT0030000000000000000000000703556",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1720735200000,
+            "direction": "CONSUMPTION",
+            "from": 1720735200000,
+            "meteringPoint": "AT0030000000000000000000000703558",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1710111600000,
+            "direction": "CONSUMPTION",
+            "from": 1710111600000,
+            "meteringPoint": "AT0030000000000000000000000706907",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1717624800000,
+            "direction": "CONSUMPTION",
+            "from": 1717624800000,
+            "meteringPoint": "AT0030000000000000000000000715894",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1719871200000,
+            "direction": "CONSUMPTION",
+            "from": 1719871200000,
+            "meteringPoint": "AT0030000000000000000000000718398",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1710111600000,
+            "direction": "CONSUMPTION",
+            "from": 1710111600000,
+            "meteringPoint": "AT0030000000000000000000000720624",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1694642400000,
+            "direction": "CONSUMPTION",
+            "from": 1694642400000,
+            "meteringPoint": "AT0030000000000000000000000731716",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1716847200000,
+            "direction": "CONSUMPTION",
+            "from": 1716847200000,
+            "meteringPoint": "AT0030000000000000000000000747370",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1719871200000,
+            "direction": "CONSUMPTION",
+            "from": 1719871200000,
+            "meteringPoint": "AT0030000000000000000000000766921",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1711321200000,
+            "direction": "CONSUMPTION",
+            "from": 1711321200000,
+            "meteringPoint": "AT0030000000000000000000000770914",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1716760800000,
+            "direction": "CONSUMPTION",
+            "from": 1716760800000,
+            "meteringPoint": "AT0030000000000000000000000776766",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1717970400000,
+            "direction": "CONSUMPTION",
+            "from": 1717970400000,
+            "meteringPoint": "AT0030000000000000000000000784637",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1686261600000,
+            "direction": "CONSUMPTION",
+            "from": 1686261600000,
+            "meteringPoint": "AT0030000000000000000000000902309",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1720994400000,
+            "direction": "CONSUMPTION",
+            "from": 1720994400000,
+            "meteringPoint": "AT0030000000000000000000000904914",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1712872800000,
+            "direction": "CONSUMPTION",
+            "from": 1712872800000,
+            "meteringPoint": "AT0030000000000000000000000915065",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1718143200000,
+            "direction": "CONSUMPTION",
+            "from": 1718143200000,
+            "meteringPoint": "AT0030000000000000000000000944690",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1720994400000,
+            "direction": "CONSUMPTION",
+            "from": 1720994400000,
+            "meteringPoint": "AT0030000000000000000000000945070",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1713477600000,
+            "direction": "CONSUMPTION",
+            "from": 1713477600000,
+            "meteringPoint": "AT0030000000000000000000000945375",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1720130400000,
+            "direction": "CONSUMPTION",
+            "from": 1720130400000,
+            "meteringPoint": "AT0030000000000000000000000945376",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1709766000000,
+            "direction": "CONSUMPTION",
+            "from": 1709766000000,
+            "meteringPoint": "AT0030000000000000000000000953277",
+            "partFact": 100,
+            "to": 253402210800000
+        },
+        {
+            "activation": 1717711200000,
+            "direction": "CONSUMPTION",
+            "from": 1717711200000,
+            "meteringPoint": "AT0030000000000000000000000966430",
+            "partFact": 100,
+            "to": 253402210800000
+        }
+    ],
+    "receiver": "RC100181",
+    "sender": "AT003000"
+}
