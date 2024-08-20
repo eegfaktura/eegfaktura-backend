@@ -156,3 +156,21 @@ func GetGridOperators(db *sqlx.DB) (map[string]string, error) {
 
 	return result, nil
 }
+
+type tenantsNameStruct struct {
+	Tenant string `json:"tenant" db:"tenant"`
+	Name   string `json:"name" db:"name"`
+}
+
+func FetchTenantsName(db *sqlx.DB, tenants []string) ([]tenantsNameStruct, error) {
+	tenantsName := []tenantsNameStruct{}
+	stmt, _, err := pgDialect.From("base.eeg").Select(&tenantsName).Where(goqu.C("tenant").In(tenants)).ToSQL()
+	if err != nil {
+		return nil, err
+	}
+	if err := db.Select(&tenantsName, stmt); err != nil {
+		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", stmt)
+		return nil, err
+	}
+	return tenantsName, nil
+}

@@ -216,6 +216,13 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 		return name
 	}
 
+	getNullDate := func(d civil.NullDate) string {
+		if !d.Valid {
+			return ""
+		}
+		return d.Date.String()
+	}
+
 	styleId, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Size: 10.0}})
 	styleDateId, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Size: 10.0}, NumFmt: 14})
 	styleIdHeader, err := f.NewStyle(&excelize.Style{
@@ -316,11 +323,11 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 						return strings.Join(titles, ",")
 					}()},
 					excelize.Cell{Value: c.Status},
-					excelize.Cell{Value: c.ParticipantSince, StyleID: styleIdDate},
+					excelize.Cell{Value: getNullDate(c.ParticipantSince), StyleID: styleIdDate},
 					excelize.Cell{Value: c.Contact.Email.String},
 					excelize.Cell{Value: c.Contact.Phone.String},
-					excelize.Cell{Value: c.TaxNumber},
-					excelize.Cell{Value: c.VatNumber},
+					excelize.Cell{Value: c.TaxNumber.String},
+					excelize.Cell{Value: c.VatNumber.String},
 					excelize.Cell{Value: c.BankAccount.Iban.String},
 					excelize.Cell{Value: c.BankAccount.Owner.String},
 					excelize.Cell{Value: c.BankAccount.BankName.String},

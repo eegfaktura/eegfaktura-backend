@@ -55,3 +55,5 @@ var ErrUpdateMeter = PartialWrap(3101)
 var ErrGetTariff = PartialWrap(4000)
 var ErrUpdateTariff = PartialWrap(4001)
 var ErrTariffUtilized = PartialWrap(4002)
+
+var ErrGetUser = PartialWrap(9000)

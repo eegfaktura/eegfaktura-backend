@@ -521,9 +521,9 @@ func MeteringPointChangePartFactor(db *sqlx.DB, tenant string, meters []model.Me
 		Cols("metering_point_id", "participant_id", "tenant", "partFact", "createdBy").
 		FromQuery(insertQuery).ToSQL()
 
-	fmt.Printf("Stmt Insert PactChange: %s - %v\n", stmt, err)
 	_, err = tx.Exec(stmt)
 	if err != nil {
+		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", stmt)
 		return model.ErrUpdateMeter(err)
 	}
 	return tx.Commit()
@@ -564,6 +564,7 @@ func MeteringPointSetInactive(dbOpen OpenDbXConnection, tenant, meterId string, 
 	_, err = tx.Exec(statement)
 
 	if err != nil {
+		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", statement)
 		return err
 	}
 
@@ -599,6 +600,7 @@ func FindGridOperatorId(dbOpen OpenDbXConnection, meterId string) (string, error
 	}
 	err = db.QueryRow(stmt).Scan(&gridOperatorId)
 	if err != nil {
+		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", stmt)
 		return "", err
 	}
 

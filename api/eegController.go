@@ -27,6 +27,9 @@ func InitEegRouter(r *mux.Router) *mux.Router {
 	s.HandleFunc("/export/masterdata", middleware.Protect(exportMasterData())).Methods("GET")
 	s.HandleFunc("/notifications/{id}", middleware.Protect(notifications())).Methods("GET")
 	s.HandleFunc("/gridoperators", middleware.Protect(gridOperators())).Methods("GET")
+	s.HandleFunc("/user/get-user", middleware.Protect(getUser())).Methods("GET")
+
+	//_ = InitUserRouter(s)
 
 	return r
 }

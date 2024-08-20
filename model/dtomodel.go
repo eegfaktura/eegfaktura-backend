@@ -90,7 +90,7 @@ func ConvertToDbMeterList(ml []Meter) []*MeteringPointDBModel {
 			GridOperatorId:   null.String{},
 			GridOperatorName: null.String{},
 			ActiveSince:      getCivilDate(ml[i].Activation),
-			InactiveSince:    civil.NullDate{},
+			InactiveSince:    getCivilDate(ml[i].To),
 			Active:           nil,
 			Flag:             nil,
 		}
