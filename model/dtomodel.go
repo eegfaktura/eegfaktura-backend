@@ -12,6 +12,7 @@ type MeteringPointDBModel struct {
 	Transformer      null.String        `json:"transformer,omitempty" goqu:"omitempty"`
 	Direction        DirectionType      `json:"direction,omitempty" goqu:"omitnil"`
 	Status           *StatusType        `json:"status,omitempty" goqu:"omitnil"`
+	ProcessState     *StatusType        `json:"processState" db:"process_state" goqu:"omitnil"`
 	StatusCode       null.Int           `json:"statusCode,omitempty" db:"statusCode" goqu:"omitempty"`
 	TariffId         null.String        `json:"tariff_id,omitempty" db:"tariff_id" goqu:"omitempty"`
 	EquipmentNumber  null.String        `json:"equipmentNumber,omitempty" db:"equipmentNumber" goqu:"omitempty"`
@@ -41,6 +42,14 @@ type MeteringPartFactDBModel struct {
 }
 
 func ConvertToDbMeterList(ml []Meter) []*MeteringPointDBModel {
+	converted := make([]*MeteringPointDBModel, len(ml))
+	for i := range ml {
+		converted[i] = ConvertToDbMeter(ml[i])
+	}
+	return converted
+}
+
+func ConvertToDbMeter(m Meter) *MeteringPointDBModel {
 
 	getConsentId := func(consentId string) null.String {
 		if len(consentId) > 0 {
@@ -67,50 +76,50 @@ func ConvertToDbMeterList(ml []Meter) []*MeteringPointDBModel {
 		return civil.NullDateTime{}
 	}
 
-	converted := make([]*MeteringPointDBModel, len(ml))
+	return &MeteringPointDBModel{
+		MeteringPoint: m.MeteringPoint,
+		ConsentId:     getConsentId(m.ConsentID),
+		//Transformer:      null.String{},
+		Direction:        m.Direction,
+		Status:           nil,
+		ProcessState:     nil,
+		StatusCode:       null.Int{},
+		TariffId:         null.String{},
+		EquipmentNumber:  null.String{},
+		EquipmentName:    null.String{},
+		InverterId:       null.String{},
+		Street:           null.String{},
+		StreetNumber:     null.String{},
+		City:             null.String{},
+		Zip:              null.String{},
+		RegisteredSince:  civil.NullDate{},
+		ModifiedAt:       getCivilDateTime(civil.Now().Unix() * 1000),
+		ModifiedBy:       null.StringFrom("ec_podlist"),
+		GridOperatorId:   null.String{},
+		GridOperatorName: null.String{},
+		ActiveSince:      getCivilDate(m.From), //civil.NullDate{},
+		InactiveSince:    civil.NullDate{Date: civil.DateFor(2999, 12, 31), Valid: true},
+		Active:           nil,
+		Flag:             nil,
+	}
+}
+func ConvertToDbMeterPartFactList(ml []Meter) []*MeteringPartFactDBModel {
+	converted := make([]*MeteringPartFactDBModel, len(ml))
 	for i := range ml {
-		converted[i] = &MeteringPointDBModel{
-			MeteringPoint: ml[i].MeteringPoint,
-			ConsentId:     getConsentId(ml[i].ConsentID),
-			//Transformer:      null.String{},
-			Direction:        ml[i].Direction,
-			Status:           nil,
-			StatusCode:       null.Int{},
-			TariffId:         null.String{},
-			EquipmentNumber:  null.String{},
-			EquipmentName:    null.String{},
-			InverterId:       null.String{},
-			Street:           null.String{},
-			StreetNumber:     null.String{},
-			City:             null.String{},
-			Zip:              null.String{},
-			RegisteredSince:  civil.NullDate{},
-			ModifiedAt:       getCivilDateTime(civil.Now().Unix() * 1000),
-			ModifiedBy:       null.StringFrom("ec_podlist"),
-			GridOperatorId:   null.String{},
-			GridOperatorName: null.String{},
-			ActiveSince:      getCivilDate(ml[i].Activation),
-			InactiveSince:    getCivilDate(ml[i].To),
-			Active:           nil,
-			Flag:             nil,
-		}
+		converted[i] = ConvertToDbMeterPartFact(ml[i])
 	}
 	return converted
 }
 
-func ConvertToDbMeterPartFactList(ml []Meter) []*MeteringPartFactDBModel {
-	converted := make([]*MeteringPartFactDBModel, len(ml))
-	for i := range ml {
-		converted[i] = &MeteringPartFactDBModel{
-			MeteringPoint: ml[i].MeteringPoint,
-			ParticipantId: nil,
-			Tenant:        nil,
-			PartFact:      ml[i].PartFact,
-			CreatedAt:     civil.NullDateTime{},
-			CreatedBy:     null.String{},
-		}
+func ConvertToDbMeterPartFact(m Meter) *MeteringPartFactDBModel {
+	return &MeteringPartFactDBModel{
+		MeteringPoint: m.MeteringPoint,
+		ParticipantId: nil,
+		Tenant:        nil,
+		PartFact:      m.PartFact,
+		CreatedAt:     civil.NullDateTime{},
+		CreatedBy:     null.String{},
 	}
-	return converted
 }
 
 func StandardizeMeteringPointList(ml []Meter) []Meter {

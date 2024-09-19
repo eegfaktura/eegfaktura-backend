@@ -182,7 +182,7 @@ func (r *RegisterService) Register(ctx context.Context, eeg *protobuf.RegisterEe
 		CommunityId:        eeg.CommunityId,
 		GridOperator:       eeg.GridId,
 		RcNumber:           eeg.RcNumber,
-		AllocationMode:     eeg.Allocation.String(),
+		AllocationMode:     model.AllocationModeType(eeg.Allocation.String()),
 		SettlementInterval: eeg.SettelmentInterval.String(),
 		ProviderBusinessNr: null.Int{},
 		TaxNumber:          null.StringFrom(eeg.TaxNumber),

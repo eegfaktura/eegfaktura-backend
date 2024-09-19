@@ -2,6 +2,7 @@ package database
 
 import (
 	"at.ourproject/vfeeg-backend/model"
+	"at.ourproject/vfeeg-backend/util"
 	"bytes"
 	"fmt"
 	"github.com/jjeffery/civil"
@@ -258,7 +259,7 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 	err = sw.SetColWidth(colNr+3, colNr+3, 8.0)
 	err = sw.SetColWidth(colNr+4, colNr+4, 20.0)
 	err = sw.SetColWidth(colNr+6, colNr+6, 18.0)
-	colNr, _ = excelize.ColumnNameToNumber("AE")
+	colNr, _ = excelize.ColumnNameToNumber("AF")
 	err = sw.SetColWidth(colNr, colNr+1, 20.0)
 	err = sw.SetColWidth(colNr+3, colNr+4, 12.0)
 	err = sw.SetColWidth(colNr+5, colNr+5, 30.0)
@@ -294,6 +295,7 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 			excelize.Cell{Value: "Zählpunktname"},
 			excelize.Cell{Value: "registriert"},
 			excelize.Cell{Value: "Bezugsrichtung"},
+			excelize.Cell{Value: "Teilnahme Fkt."},
 			excelize.Cell{Value: "WechselrichterNr."},
 			excelize.Cell{Value: "PLZ"},
 			excelize.Cell{Value: "Ort"},
@@ -347,18 +349,19 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 					excelize.Cell{Value: c.Status},
 					excelize.Cell{Value: getTariffName(c.TariffId.String), StyleID: styleDateId},
 					excelize.Cell{Value: m.MeteringPoint},
-					excelize.Cell{Value: m.Status},
+					excelize.Cell{Value: m.ProcessState},
 					excelize.Cell{Value: m.EquipmentNumber.String},
 					excelize.Cell{Value: m.EquipmentName.String},
 					excelize.Cell{Value: m.RegisteredSince, StyleID: styleDateId},
 					excelize.Cell{Value: m.Direction},
+					excelize.Cell{Value: fmt.Sprintf("%d %%", m.PartFact)},
 					excelize.Cell{Value: m.InverterId.String},
 					excelize.Cell{Value: m.Zip.String},
 					excelize.Cell{Value: m.City.String},
 					excelize.Cell{Value: m.Street.String},
 					excelize.Cell{Value: m.StreetNumber.String},
-					excelize.Cell{Value: m.State.ActiveSince, StyleID: styleDateId},
-					excelize.Cell{Value: m.State.InactiveSince, StyleID: styleDateId},
+					excelize.Cell{Value: getNullDate(m.State.ActiveSince), StyleID: styleDateId},
+					excelize.Cell{Value: getNullDate(m.State.InactiveSince), StyleID: styleDateId},
 					excelize.Cell{Value: getTariffName(m.TariffId.String), StyleID: styleDateId},
 					excelize.Cell{Value: m.Transformer.String},
 				}, excelize.RowOpts{StyleID: styleId})
@@ -472,6 +475,21 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 		return s
 	}
 
+	getColumDate := func(cols []string, values map[string]int, deName, enName string, defaultValue civil.Date) civil.NullDate {
+		v := getColumValue(cols, colMap, deName, enName, nil)
+		d, err := util.ParseTimeString(v)
+		if err != nil {
+			return civil.NullDate{
+				Date:  defaultValue,
+				Valid: true,
+			}
+		}
+		return civil.NullDate{
+			Date:  d,
+			Valid: true,
+		}
+	}
+
 	for rows.Next() {
 		if cols, err := rows.Columns(excelize.Options{RawCellValue: true}); err == nil && len(cols) > 0 {
 			switch cols[0] {
@@ -583,6 +601,7 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 							Transformer:      null.String{},
 							Direction:        role,
 							Status:           model.ACTIVE,
+							ProcessState:     model.ACTIVE,
 							TariffId:         null.String{},
 							EquipmentNumber:  equipmentNumber(cols, colMap),
 							EquipmentName:    equipmentName(cols, colMap),
@@ -593,6 +612,12 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 							StreetNumber:     null.StringFrom(getColumValue(cols, colMap, "Hausnummer", "Street Number", nil)),
 							City:             null.StringFrom(getColumValue(cols, colMap, "Ort", "City", nil)),
 							Zip:              null.StringFrom(getColumValue(cols, colMap, "PLZ", "ZIP", nil)),
+							State: &model.MeterState{
+								ActiveSince:   getColumDate(cols, colMap, "registriert seit", "registriert seit", civil.DateFor(time.Now().Year(), 1, 1)),
+								InactiveSince: civil.NullDate{Date: civil.DateFor(2999, 12, 31), Valid: true},
+								Active:        1,
+								Flag:          1,
+							},
 						})
 					}
 				}

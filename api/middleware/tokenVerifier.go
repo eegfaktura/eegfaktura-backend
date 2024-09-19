@@ -156,6 +156,14 @@ func Protect(handler JWTHandlerFunc) http.HandlerFunc {
 }
 
 func verifyRequest(handler JWTHandlerFunc) func(w http.ResponseWriter, r *http.Request) {
+	toUpper := func(ss []string) []string {
+		rss := make([]string, len(ss))
+		for i, s := range ss {
+			rss[i] = strings.ToUpper(s)
+		}
+		return rss
+	}
+
 	return func(w http.ResponseWriter, r *http.Request) {
 		jwtToken := r.Header.Get("Authorization")
 		if len(jwtToken) == 0 {
@@ -192,6 +200,7 @@ func verifyRequest(handler JWTHandlerFunc) func(w http.ResponseWriter, r *http.R
 			return
 		}
 
+		claims.Tenants = toUpper(claims.Tenants)
 		handler(w, r, &claims, strings.ToUpper(tenant))
 	}
 }

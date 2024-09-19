@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS base.EEG
     "vatNumber"          TEXT,
     subjecttovat         BOOLEAN,
     "contactPerson"      TEXT,
+    createdat            DATE NOT NULL DEFAULT now()::DATE,
     -- Address Info
     street               TEXT    NOT NULL,
     "streetNumber"       TEXT    NOT NULL,
@@ -140,9 +141,11 @@ CREATE TABLE IF NOT EXISTS base.meteringpoint
     tenant             TEXT      NOT NULL,
     grid_operator_name VARCHAR,
     grid_operator_id   VARCHAR,
+    allocation_factor  FLOAT,
     transformer        TEXT,
     direction          TEXT      NOT NULL DEFAULT 'CONSUMPTION', /* 'GENERATION' | 'CONSUMPTION' */
-    status             TEXT      NOT NULL DEFAULT 'NEW', /* "NEW" | "PENDING" | "ACCEPTED" | "ACTIVE" | "INACTIVE" | "REJECTED" */
+    status             TEXT      NOT NULL DEFAULT 'INIT', /* "INIT" | "ACTIVE" | "INACTIVE" */
+    process_state      TEXT      NOT NULL DEFAULT 'NEW', /* "NEW" | "PENDING" | "ACCEPTED" | "ACTIVE" | "INACTIVE" | "REJECTED" */
     "statusCode"       INTEGER,
     tariff_id          UUID,
     inverterid         TEXT,
@@ -152,11 +155,11 @@ CREATE TABLE IF NOT EXISTS base.meteringpoint
     "streetNumber"     TEXT,
     city               TEXT,
     zip                TEXT,
-    "registeredSince"  DATE      NOT NULL DEFAULT now(),
+    "registeredSince"  DATE      NOT NULL DEFAULT now()::date,
     "modifiedAt"       TIMESTAMP NOT NULL DEFAULT now(),
     "modifiedBy"       TEXT,
-    activeSince        DATE NOT NULL DEFAULT now(),
-    inactiveSince      DATE NOT NULL DEFAULT Date('2999-12-31'),
+    activeSince        DATE,
+    inactiveSince      DATE,
     active             INT       NOT NULL DEFAULT 1,
     flag               INT       NOT NULL DEFAULT 1,
     CONSTRAINT meteringpointPK PRIMARY KEY (metering_point_id, tenant, participant_id),
@@ -164,7 +167,7 @@ CREATE TABLE IF NOT EXISTS base.meteringpoint
 --    UNIQUE (metering_point_id, active)
 --     CONSTRAINT FK_TariffMeteringpoint FOREIGN KEY (tariff_id) REFERENCES base.tariff (id)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_meteringpoint_active ON base.meteringpoint (metering_point_id, tenant, active) where active = 1;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_meteringpoint_active ON base.meteringpoint (metering_point_id, tenant, flag) where flag = 1;
 
 CREATE TABLE IF NOT EXISTS base.metering_partition_factor
 (

@@ -30,8 +30,8 @@ func (api *ApiService) MasterData_MeteringPoint(ctx context.Context, meterReques
 
 	result := []*protobuf.MeteringPoint{}
 	for _, meter := range meters {
-		activeSince := uint64(meter.State.ActiveSince.Unix() * 1000)
-		inactiveSince := uint64(meter.State.InactiveSince.Unix() * 1000)
+		activeSince := uint64(meter.State.ActiveSince.Date.Unix() * 1000)
+		inactiveSince := uint64(meter.State.InactiveSince.Date.Unix() * 1000)
 		registeredSince := uint64(meter.RegisteredSince.Unix() * 1000)
 		result = append(result, &protobuf.MeteringPoint{
 			MeteringPointId: meter.MeteringPoint,

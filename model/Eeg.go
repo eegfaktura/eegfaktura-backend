@@ -7,22 +7,22 @@ import (
 )
 
 type Eeg struct {
-	Id                 string      `json:"id" db:"tenant"`
-	Name               string      `json:"name,omitempty"`
-	Description        string      `json:"description"`
-	BusinessNr         null.String `json:"businessNr,omitempty" db:"businessNr"`
-	Area               AreaType    `json:"area"` /* LOCAL | REGIONAL | BEG | GEA */
-	Legal              string      `json:"legal,omitempty"`
-	GridOperator       string      `json:"gridOperator,omitempty" db:"gridoperator_code"`
-	OperatorName       string      `json:"operatorName,omitempty" db:"gridoperator_name"`
-	CommunityId        string      `json:"communityId,omitempty" db:"communityId"`
-	RcNumber           string      `json:"rcNumber" db:"rcNumber"`
-	AllocationMode     string      `json:"allocationMode,omitempty" db:"allocationMode"`
-	SettlementInterval string      `json:"settlementInterval,omitempty" db:"settlementInterval"`
-	ProviderBusinessNr null.Int    `json:"providerBusinessNr,omitempty" db:"providerBusinessNr"`
-	TaxNumber          null.String `json:"taxNumber,omitempty" db:"taxNumber"`
-	VatNumber          null.String `json:"vatNumber" db:"vatNumber"`
-	ContactPerson      null.String `json:"contactPerson" db:"contactPerson"`
+	Id                 string             `json:"id" db:"tenant"`
+	Name               string             `json:"name,omitempty"`
+	Description        string             `json:"description"`
+	BusinessNr         null.String        `json:"businessNr,omitempty" db:"businessNr"`
+	Area               AreaType           `json:"area"` /* LOCAL | REGIONAL | BEG | GEA */
+	Legal              string             `json:"legal,omitempty"`
+	GridOperator       string             `json:"gridOperator,omitempty" db:"gridoperator_code"`
+	OperatorName       string             `json:"operatorName,omitempty" db:"gridoperator_name"`
+	CommunityId        string             `json:"communityId,omitempty" db:"communityId"`
+	RcNumber           string             `json:"rcNumber" db:"rcNumber"`
+	AllocationMode     AllocationModeType `json:"allocationMode,omitempty" db:"allocationMode"`
+	SettlementInterval string             `json:"settlementInterval,omitempty" db:"settlementInterval"`
+	ProviderBusinessNr null.Int           `json:"providerBusinessNr,omitempty" db:"providerBusinessNr"`
+	TaxNumber          null.String        `json:"taxNumber,omitempty" db:"taxNumber"`
+	VatNumber          null.String        `json:"vatNumber" db:"vatNumber"`
+	ContactPerson      null.String        `json:"contactPerson" db:"contactPerson"`
 	EegAddress         `json:"address,omitempty"`
 	AccountInfo        `json:"accountInfo,omitempty"`
 	Contact            `json:"contact,omitempty"`
@@ -70,8 +70,9 @@ type EegAddress struct {
 }
 
 type Contact struct {
-	Phone null.String `json:"phone,omitempty"`
-	Email null.String `json:"email,omitempty"`
+	Person null.String `json:"person,omitempty"`
+	Phone  null.String `json:"phone,omitempty"`
+	Email  null.String `json:"email,omitempty"`
 }
 
 type AccountInfo struct {

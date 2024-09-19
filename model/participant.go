@@ -22,10 +22,10 @@ import (
 //}
 
 type MeterState struct {
-	ActiveSince   civil.Date    `json:"activeSince" goqu:"skipinsert"`
-	InactiveSince civil.Date    `json:"inactiveSince" goqu:"skipinsert"`
-	Active        ProcessStatus `json:"-" goqu:"skipinsert"`
-	Flag          int           `json:"-" db:"-" goqu:"skipinsert"`
+	ActiveSince   civil.NullDate `json:"activeSince" goqu:"skipinsert"`
+	InactiveSince civil.NullDate `json:"inactiveSince" goqu:"skipinsert"`
+	Active        ProcessStatus  `json:"-" db:"-" goqu:"skipinsert"`
+	Flag          ProcessFlag    `json:"-" goqu:"skipinsert"`
 }
 
 type EegParticipant struct {
@@ -104,8 +104,9 @@ const (
 type ProcessFlag int
 
 const (
-	F_IDLE ProcessFlag = iota
-	F_WAITING
+	F_MOVED ProcessFlag = iota
+	F_ASSIGNED
+	F_DELETED
 )
 
 type MeteringPoint struct {
@@ -128,10 +129,12 @@ type MeteringPoint struct {
 	ModifiedBy       null.String      `json:"modifiedBy" db:"modifiedBy"`
 	GridOperatorId   null.String      `json:"gridOperatorId,omitempty" db:"grid_operator_id"`
 	GridOperatorName null.String      `json:"gridOperatorName,omitempty" db:"grid_operator_name"`
+	ProcessState     StatusType       `json:"processState" db:"process_state"`
 	State            *MeterState      `json:"participantState" goqu:"skipupdate"`
 	PartFact         int              `json:"partFact,omitempty" db:"partFact" goqu:"skipupdate,skipinsert"`
 	ActivationMode   RegistrationMode `json:"activationMode" goqu:"skipupdate,skipinsert" db:"-"`
 	ActivationCode   string           `json:"activationCode,omitempty" goqu:"skipupdate,skipinsert" db:"-"`
+	AllocationFactor null.Float       `json:"allocationFactor,omitempty" db:"allocation_factor" goqu:"omitempty"`
 }
 
 //type MeteringPointOffline struct {

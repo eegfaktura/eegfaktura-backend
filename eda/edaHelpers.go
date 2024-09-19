@@ -81,7 +81,7 @@ func extractResponseCodeAndMeteringPointV2(ebmsMessage *model.EbmsMessage) ([]re
 func extractMeterList(ebmsMessage *model.EbmsMessage) []*completionMeters {
 	meters := []*completionMeters{}
 	for _, m := range ebmsMessage.MeterList {
-		meters = append(meters, &completionMeters{meter: m.MeteringPoint, activeSince: time.UnixMilli(m.Activation), consentId: getConsentIdPtr(m.ConsentID)})
+		meters = append(meters, &completionMeters{meter: m.MeteringPoint, activeSince: time.UnixMilli(m.From), consentId: getConsentIdPtr(m.ConsentID)})
 	}
 	return meters
 }

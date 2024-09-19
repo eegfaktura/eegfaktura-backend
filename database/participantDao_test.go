@@ -143,6 +143,7 @@ func Test_GetParticipants(t *testing.T) {
 		Transformer:      null.String{},
 		Direction:        model.GENERATOR,
 		Status:           model.ACTIVE,
+		ProcessState:     model.ACTIVE,
 		TariffId:         null.StringFrom("f9b640dc-efe3-11ed-9f81-6ad19f4af00f"),
 		EquipmentNumber:  null.StringFrom("GERZ02"),
 		EquipmentName:    null.String{},
@@ -157,10 +158,10 @@ func Test_GetParticipants(t *testing.T) {
 		GridOperatorId:   null.String{},
 		GridOperatorName: null.String{},
 		State: &model.MeterState{
-			ActiveSince:   civil.DateOf(time.Date(2023, 1, 1, 0, 0, 0, 0, time.FixedZone("", 0))),
-			InactiveSince: civil.DateOf(time.Date(2999, 12, 31, 0, 0, 0, 0, time.FixedZone("", 0))),
-			Active:        1,
-			Flag:          0,
+			ActiveSince:   civil.NullDate{Date: civil.DateOf(time.Date(2023, 1, 1, 0, 0, 0, 0, time.FixedZone("", 0))), Valid: true},
+			InactiveSince: civil.NullDate{Date: civil.DateOf(time.Date(2999, 12, 31, 0, 0, 0, 0, time.FixedZone("", 0))), Valid: true},
+			Active:        0,
+			Flag:          1,
 		},
 		PartFact: 100,
 	}
@@ -277,11 +278,11 @@ func TestImportParticipant(t *testing.T) {
 
 				assert.Equal(t, civil.Today(), p.ParticipantSince.Date)
 				assert.Equal(t, civil.Today(), m.RegisteredSince)
-				assert.Equal(t, civil.Today(), m.State.ActiveSince)
-				assert.Equal(t, civil.DateFor(2999, 12, 31), m.State.InactiveSince)
+				assert.Nil(t, m.State.ActiveSince.Ptr())
+				assert.Nil(t, m.State.InactiveSince.Ptr())
 
 				assert.Equal(t, model.NEW, p.Status)
-				assert.Equal(t, model.NEW, m.Status)
+				assert.Equal(t, model.INIT, m.Status)
 
 				assert.Equal(t, "Max", p.FirstName)
 			},
@@ -318,7 +319,7 @@ func TestImportParticipant(t *testing.T) {
 					StreetNumber:    null.StringFrom("11a"),
 					City:            null.StringFrom("Solarcity"),
 					Zip:             null.StringFrom("1111"),
-					Status:          model.ACTIVE,
+					ProcessState:    model.ACTIVE,
 					RegisteredSince: civil.DateFor(2023, 10, 6),
 				}},
 				Status: model.ACTIVE,
@@ -333,8 +334,8 @@ func TestImportParticipant(t *testing.T) {
 				require.NotNil(t, p.ParticipantSince.Ptr())
 				assert.Equal(t, civil.Today(), p.ParticipantSince.Date)
 				assert.Equal(t, civil.DateFor(2023, 10, 6), m.RegisteredSince)
-				assert.Equal(t, civil.DateFor(2023, 10, 6), m.State.ActiveSince)
-				assert.Equal(t, civil.DateFor(2999, 12, 31), m.State.InactiveSince)
+				assert.Equal(t, civil.DateFor(2023, 10, 6), m.State.ActiveSince.Date)
+				assert.Equal(t, civil.DateFor(2999, 12, 31), m.State.InactiveSince.Date)
 
 				assert.Equal(t, model.ACTIVE, p.Status)
 				assert.Equal(t, model.ACTIVE, m.Status)
@@ -384,11 +385,11 @@ func TestImportParticipant(t *testing.T) {
 
 				assert.Equal(t, civil.Today(), p.ParticipantSince.Date)
 				assert.Equal(t, civil.Today(), m.RegisteredSince)
-				assert.Equal(t, civil.Today(), m.State.ActiveSince)
-				assert.Equal(t, civil.DateFor(2999, 12, 31), m.State.InactiveSince)
+				assert.Nil(t, m.State.ActiveSince.Ptr())
+				assert.Nil(t, m.State.InactiveSince.Ptr())
 
 				assert.Equal(t, model.NEW, p.Status)
-				assert.Equal(t, model.NEW, m.Status)
+				assert.Equal(t, model.INIT, m.Status)
 
 				assert.Equal(t, "Helmut", p.FirstName)
 			},

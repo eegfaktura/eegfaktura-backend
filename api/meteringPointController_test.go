@@ -17,54 +17,7 @@ import (
 	"time"
 )
 
-//func executeRequest(req *http.Request) *httptest.ResponseRecorder {
-//	rr := httptest.NewRecorder()
-//	a.Router.ServeHTTP(rr, req)
-//
-//	return rr
-//}
-
 func TestRequestMeteringPointValues(t *testing.T) {
-	//var mockDb, err = database.GetDatabaseMock()
-	//require.NoError(t, err)
-	//
-	//database.ConnectToDatabase = func() (*sqlx.DB, error) {
-	//	return mockDb.OpenMockDb()
-	//}
-	//
-	//rows := sqlmock.NewRows([]string{"name", "description", "\"businessNr\"", "legal", "gridoperator_name", "\"communityId\"", "gridoperator_code", "\"rcNumber\"", "area", "\"allocationMode\"",
-	//	"\"settlementInterval\"", "providerBusinessNr", "street", "\"streetNumber\"", "zip", "city", "phone", "email", "website", "iban", "owner", "sepa", "\"bankName\"",
-	//	"\"taxNumber\"", "\"vatNumber\"", "online", "\"contactPerson\""}).
-	//	AddRow("TEST_EEG", "Test EEG", "", "verein", "Netz Test", "AT000000000000000001", "AT009999", "RC000001", "LOCAL", "DYNAMIC", "", 0,
-	//		"Solargasse", "10", "1111", "Solarcity", "", "", "", "", "test", false, "", "", "", true, "")
-	//mockDb.Mock.ExpectQuery("^SELECT (.+)").WillReturnRows(rows)
-	//
-	//activated := time.Date(2024, time.Month(1), 1, 0, 0, 0, 0, time.Local)
-	//inactivated := time.Date(2999, time.Month(1), 1, 0, 0, 0, 0, time.Local)
-	//
-	//rows = sqlmock.NewRows([]string{"city", "direction", "equipmentName", "equipmentNumber", "grid_operator_id", "grid_operator_name", "inverterid",
-	//	"metering_point_id", "modifiedAt", "modifiedBy", "registeredSince", "state.active", "state.activesince", "state.inactivesince", "status", "street", "streetNumber", "tariff_id",
-	//	"transformer", "zip"}).
-	//	AddRow("Solarcity", "CONSUMPTION", "", "", "AT009999", "Netz Test", "", "AT009999999999999999999999", time.Now(), "", time.Now(), 1,
-	//		activated, inactivated, "ACTIVE", "Solargasse", "1", nil, nil, "1111",
-	//	)
-	//mockDb.Mock.ExpectQuery("^SELECT (.+)").WillReturnRows(rows)
-
-	//rows = sqlmock.NewRows([]string{"city", "direction", "equipmentName", "equipmentNumber", "grid_operator_id", "grid_operator_name", "inverterid",
-	//	"metering_point_id", "modifiedAt", "modifiedBy", "registeredSince", "active", "activesince", "inactivesince", "status", "street", "streetNumber", "tariff_id",
-	//	"transformer", "zip"}).AddRow("Solarcity", "CONSUMPTION", "", "", "AT009999", "Netz Test", "", "AT009999999999999999999999", time.Now(), "", time.Now(), 1,
-	//	time.Date(2024, time.Month(1), 1, 0, 0, 0, 0, time.Local), time.Date(2999, time.Month(1), 1, 0, 0, 0, 0, time.Local),
-	//	"ACTIVE", "Solargasse", "1", nil, nil, "1111",
-	//)
-	//mockDb.Mock.ExpectQuery("^SELECT (.+)").WillReturnRows(rows)
-
-	//req, _ := http.NewRequest("POST", "/meteringpoint/syncenergy", strings.NewReader(request))
-	//w := httptest.NewRecorder()
-
-	//mqttclient.RequestingEnergyData = func(eeg *model.Eeg, meter *model.MeteringPoint, fromDate, toDate int64) error {
-	//	return nil
-	//}
-
 	type args struct {
 		tenant      string
 		request     string
@@ -77,7 +30,7 @@ func TestRequestMeteringPointValues(t *testing.T) {
 		check func(t *testing.T, recorder *httptest.ResponseRecorder)
 	}{
 		{
-			name: "Update EEG", // TODO: Add test cases.
+			name: "Update EEG",
 			args: args{
 				tenant:  "TE100100",
 				request: `{"meteringPoints": [{"meter": "AT000000000000000000001", "direction": "CONSUMPTION"}], "from": 1212001200120012, "to": 23423434243234234}`,
@@ -128,10 +81,10 @@ func TestRequestMeteringPointValues(t *testing.T) {
 			inactivated := time.Date(2999, time.Month(1), 1, 0, 0, 0, 0, time.Local)
 
 			rows = sqlmock.NewRows([]string{"city", "direction", "equipmentName", "equipmentNumber", "grid_operator_id", "grid_operator_name", "inverterid",
-				"metering_point_id", "modifiedAt", "modifiedBy", "registeredSince", "state.active", "state.activesince", "state.inactivesince", "status", "street", "streetNumber", "tariff_id",
+				"metering_point_id", "modifiedAt", "modifiedBy", "registeredSince", "state.flag", "state.activesince", "state.inactivesince", "status", "process_state", "street", "streetNumber", "tariff_id",
 				"transformer", "zip"}).
 				AddRow("Solarcity", "CONSUMPTION", "", "", "AT009999", "Netz Test", "", "AT009999999999999999999999", time.Now(), "", time.Now(), 1,
-					activated, inactivated, "ACTIVE", "Solargasse", "1", nil, nil, "1111",
+					activated, inactivated, "ACTIVE", "ACTIVE", "Solargasse", "1", nil, nil, "1111",
 				)
 			mockDb.Mock.ExpectQuery("^SELECT (.+)").WillReturnRows(rows)
 
@@ -142,8 +95,6 @@ func TestRequestMeteringPointValues(t *testing.T) {
 			tt.check(t, w)
 		})
 	}
-
-	//assert.Equal(t, http.StatusCreated, w.Code)
 }
 
 func TestRequestChangePartitionFactor(t *testing.T) {

@@ -186,7 +186,7 @@ func TestProtocolEcReqOnlHandler(t *testing.T) {
 					AddRow("TE1000001", "test-eeg", "", "", "verein", "Netz-Test", "CC00000000000002221212121212", "EE000001", "RC100130",
 						"LOCAL", "DYNAMIC", "MONTHLY", 0, "Solargasse", "1", "1111", "Solarcity", "", "", "", "", "Max Mustermann", false, "Bankname", "", "", false, "Max Mustermann")
 				mockDb.Mock.ExpectQuery(stmt).WillReturnRows(rows)
-				mockDb.Mock.ExpectExec(`UPDATE "base"."meteringpoint" SET (.+"status"='INIT'.+)`).WillReturnResult(sqlmock.NewResult(1, 1))
+				mockDb.Mock.ExpectExec(`UPDATE "base"."meteringpoint" SET (.+"process_state"='INIT'.+)`).WillReturnResult(sqlmock.NewResult(1, 1))
 
 				recorder.Mock.On("saveNotification", map[string]interface{}{
 					"type":           msg.MessageCode,

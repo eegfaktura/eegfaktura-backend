@@ -2,28 +2,38 @@ package mqttclient
 
 import (
 	"at.ourproject/vfeeg-backend/model"
+	"at.ourproject/vfeeg-backend/util"
 	"errors"
 	log "github.com/sirupsen/logrus"
 	"strings"
 )
 
-func RegistrationForParticipation(eeg *model.Eeg, meter *model.MeteringPoint) error {
+var RegistrationForParticipation = func(eeg *model.Eeg, meter *model.MeteringPoint, from *int64) error {
 
 	ebmsMessage := createEbmsMessage(eeg, meter, model.EBMS_ONLINE_REG_INIT)
 	ebmsMessage.Meter = &model.Meter{MeteringPoint: meter.MeteringPoint, Direction: meter.Direction, PartFact: meter.PartFact}
 
-	log.WithField("tenant", eeg.Id).Infof("Start Meteringpoint %s registration", meter.MeteringPoint)
-	if err := SendEbmsMessage(ebmsMessage); err != nil {
-		return model.ErrEdaCommunication(err)
-	}
-	return nil
+	log.WithField("tenant", eeg.Id).Infof("Start Meteringpoint %s ONLINE registration", meter.MeteringPoint)
+	return sendRegistrationForParticipation(eeg, meter, from, ebmsMessage)
 }
 
-func OfflineRegistrationForParticipation(eeg *model.Eeg, meter *model.MeteringPoint) error {
+var OfflineRegistrationForParticipation = func(eeg *model.Eeg, meter *model.MeteringPoint, from *int64) error {
 	ebmsMessage := createEbmsMessage(eeg, meter, model.EBMS_OFFLINE_REG_INIT)
 	ebmsMessage.Meter = &model.Meter{MeteringPoint: meter.MeteringPoint, Direction: meter.Direction, PartFact: meter.PartFact, ConsentID: meter.ActivationCode}
 
 	log.WithField("tenant", eeg.Id).Infof("Start Meteringpoint %s OFFLINE registration", meter.MeteringPoint)
+	return sendRegistrationForParticipation(eeg, meter, from, ebmsMessage)
+}
+
+func sendRegistrationForParticipation(eeg *model.Eeg, meter *model.MeteringPoint, from *int64, ebmsMessage model.EbmsMessage) error {
+	if from != nil {
+		ebmsMessage.Meter.From = *from
+	}
+
+	if eeg.AllocationMode == model.STATIC && meter.AllocationFactor.Valid {
+		ebmsMessage.Meter.Share = util.ToFixed(meter.AllocationFactor.Float64/100.0, 4)
+	}
+
 	if err := SendEbmsMessage(ebmsMessage); err != nil {
 		return model.ErrEdaCommunication(err)
 	}
@@ -127,13 +137,12 @@ func getReceiverFrom(eeg *model.Eeg, meter *model.MeteringPoint) string {
 }
 
 func createEbmsMessage(eeg *model.Eeg, meter *model.MeteringPoint, code model.EbMsMessageType) model.EbmsMessage {
-	//sender := strings.ToUpper(eeg.RcNumber)
 	receiver := getReceiverFrom(eeg, meter)
 
 	return model.EbmsMessage{
 		Sender:   strings.ToUpper(eeg.RcNumber),
-		Receiver: receiver, //getReceiverFrom(eeg, meter),
-		//Sender:      "sepp.gaug",
+		Receiver: receiver,
+		//Sender:      strings.ToUpper("sepp.gaug"),
 		//Receiver:    "obermueller.peter",
 		MessageCode: code,
 		EcId:        eeg.CommunityId,

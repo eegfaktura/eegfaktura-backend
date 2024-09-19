@@ -50,7 +50,7 @@ var (
 		189: "Zählpunkt ist der Gemeinschafts-ID nicht zugeordnet",
 		196: "Teilnahme-Limit wird überschritten",
 	}
-	REJECTED_INVALID_CODES = []int16{56, 57, 76, 104, 157, 158, 159, 172, 173, 177, 181, 184, 185, 196}
+	REJECTED_INVALID_CODES = []int16{56, 57, 76, 104, 157, 158, 159, 172, 173, 177, 181, 184, 185, 188, 196}
 	REJECTED_VALID_CODES   = []int16{156}
 	REJECTED_IGNORE_CODES  = []int16{86}
 )
@@ -212,7 +212,7 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 
 	codes, meters, consentIds, _ := extractResponseCodeAndMeteringPoint(&msg.Payload)
 	var status model.StatusType
-	var statusCode int16 = 0
+	var statusCode *int16
 	var activeSince civil.NullDate
 	var consentId *string
 
@@ -226,7 +226,6 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 			activeSince = civil.NullDateFrom(&ax)
 			consentId = completeMeters[0].consentId
 			status = model.ACTIVE
-			statusCode = 0
 		} else {
 			status = ""
 			meters = []string{}
@@ -235,7 +234,7 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 	case model.EBMS_ONLINE_REG_REJECTION, model.EBMS_OFFLINE_REG_REJECTION:
 		if codesContains(REJECTED_INVALID_CODES, codes) {
 			status = model.INVALID
-			statusCode = intersectCodes(REJECTED_INVALID_CODES, codes)[0]
+			statusCode = &intersectCodes(REJECTED_INVALID_CODES, codes)[0]
 		} else if codesContains(REJECTED_VALID_CODES, codes) {
 			status = model.ACTIVE
 			codes = []int16{0}
@@ -245,7 +244,7 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 		} else {
 			status = model.REJECTED
 			if len(codes) > 0 {
-				statusCode = codes[0]
+				statusCode = &codes[0]
 			}
 		}
 	case model.EBMS_ONLINE_REG_APPROVAL, model.EBMS_OFFLINE_REG_APPROVAL:
@@ -265,6 +264,7 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 				}
 			} else if c == 182 || c == 183 {
 				status = model.INVALID
+				statusCode = &c
 			}
 		}
 	case model.EBMS_ONLINE_REG_INIT, model.EBMS_OFFLINE_REG_INIT:
@@ -309,7 +309,6 @@ func protocolCmRevImpHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 	logrus.WithField("tenant", msg.Tenant).Printf("Handle Subscriptions: %+v Code: %s", msg.Protocol, msg.MessageCode)
 
 	meters, _ := extractResponseCodeAndMeteringPointV2(&msg.Payload)
-	var status model.StatusType
 
 	db, err := recorder.databaseConnection()
 	if err != nil {
@@ -321,7 +320,6 @@ func protocolCmRevImpHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 	var eeg *model.Eeg
 	switch msg.MessageCode {
 	case model.EBMS_AUFHEBUNG_CCMS, model.EBMS_ABLEHNUNG_CCMS:
-		status = ""
 		eeg, err = database.GetEegByEcId(db, msg.Payload.EcId)
 		if err != nil {
 			logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
@@ -345,15 +343,13 @@ func protocolCmRevImpHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 		if len(meters) > 0 {
 			if codesContains([]int16{176}, meters[0].codes) {
 				meters[0].consentEnd = civil.DateOf(time.UnixMilli(msg.Payload.ConsentEnd))
-				status = model.INACTIVE
-
 				eeg, err = database.GetEegByEcId(db, msg.Payload.EcId)
 				if err != nil {
 					logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
 					return
 				}
 
-				if err := database.MeteringPointRevoke(db, eeg.Id, meters[0].meter, status, meters[0].consentEnd); err != nil {
+				if err := database.MeteringPointRevoke(db, eeg.Id, meters[0].meter, meters[0].consentEnd); err != nil {
 					logrus.WithField("tenant", eeg.Id).Errorf("can not revoke metering point %+v - %+v", meters, err)
 					return
 				}

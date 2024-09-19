@@ -69,7 +69,7 @@ func createMeteringPoint() middleware.JWTHandlerFunc {
 			return
 		}
 
-		if m.Status == model.NEW {
+		if m.ProcessState == model.NEW {
 			log.WithField("tenant", tenant).Infof("register Meter:  %v ", m)
 			eeg, err := database.GetEeg(db, tenant)
 			if err != nil {
@@ -77,7 +77,21 @@ func createMeteringPoint() middleware.JWTHandlerFunc {
 				return
 			}
 
-			if err = edaRegisterMeteringpoint(eeg, m.ActivationMode, &m); err != nil {
+			participant, err := database.QueryParticipant(db, participantId)
+			if err != nil {
+				log.WithField("tenant", tenant).WithError(err).Error("failed to register metering point. Cannot find appropriate participant.")
+				respondWith(w, http.StatusBadRequest, tenant, err)
+				return
+			}
+
+			var from int64
+			if m.RegisteredSince.After(participant.ParticipantSince.Date) {
+				from = util.CalcProcessDate(m.RegisteredSince)
+			} else {
+				from = util.CalcProcessNullDate(participant.ParticipantSince)
+			}
+
+			if err = edaRegisterMeteringpoint(eeg, m.ActivationMode, &m, &from); err != nil {
 				respondWith(w, http.StatusBadRequest, tenant, err)
 				return
 			}
@@ -282,7 +296,14 @@ func registerMeteringPoint() middleware.JWTHandlerFunc {
 			}
 		}
 
-		if err = edaRegisterMeteringpoint(eeg, request.ActivationMode, meter); err != nil {
+		var from int64
+		if meter.RegisteredSince.After(participant.ParticipantSince.Date) {
+			from = util.CalcProcessDate(meter.RegisteredSince)
+		} else {
+			from = util.CalcProcessNullDate(participant.ParticipantSince)
+		}
+
+		if err = edaRegisterMeteringpoint(eeg, request.ActivationMode, meter, &from); err != nil {
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
@@ -362,10 +383,10 @@ func requestMeteringPointValues() middleware.JWTHandlerFunc {
 				return
 			}
 			for _, m := range meters {
-				if m.Status != model.ACTIVE || m.State.Active != model.P_ACTIVE {
+				if m.Status != model.ACTIVE || m.State.Flag != model.F_ASSIGNED || !m.State.ActiveSince.Valid {
 					continue
 				}
-				from := util.MaxTimeStamp(m.State.ActiveSince.Unix()*1000, fromDate)
+				from := util.MaxTimeStamp(m.State.ActiveSince.Date.Unix()*1000, fromDate)
 				if err = mqttclient.RequestingEnergyData(eeg, m, from, toDate); err != nil {
 					log.WithField("tenant", tenant).Errorf("request Metering values %v (%s - %s)", m,
 						time.UnixMilli(from).String(), time.UnixMilli(toDate).String())
@@ -501,7 +522,7 @@ func archiveMeteringPoint() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
 		vars := mux.Vars(r)
 		meterId := vars["mid"]
-		//participantId := vars["pid"]
+		participantId := vars["pid"]
 
 		db, err := database.ConnectToDatabase()
 		if err != nil {
@@ -511,7 +532,7 @@ func archiveMeteringPoint() middleware.JWTHandlerFunc {
 		}
 		defer func() { _ = db.Close() }()
 
-		err = database.MeteringPointsSetStatus(db, tenant, model.ARCHIVED, 0, []string{meterId}, nil, nil)
+		err = database.ArchiveMeteringPoint(db, tenant, participantId, meterId)
 		if err != nil {
 			log.WithField("tenant", tenant).WithError(err).Error("failed to archive metering point.")
 			respondWith(w, http.StatusBadRequest, tenant, err)
@@ -573,15 +594,15 @@ func requestChangePartitionFactor() middleware.JWTHandlerFunc {
 	}
 }
 
-func edaRegisterMeteringpoint(eeg *model.Eeg, mode model.RegistrationMode, meter *model.MeteringPoint) error {
+func edaRegisterMeteringpoint(eeg *model.Eeg, mode model.RegistrationMode, meter *model.MeteringPoint, from *int64) error {
 	var err error
 	if eeg.Online && meter != nil {
 		if mode == model.ONLINE {
-			if err = mqttclient.RegistrationForParticipation(eeg, meter); err != nil {
+			if err = mqttclient.RegistrationForParticipation(eeg, meter, from); err != nil {
 				return err
 			}
 		} else if mode == model.OFFLINE {
-			if err = mqttclient.OfflineRegistrationForParticipation(eeg, meter); err != nil {
+			if err = mqttclient.OfflineRegistrationForParticipation(eeg, meter, from); err != nil {
 				return err
 			}
 		} else {

@@ -109,10 +109,13 @@ func TestImportMasterdataFromExcel(t *testing.T) {
 				require.NotNil(t, p)
 				require.Equal(t, 1, len(p.MeteringPoint))
 
+				fmt.Printf("ACTIVE-DATE: %v %v\n", p.MeteringPoint[0].State.ActiveSince.Valid, p.MeteringPoint[0].State.ActiveSince.Date)
+
 				assert.Equal(t, "Test Operator", p.MeteringPoint[0].GridOperatorName.String)
-				assert.Equal(t, civil.DateOf(time.Date(time.Now().Year(), 1, 1, 0, 0, 0, 0, time.Local)), p.MeteringPoint[0].State.ActiveSince)
-				assert.Equal(t, civil.DateOf(time.Date(2999, 12, 31, 0, 0, 0, 0, time.Local)), p.MeteringPoint[0].State.InactiveSince)
-				assert.Equal(t, 0, p.MeteringPoint[0].State.Flag)
+				assert.Equal(t, civil.DateOf(time.Date(time.Now().Year(), 1, 1, 0, 0, 0, 0, time.Local)), p.MeteringPoint[0].State.ActiveSince.Date)
+				assert.Equal(t, civil.DateOf(time.Date(2999, 12, 31, 0, 0, 0, 0, time.Local)), p.MeteringPoint[0].State.InactiveSince.Date)
+				assert.Equal(t, model.F_ASSIGNED, p.MeteringPoint[0].State.Flag)
+				assert.Equal(t, model.ACTIVE, p.MeteringPoint[0].ProcessState)
 				assert.Equal(t, model.ACTIVE, p.MeteringPoint[0].Status)
 			},
 		},
