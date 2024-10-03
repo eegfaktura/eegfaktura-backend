@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/jjeffery/civil"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/guregu/null.v4"
@@ -15,7 +16,7 @@ import (
 )
 
 func init() {
-	viper.Set("services.mail-server", "localhost:9092")
+	viper.Set("services.mail-server", "localhost:9093")
 	viper.Set("file-content.templates", "../public")
 }
 
@@ -172,8 +173,8 @@ func TestParseTemplate(t *testing.T) {
 			want: bytes.NewBufferString(strings.Trim(`<!DOCTYPE html>
         <html>
         <head>
-            <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-            <style type="text/css" style="display:none;"> P {margin-top:0;margin-bottom:0;} </style>
+          <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+          <style type="text/css" style="display:none;"> P {margin-top:0;margin-bottom:0;} </style>
         </head>
         <body dir="ltr">
         <p><span style="font-family: Verdana, Geneva, sans-serif; font-size: 10pt">Liebe Mitglieder der EEG St.Florian &amp; Nachbargemeinden,</span></p>
@@ -183,8 +184,8 @@ func TestParseTemplate(t *testing.T) {
             Ich darf Ihnen hiermit mitteilen, dass wir Sie erfolgreich bei uns registrieren konnten.</span></p>
         <p><span style="font-family: Verdana, Geneva, sans-serif; font-size: 10pt">
             Ein letzter Schritt ist noch erforderlich:<br>
-            Videoanleitung: <a href="https://www.youtube.com/watch?v=yR8Bgf56rNk" id="OWA5bd48a2b-81e0-0338-d18f-2f4c31144d23" data-auth="NotApplicable" data-loopstyle="linkonly" style="margin-top: 0px; margin-bottom: 0px;">
-                https://www.youtube.com/watch?v=yR8Bgf56rNk
+            Videoanleitung: <a href="https://youtu.be/zZdbxv-cPog?si=-yG5GNMZ5BsMLMmI" id="OWA5bd48a2b-81e0-0338-d18f-2f4c31144d23" data-auth="NotApplicable" data-loopstyle="linkonly" style="margin-top: 0px; margin-bottom: 0px;">
+                https://youtu.be/zZdbxv-cPog?si=-yG5GNMZ5BsMLMmI
             </a>
             </span>
         </p>
@@ -221,18 +222,18 @@ func TestParseTemplate(t *testing.T) {
             <a href="mailto:online@eeg-stflorian.at" class="OWAAutoLink" data-loopstyle="linkonly" style="margin-top: 0px; margin-bottom: 0px;">online@eeg-stflorian.at</a><br>
             <br>
             Webseite - <a href="https://eeg-stflorian.jimdofree.com/" id="OWAf90744b3-c086-3851-3626-9ebcedc5ee90" class="OWAAutoLink" data-auth="NotApplicable" data-loopstyle="linkonly"
-                          style="margin-top: 0px; margin-bottom: 0px;">
+               style="margin-top: 0px; margin-bottom: 0px;">
                 https://eeg-stflorian.jimdofree.com/
             </a><br>
             Cities - <a href="https://citiesapps.com/pages/erneuerbare-energiegemeinschaft-stflorian/" class="OWAAutoLink" data-auth="NotApplicable" data-loopstyle="linkonly"
-                        style="margin-top: 0px; margin-bottom: 0px;">
+                          style="margin-top: 0px; margin-bottom: 0px;">
                 https://citiesapps.com/pages/erneuerbare-energiegemeinschaft-stflorian/
             </a><br>
             Facebook - <a href="https://www.facebook.com/profile.php?id=3D100092747569956" id="OWA65ff5825-9b1f-d3aa-06b5-f9b4610a0ff1" class="OWAAutoLink" data-auth="NotApplicable"
-                          data-loopstyle="linkonly" style="margin-top: 0px; margin-bottom: 0px;">
+               data-loopstyle="linkonly" style="margin-top: 0px; margin-bottom: 0px;">
                 https://www.facebook.com/profile.php?id=3D100092747569956</a><br>
             Youtube - <a href="https://www.youtube.com/@SogehtEEG" class="OWAAutoLink" data-auth="NotApplicable" data-loopstyle="linkonly"
-                         style="margin-top: 0px; margin-bottom: 0px;">
+                        style="margin-top: 0px; margin-bottom: 0px;">
                 https://www.youtube.com/@SogehtEEG
             </a><br>
         </span></p>
@@ -262,8 +263,8 @@ func TestParseTemplate(t *testing.T) {
             Ich darf Ihnen hiermit mitteilen, dass wir Sie erfolgreich bei uns registrieren konnten.</span></p>
         <p><span style="font-family: Verdana, Geneva, sans-serif; font-size: 10pt">
             Ein letzter Schritt ist noch erforderlich:<br>
-            Videoanleitung: <a href="https://www.youtube.com/watch?v=yR8Bgf56rNk" id="OWA5bd48a2b-81e0-0338-d18f-2f4c31144d23" data-auth="NotApplicable" data-loopstyle="linkonly" style="margin-top: 0px; margin-bottom: 0px;">
-                https://www.youtube.com/watch?v=yR8Bgf56rNk
+            Videoanleitung: <a href="https://youtu.be/zZdbxv-cPog?si=-yG5GNMZ5BsMLMmI" id="OWA5bd48a2b-81e0-0338-d18f-2f4c31144d23" data-auth="NotApplicable" data-loopstyle="linkonly" style="margin-top: 0px; margin-bottom: 0px;">
+                https://youtu.be/zZdbxv-cPog?si=-yG5GNMZ5BsMLMmI
             </a>
             </span>
         </p>
@@ -387,12 +388,72 @@ func TestParseTemplate2(t *testing.T) {
 		Version:         0,
 	}
 
-	sendMock := func(tenant, to, subject string, cc *string, body *bytes.Buffer, attachments []*services.Attachment) error {
+	sendMock := func(tenant, to, subject string, cc *string, body *bytes.Buffer, inlineContent []*services.Attachment, attachment *services.Attachment) error {
 		fmt.Printf("Mail-Body: %s\n", body.String())
 		return nil
 	}
 
 	err := SendActivationMailFromTemplate(sendMock, "sepp", "test", eeg, participant)
 	assert.NoError(t, err)
+}
 
+func TestManualSending(t *testing.T) {
+	eeg := &model.Eeg{
+		Id:                 "RC100130",
+		Name:               "TE-EEG",
+		Description:        "TEST EEG",
+		BusinessNr:         null.String{},
+		Area:               "",
+		Legal:              "",
+		OperatorName:       "",
+		CommunityId:        "",
+		GridOperator:       "",
+		RcNumber:           "",
+		AllocationMode:     "",
+		SettlementInterval: "",
+		ProviderBusinessNr: null.Int{},
+		TaxNumber:          null.String{},
+		VatNumber:          null.String{},
+		ContactPerson:      null.StringFrom("Max Sonnenmann"),
+		EegAddress:         model.EegAddress{},
+		AccountInfo:        model.AccountInfo{},
+		Contact: model.Contact{
+			Phone: null.StringFrom("123456789"),
+		},
+		Optionals: model.Optionals{},
+		Online:    false,
+	}
+
+	participant := &model.EegParticipant{
+		Id:                    nil,
+		ParticipantNumber:     null.String{},
+		BusinessRole:          "",
+		FirstName:             "Max",
+		LastName:              "Mustermann",
+		TitleBefore:           "",
+		TitleAfter:            "",
+		ParticipantSince:      civil.NullDate{},
+		VatNumber:             null.String{},
+		TaxNumber:             null.String{},
+		CompanyRegisterNumber: "",
+		Contact: model.ContactInfo{
+			Phone: null.String{},
+			Email: null.StringFrom("obermueller.peter@gmail.com"),
+		},
+		BillingAddress:  model.Address{},
+		ResidentAddress: model.Address{},
+		BankAccount:     model.BankInfo{},
+		MeteringPoint:   nil,
+		TariffId:        null.String{},
+		Status:          "",
+		Version:         0,
+	}
+
+	var err error
+	if err = SendActivationMailFromTemplate(services.SendMail,
+		eeg.Id, "Aktivierung im Serviceportal", eeg, participant); err != nil {
+		logrus.WithField("tenant", eeg.Id).WithError(err).Error("Error Sending Mail")
+	}
+
+	assert.NoError(t, err)
 }

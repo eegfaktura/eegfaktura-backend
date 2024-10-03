@@ -127,6 +127,10 @@ func Test_GetParticipants(t *testing.T) {
 	p := participants[0]
 
 	assert.Equal(t, "Peter", p.FirstName)
+	assert.Equal(t, "Schulberg", p.ResidentAddress.Street.String)
+	assert.Equal(t, "Sparberweg", p.BillingAddress.Street.String)
+	assert.Nil(t, p.BankAccount.Iban.Ptr())
+
 	assert.Equal(t, 5, len(p.MeteringPoint))
 
 	findMeter := func(m []*model.MeteringPoint, mid string) *model.MeteringPoint {
@@ -239,10 +243,22 @@ func TestImportParticipant(t *testing.T) {
 			name: "Test Import New Participant",
 			mp:   "AT00300000000000000000000000000001",
 			params: &model.EegParticipant{
-				ParticipantNumber: null.String{},
-				FirstName:         "Max",
-				LastName:          "Mustermann",
-				Contact:           model.ContactInfo{},
+				EegParticipantBase: model.EegParticipantBase{
+					ParticipantNumber: null.String{},
+					FirstName:         "Max",
+					LastName:          "Mustermann",
+					MeteringPoint: []*model.MeteringPoint{&model.MeteringPoint{
+						MeteringPoint: "AT00300000000000000000000000000001",
+						Transformer:   null.String{},
+						Direction:     model.GENERATOR,
+						Street:        null.StringFrom("Solargasse"),
+						StreetNumber:  null.StringFrom("11a"),
+						City:          null.StringFrom("Solarcity"),
+						Zip:           null.StringFrom("1111"),
+					}},
+					Status: model.NEW,
+				},
+				Contact: model.ContactInfo{},
 				BillingAddress: model.Address{
 					Type:         model.BILLING,
 					Street:       null.StringFrom("Solargasse"),
@@ -258,16 +274,6 @@ func TestImportParticipant(t *testing.T) {
 					City:         null.StringFrom("Solarcity"),
 				},
 				BankAccount: model.BankInfo{},
-				MeteringPoint: []*model.MeteringPoint{&model.MeteringPoint{
-					MeteringPoint: "AT00300000000000000000000000000001",
-					Transformer:   null.String{},
-					Direction:     model.GENERATOR,
-					Street:        null.StringFrom("Solargasse"),
-					StreetNumber:  null.StringFrom("11a"),
-					City:          null.StringFrom("Solarcity"),
-					Zip:           null.StringFrom("1111"),
-				}},
-				Status: model.NEW,
 			},
 			test: func(t *testing.T, p *model.EegParticipant) {
 				assert.Equal(t, 1, len(p.MeteringPoint))
@@ -291,10 +297,25 @@ func TestImportParticipant(t *testing.T) {
 			name: "Test Import Activated Participant",
 			mp:   "AT00300000000000000000000000000002",
 			params: &model.EegParticipant{
-				ParticipantNumber: null.String{},
-				FirstName:         "Maria",
-				LastName:          "Mustermann",
-				Contact:           model.ContactInfo{},
+				EegParticipantBase: model.EegParticipantBase{
+					ParticipantNumber: null.String{},
+					FirstName:         "Maria",
+					LastName:          "Mustermann",
+					ParticipantSince:  civil.NullDate{},
+					MeteringPoint: []*model.MeteringPoint{&model.MeteringPoint{
+						MeteringPoint:   "AT00300000000000000000000000000002",
+						Transformer:     null.String{},
+						Direction:       model.GENERATOR,
+						Street:          null.StringFrom("Solargasse"),
+						StreetNumber:    null.StringFrom("11a"),
+						City:            null.StringFrom("Solarcity"),
+						Zip:             null.StringFrom("1111"),
+						ProcessState:    model.ACTIVE,
+						RegisteredSince: civil.DateFor(2023, 10, 6),
+					}},
+					Status: model.ACTIVE,
+				},
+				Contact: model.ContactInfo{},
 				BillingAddress: model.Address{
 					Type:         model.BILLING,
 					Street:       null.StringFrom("Solargasse"),
@@ -309,20 +330,7 @@ func TestImportParticipant(t *testing.T) {
 					Zip:          null.StringFrom("1111"),
 					City:         null.StringFrom("Solarcity"),
 				},
-				BankAccount:      model.BankInfo{},
-				ParticipantSince: civil.NullDate{},
-				MeteringPoint: []*model.MeteringPoint{&model.MeteringPoint{
-					MeteringPoint:   "AT00300000000000000000000000000002",
-					Transformer:     null.String{},
-					Direction:       model.GENERATOR,
-					Street:          null.StringFrom("Solargasse"),
-					StreetNumber:    null.StringFrom("11a"),
-					City:            null.StringFrom("Solarcity"),
-					Zip:             null.StringFrom("1111"),
-					ProcessState:    model.ACTIVE,
-					RegisteredSince: civil.DateFor(2023, 10, 6),
-				}},
-				Status: model.ACTIVE,
+				BankAccount: model.BankInfo{},
 			},
 			test: func(t *testing.T, p *model.EegParticipant) {
 				assert.Equal(t, 1, len(p.MeteringPoint))
@@ -347,10 +355,21 @@ func TestImportParticipant(t *testing.T) {
 			name: "Test Import Participant - empty state",
 			mp:   "AT00300000000000000000000000000003",
 			params: &model.EegParticipant{
-				ParticipantNumber: null.String{},
-				FirstName:         "Helmut",
-				LastName:          "Mustermann",
-				Contact:           model.ContactInfo{},
+				EegParticipantBase: model.EegParticipantBase{
+					ParticipantNumber: null.String{},
+					FirstName:         "Helmut",
+					LastName:          "Mustermann",
+					MeteringPoint: []*model.MeteringPoint{&model.MeteringPoint{
+						MeteringPoint: "AT00300000000000000000000000000003",
+						Transformer:   null.String{},
+						Direction:     model.GENERATOR,
+						Street:        null.StringFrom("Solargasse"),
+						StreetNumber:  null.StringFrom("11a"),
+						City:          null.StringFrom("Solarcity"),
+						Zip:           null.StringFrom("1111"),
+					}},
+				},
+				Contact: model.ContactInfo{},
 				BillingAddress: model.Address{
 					Type:         model.BILLING,
 					Street:       null.StringFrom("Solargasse"),
@@ -366,15 +385,6 @@ func TestImportParticipant(t *testing.T) {
 					City:         null.StringFrom("Solarcity"),
 				},
 				BankAccount: model.BankInfo{},
-				MeteringPoint: []*model.MeteringPoint{&model.MeteringPoint{
-					MeteringPoint: "AT00300000000000000000000000000003",
-					Transformer:   null.String{},
-					Direction:     model.GENERATOR,
-					Street:        null.StringFrom("Solargasse"),
-					StreetNumber:  null.StringFrom("11a"),
-					City:          null.StringFrom("Solarcity"),
-					Zip:           null.StringFrom("1111"),
-				}},
 			},
 			test: func(t *testing.T, p *model.EegParticipant) {
 				assert.Equal(t, 1, len(p.MeteringPoint))

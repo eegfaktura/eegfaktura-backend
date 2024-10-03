@@ -59,7 +59,11 @@ func ImportMasterdataFromExcel(db *sqlx.DB, r io.Reader, filename, sheet, tenant
 		return ""
 	}
 
-	participants := transformExcelData(rows, gridOperatorName)
+	eeg, err := GetEegById(db, tenant)
+	if err != nil {
+		return err
+	}
+	participants := transformExcelData(rows, gridOperatorName, eeg.Online)
 	log.Debugf("Rows: %+v", rows)
 	log.Debugf("LEN _ Import participants: %v", len(participants))
 
@@ -437,7 +441,7 @@ func parseExcelDate(cell string) time.Time {
 	return time.Now()
 }
 
-func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) string) []*model.EegParticipant {
+func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) string, online bool) []*model.EegParticipant {
 	colMap := map[string]int{}
 	participants := []*model.EegParticipant{}
 	defaultPartFact := "100"
@@ -490,6 +494,27 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 		}
 	}
 
+	getParticipantStatus := func() model.StatusType {
+		if online {
+			return model.NEW
+		}
+		return model.ACTIVE
+	}
+
+	getMeteringPointProcessState := func() model.StatusType {
+		if online {
+			return model.NEW
+		}
+		return model.ACTIVE
+	}
+
+	getMeteringPointStatus := func() model.StatusType {
+		if online {
+			return model.INIT
+		}
+		return model.ACTIVE
+	}
+
 	for rows.Next() {
 		if cols, err := rows.Columns(excelize.Options{RawCellValue: true}); err == nil && len(cols) > 0 {
 			switch cols[0] {
@@ -521,7 +546,7 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 					}
 
 					role := model.UNKNOWN
-					switch getColumValue(cols, colMap, "Energierichtung", "Energy Direction", nil) {
+					switch strings.ToUpper(strings.Trim(getColumValue(cols, colMap, "Energierichtung", "Energy Direction", nil), " ")) {
 					case "GENERATION":
 						role = model.GENERATOR
 					case "CONSUMPTION":
@@ -542,26 +567,38 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 					}
 
 					var registeredSince civil.Date
-					regDateAt := getColumValue(cols, colMap, "registriert seit", "registred since", nil)
-					if len(regDateAt) > 0 {
-						registeredSince = civil.DateOf(parseExcelDate(regDateAt))
+					if online {
+						registeredSince = civil.Today()
 					} else {
-						registeredSince = civil.DateFor(time.Now().Year(), 1, 1)
+						regDateAt := getColumValue(cols, colMap, "registriert seit", "registred since", nil)
+						if len(regDateAt) > 0 {
+							registeredSince = civil.DateOf(parseExcelDate(regDateAt))
+						} else {
+							registeredSince = civil.DateFor(time.Now().Year(), 1, 1)
+						}
 					}
 
 					cpStatus := getColumValue(cols, colMap, "Zählpunktstatus", "Metering Point State", nil)
-					if cpStatus == "ACTIVATED" || cpStatus == "REGISTERED" || len(cpStatus) == 0 {
+					if (!online && (cpStatus == "ACTIVATED" || cpStatus == "REGISTERED")) || (online && cpStatus == "NEW") || len(cpStatus) == 0 {
 						var participant *model.EegParticipant
 						if p, ok := findParticipant(participants, firstname, lastname); ok {
 							participant = p
 						} else {
 							participant = &model.EegParticipant{
-								ParticipantNumber: null.StringFrom(getColumValue(cols, colMap, "MitgliedsNr", "ParticipantNr", nil)),
-								FirstName:         firstname,
-								LastName:          lastname,
-								TitleBefore:       getColumValue(cols, colMap, "TitelVor", "TitleBefor", nil),
-								TitleAfter:        getColumValue(cols, colMap, "TitelNach", "TitleAfter", nil),
-								BusinessRole:      businessRole(cols, colMap),
+								EegParticipantBase: model.EegParticipantBase{
+									ParticipantNumber: null.StringFrom(getColumValue(cols, colMap, "MitgliedsNr", "ParticipantNr", nil)),
+									FirstName:         firstname,
+									LastName:          lastname,
+									TitleBefore:       getColumValue(cols, colMap, "TitelVor", "TitleBefor", nil),
+									TitleAfter:        getColumValue(cols, colMap, "TitelNach", "TitleAfter", nil),
+									BusinessRole:      businessRole(cols, colMap),
+									Status:            getParticipantStatus(),
+									ParticipantSince:  participantSince,
+									MeteringPoint:     []*model.MeteringPoint{},
+									TaxNumber:         null.StringFrom(getColumValue(cols, colMap, "SteuerNr", "taxNumber", nil)),
+									VatNumber:         null.StringFrom(getColumValue(cols, colMap, "UmsatzsteuerNr", "vatNumber", nil)),
+									Version:           0,
+								},
 								ResidentAddress: model.Address{
 									Type:         model.RESIDENCE,
 									Street:       null.StringFrom(getColumValue(cols, colMap, "Straße", "Street", nil)),
@@ -576,9 +613,6 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 									Zip:          null.StringFrom(getColumValue(cols, colMap, "PLZ", "ZIP", nil)),
 									City:         null.StringFrom(getColumValue(cols, colMap, "Ort", "City", nil)),
 								},
-								Status:           model.ACTIVE,
-								ParticipantSince: participantSince,
-								MeteringPoint:    []*model.MeteringPoint{},
 								BankAccount: model.BankInfo{
 									Iban:     null.StringFrom(getColumValue(cols, colMap, "IBAN", "IBAN", nil)),
 									Owner:    null.StringFrom(getColumValue(cols, colMap, "Kontoinhaber", "Accountname", nil)),
@@ -588,37 +622,39 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 									Email: null.StringFrom(getColumValue(cols, colMap, "email", "email", nil)),
 									Phone: null.StringFrom(getColumValue(cols, colMap, "TelefonNr", "phonenr", nil)),
 								},
-								TaxNumber: null.StringFrom(getColumValue(cols, colMap, "SteuerNr", "taxNumber", nil)),
-								VatNumber: null.StringFrom(getColumValue(cols, colMap, "UmsatzsteuerNr", "vatNumber", nil)),
-								Version:   0,
 							}
 							participants = append(participants, participant)
 						}
-						participant.MeteringPoint = append(participant.MeteringPoint, &model.MeteringPoint{
-							GridOperatorId:   null.StringFrom(netOperatorId),
-							GridOperatorName: null.StringFrom(gridOperatorName(netOperatorId)),
-							MeteringPoint:    getColumValue(cols, colMap, "Zählpunkt", "MeteringPoint Id", nil),
-							Transformer:      null.String{},
-							Direction:        role,
-							Status:           model.ACTIVE,
-							ProcessState:     model.ACTIVE,
-							TariffId:         null.String{},
-							EquipmentNumber:  equipmentNumber(cols, colMap),
-							EquipmentName:    equipmentName(cols, colMap),
-							RegisteredSince:  registeredSince,
-							InverterId:       null.String{},
-							PartFact:         partFact(cols, colMap),
-							Street:           null.StringFrom(getColumValue(cols, colMap, "Straße", "Street", nil)),
-							StreetNumber:     null.StringFrom(getColumValue(cols, colMap, "Hausnummer", "Street Number", nil)),
-							City:             null.StringFrom(getColumValue(cols, colMap, "Ort", "City", nil)),
-							Zip:              null.StringFrom(getColumValue(cols, colMap, "PLZ", "ZIP", nil)),
-							State: &model.MeterState{
-								ActiveSince:   getColumDate(cols, colMap, "registriert seit", "registriert seit", civil.DateFor(time.Now().Year(), 1, 1)),
-								InactiveSince: civil.NullDate{Date: civil.DateFor(2999, 12, 31), Valid: true},
-								Active:        1,
-								Flag:          1,
-							},
-						})
+						meteringPointId := strings.Trim(getColumValue(cols, colMap, "Zählpunkt", "MeteringPoint Id", nil), " ")
+						if len(meteringPointId) == 33 {
+							participant.MeteringPoint = append(participant.MeteringPoint, &model.MeteringPoint{
+								GridOperatorId:   null.StringFrom(netOperatorId),
+								GridOperatorName: null.StringFrom(gridOperatorName(netOperatorId)),
+								MeteringPoint:    meteringPointId,
+								Transformer:      null.String{},
+								Direction:        role,
+								Status:           getMeteringPointStatus(),
+								ProcessState:     getMeteringPointProcessState(),
+								TariffId:         null.String{},
+								EquipmentNumber:  equipmentNumber(cols, colMap),
+								EquipmentName:    equipmentName(cols, colMap),
+								RegisteredSince:  registeredSince,
+								InverterId:       null.String{},
+								PartFact:         partFact(cols, colMap),
+								Street:           null.StringFrom(getColumValue(cols, colMap, "Straße", "Street", nil)),
+								StreetNumber:     null.StringFrom(getColumValue(cols, colMap, "Hausnummer", "Street Number", nil)),
+								City:             null.StringFrom(getColumValue(cols, colMap, "Ort", "City", nil)),
+								Zip:              null.StringFrom(getColumValue(cols, colMap, "PLZ", "ZIP", nil)),
+								State: &model.MeterState{
+									ActiveSince:   getColumDate(cols, colMap, "registriert seit", "registriert seit", civil.DateFor(time.Now().Year(), 1, 1)),
+									InactiveSince: civil.NullDate{Date: civil.DateFor(2999, 12, 31), Valid: true},
+									Active:        1,
+									Flag:          1,
+								},
+							})
+						} else {
+							log.Warnf("Metering Point -%s- does not fullfill requirements! Len not equal 33. -> Not Included", meteringPointId)
+						}
 					}
 				}
 			}

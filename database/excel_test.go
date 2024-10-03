@@ -31,7 +31,7 @@ func Test_transformExcelData(t *testing.T) {
 	rows, err := f.Rows("EEG Stammdaten")
 	require.NoError(t, err)
 
-	participants := transformExcelData(rows, func(id string) string { return id })
+	participants := transformExcelData(rows, func(id string) string { return id }, false)
 
 	findParticipant := func(n string, p []*model.EegParticipant) *model.EegParticipant {
 		for i := range p {

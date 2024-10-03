@@ -28,7 +28,7 @@ type MeterState struct {
 	Flag          ProcessFlag    `json:"-" goqu:"skipinsert"`
 }
 
-type EegParticipant struct {
+type EegParticipantBase struct {
 	Id                    uuid.UUID        `json:"id" goqu:"skipupdate"`
 	ParticipantNumber     null.String      `json:"participantNumber" db:"participantNumber"`
 	BusinessRole          string           `json:"businessRole" db:"businessRole"`
@@ -41,15 +41,19 @@ type EegParticipant struct {
 	VatNumber             null.String      `json:"vatNumber" db:"vatNumber"`
 	TaxNumber             null.String      `json:"taxNumber" db:"taxNumber"`
 	CompanyRegisterNumber string           `json:"companyRegisterNumber" db:"companyRegisterNumber"`
-	Contact               ContactInfo      `json:"contact" db:"-" goqu:"skipinsert"`
-	BillingAddress        Address          `json:"billingAddress" db:"-" goqu:"skipinsert"`
-	ResidentAddress       Address          `json:"residentAddress" db:"-" goqu:"skipinsert"`
-	BankAccount           BankInfo         `json:"accountInfo" db:"-" goqu:"skipinsert"`
 	MeteringPoint         []*MeteringPoint `json:"meters" db:"-" goqu:"skipinsert"`
 	TariffId              null.String      `json:"tariffId" db:"tariffId" goqu:"skipinsert"`
 	Status                StatusType       `json:"status" goqu:"defaultifempty"`
 	Version               int              `json:"version" goqu:"defaultifempty"`
 	CreatedBy             string           `json:"createdBy,omitempty" db:"createdBy"`
+}
+
+type EegParticipant struct {
+	EegParticipantBase
+	Contact         ContactInfo `json:"contact" db:"contact"`
+	BillingAddress  Address     `json:"billingAddress" db:"billingAddress"`
+	ResidentAddress Address     `json:"residentAddress" db:"residentAddress"`
+	BankAccount     BankInfo    `json:"accountInfo" db:"accountInfo"`
 }
 
 type ContactInfo struct {

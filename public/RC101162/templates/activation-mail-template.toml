@@ -1,0 +1,5 @@
+TemplateFile="AktivierungsEmail-template.html"
+InlinePictures = [
+  { Filepath="STERN-EEG_Kopfzeile.png", contentId="logo-1"},
+]
+Attachment = { Name="Anleitung Zusatzvereinbarung Netz OÖ.pdf", Mime="application/pdf" }

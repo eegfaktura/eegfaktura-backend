@@ -232,12 +232,12 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 		}
 
 	case model.EBMS_ONLINE_REG_REJECTION, model.EBMS_OFFLINE_REG_REJECTION:
-		if codesContains(REJECTED_INVALID_CODES, codes) {
-			status = model.INVALID
-			statusCode = &intersectCodes(REJECTED_INVALID_CODES, codes)[0]
-		} else if codesContains(REJECTED_VALID_CODES, codes) {
+		if codesContains(REJECTED_VALID_CODES, codes) {
 			status = model.ACTIVE
 			codes = []int16{0}
+		} else if codesContains(REJECTED_INVALID_CODES, codes) {
+			status = model.INVALID
+			statusCode = &intersectCodes(REJECTED_INVALID_CODES, codes)[0]
 		} else if codesContains(REJECTED_IGNORE_CODES, codes) {
 			status = ""
 			codes = []int16{0}

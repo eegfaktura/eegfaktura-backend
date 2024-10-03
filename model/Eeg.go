@@ -70,16 +70,15 @@ type EegAddress struct {
 }
 
 type Contact struct {
-	Person null.String `json:"person,omitempty"`
-	Phone  null.String `json:"phone,omitempty"`
-	Email  null.String `json:"email,omitempty"`
+	Phone null.String `json:"phone,omitempty"`
+	Email null.String `json:"email,omitempty"`
 }
 
 type AccountInfo struct {
 	Iban     null.String `json:"iban"`
 	Owner    null.String `json:"owner"`
 	BankName null.String `json:"bankName" db:"bankName"`
-	Sepa     bool        `json:"sepa"`
+	Sepa     bool        `json:"sepa" db:"-"`
 }
 
 type Optionals struct {

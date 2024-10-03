@@ -107,7 +107,7 @@ func updateParticipantPartial() middleware.JWTHandlerFunc {
 			return
 		}
 
-		participant, err := database.GetParticipant(db, participantId)
+		participant, err := database.QueryParticipant(db, participantId)
 		if err != nil {
 			log.WithField("tenant", tenant).WithError(err).Error("failed to update partial participant.")
 			respondWith(w, http.StatusBadRequest, tenant, err)

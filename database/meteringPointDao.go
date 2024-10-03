@@ -370,10 +370,12 @@ func MeteringPointsSetStatus(db *sqlx.DB, tenant string, status model.StatusType
 	if statusCode != nil {
 		updateRecord["statusCode"] = *statusCode
 	}
-	if status == model.ACTIVE && activeSince != nil {
+	if status == model.ACTIVE {
+		updateRecord["status"] = model.ACTIVE
+	}
+	if activeSince != nil {
 		updateRecord["activesince"] = goqu.COALESCE(goqu.C("activesince"), *activeSince)
 		updateRecord["inactivesince"] = civil.DateFor(2999, 12, 31)
-		updateRecord["status"] = model.ACTIVE
 	}
 
 	/**
@@ -397,6 +399,7 @@ func MeteringPointsSetStatus(db *sqlx.DB, tenant string, status model.StatusType
 		return model.ErrStatusMeter(err)
 	}
 
+	println(statement)
 	result, err := db.Exec(statement)
 	if err != nil {
 		log.WithField("SQL", "UPDATE").Errorf("Stmt: %v", statement)
@@ -518,7 +521,7 @@ func MeteringPointRevokeByConsentId(db *sqlx.DB, consentId *string, meterId stri
 		return nil, model.ErrUpdateMeter(err)
 	}
 	if len(tenants) != 1 {
-		log.Warnf("Meteringpoint %s is not unique", meterId)
+		log.Warnf("Meteringpoint %s is not unique. %d-[%+v]", meterId, len(tenants), tenants)
 		return nil, model.ErrUpdateMeter(errors.New(fmt.Sprintf("Meteringpoint %s is not unique", meterId)))
 	}
 	return &tenants[0], nil

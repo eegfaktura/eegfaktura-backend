@@ -144,3 +144,14 @@ func TestNotification(t *testing.T) {
 
 	assert.NotEmpty(t, not)
 }
+
+func TestGetEegById(t *testing.T) {
+	db, err := openTestDb()
+	require.NoError(t, err)
+	defer db.Close()
+
+	eeg, err := GetEegById(db, "TE000001")
+	assert.NoError(t, err)
+
+	println(eeg)
+}

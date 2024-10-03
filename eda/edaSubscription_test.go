@@ -223,7 +223,49 @@ func TestProtocolEcReqOnlHandler(t *testing.T) {
 					AddRow("TE1000001", "test-eeg", "", "", "verein", "Netz-Test", "CC00000000000002221212121212", "EE000001", "RC100130",
 						"LOCAL", "DYNAMIC", "MONTHLY", 0, "Solargasse", "1", "1111", "Solarcity", "", "", "", "", "Max Mustermann", false, "Bankname", "", "", false, "Max Mustermann")
 				mockDb.Mock.ExpectQuery(stmt).WillReturnRows(rows)
-				mockDb.Mock.ExpectExec("UPDATE (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
+				//mockDb.Mock.ExpectExec("UPDATE (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
+				mockDb.Mock.ExpectExec(
+					`UPDATE "base"."meteringpoint" SET ("modifiedAt"='\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\dZ',"modifiedBy"='EVU',"process_state"='APPROVED') WHERE`).WillReturnResult(sqlmock.NewResult(1, 1))
+
+				recorder.Mock.On("saveNotification", map[string]interface{}{
+					"type":           msg.MessageCode,
+					"meteringPoints": extractMeters(msg.Payload, model.EBMS_ONLINE_REG_APPROVAL),
+					"responseCodes":  codes,
+				}, msg.Tenant, "EDA_PROCESS", "ADMIN").Return(nil)
+
+				recorder.Mock.On("saveHistory", "TE1000001", msg.MessageCode, "RC100298202308171692252620000000321", "ADMIN", "IN", model.EC_REQ_ONL, msg.Payload).Return(nil)
+
+				return recorder, msg, mockDb.Mock
+			},
+		},
+		{
+			name: "Zustimmung with consent-Id",
+			prepareMock: func() (*RecorderMock, model.SubscribeMessage, sqlmock.Sqlmock) {
+				mockDb, err := database.GetDatabaseMock()
+				require.NoError(t, err)
+
+				recorder := &RecorderMock{dbOpen: mockDb.OpenMockDb}
+				msg := model.SubscribeMessage{
+					MessageCode: model.EBMS_ONLINE_REG_APPROVAL,
+					Protocol:    model.EC_REQ_ONL,
+					Tenant:      "TE1000001",
+					Payload:     model.EbmsMessage{},
+				}
+				message := `{"conversationId":"RC100298202308171692252620000000321","messageId":"AT003000202308170810324070187796715","sender":"AT003000","receiver":"RC100298","messageCode":"ZUSTIMMUNG_ECON","requestId":"XV3VFJN2","responseData":[{"meteringPoint":"AT0030000000000000000000000459143", "consentId": "1726617600000","responseCode":[175]}]}`
+				codes := []string{"Zustimmung erteilt"}
+				err = json.Unmarshal([]byte(message), &msg.Payload)
+				require.NoError(t, err)
+				stmt := "SELECT (.+) FROM \"base\".\"eeg\" WHERE (.+)"
+				rows := sqlmock.NewRows([]string{"tenant", "name", "description", "businessNr", "legal", "gridoperator_name", "communityId", "gridoperator_code", "rcNumber", "area", "allocationMode",
+					"settlementInterval", "providerBusinessNr", "street", "streetNumber", "zip", "city", "phone", "email", "website", "iban", "owner", "sepa", "bankName",
+					"taxNumber", "vatNumber", "online", "contactPerson"}).
+					AddRow("TE1000001", "test-eeg", "", "", "verein", "Netz-Test", "CC00000000000002221212121212", "EE000001", "RC100130",
+						"LOCAL", "DYNAMIC", "MONTHLY", 0, "Solargasse", "1", "1111", "Solarcity", "", "", "", "", "Max Mustermann", false, "Bankname", "", "", false, "Max Mustermann")
+				mockDb.Mock.ExpectQuery(stmt).WillReturnRows(rows)
+				//mockDb.Mock.ExpectExec(fmt.Sprintf("UPDATE (.+) SET (.+) %s WHERE (.+)", regexp.QuoteMeta(`"process_state"='APPROVED'`))).WillReturnResult(sqlmock.NewResult(1, 1))
+				//mockDb.Mock.ExpectExec(fmt.Sprintf(`UPDATE \"base\".\"meteringpoint\" SET (.+) %s WHERE`, regexp.QuoteMeta(`"process_state"='APPROVED'`))).WillReturnResult(sqlmock.NewResult(1, 1))
+				mockDb.Mock.ExpectExec(
+					`UPDATE "base"."meteringpoint" SET ("consent_id"='1726617600000',"modifiedAt"='\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\dZ',"modifiedBy"='EVU',"process_state"='APPROVED') WHERE`).WillReturnResult(sqlmock.NewResult(1, 1))
 
 				recorder.Mock.On("saveNotification", map[string]interface{}{
 					"type":           msg.MessageCode,
@@ -288,7 +330,7 @@ func TestProtocolEcReqOnlHandler(t *testing.T) {
 					Payload:     model.EbmsMessage{},
 				}
 				//message := `{"conversationId":"RC100298202308171692252620000000321","messageId":"AT003000202308180842215740187694787","sender":"AT003000","receiver":"RC100298","messageCode":"ABSCHLUSS_ECON","meterList":[{"meteringPoint":"AT0030000000000000000000000519928","direction":"CONSUMPTION"}]}`
-				message := `{"conversationId":"RC100346202406091843475020000046464","messageId":"AT003300202406292044374080000009571","sender":"AT003300","receiver":"TE1000001","messageCode":"ABSCHLUSS_ECON","messageCodeVersion":"02.00","ecId":"AT00330004600RC100346000000000001","meterList":[{"meteringPoint":"AT0030000000000000000000000519928","direction":"CONSUMPTION","activation":1719612000000,"partFact":100}]}`
+				message := `{"conversationId":"RC100346202406091843475020000046464","messageId":"AT003300202406292044374080000009571","sender":"AT003300","receiver":"TE1000001","messageCode":"ABSCHLUSS_ECON","messageCodeVersion":"02.00","ecId":"AT00330004600RC100346000000000001","meterList":[{"meteringPoint":"AT0030000000000000000000000519928","direction":"CONSUMPTION","from":1719612000000,"partFact":100, "consentId":"AT1111122222"}]}`
 				err = json.Unmarshal([]byte(message), &msg.Payload)
 				require.NoError(t, err)
 				codes := []string{}
@@ -300,7 +342,9 @@ func TestProtocolEcReqOnlHandler(t *testing.T) {
 					AddRow("TE1000001", "test-eeg", "", "", "verein", "Netz-Test", "CC00000000000002221212121212", "EE000001", "RC100130",
 						"LOCAL", "DYNAMIC", "MONTHLY", 0, "Solargasse", "1", "1111", "Solarcity", "", "", "", "", "Max Mustermann", false, "Bankname", "", "", false, "Max Mustermann")
 				mockDb.Mock.ExpectQuery(stmt).WillReturnRows(rows)
-				mockDb.Mock.ExpectExec("UPDATE (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
+				//mockDb.Mock.ExpectExec("UPDATE (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
+				mockDb.Mock.ExpectExec(
+					`UPDATE "base"."meteringpoint" SET ("activesince"=.+'2024-06-29T00:00:00Z'.,"consent_id"='AT1111122222',"inactivesince"='2999-12-31T00:00:00Z',"modifiedAt"='\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\dZ',"modifiedBy"='EVU',"process_state"='ACTIVE',"status"='ACTIVE') WHERE`).WillReturnResult(sqlmock.NewResult(1, 1))
 
 				recorder.Mock.On("saveNotification", map[string]interface{}{
 					"type":           msg.MessageCode,

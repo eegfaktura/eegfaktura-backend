@@ -67,6 +67,26 @@ INSERT INTO base.address (id, participant_id, type, street, "streetNumber", city
 INSERT INTO base.address (id, participant_id, type, street, "streetNumber", city, zip)
     VALUES ('223185c0-9a68-4994-a4ec-f8577f751da0', 'ea9942db-03da-11ee-b82b-5a985b4b033a', 'BILLING', 'Sparberweg', '6', 'Strobl', '5350');
 
+INSERT INTO base.address (id, participant_id, type, street, "streetNumber", city, zip)
+    VALUES ('06060606-8620-4c51-88a4-5c39bd0b768b', 'ea1142dc-03da-11ee-b82b-5a985b4b0306', 'RESIDENCE', 'Schulberg', '1', 'Waizenkirchen', '4730');
+INSERT INTO base.address (id, participant_id, type, street, "streetNumber", city, zip)
+    VALUES ('06060606-9a68-4994-a4ec-f8577f751da0', 'ea1142dc-03da-11ee-b82b-5a985b4b0306', 'BILLING', 'Sparberweg', '6', 'Strobl', '5350');
+
+INSERT INTO base.address (id, participant_id, type, street, "streetNumber", city, zip)
+    VALUES ('06060616-8620-4c51-88a4-5c39bd0b768b', 'ea1142dc-03da-11ee-b82b-5a985b4b0316', 'RESIDENCE', 'Schulberg', '1', 'Waizenkirchen', '4730');
+INSERT INTO base.address (id, participant_id, type, street, "streetNumber", city, zip)
+    VALUES ('06060616-9a68-4994-a4ec-f8577f751da0', 'ea1142dc-03da-11ee-b82b-5a985b4b0316', 'BILLING', 'Sparberweg', '6', 'Strobl', '5350');
+
+INSERT INTO base.address (id, participant_id, type, street, "streetNumber", city, zip)
+    VALUES ('06060626-8620-4c51-88a4-5c39bd0b768b', 'ea1142dc-03da-11ee-b82b-5a985b4b0326', 'RESIDENCE', 'Schulberg', '1', 'Waizenkirchen', '4730');
+INSERT INTO base.address (id, participant_id, type, street, "streetNumber", city, zip)
+    VALUES ('06060626-9a68-4994-a4ec-f8577f751da0', 'ea1142dc-03da-11ee-b82b-5a985b4b0326', 'BILLING', 'Sparberweg', '6', 'Strobl', '5350');
+
+INSERT INTO base.address (id, participant_id, type, street, "streetNumber", city, zip)
+    VALUES ('06060636-8620-4c51-88a4-5c39bd0b768b', 'ea1142dc-03da-11ee-b82b-5a985b4b0336', 'RESIDENCE', 'Schulberg', '1', 'Waizenkirchen', '4730');
+INSERT INTO base.address (id, participant_id, type, street, "streetNumber", city, zip)
+    VALUES ('06060636-9a68-4994-a4ec-f8577f751da0', 'ea1142dc-03da-11ee-b82b-5a985b4b0336', 'BILLING', 'Sparberweg', '6', 'Strobl', '5350');
+
 INSERT INTO base.address (participant_id, type, street, "streetNumber", city, zip)
     VALUES ('ea1142dc-03da-15ee-b82b-5a985b4b033a', 'RESIDENCE', 'Schulberg', '1', 'Waizenkirchen', '4730');
 INSERT INTO base.address (participant_id, type, street, "streetNumber", city, zip)

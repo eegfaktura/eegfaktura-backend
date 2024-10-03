@@ -5,7 +5,13 @@ type InlinePicture struct {
 	ContentId string
 }
 
+type FileAttachment struct {
+	Name string
+	Mime string
+}
+
 type ActivationMailTemplate struct {
 	TemplateFile   string
 	InlinePictures []InlinePicture
+	Attachment     FileAttachment
 }
