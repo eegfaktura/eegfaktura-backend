@@ -1,0 +1,28 @@
+# GraphQL vfeeg-backend
+#
+
+scalar Eeg
+scalar Upload
+
+type Link {
+  id: ID!
+  title: String!
+  address: String!
+}
+
+input EegModel {
+  tenant: String
+  settlementInterval: String
+  sepaActiv: Boolean
+}
+
+
+type Query {
+  eeg: Eeg
+  links: [Link!]!
+}
+
+type Mutation {
+  updateEegModel(tenant: String!, eegModel: EegModel): Eeg
+  masterDataUpload(tenant: String!, sheet: String!, file: Upload!): Boolean!
+}

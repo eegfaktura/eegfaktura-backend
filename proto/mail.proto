@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "at.energydash.admin.mail";
+option java_outer_classname = "MailAdminProto";
+option go_package = "at.ourproject/vfeeg-backend/proto";
+
+package at.energydash;
+
+service SendMailService {
+  // Sends a greeting
+  rpc SendMailWithInlineAttachment (SendMailWithInlineAttachmentsRequest) returns (SendMailReply) {}
+  rpc SendMail (SendMailRequest) returns (SendMailReply) {}
+}
+
+message SendMailWithInlineAttachmentsRequest {
+  string sender = 1;
+  string recipient = 2;
+  string subject = 3;
+  string htmlBody = 4;
+  repeated Attachement attachments = 5;
+}
+
+message SendMailRequest {
+  string sender = 1;
+  string recipient = 2;
+  string subject = 3;
+  optional string filename = 4;
+  optional bytes content = 5;
+  optional bytes body = 6;
+}
+
+// The response status for sending emails
+message SendMailReply {
+  int32 status = 1;
+  optional string message = 2;
+}
+
+message Attachement {
+  bytes content = 1;
+  string filename = 2;
+  string mimeType = 3;
+  optional string contentId = 4;
+}

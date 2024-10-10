@@ -1,0 +1,25 @@
+port: 9080
+database:
+  host: "localhost"
+  port: 6432
+  user: "postgresuser"
+  password: "postgresPW"
+  dbname: "postgresdb"
+
+jwt:
+  pubKeyFile: "./zertifikat-pub.pem"
+
+mqtt:
+  host: "tcp://localhost:1883"
+  id: "edash-backend-2"
+  qos: 1
+
+file-content:
+  basedir: "../../file-content/"
+  templates: "./public"
+
+grpc-provider:
+  port: 9092
+
+services:
+  mail-server: "localhost:9093"
