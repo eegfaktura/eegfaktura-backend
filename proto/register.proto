@@ -1,0 +1,80 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "at.ourproject.register";
+option java_outer_classname = "RegisterEegProto";
+option go_package = "at.ourproject/vfeeg-backend/proto";
+
+package at.ourproject;
+
+// The greeting service definition.
+service RegisterEegService {
+  // Sends a greeting
+  rpc register (RegisterEegRequest) returns (RegisteredEegReply) {}
+  rpc eegExists (EegRequest) returns (EegResponse) {}
+}
+
+message EegRequest {
+  string rcNumber = 1;
+}
+
+message EegResponse {
+  bool exists = 1;
+}
+
+// The request message containing the user's name.
+message RegisterEegRequest {
+  enum EEG_LEGAL{
+    VEREIN = 0;
+    GENOSSENSCHAFT = 1;
+    GESELLSCHAFT = 2;
+  }
+
+  enum EEG_SETTELMENT {
+    ANNUAL = 0;
+    BIANNUAL = 1;
+    QUARTER = 2;
+    MONTHLY = 3;
+  }
+
+  enum GRID_AREA {
+    REGIONAL = 0;
+    LOCAL = 1;
+  }
+
+  enum GRID_ALLOCATION {
+    DYNAMIC = 0;
+    STATIC = 1;
+  }
+
+  string rcNumber = 1;
+  string communityId = 2;
+  string name = 3;
+  string description = 4;
+  string iban = 5;
+  string owner = 6;
+  bool sepa = 7;
+  EEG_LEGAL legal = 8;
+  string businessNr = 9;
+  string taxNumber = 10;
+  string vatNumber =11;
+  EEG_SETTELMENT settelmentInterval = 12;
+  string gridId = 13;
+  string gridName = 14;
+  GRID_AREA area = 15;
+  GRID_ALLOCATION allocation = 16;
+  string eegOwner = 17;
+  string street = 18;
+  string streetNumber = 19;
+  string city = 20;
+  string zip = 21;
+  string email = 22;
+  optional string web = 23;
+  optional string phone = 24;
+  bool online = 25;
+}
+
+// The response message containing the greetings
+message RegisteredEegReply {
+  uint32 status = 1;
+}

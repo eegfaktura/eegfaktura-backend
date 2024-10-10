@@ -1,0 +1,4 @@
+TemplateFile="./public/templates/activation-inline-content.html"
+InlinePictures = [
+  { Filepath="./public/templates/eegfaktura-logo.png", contentId="eegfaktura-logo-1"},
+]

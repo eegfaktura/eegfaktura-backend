@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Aktivierung Zählpunkt</title>
+</head>
+<body>
+<p>Servus {{.Participant.FirstName}},</p>
+
+<p>recht lieben Dank für die Anmeldung! Du musst jetzt abschließend noch die Aktivierung bei der Netz OÖ durchführen. Im Menü Datenfreigabe sollte die EEG bereits angeführt sein und Du musst den offenen Zählpunkt anhakerln.</p>
+<br>
+
+<ol>
+  <li>
+    <p>
+      Registrieren und/oder anmelden unter <a href="https://eservice.netzooe.at/app/login">https://eservice.netzooe.at/app/login</a> (im Falle der Registrierung bekommst Du mit der Post auch noch einen Code geschickt mit dem Du die Registrierung abschließen musst. Die unter Punkt 2 angeführt Zustimmung zur EEG kannst Du aber ohne Code sofort durchführen)
+    </p>
+  </li>
+</ol>
+<p>Mit besten Grüßen</p>
+<p>
+<div>{{.Eeg.ContactPerson}}</div>
+{{if Eeg.Contact.Phone != nil}}
+<div>{{.Eeg.Contact.Phone}}</div>
+{{end}}
+</p>
+<div>Erneuerbare Energie Gemeinschaft - {{.Eeg.Name}}</div>
+<div>{{.Eeg.Description}}</div>
+
+</body>
+</html>
