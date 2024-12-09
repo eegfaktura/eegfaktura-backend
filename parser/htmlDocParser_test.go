@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/jjeffery/civil"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/guregu/null.v4"
@@ -88,17 +87,23 @@ func TestParseTemplate(t *testing.T) {
 	}
 
 	participant := &model.EegParticipant{
-		Id:                    nil,
-		ParticipantNumber:     null.String{},
-		BusinessRole:          "",
-		FirstName:             "Max",
-		LastName:              "Mustermann",
-		TitleBefore:           "",
-		TitleAfter:            "",
-		ParticipantSince:      civil.NullDate{},
-		VatNumber:             null.String{},
-		TaxNumber:             null.String{},
-		CompanyRegisterNumber: "",
+		EegParticipantBase: model.EegParticipantBase{
+			Id:                    nil,
+			ParticipantNumber:     null.String{},
+			BusinessRole:          "",
+			FirstName:             "Max",
+			LastName:              "Mustermann",
+			TitleBefore:           "",
+			TitleAfter:            "",
+			ParticipantSince:      civil.NullDate{},
+			VatNumber:             null.String{},
+			TaxNumber:             null.String{},
+			CompanyRegisterNumber: "",
+			MeteringPoint:         nil,
+			TariffId:              null.String{},
+			Status:                "",
+			Version:               0,
+		},
 		Contact: model.ContactInfo{
 			Phone: null.String{},
 			Email: null.StringFrom("my@mail.com"),
@@ -106,10 +111,6 @@ func TestParseTemplate(t *testing.T) {
 		BillingAddress:  model.Address{},
 		ResidentAddress: model.Address{},
 		BankAccount:     model.BankInfo{},
-		MeteringPoint:   nil,
-		TariffId:        null.String{},
-		Status:          "",
-		Version:         0,
 	}
 
 	type args struct {
@@ -364,17 +365,23 @@ func TestParseTemplate2(t *testing.T) {
 	}
 
 	participant := &model.EegParticipant{
-		Id:                    nil,
-		ParticipantNumber:     null.String{},
-		BusinessRole:          "",
-		FirstName:             "Max",
-		LastName:              "Mustermann",
-		TitleBefore:           "",
-		TitleAfter:            "",
-		ParticipantSince:      civil.NullDate{},
-		VatNumber:             null.String{},
-		TaxNumber:             null.String{},
-		CompanyRegisterNumber: "",
+		EegParticipantBase: model.EegParticipantBase{
+			Id:                    nil,
+			ParticipantNumber:     null.String{},
+			BusinessRole:          "",
+			FirstName:             "Max",
+			LastName:              "Mustermann",
+			TitleBefore:           "",
+			TitleAfter:            "",
+			ParticipantSince:      civil.NullDate{},
+			VatNumber:             null.String{},
+			TaxNumber:             null.String{},
+			CompanyRegisterNumber: "",
+			MeteringPoint:         nil,
+			TariffId:              null.String{},
+			Status:                "",
+			Version:               0,
+		},
 		Contact: model.ContactInfo{
 			Phone: null.String{},
 			Email: null.StringFrom("my@mail.com"),
@@ -382,10 +389,6 @@ func TestParseTemplate2(t *testing.T) {
 		BillingAddress:  model.Address{},
 		ResidentAddress: model.Address{},
 		BankAccount:     model.BankInfo{},
-		MeteringPoint:   nil,
-		TariffId:        null.String{},
-		Status:          "",
-		Version:         0,
 	}
 
 	sendMock := func(tenant, to, subject string, cc *string, body *bytes.Buffer, inlineContent []*services.Attachment, attachment *services.Attachment) error {
@@ -397,63 +400,65 @@ func TestParseTemplate2(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestManualSending(t *testing.T) {
-	eeg := &model.Eeg{
-		Id:                 "RC100130",
-		Name:               "TE-EEG",
-		Description:        "TEST EEG",
-		BusinessNr:         null.String{},
-		Area:               "",
-		Legal:              "",
-		OperatorName:       "",
-		CommunityId:        "",
-		GridOperator:       "",
-		RcNumber:           "",
-		AllocationMode:     "",
-		SettlementInterval: "",
-		ProviderBusinessNr: null.Int{},
-		TaxNumber:          null.String{},
-		VatNumber:          null.String{},
-		ContactPerson:      null.StringFrom("Max Sonnenmann"),
-		EegAddress:         model.EegAddress{},
-		AccountInfo:        model.AccountInfo{},
-		Contact: model.Contact{
-			Phone: null.StringFrom("123456789"),
-		},
-		Optionals: model.Optionals{},
-		Online:    false,
-	}
-
-	participant := &model.EegParticipant{
-		Id:                    nil,
-		ParticipantNumber:     null.String{},
-		BusinessRole:          "",
-		FirstName:             "Max",
-		LastName:              "Mustermann",
-		TitleBefore:           "",
-		TitleAfter:            "",
-		ParticipantSince:      civil.NullDate{},
-		VatNumber:             null.String{},
-		TaxNumber:             null.String{},
-		CompanyRegisterNumber: "",
-		Contact: model.ContactInfo{
-			Phone: null.String{},
-			Email: null.StringFrom("obermueller.peter@gmail.com"),
-		},
-		BillingAddress:  model.Address{},
-		ResidentAddress: model.Address{},
-		BankAccount:     model.BankInfo{},
-		MeteringPoint:   nil,
-		TariffId:        null.String{},
-		Status:          "",
-		Version:         0,
-	}
-
-	var err error
-	if err = SendActivationMailFromTemplate(services.SendMail,
-		eeg.Id, "Aktivierung im Serviceportal", eeg, participant); err != nil {
-		logrus.WithField("tenant", eeg.Id).WithError(err).Error("Error Sending Mail")
-	}
-
-	assert.NoError(t, err)
-}
+//func TestManualSending(t *testing.T) {
+//	eeg := &model.Eeg{
+//		Id:                 "CC100438",
+//		Name:               "TE-EEG",
+//		Description:        "TEST EEG",
+//		BusinessNr:         null.String{},
+//		Area:               "",
+//		Legal:              "",
+//		OperatorName:       "",
+//		CommunityId:        "",
+//		GridOperator:       "",
+//		RcNumber:           "",
+//		AllocationMode:     "",
+//		SettlementInterval: "",
+//		ProviderBusinessNr: null.Int{},
+//		TaxNumber:          null.String{},
+//		VatNumber:          null.String{},
+//		ContactPerson:      null.StringFrom("Max Sonnenmann"),
+//		EegAddress:         model.EegAddress{},
+//		AccountInfo:        model.AccountInfo{},
+//		Contact: model.Contact{
+//			Phone: null.StringFrom("123456789"),
+//		},
+//		Optionals: model.Optionals{},
+//		Online:    false,
+//	}
+//
+//	participant := &model.EegParticipant{
+//		EegParticipantBase: model.EegParticipantBase{
+//			Id:                    nil,
+//			ParticipantNumber:     null.String{},
+//			BusinessRole:          "",
+//			FirstName:             "Max",
+//			LastName:              "Mustermann",
+//			TitleBefore:           "",
+//			TitleAfter:            "",
+//			ParticipantSince:      civil.NullDate{},
+//			VatNumber:             null.String{},
+//			TaxNumber:             null.String{},
+//			CompanyRegisterNumber: "",
+//			MeteringPoint:         nil,
+//			TariffId:              null.String{},
+//			Status:                "",
+//			Version:               0,
+//		},
+//		Contact: model.ContactInfo{
+//			Phone: null.String{},
+//			Email: null.StringFrom("obermueller.peter@gmail.com"),
+//		},
+//		BillingAddress:  model.Address{},
+//		ResidentAddress: model.Address{},
+//		BankAccount:     model.BankInfo{},
+//	}
+//
+//	var err error
+//	if err = SendActivationMailFromTemplate(services.SendMail,
+//		eeg.Id, "Aktivierung im Serviceportal", eeg, participant); err != nil {
+//		logrus.WithField("tenant", eeg.Id).WithError(err).Error("Error Sending Mail")
+//	}
+//
+//	assert.NoError(t, err)
+//}

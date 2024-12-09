@@ -35,9 +35,7 @@ func ImportMasterdataFromExcel(db *sqlx.DB, r io.Reader, filename, sheet, tenant
 	if f, err = openReader(r, filename); err != nil {
 		return err
 	}
-
-	defer f.Close()
-	log.Debug("Successfully open stream")
+	defer func() { _ = f.Close() }()
 
 	rows, err := f.Rows(sheet)
 	if err != nil {
@@ -63,7 +61,9 @@ func ImportMasterdataFromExcel(db *sqlx.DB, r io.Reader, filename, sheet, tenant
 	if err != nil {
 		return err
 	}
-	participants := transformExcelData(rows, gridOperatorName, eeg.Online)
+
+	importLog := &model.Log{Operation: "Excel Master Data Import", Messages: []*model.LogMessage{}}
+	participants := transformExcelData(rows, gridOperatorName, eeg.Online, importLog)
 	log.Debugf("Rows: %+v", rows)
 	log.Debugf("LEN _ Import participants: %v", len(participants))
 
@@ -72,17 +72,46 @@ func ImportMasterdataFromExcel(db *sqlx.DB, r io.Reader, filename, sheet, tenant
 		log.Error(err)
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	for _, p := range participants {
 		err = ImportParticipant(tx, strings.ToUpper(tenant), "excel", p)
 		if err != nil {
+			importLog.Messages = append(importLog.Messages, model.NewLogMessageFromVfeegError(
+				fmt.Sprintf("%s %s", p.FirstName, p.LastName),
+				err,
+			))
 			log.Errorf("Error Import Participant from Excel: %s", err.Error())
-			return err
+			return SaveNotificationFromMap(db, CreateNotificationMessageFromLog(importLog), tenant,
+				model.N_TYPE_NOTIFICATION, model.N_PROCESS_IMPORT_EXCEL, "ADMIN")
+		}
+	}
+
+	if len(importLog.Messages) > 0 {
+		err = SaveNotificationFromMap(db, CreateNotificationMessageFromLog(importLog), tenant,
+			model.N_TYPE_NOTIFICATION, model.N_PROCESS_IMPORT_EXCEL, "ADMIN")
+		if err != nil {
+			log.Error(err)
 		}
 	}
 
 	return tx.Commit()
+}
+
+func CreateNotificationMessageFromLog(logMsg *model.Log) map[string]interface{} {
+	//messageMap := func() map[string]interface{} {
+	//	ms := map[string]interface{}{}
+	//	for _, m := range logMsg.Messages {
+	//		ms["code"] = m.MessageCode
+	//		ms["identifier"] = m.Identifier
+	//	}
+	//	return ms
+	//}
+
+	return map[string]interface{}{
+		"type":     logMsg.Operation,
+		"messages": logMsg.Messages,
+	}
 }
 
 func ExportMasterdataToExcel(participants []model.EegParticipant, eeg *model.Eeg, tariffMap map[string]string) (*bytes.Buffer, error) {
@@ -441,7 +470,7 @@ func parseExcelDate(cell string) time.Time {
 	return time.Now()
 }
 
-func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) string, online bool) []*model.EegParticipant {
+func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) string, online bool, importLog *model.Log) []*model.EegParticipant {
 	colMap := map[string]int{}
 	participants := []*model.EegParticipant{}
 	defaultPartFact := "100"
@@ -494,25 +523,25 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 		}
 	}
 
-	getParticipantStatus := func() model.StatusType {
-		if online {
+	getParticipantStatus := func(state string) model.ProcessStatusType {
+		if state == "NEW" {
 			return model.NEW
 		}
 		return model.ACTIVE
 	}
 
-	getMeteringPointProcessState := func() model.StatusType {
-		if online {
+	getMeteringPointProcessState := func(state string) model.ProcessStatusType {
+		if state == "NEW" {
 			return model.NEW
 		}
 		return model.ACTIVE
 	}
 
-	getMeteringPointStatus := func() model.StatusType {
-		if online {
-			return model.INIT
+	getMeteringPointStatus := func(state string) model.StatusType {
+		if state == "NEW" {
+			return model.S_INIT
 		}
-		return model.ACTIVE
+		return model.S_ACTIVE
 	}
 
 	for rows.Next() {
@@ -570,7 +599,7 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 					if online {
 						registeredSince = civil.Today()
 					} else {
-						regDateAt := getColumValue(cols, colMap, "registriert seit", "registred since", nil)
+						regDateAt := getColumValue(cols, colMap, "Mitglied seit", "member since", nil)
 						if len(regDateAt) > 0 {
 							registeredSince = civil.DateOf(parseExcelDate(regDateAt))
 						} else {
@@ -579,7 +608,7 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 					}
 
 					cpStatus := getColumValue(cols, colMap, "Zählpunktstatus", "Metering Point State", nil)
-					if (!online && (cpStatus == "ACTIVATED" || cpStatus == "REGISTERED")) || (online && cpStatus == "NEW") || len(cpStatus) == 0 {
+					if cpStatus == "ACTIVE" || cpStatus == "ACTIVATED" || cpStatus == "REGISTERED" || cpStatus == "NEW" {
 						var participant *model.EegParticipant
 						if p, ok := findParticipant(participants, firstname, lastname); ok {
 							participant = p
@@ -592,7 +621,7 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 									TitleBefore:       getColumValue(cols, colMap, "TitelVor", "TitleBefor", nil),
 									TitleAfter:        getColumValue(cols, colMap, "TitelNach", "TitleAfter", nil),
 									BusinessRole:      businessRole(cols, colMap),
-									Status:            getParticipantStatus(),
+									Status:            getParticipantStatus(cpStatus),
 									ParticipantSince:  participantSince,
 									MeteringPoint:     []*model.MeteringPoint{},
 									TaxNumber:         null.StringFrom(getColumValue(cols, colMap, "SteuerNr", "taxNumber", nil)),
@@ -633,8 +662,8 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 								MeteringPoint:    meteringPointId,
 								Transformer:      null.String{},
 								Direction:        role,
-								Status:           getMeteringPointStatus(),
-								ProcessState:     getMeteringPointProcessState(),
+								Status:           getMeteringPointStatus(cpStatus),
+								ProcessState:     getMeteringPointProcessState(cpStatus),
 								TariffId:         null.String{},
 								EquipmentNumber:  equipmentNumber(cols, colMap),
 								EquipmentName:    equipmentName(cols, colMap),
@@ -646,15 +675,29 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 								City:             null.StringFrom(getColumValue(cols, colMap, "Ort", "City", nil)),
 								Zip:              null.StringFrom(getColumValue(cols, colMap, "PLZ", "ZIP", nil)),
 								State: &model.MeterState{
-									ActiveSince:   getColumDate(cols, colMap, "registriert seit", "registriert seit", civil.DateFor(time.Now().Year(), 1, 1)),
+									ActiveSince:   getColumDate(cols, colMap, "registriert seit", "registriert since", civil.DateFor(time.Now().Year(), 1, 1)),
 									InactiveSince: civil.NullDate{Date: civil.DateFor(2999, 12, 31), Valid: true},
 									Active:        1,
 									Flag:          1,
 								},
 							})
 						} else {
-							log.Warnf("Metering Point -%s- does not fullfill requirements! Len not equal 33. -> Not Included", meteringPointId)
+							importLog.Messages = append(importLog.Messages, model.NewLogMessage(
+								"ERROR",
+								meteringPointId,
+								"E_COUNTERPOINT_1000",
+								"Does not fulfill requirements! Len not equal 33. -> Not Included",
+							))
+							log.Warnf("Metering Point -%s- does not fulfill requirements! Len not equal 33. -> Not Included", meteringPointId)
 						}
+					} else {
+						importLog.Messages = append(importLog.Messages,
+							model.NewLogMessage(
+								"ERROR",
+								fmt.Sprintf("%s %s", firstname, lastname),
+								"E_PARTICIPANT_1000",
+								fmt.Sprintf("Does not fulfill requirements! Participant has wrong status: %s", cpStatus)))
+						log.Warnf("Participant -%s %s- does not fulfill requirements! Participant has wrong status: %s", firstname, lastname, cpStatus)
 					}
 				}
 			}

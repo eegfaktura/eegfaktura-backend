@@ -203,7 +203,7 @@ func (r *RegisterService) Register(ctx context.Context, eeg *protobuf.RegisterEe
 	return &protobuf.RegisteredEegReply{Status: 201}, nil
 }
 
-func StartGRPCServer() {
+func StartGRPCServer(quit chan bool) {
 	port := viper.GetInt("grpc-provider.port")
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
@@ -217,5 +217,15 @@ func StartGRPCServer() {
 	grpcServer := grpc.NewServer()
 	protobuf.RegisterRegisterEegServiceServer(grpcServer, &RegisterService{})
 	protobuf.RegisterApiServiceServer(grpcServer, &ApiService{})
-	grpcServer.Serve(listener)
+
+	go func() {
+		<-quit
+		grpcServer.GracefulStop()
+	}()
+
+	err = grpcServer.Serve(listener)
+	if err != nil {
+		log.Printf("gRPC: Serve() error: %s", err)
+	}
+	log.Println("gRPC listener stopped")
 }

@@ -49,7 +49,7 @@ func createMeteringPoint() middleware.JWTHandlerFunc {
 		}
 
 		m.ModifiedAt = civil.Now()
-		if m.Status != model.ACTIVE {
+		if m.Status != model.S_ACTIVE {
 			m.RegisteredSince = civil.Today()
 		}
 		m.ModifiedBy = null.StringFrom(claims.Username)
@@ -303,6 +303,7 @@ func registerMeteringPoint() middleware.JWTHandlerFunc {
 			from = util.CalcProcessNullDate(participant.ParticipantSince)
 		}
 
+		meter.ActivationCode = request.ActivationCode
 		if err = edaRegisterMeteringpoint(eeg, request.ActivationMode, meter, &from); err != nil {
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
@@ -383,7 +384,7 @@ func requestMeteringPointValues() middleware.JWTHandlerFunc {
 				return
 			}
 			for _, m := range meters {
-				if m.Status != model.ACTIVE || m.State.Flag != model.F_ASSIGNED || !m.State.ActiveSince.Valid {
+				if m.Status != model.S_ACTIVE || m.State.Flag != model.F_ASSIGNED || !m.State.ActiveSince.Valid {
 					continue
 				}
 				from := util.MaxTimeStamp(m.State.ActiveSince.Date.Unix()*1000, fromDate)

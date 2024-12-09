@@ -12,7 +12,7 @@ type MeteringPointDBModel struct {
 	Transformer      null.String        `json:"transformer,omitempty" goqu:"omitempty"`
 	Direction        DirectionType      `json:"direction,omitempty" goqu:"omitnil"`
 	Status           *StatusType        `json:"status,omitempty" goqu:"omitnil"`
-	ProcessState     *StatusType        `json:"processState" db:"process_state" goqu:"omitnil"`
+	ProcessState     *ProcessStatusType `json:"processState" db:"process_state" goqu:"omitnil"`
 	StatusCode       null.Int           `json:"statusCode,omitempty" db:"statusCode" goqu:"omitempty"`
 	TariffId         null.String        `json:"tariff_id,omitempty" db:"tariff_id" goqu:"omitempty"`
 	EquipmentNumber  null.String        `json:"equipmentNumber,omitempty" db:"equipmentNumber" goqu:"omitempty"`

@@ -22,10 +22,10 @@ func Test_createMeteringEntries(t *testing.T) {
 	type args struct {
 		participantId string
 		points        []*model.MeteringPoint
-		state         *model.StatusType
+		state         *model.ProcessStatusType
 	}
 
-	getStatePtr := func(s model.StatusType) *model.StatusType {
+	getStatePtr := func(s model.ProcessStatusType) *model.ProcessStatusType {
 		return &s
 	}
 
@@ -52,7 +52,7 @@ func Test_createMeteringEntries(t *testing.T) {
 				assert.Equal(t, 1, len(m))
 				assert.Nil(t, m[0].ActiveSince.Ptr())
 				assert.Nil(t, m[0].InactiveSince.Ptr())
-				assert.Equal(t, model.INIT, m[0].Status)
+				assert.Equal(t, model.S_INIT, m[0].Status)
 				assert.Equal(t, model.NEW, m[0].ProcessState)
 
 				assert.Equal(t, 10, mp[0].PartFact)
@@ -76,7 +76,7 @@ func Test_createMeteringEntries(t *testing.T) {
 				assert.Equal(t, 1, len(m))
 				assert.Nil(t, m[0].ActiveSince.Ptr())
 				assert.Nil(t, m[0].InactiveSince.Ptr())
-				assert.Equal(t, model.INIT, m[0].Status)
+				assert.Equal(t, model.S_INIT, m[0].Status)
 				assert.Equal(t, model.NEW, m[0].ProcessState)
 
 				assert.Equal(t, 15, mp[0].PartFact)
@@ -100,7 +100,7 @@ func Test_createMeteringEntries(t *testing.T) {
 				assert.Equal(t, 1, len(m))
 				assert.Equal(t, civil.Today(), m[0].ActiveSince.Date)
 				assert.Equal(t, civil.DateFor(2999, 12, 31), m[0].InactiveSince.Date)
-				assert.Equal(t, model.ACTIVE, m[0].Status)
+				assert.Equal(t, model.S_ACTIVE, m[0].Status)
 				assert.Equal(t, model.ACTIVE, m[0].ProcessState)
 
 				assert.Equal(t, 10, mp[0].PartFact)
@@ -127,7 +127,7 @@ func Test_createMeteringEntries(t *testing.T) {
 				assert.Equal(t, 1, len(m))
 				assert.Equal(t, civil.Today(), m[0].ActiveSince.Date)
 				assert.Equal(t, civil.DateFor(2999, 12, 31), m[0].InactiveSince.Date)
-				assert.Equal(t, model.ACTIVE, m[0].Status)
+				assert.Equal(t, model.S_ACTIVE, m[0].Status)
 				assert.Equal(t, model.ACTIVE, m[0].ProcessState)
 
 				assert.Equal(t, 10, mp[0].PartFact)
@@ -179,7 +179,7 @@ func Test_ImportMeteringPoints(t *testing.T) {
 				assert.Equal(t, 1, len(pUnderTest.MeteringPoint))
 				assert.Equal(t, model.ACTIVE, pUnderTest.Status)
 				assert.Equal(t, model.NEW, pUnderTest.MeteringPoint[0].ProcessState)
-				assert.Equal(t, model.INIT, pUnderTest.MeteringPoint[0].Status)
+				assert.Equal(t, model.S_INIT, pUnderTest.MeteringPoint[0].Status)
 				assert.Equal(t, civil.Today(), pUnderTest.MeteringPoint[0].RegisteredSince)
 				assert.Nil(t, pUnderTest.MeteringPoint[0].State.ActiveSince.Ptr())
 				assert.Nil(t, pUnderTest.MeteringPoint[0].State.InactiveSince.Ptr())
@@ -203,7 +203,7 @@ func Test_ImportMeteringPoints(t *testing.T) {
 				assert.Equal(t, 1, len(pUnderTest.MeteringPoint))
 				assert.Equal(t, model.ACTIVE, pUnderTest.Status)
 				assert.Equal(t, model.NEW, pUnderTest.MeteringPoint[0].ProcessState)
-				assert.Equal(t, model.INIT, pUnderTest.MeteringPoint[0].Status)
+				assert.Equal(t, model.S_INIT, pUnderTest.MeteringPoint[0].Status)
 				assert.Equal(t, civil.Today(), pUnderTest.MeteringPoint[0].RegisteredSince)
 				assert.Nil(t, pUnderTest.MeteringPoint[0].State.ActiveSince.Ptr())
 				assert.Nil(t, pUnderTest.MeteringPoint[0].State.InactiveSince.Ptr())
@@ -231,7 +231,7 @@ func Test_ImportMeteringPoints(t *testing.T) {
 				assert.Equal(t, 1, len(pUnderTest.MeteringPoint))
 				assert.Equal(t, model.ACTIVE, pUnderTest.Status)
 				assert.Equal(t, model.ACTIVE, pUnderTest.MeteringPoint[0].ProcessState)
-				assert.Equal(t, model.ACTIVE, pUnderTest.MeteringPoint[0].Status)
+				assert.Equal(t, model.S_ACTIVE, pUnderTest.MeteringPoint[0].Status)
 				assert.Equal(t, civil.Today(), pUnderTest.MeteringPoint[0].RegisteredSince)
 				assert.Equal(t, civil.DateFor(2024, 5, 10), pUnderTest.MeteringPoint[0].State.ActiveSince.Date)
 				assert.Equal(t, civil.DateFor(2999, 12, 31), pUnderTest.MeteringPoint[0].State.InactiveSince.Date)
@@ -257,7 +257,7 @@ func Test_ImportMeteringPoints(t *testing.T) {
 				assert.Equal(t, 1, len(pUnderTest.MeteringPoint))
 				assert.Equal(t, model.ACTIVE, pUnderTest.Status)
 				assert.Equal(t, model.ACTIVE, pUnderTest.MeteringPoint[0].ProcessState)
-				assert.Equal(t, model.ACTIVE, pUnderTest.MeteringPoint[0].Status)
+				assert.Equal(t, model.S_ACTIVE, pUnderTest.MeteringPoint[0].Status)
 				assert.Equal(t, civil.DateFor(2024, 5, 10), pUnderTest.MeteringPoint[0].RegisteredSince)
 				assert.Equal(t, pUnderTest.MeteringPoint[0].RegisteredSince, pUnderTest.MeteringPoint[0].State.ActiveSince.Date)
 				assert.Equal(t, civil.DateFor(2999, 12, 31), pUnderTest.MeteringPoint[0].State.InactiveSince.Date)
@@ -359,7 +359,7 @@ func Test_MeteringPointRevoke(t *testing.T) {
 	meter := meters[0]
 
 	assert.Equal(t, consentEnd, meter.State.InactiveSince.Date)
-	assert.Equal(t, model.INACTIVE, meter.Status)
+	assert.Equal(t, model.S_INACTIVE, meter.Status)
 
 	meters, err = GetMeteringByIds(db, "TE000015", []string{"AT0030000000000000000000000153013"})
 	assert.NoError(t, err)
@@ -504,13 +504,13 @@ func Test_AddMultipleMeteringPoints(t *testing.T) {
 	p1 := findP(p, "Peter", "Obermüller")
 	assert.NotNil(t, p1)
 	assert.Equal(t, 1, len(p1.MeteringPoint))
-	assert.Equal(t, model.INACTIVE, p1.MeteringPoint[0].Status)
+	assert.Equal(t, model.S_INACTIVE, p1.MeteringPoint[0].Status)
 
 	p2 := findP(p, "Paula", "Obermüller")
 	assert.NotNil(t, p2)
 	assert.Equal(t, 1, len(p2.MeteringPoint))
 	assert.Equal(t, model.NEW, p2.MeteringPoint[0].ProcessState)
-	assert.Equal(t, model.INIT, p2.MeteringPoint[0].Status)
+	assert.Equal(t, model.S_INIT, p2.MeteringPoint[0].Status)
 }
 
 func Test_MeteringPointIntegration(t *testing.T) {
@@ -620,7 +620,7 @@ func Test_MeteringPointIntegration(t *testing.T) {
 
 				assert.Equal(t, model.PENDING, pUnderTest.Status)
 				assert.Equal(t, 1, len(pUnderTest.MeteringPoint))
-				assert.Equal(t, model.INIT, pUnderTest.MeteringPoint[0].Status)
+				assert.Equal(t, model.S_INIT, pUnderTest.MeteringPoint[0].Status)
 				assert.Equal(t, model.NEW, pUnderTest.MeteringPoint[0].ProcessState)
 				assert.Nil(t, pUnderTest.MeteringPoint[0].State.ActiveSince.Ptr())
 				assert.Nil(t, pUnderTest.MeteringPoint[0].State.InactiveSince.Ptr())
@@ -683,7 +683,7 @@ func Test_MeteringPointIntegration(t *testing.T) {
 				pUnderTest := getParticipantUnderTest(t, "TestUser1")
 
 				require.Equal(t, 1, len(pUnderTest.MeteringPoint))
-				assert.Equal(t, model.ACTIVE, pUnderTest.MeteringPoint[0].Status)
+				assert.Equal(t, model.S_ACTIVE, pUnderTest.MeteringPoint[0].Status)
 				assert.Equal(t, model.ACTIVE, pUnderTest.MeteringPoint[0].ProcessState)
 				assert.Equal(t, civil.DateOf(time.Date(2999, 12, 31, 23, 59, 59, 0, time.UTC)), pUnderTest.MeteringPoint[0].State.InactiveSince.Date)
 				assert.Equal(t, civil.Today(), pUnderTest.MeteringPoint[0].State.ActiveSince.Date)
@@ -725,7 +725,7 @@ func Test_MeteringPointIntegration(t *testing.T) {
 
 				require.Equal(t, 1, len(pUnderTest.MeteringPoint))
 				assert.Equal(t, model.F_ASSIGNED, pUnderTest.MeteringPoint[0].State.Flag)
-				assert.Equal(t, model.INACTIVE, pUnderTest.MeteringPoint[0].Status)
+				assert.Equal(t, model.S_INACTIVE, pUnderTest.MeteringPoint[0].Status)
 				assert.Equal(t, civil.Today(), pUnderTest.MeteringPoint[0].State.InactiveSince.Date)
 				assert.Equal(t, civil.Today(), pUnderTest.MeteringPoint[0].State.ActiveSince.Date)
 
@@ -755,14 +755,14 @@ func Test_MeteringPointIntegration(t *testing.T) {
 
 				assert.Equal(t, model.PENDING, pUnderTest.Status)
 				assert.Equal(t, 1, len(pUnderTest.MeteringPoint))
-				assert.Equal(t, model.ACTIVE, pUnderTest.MeteringPoint[0].Status)
+				assert.Equal(t, model.S_ACTIVE, pUnderTest.MeteringPoint[0].Status)
 				assert.Equal(t, model.ACTIVE, pUnderTest.MeteringPoint[0].ProcessState)
 				assert.Equal(t, model.F_ASSIGNED, pUnderTest.MeteringPoint[0].State.Flag)
 				assert.Equal(t, civil.Today().Add(2*24*time.Hour), pUnderTest.MeteringPoint[0].State.ActiveSince.Date)
 				assert.Equal(t, civil.DateOf(time.Date(2999, 12, 31, 23, 59, 59, 0, time.UTC)), pUnderTest.MeteringPoint[0].State.InactiveSince.Date)
 
 				pUnderTest1 := getParticipantUnderTest(t, "TestUser1")
-				assert.Equal(t, model.INACTIVE, pUnderTest1.MeteringPoint[0].Status)
+				assert.Equal(t, model.S_INACTIVE, pUnderTest1.MeteringPoint[0].Status)
 				assert.Equal(t, model.F_MOVED, pUnderTest1.MeteringPoint[0].State.Flag)
 
 			},
@@ -780,7 +780,7 @@ func Test_MeteringPointIntegration(t *testing.T) {
 				pUnderTest := getParticipantUnderTest(t, "TestUser2")
 
 				require.Equal(t, 1, len(pUnderTest.MeteringPoint))
-				assert.Equal(t, model.INACTIVE, pUnderTest.MeteringPoint[0].Status)
+				assert.Equal(t, model.S_INACTIVE, pUnderTest.MeteringPoint[0].Status)
 				assert.Equal(t, civil.Today().Add(6*24*time.Hour), pUnderTest.MeteringPoint[0].State.InactiveSince.Date)
 				assert.Equal(t, civil.Today().Add(2*24*time.Hour), pUnderTest.MeteringPoint[0].State.ActiveSince.Date)
 
@@ -799,7 +799,7 @@ func Test_MeteringPointIntegration(t *testing.T) {
 				pUnderTest := getParticipantUnderTest(t, "TestUser2")
 
 				require.Equal(t, 1, len(pUnderTest.MeteringPoint))
-				assert.Equal(t, model.INACTIVE, pUnderTest.MeteringPoint[0].Status)
+				assert.Equal(t, model.S_INACTIVE, pUnderTest.MeteringPoint[0].Status)
 				assert.Equal(t, model.PENDING, pUnderTest.MeteringPoint[0].ProcessState)
 				assert.Equal(t, civil.Today().Add(6*24*time.Hour), pUnderTest.MeteringPoint[0].State.InactiveSince.Date)
 				assert.Equal(t, civil.Today().Add(2*24*time.Hour), pUnderTest.MeteringPoint[0].State.ActiveSince.Date)
@@ -818,7 +818,7 @@ func Test_MeteringPointIntegration(t *testing.T) {
 				pUnderTest := getParticipantUnderTest(t, "TestUser2")
 
 				require.Equal(t, 1, len(pUnderTest.MeteringPoint))
-				assert.Equal(t, model.INACTIVE, pUnderTest.MeteringPoint[0].Status)
+				assert.Equal(t, model.S_INACTIVE, pUnderTest.MeteringPoint[0].Status)
 				assert.Equal(t, model.APPROVED, pUnderTest.MeteringPoint[0].ProcessState)
 				assert.Equal(t, civil.Today().Add(6*24*time.Hour), pUnderTest.MeteringPoint[0].State.InactiveSince.Date)
 				assert.Equal(t, civil.Today().Add(2*24*time.Hour), pUnderTest.MeteringPoint[0].State.ActiveSince.Date)
@@ -839,7 +839,7 @@ func Test_MeteringPointIntegration(t *testing.T) {
 				pUnderTest := getParticipantUnderTest(t, "TestUser2")
 
 				require.Equal(t, 1, len(pUnderTest.MeteringPoint))
-				assert.Equal(t, model.ACTIVE, pUnderTest.MeteringPoint[0].Status)
+				assert.Equal(t, model.S_ACTIVE, pUnderTest.MeteringPoint[0].Status)
 				assert.Equal(t, model.ACTIVE, pUnderTest.MeteringPoint[0].ProcessState)
 				assert.Equal(t, civil.DateOf(time.Date(2999, 12, 31, 23, 59, 59, 0, time.UTC)), pUnderTest.MeteringPoint[0].State.InactiveSince.Date)
 				assert.Equal(t, civil.Today().Add(2*24*time.Hour), pUnderTest.MeteringPoint[0].State.ActiveSince.Date)
@@ -919,7 +919,7 @@ func Test_ActivateRevokedMeteringPoint(t *testing.T) {
 
 	assert.Equal(t, model.PENDING, pUnderTest.Status)
 	assert.Equal(t, 1, len(pUnderTest.MeteringPoint))
-	assert.Equal(t, model.INIT, pUnderTest.MeteringPoint[0].Status)
+	assert.Equal(t, model.S_INIT, pUnderTest.MeteringPoint[0].Status)
 	assert.Equal(t, model.NEW, pUnderTest.MeteringPoint[0].ProcessState)
 	assert.Nil(t, pUnderTest.MeteringPoint[0].State.ActiveSince.Ptr())
 	assert.Nil(t, pUnderTest.MeteringPoint[0].State.InactiveSince.Ptr())
@@ -932,7 +932,7 @@ func Test_ActivateRevokedMeteringPoint(t *testing.T) {
 	p := findParticipantUnderTest(t, db, "TE000004", "Michael", "Obermüller")
 
 	require.Equal(t, 1, len(p.MeteringPoint))
-	assert.Equal(t, model.INACTIVE, p.MeteringPoint[0].Status)
+	assert.Equal(t, model.S_INACTIVE, p.MeteringPoint[0].Status)
 	assert.Equal(t, consentEnd, p.MeteringPoint[0].State.InactiveSince.Date)
 	assert.Nil(t, p.MeteringPoint[0].State.ActiveSince.Ptr())
 
@@ -943,7 +943,7 @@ func Test_ActivateRevokedMeteringPoint(t *testing.T) {
 	p = findParticipantUnderTest(t, db, "TE000004", "Michael", "Obermüller")
 
 	require.Equal(t, 1, len(p.MeteringPoint))
-	assert.Equal(t, model.ACTIVE, p.MeteringPoint[0].Status)
+	assert.Equal(t, model.S_ACTIVE, p.MeteringPoint[0].Status)
 	assert.Equal(t, civil.DateOf(time.Date(2999, 12, 31, 23, 59, 59, 0, time.UTC)), p.MeteringPoint[0].State.InactiveSince.Date)
 	assert.Equal(t, civil.Today(), p.MeteringPoint[0].State.ActiveSince.Date)
 }
@@ -1027,7 +1027,7 @@ func Test_RegistrationProcess(t *testing.T) {
 	require.Equal(t, model.ACTIVE, pUnderTest.Status)
 	require.Equal(t, 1, len(pUnderTest.MeteringPoint))
 	require.Equal(t, model.NEW, pUnderTest.MeteringPoint[0].ProcessState)
-	require.Equal(t, model.INIT, pUnderTest.MeteringPoint[0].Status)
+	require.Equal(t, model.S_INIT, pUnderTest.MeteringPoint[0].Status)
 	require.Equal(t, civil.Today(), pUnderTest.MeteringPoint[0].RegisteredSince)
 	require.Nil(t, pUnderTest.MeteringPoint[0].State.ActiveSince.Ptr())
 
@@ -1035,19 +1035,19 @@ func Test_RegistrationProcess(t *testing.T) {
 	err = MeteringPointsSetStatus(db, "TE000004", model.PENDING, nil, []string{meter.MeteringPoint}, &now, nil)
 	require.NoError(t, err)
 
-	m, err := FindMeteringByStatus(db, "TE000004", meter.MeteringPoint, model.INIT)
+	m, err := FindMeteringByStatus(db, "TE000004", meter.MeteringPoint, model.S_INIT)
 	require.NoError(t, err)
 	assert.Equal(t, model.PENDING, m.ProcessState)
 
 	err = MeteringPointsSetStatus(db, "TE000004", model.APPROVED, nil, []string{meter.MeteringPoint}, &now, nil)
 	require.NoError(t, err)
-	m, err = FindMeteringByStatus(db, "TE000004", meter.MeteringPoint, model.INIT)
+	m, err = FindMeteringByStatus(db, "TE000004", meter.MeteringPoint, model.S_INIT)
 	require.NoError(t, err)
 	assert.Equal(t, model.APPROVED, m.ProcessState)
 
 	err = MeteringPointsSetStatus(db, "TE000004", model.ACTIVE, nil, []string{meter.MeteringPoint}, &now, nil)
 	require.NoError(t, err)
-	m, err = FindMeteringByStatus(db, "TE000004", meter.MeteringPoint, model.ACTIVE)
+	m, err = FindMeteringByStatus(db, "TE000004", meter.MeteringPoint, model.S_ACTIVE)
 	require.NoError(t, err)
 	assert.Equal(t, model.ACTIVE, m.ProcessState)
 	assert.Equal(t, civil.Today(), m.RegisteredSince)
@@ -1133,7 +1133,7 @@ func Test_UpdateMeteringPoints(t *testing.T) {
 			},
 			validate: func(t *testing.T, mUnderTest *model.MeteringPoint) {
 				fmt.Printf("New ZP: %+v\n", mUnderTest)
-				assert.Equal(t, model.ACTIVE, mUnderTest.Status)
+				assert.Equal(t, model.S_ACTIVE, mUnderTest.Status)
 				assert.Equal(t, model.ACTIVE, mUnderTest.ProcessState)
 				assert.Equal(t, mUnderTest.ConsentId.String, "AT00300020240617113044504B5ZO5IRS")
 				assert.Equal(t, civil.DateFor(2024, 3, 12), mUnderTest.State.ActiveSince.Date)
@@ -1157,7 +1157,7 @@ func Test_UpdateMeteringPoints(t *testing.T) {
 			validate: func(t *testing.T, mUnderTest *model.MeteringPoint) {
 				fmt.Printf("New ZP: %+v\n", mUnderTest)
 				assert.Equal(t, mUnderTest.ConsentId.String, "AT00300020240617113044504B5ZO5IRS")
-				assert.Equal(t, model.ACTIVE, mUnderTest.Status)
+				assert.Equal(t, model.S_ACTIVE, mUnderTest.Status)
 				assert.Equal(t, model.ACTIVE, mUnderTest.ProcessState)
 				assert.Equal(t, civil.DateFor(2024, 3, 12), mUnderTest.State.ActiveSince.Date)
 				assert.Equal(t, civil.DateFor(2999, 12, 31), mUnderTest.State.InactiveSince.Date)
@@ -1179,7 +1179,7 @@ func Test_UpdateMeteringPoints(t *testing.T) {
 			},
 			validate: func(t *testing.T, mUnderTest *model.MeteringPoint) {
 				fmt.Printf("New ZP: %+v\n", mUnderTest.State)
-				assert.Equal(t, model.ACTIVE, mUnderTest.Status)
+				assert.Equal(t, model.S_ACTIVE, mUnderTest.Status)
 				assert.Equal(t, model.ACTIVE, mUnderTest.ProcessState)
 				assert.Equal(t, mUnderTest.ConsentId.String, "AT00300020240617113044504B5ZO5IRS")
 				assert.Equal(t, civil.DateFor(2024, 3, 11), mUnderTest.State.ActiveSince.Date, mUnderTest.State.ActiveSince)
@@ -1198,7 +1198,7 @@ func Test_UpdateMeteringPoints(t *testing.T) {
 			err = UpdateActiveMeteringPoints(db, "TE000005", tt.testObject.MeterList)
 			require.NoError(t, err)
 
-			mUnderTest, err := FindMeteringByStatus(db, "TE000005", "AT0030000000000000000000000003013", model.ACTIVE)
+			mUnderTest, err := FindMeteringByStatus(db, "TE000005", "AT0030000000000000000000000003013", model.S_ACTIVE)
 			require.NoError(t, err)
 
 			tt.validate(t, mUnderTest)
@@ -1232,8 +1232,8 @@ func TestFindMeteringPointsActivePeriod(t *testing.T) {
 	fmt.Printf("MeteringPoints: %+v\n", meters)
 }
 
-func TestMeteringPointRevokeByConsentId(t *testing.T) {
-	jsonStr := `{"conversationId":"RC100130202407121427323390000087827","messageId":"RC100130202407121427323390000087826","sender":"RC100130","receiver":"AT003000","messageCode":"AUFHEBUNG_CCMS","messageCodeVersion":"","requestId":"MILNITLK","meter":{"meteringPoint":"AT0030000000000000000000000200822","consentId":"AT00300020221001105609115"},"ecId":"AT00300000000RC100130000000952832","consentEnd":1720994400000}`
+func TestMeteringPointRevokeByConsentId_INIT(t *testing.T) {
+	jsonStr := `{"conversationId":"RC100130202407121427323390000087827","messageId":"RC100130202407121427323390000087826","sender":"RC100130","receiver":"AT003000","messageCode":"AUFHEBUNG_CCMS","messageCodeVersion":"","requestId":"MILNITLK","meter":{"meteringPoint":"AT0030000000000000000000000200822","consentId":"AT00300020221001105609117"},"ecId":"AT00300000000RC100130000000952832","consentEnd":1720994400000}`
 
 	m := model.EbmsMessage{}
 	err := json.NewDecoder(strings.NewReader(jsonStr)).Decode(&m)
@@ -1255,12 +1255,58 @@ func TestMeteringPointRevokeByConsentId(t *testing.T) {
 
 	meters, err := FindInactiveMeteringById(db, "TE100201", meterId)
 	require.NoError(t, err)
+	require.Equal(t, 0, len(meters))
+
+	meters, err = FindNewMeteringById(db, "TE100201", meterId)
+	require.NoError(t, err)
 	require.Equal(t, 1, len(meters))
 
 	mUnderTest := meters[0]
-	assert.Equal(t, "AT00300020221001105609115", mUnderTest.ConsentId.String)
+	assert.Equal(t, "AT0030000000000000000000000200822", mUnderTest.MeteringPoint)
+	assert.Equal(t, "AT00300020221001105609117", mUnderTest.ConsentId.String)
+	assert.Nil(t, mUnderTest.State.InactiveSince.Ptr())
+	assert.Nil(t, mUnderTest.State.ActiveSince.Ptr())
+	assert.Equal(t, 100, mUnderTest.PartFact)
+	assert.Equal(t, model.NEW, mUnderTest.ProcessState)
+	assert.Equal(t, model.S_INIT, mUnderTest.Status)
+}
+
+func TestMeteringPointRevokeByConsentId_ACTIVE(t *testing.T) {
+	jsonStr := `{"conversationId":"RC100130202407121427323390000087827","messageId":"RC100130202407121427323390000087826","sender":"RC100130","receiver":"AT003000","messageCode":"AUFHEBUNG_CCMS","messageCodeVersion":"","requestId":"MILNITLK","meter":{"meteringPoint":"AT0030000000000000000000000200823","consentId":"AT00300020221001105609116"},"ecId":"AT00300000000RC100130000000952832","consentEnd":1720994400000}`
+
+	m := model.EbmsMessage{}
+	err := json.NewDecoder(strings.NewReader(jsonStr)).Decode(&m)
+	require.NoError(t, err)
+
+	db, err := openTestDb()
+	require.NoError(t, err)
+	defer db.Close()
+
+	meterId := m.Meter.MeteringPoint
+	consentId := m.Meter.ConsentID
+	consentEnd := civil.DateOf(time.UnixMilli(m.ConsentEnd))
+	fmt.Printf("Consent-End: %+s\n", consentEnd)
+
+	tenant, err := MeteringPointRevokeByConsentId(db, &consentId, meterId, consentEnd)
+	require.NoError(t, err)
+	require.NotNil(t, tenant)
+	require.Equal(t, "TE100201", *tenant)
+
+	meters, err := FindNewMeteringById(db, "TE100201", meterId)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(meters))
+
+	meters, err = FindInactiveMeteringById(db, "TE100201", meterId)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(meters))
+
+	mUnderTest := meters[0]
+	assert.Equal(t, "AT0030000000000000000000000200823", mUnderTest.MeteringPoint)
+	assert.Equal(t, "AT00300020221001105609116", mUnderTest.ConsentId.String)
 	assert.Equal(t, civil.DateFor(2024, 7, 15), mUnderTest.State.InactiveSince.Date)
 	assert.Equal(t, 100, mUnderTest.PartFact)
+	assert.Equal(t, model.INACTIVE, mUnderTest.ProcessState)
+	assert.Equal(t, model.S_INACTIVE, mUnderTest.Status)
 }
 
 func TestRemoveMeteringPoint(t *testing.T) {
@@ -1281,21 +1327,21 @@ func TestRemoveMeteringPoint(t *testing.T) {
 	err = RegisterMeteringPoint(db, "TE000001", "test", "ea9942da-03da-11ee-b82b-5a985b4b033a", meter)
 	require.NoError(t, err)
 
-	m, err := FindMeteringByStatus(db, "TE000001", "AT0030000000000000000000030000999", model.INIT)
+	m, err := FindMeteringByStatus(db, "TE000001", "AT0030000000000000000000030000999", model.S_INIT)
 	require.NoError(t, err)
 	require.NotNil(t, m)
 
 	assert.NoError(t, MeteringPointsSetStatus(db, "TE000001", model.REVOKED, nil, []string{"AT0030000000000000000000030000999"}, nil, nil))
 	assert.NoError(t, RemoveMeteringPoint(db, "TE000001", "ea9942da-03da-11ee-b82b-5a985b4b033a", "AT0030000000000000000000030000999"))
 
-	m, err = FindMeteringByStatus(db, "TE000001", "AT0030000000000000000000030000999", model.INIT)
+	m, err = FindMeteringByStatus(db, "TE000001", "AT0030000000000000000000030000999", model.S_INIT)
 	require.NoError(t, err)
 	require.NotNil(t, m)
 
 	assert.NoError(t, MeteringPointsSetStatus(db, "TE000001", model.INVALID, nil, []string{"AT0030000000000000000000030000999"}, nil, nil))
 	assert.NoError(t, RemoveMeteringPoint(db, "TE000001", "ea9942da-03da-11ee-b82b-5a985b4b033a", "AT0030000000000000000000030000999"))
 
-	m, err = FindMeteringByStatus(db, "TE000001", "AT0030000000000000000000030000999", model.INIT)
+	m, err = FindMeteringByStatus(db, "TE000001", "AT0030000000000000000000030000999", model.S_INIT)
 	require.Error(t, err)
 	require.Nil(t, m)
 }

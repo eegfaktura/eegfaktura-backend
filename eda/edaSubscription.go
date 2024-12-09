@@ -13,6 +13,43 @@ import (
 	"time"
 )
 
+const (
+	Stornierung_nicht_moeglich                                        = 37
+	Zaehlpunkt_nicht_dem_Lieferanten_zugeordnet                       = 55
+	Zaehlpunkt_nicht_gefunden                                         = 56
+	Zaehlpunkt_nicht_versorgt                                         = 57
+	Aenderung_Anforderung_akzeptiert                                  = 70
+	Ungueltige_Anforderungsdaten                                      = 76
+	Prozessdatum_falsch                                               = 82
+	konkurrierende_Prozesse                                           = 86
+	Kein_Smart_Meter                                                  = 90
+	Keine_Daten_im_angeforderten_Zeitraum_vorhanden                   = 94
+	MESSAGE_RECEIVED                                                  = 99
+	WRONG_ENERGY_DIRECTION                                            = 104
+	ZP_bereits_zugeordnet                                             = 156
+	ZP_bereits_einem_Betreiber_zugeordnet                             = 157
+	ZP_ist_nicht_teilnahmeberechtigt                                  = 158
+	Zu_Prozessdatum_ZP_inaktiv_bzw_noch_kein_Geraet_eingebaut         = 159
+	Verteilmodell_entspricht_nicht_der_Vereinbarung                   = 160
+	CUSTOMER_HAS_REFUSED_DATA_RELEASE                                 = 172
+	Kunde_hat_auf_Datenfreigabe_nicht_reagiert                        = 173
+	Angefragte_Daten_nicht_lieferbar                                  = 174
+	CONSENT_GRANTED                                                   = 175
+	Zustimmung_erfolgreich_entzogen                                   = 176
+	Keine_Datenfreigabe_vorhanden                                     = 177
+	Consent_existiert_bereits                                         = 178
+	ConsentID_abgelaufen                                              = 180
+	GemeinschaftsID_nicht_vorhanden                                   = 181
+	NO_REMOTELY_READABLE_METER_INSTALLED_YET                          = 182
+	SUM_OF_REPORTED_ALLOCATION_KEYS_EXCEEDS_100                       = 183
+	Kunde_hat_optiert                                                 = 184
+	Zaehlpunkt_befindet_sich_nicht_im_Bereich_der_Energiegemeinschaft = 185
+	ConsentID_und_Zaehlpunkt_passen_nicht_zusammen                    = 187
+	Teilnahmefaktor_von_100_wuerde_ueberschritten_werden              = 188
+	Zaehlpunkt_ist_der_GemeinschaftsID_nicht_zugeordnet               = 189
+	TeilnahmeLimit_wird_ueberschritten                                = 196
+)
+
 var (
 	ECON_RESPONSE_CODES = map[int16]string{
 		37:  "Stornierung nicht möglich",
@@ -139,8 +176,11 @@ func protocolCrMsgHandler(msg model.SubscribeMessage, recorder EdaRecording) {
 	}
 
 	if msg.Payload.Meter != nil && msg.Payload.Energy != nil {
-		historyValue := map[string]interface{}{"meter": msg.Payload.Meter.MeteringPoint, "from": msg.Payload.Energy.Start, "to": msg.Payload.Energy.End}
-		_ = recorder.saveHistory(eeg.Id, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, historyValue)
+		for i := range msg.Payload.Energy {
+			energy := msg.Payload.Energy[i]
+			historyValue := map[string]interface{}{"meter": msg.Payload.Meter.MeteringPoint, "from": energy.Start, "to": energy.End}
+			_ = recorder.saveHistory(db, eeg.Id, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, historyValue)
+		}
 	}
 	return
 }
@@ -171,14 +211,8 @@ func protocolCrReqPtHandler(msg model.SubscribeMessage, recorder EdaRecording) {
 		return
 	}
 
-	if err := recorder.saveNotification(map[string]interface{}{
-		"type":           msg.MessageCode,
-		"meteringPoints": msg.Payload.Meters(),
-		"responseCodes":  convertCodes2Strings(codes),
-	}, eeg.Id, "EDA_PROCESS", "ADMIN"); err != nil {
-		logrus.WithField("PROTOCOL", msg.Protocol).Error(err)
-	}
-	_ = recorder.saveHistory(eeg.Id, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
+	recorder.saveNotification(db, eeg.Id, msg.MessageCode, msg.Payload.Meters(), codes, msg.Protocol)
+	_ = recorder.saveHistory(db, eeg.Id, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
 }
 
 // protocolEcReqOnlHandler executing the EC_REQ_ONL eda process (Online Meteringpoint registration). This process exist of the following steps
@@ -211,7 +245,7 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 	}
 
 	codes, meters, consentIds, _ := extractResponseCodeAndMeteringPoint(&msg.Payload)
-	var status model.StatusType
+	var status model.ProcessStatusType
 	var statusCode *int16
 	var activeSince civil.NullDate
 	var consentId *string
@@ -234,7 +268,9 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 	case model.EBMS_ONLINE_REG_REJECTION, model.EBMS_OFFLINE_REG_REJECTION:
 		if codesContains(REJECTED_VALID_CODES, codes) {
 			status = model.ACTIVE
+			activeSince = civil.NullDate{civil.Today(), true}
 			codes = []int16{0}
+			statusCode = &codes[0]
 		} else if codesContains(REJECTED_INVALID_CODES, codes) {
 			status = model.INVALID
 			statusCode = &intersectCodes(REJECTED_INVALID_CODES, codes)[0]
@@ -249,20 +285,25 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 		}
 	case model.EBMS_ONLINE_REG_APPROVAL, model.EBMS_OFFLINE_REG_APPROVAL:
 		for i, c := range codes {
-			if c == 175 {
+			switch c {
+			case CONSENT_GRANTED:
 				status = model.APPROVED
 				consentId = &consentIds[i]
+				break
+			case CUSTOMER_HAS_REFUSED_DATA_RELEASE:
+				status = model.INVALID
+				statusCode = &c
+				break
 			}
 		}
 	case model.EBMS_ONLINE_REG_ANSWER, model.EBMS_OFFLINE_REG_ANSWER:
 		for _, c := range codes {
-			if c == 99 {
+			if c == MESSAGE_RECEIVED {
 				status = model.PENDING
 				if err := recorder.meteringPointPerformAnswerMsg(msg.Payload.EcId, meters); err != nil {
 					logrus.WithField("error", err.Error()).Errorf("Perform Answer Message %+v", meters)
-					return
 				}
-			} else if c == 182 || c == 183 {
+			} else if c == NO_REMOTELY_READABLE_METER_INSTALLED_YET || c == SUM_OF_REPORTED_ALLOCATION_KEYS_EXCEEDS_100 {
 				status = model.INVALID
 				statusCode = &c
 			}
@@ -292,16 +333,9 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 		if err := database.MeteringPointsSetStatus(db, eeg.Id, status, statusCode, meters, activeSince.Ptr(), getConsentId(consentId)); err != nil {
 			logrus.WithField("error", err.Error()).Errorf("can not change metering point status %+v", meters)
 		}
+		recorder.saveNotification(db, eeg.Id, msg.MessageCode, meters, codes, msg.Protocol)
 	}
-
-	if err := recorder.saveNotification(map[string]interface{}{
-		"type":           msg.MessageCode,
-		"meteringPoints": meters,
-		"responseCodes":  convertCodes2Strings(codes),
-	}, eeg.Id, "EDA_PROCESS", "ADMIN"); err != nil {
-		logrus.WithField("PROTOCOL", msg.Protocol).Error(err)
-	}
-	_ = recorder.saveHistory(eeg.Id, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
+	_ = recorder.saveHistory(db, eeg.Id, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
 }
 
 func protocolCmRevImpHandler(msg model.SubscribeMessage, recorder EdaRecording) {
@@ -361,15 +395,9 @@ func protocolCmRevImpHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 
 	if eeg != nil {
 		if len(meters) > 0 {
-			if err := recorder.saveNotification(map[string]interface{}{
-				"type":           msg.MessageCode,
-				"meteringPoints": []string{meters[0].meter},
-				"responseCodes":  convertCodes2Strings(meters[0].codes),
-			}, eeg.Id, "EDA_PROCESS", "ADMIN"); err != nil {
-				logrus.WithField("PROTOCOL", msg.Protocol).Error(err)
-			}
+			recorder.saveNotification(db, eeg.Id, msg.MessageCode, []string{meters[0].meter}, meters[0].codes, msg.Protocol)
 		}
-		_ = recorder.saveHistory(eeg.Id, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
+		_ = recorder.saveHistory(db, eeg.Id, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
 	} else {
 		logrus.WithField("tenant", msg.Tenant).Errorf("%+v", msg.Payload)
 	}
@@ -421,19 +449,20 @@ func protocolEcPrtChangeHandler(msg model.SubscribeMessage, recorder EdaRecordin
 	}
 
 	if errCode > 0 {
-		if err := recorder.saveNotification(map[string]interface{}{
-			"type":           msg.MessageCode,
-			"meteringPoints": meters,
-			"responseCodes":  convertCodes2Strings([]int16{errCode}),
-		}, eeg.Id, "EDA_PROCESS", "ADMIN"); err != nil {
-			logrus.WithField("PROTOCOL", msg.Protocol).Error(err)
-		}
+		recorder.saveNotification(db, eeg.Id, msg.MessageCode, getMeterIdSlice(meters), []int16{errCode}, msg.Protocol)
 	}
-	_ = recorder.saveHistory(eeg.Id, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
+	_ = recorder.saveHistory(db, eeg.Id, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
 }
 
 func protocolEcPodListHandler(msg model.SubscribeMessage, recorder EdaRecording) {
 	logrus.WithField("tenant", msg.Tenant).Printf("Handle Subscriptions: %+v Code: %s", msg.Protocol, msg.MessageCode)
+
+	db, err := recorder.databaseConnection()
+	if err != nil {
+		logrus.Error(err)
+		return
+	}
+	defer func() { _ = db.Close() }()
 
 	switch msg.MessageCode {
 	case model.EBMS_ZP_LIST:
@@ -442,13 +471,6 @@ func protocolEcPodListHandler(msg model.SubscribeMessage, recorder EdaRecording)
 		if err != nil {
 			return
 		}
-
-		db, err := recorder.databaseConnection()
-		if err != nil {
-			logrus.Error(err)
-			return
-		}
-		defer func() { _ = db.Close() }()
 
 		eeg, err := database.GetEegByEcId(db, msg.Payload.EcId)
 		if err != nil {
@@ -481,5 +503,13 @@ func protocolEcPodListHandler(msg model.SubscribeMessage, recorder EdaRecording)
 		logrus.WithField("tenant", msg.Tenant).Warnf("Unknown Messagecode: %v", msg)
 		return
 	}
-	_ = recorder.saveHistory(msg.Tenant, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
+	_ = recorder.saveHistory(db, msg.Tenant, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
+}
+
+func getMeterIdSlice(meters []model.Meter) []string {
+	ms := make([]string, len(meters))
+	for _, m := range meters {
+		ms = append(ms, m.MeteringPoint)
+	}
+	return ms
 }

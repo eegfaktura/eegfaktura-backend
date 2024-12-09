@@ -136,7 +136,7 @@ func TestNotification(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	err = SaveNotification(openTestDb, "TE000001", `{"msg":"hello world"}`, "NOTIFICATION", "ADMIN")
+	err = SaveNotification(openTestDb, "TE000001", `{"msg":"hello world"}`, model.N_TYPE_NOTIFICATION, model.N_PROCESS_EDA_PROCESS, "ADMIN")
 	assert.NoError(t, err)
 
 	not, err := GetNotification(db, "TE000001", 0, true)

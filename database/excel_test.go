@@ -31,7 +31,8 @@ func Test_transformExcelData(t *testing.T) {
 	rows, err := f.Rows("EEG Stammdaten")
 	require.NoError(t, err)
 
-	participants := transformExcelData(rows, func(id string) string { return id }, false)
+	importLog := &model.Log{Operation: "Excel Master Data Import", Messages: []*model.LogMessage{}}
+	participants := transformExcelData(rows, func(id string) string { return id }, false, importLog)
 
 	findParticipant := func(n string, p []*model.EegParticipant) *model.EegParticipant {
 		for i := range p {
@@ -42,7 +43,7 @@ func Test_transformExcelData(t *testing.T) {
 		return &model.EegParticipant{}
 	}
 
-	assert.Equal(t, 5, len(participants))
+	assert.Equal(t, 7, len(participants))
 	assert.Equal(t, 2, len(findParticipant("Finnegan", participants).MeteringPoint))
 	assert.Equal(t, null.StringFrom("001-3456"), findParticipant("Finnegan", participants).TaxNumber)
 
@@ -103,7 +104,7 @@ func TestImportMasterdataFromExcel(t *testing.T) {
 				require.NoError(t, ImportMasterdataFromExcel(args.db, args.r, args.filename, args.sheet, args.tenant))
 				ps, err := GetParticipants(args.db, args.tenant)
 				require.NoError(t, err)
-				assert.Equal(t, 5, len(ps))
+				assert.Equal(t, 7, len(ps))
 
 				p := findParticipant(ps, "Max", "Mustermann")
 				require.NotNil(t, p)
@@ -116,7 +117,7 @@ func TestImportMasterdataFromExcel(t *testing.T) {
 				assert.Equal(t, civil.DateOf(time.Date(2999, 12, 31, 0, 0, 0, 0, time.Local)), p.MeteringPoint[0].State.InactiveSince.Date)
 				assert.Equal(t, model.F_ASSIGNED, p.MeteringPoint[0].State.Flag)
 				assert.Equal(t, model.ACTIVE, p.MeteringPoint[0].ProcessState)
-				assert.Equal(t, model.ACTIVE, p.MeteringPoint[0].Status)
+				assert.Equal(t, model.S_ACTIVE, p.MeteringPoint[0].Status)
 			},
 		},
 	}

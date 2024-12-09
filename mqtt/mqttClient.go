@@ -94,7 +94,7 @@ func SendEbmsMessage(msg model.EbmsMessage) error {
 
 	if messageBroker != nil {
 		messageBroker.Outbound <- msg
-
+		log.WithField("tenant", msg.Sender).Infof("Message sent successfully")
 		return nil
 	}
 	return MqttBrokerNotStarted

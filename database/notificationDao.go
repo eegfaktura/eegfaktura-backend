@@ -10,13 +10,7 @@ import (
 	"time"
 )
 
-func SaveEdaHistory(dbOpen OpenDbXConnection, history *model.EdaProcessHistory) error {
-	db, err := dbOpen()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
+func SaveEdaHistory(db *sqlx.DB, history *model.EdaProcessHistory) error {
 	sql, _, err := goqu.Insert("base.processhistory").Rows(history).ToSQL()
 	_, err = db.Exec(sql)
 	return err

@@ -131,9 +131,9 @@ func (mb *MessageBroker) Connect() error {
 	return nil
 }
 
-func (mb *MessageBroker) Start() {
+func (mb *MessageBroker) Start() error {
 	go mb.Listen()
-	mb.Connect()
+	return mb.Connect()
 }
 
 func (mb *MessageBroker) Stop() {
@@ -167,6 +167,7 @@ func (mb *MessageBroker) Listen() {
 		case msg := <-mb.Inbound:
 			log.WithField("tenant", msg.tenant).Infof("Message on topic: %s", msg.protocol)
 			mb.received(msg)
+			//log.WithField("tenant", msg.tenant).Infof("Message on topic: %s handeled", msg.protocol)
 		case cmd := <-mb.Command:
 			mb.command(cmd)
 		case err := <-mb.ErrorC:

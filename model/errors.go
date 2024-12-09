@@ -1,5 +1,10 @@
 package model
 
+import (
+	"errors"
+	"fmt"
+)
+
 type VfeegError struct {
 	Code int
 	Err  error
@@ -57,3 +62,38 @@ var ErrUpdateTariff = PartialWrap(4001)
 var ErrTariffUtilized = PartialWrap(4002)
 
 var ErrGetUser = PartialWrap(9000)
+
+type LogMessage struct {
+	Kind        string `json:"kind"`
+	Identifier  string `json:"metering_point"`
+	MessageCode string `json:"message_code"`
+	Message     string `json:"message"`
+}
+
+func NewLogMessage(kind, identifier string, messageCode, messageDesc string) *LogMessage {
+	return &LogMessage{
+		Kind:        kind,
+		Identifier:  identifier,
+		MessageCode: messageCode,
+		Message:     messageDesc,
+	}
+}
+
+func NewLogMessageFromVfeegError(identifier string, err error) *LogMessage {
+	lm := &LogMessage{Kind: "ERROR", Identifier: identifier}
+	var e *VfeegError
+	switch {
+	case errors.As(err, &e):
+		lm.MessageCode = fmt.Sprintf("E_DB_%d", e.Code)
+		lm.Message = e.Err.Error()
+	default:
+		lm.MessageCode = fmt.Sprintf("E_UNEFINED%d", e.Code)
+		lm.Message = err.Error()
+	}
+	return lm
+}
+
+type Log struct {
+	Operation string        `json:"operation"`
+	Messages  []*LogMessage `json:"messages"`
+}

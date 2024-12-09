@@ -15,8 +15,8 @@ import (
 )
 
 type EdaRecording interface {
-	saveNotification(notificationValue map[string]interface{}, tenant, notificationType, role string) error
-	saveHistory(tenant string, messageCode model.EbMsMessageType, conversationId, role, dir string, protocol model.EdaProtocol, msg interface{}) error
+	saveNotification(db *sqlx.DB, tenant string, code model.EbMsMessageType, meters []string, errCodes []int16, protocol model.EdaProtocol)
+	saveHistory(db *sqlx.DB, tenant string, messageCode model.EbMsMessageType, conversationId, role, dir string, protocol model.EdaProtocol, msg interface{}) error
 	meteringPointPerformAnswerMsg(ecId string, meterId []string) error
 	databaseConnectFunc() database.OpenDbXConnection
 	databaseConnection() (*sqlx.DB, error)
@@ -38,24 +38,25 @@ func (r *EdaRecorder) databaseConnection() (*sqlx.DB, error) {
 	return r.dbOpen()
 }
 
-func (r *EdaRecorder) saveNotification(notificationValue map[string]interface{}, tenant, notificationType, role string) error {
-	var msgBytes []byte
+func (r *EdaRecorder) saveNotification(db *sqlx.DB, tenant string, code model.EbMsMessageType, meters []string, errCodes []int16, protocol model.EdaProtocol) {
 	var err error
-	if msgBytes, err = json.Marshal(notificationValue); err == nil {
-		if err = database.SaveNotification(r.dbOpen, tenant, string(msgBytes), notificationType, role); err != nil {
-			logrus.Error(err)
-			return err
-		}
+	notificationValue := map[string]interface{}{
+		"type":           code,
+		"meteringPoints": meters,
+		"responseCodes":  convertCodes2Strings(errCodes),
 	}
-	return nil
+
+	if err = database.SaveNotificationFromMap(db, notificationValue, tenant, model.N_TYPE_MESSAGE, model.N_PROCESS_EDA_PROCESS, "ADMIN"); err != nil {
+		logrus.WithField("PROTOCOL", protocol).Error(err)
+	}
 }
 
-func (r *EdaRecorder) saveHistory(tenant string, messageCode model.EbMsMessageType, conversationId, role, dir string, protocol model.EdaProtocol, msg interface{}) error {
+func (r *EdaRecorder) saveHistory(db *sqlx.DB, tenant string, messageCode model.EbMsMessageType, conversationId, role, dir string, protocol model.EdaProtocol, msg interface{}) error {
 
 	var err error
 	var msgBytes []byte
 	if msgBytes, err = json.Marshal(msg); err == nil {
-		if err = database.SaveEdaHistory(r.dbOpen, &model.EdaProcessHistory{
+		if err = database.SaveEdaHistory(db, &model.EdaProcessHistory{
 			Tenant:         tenant,
 			ConversationId: conversationId,
 			ProcessType:    messageCode,

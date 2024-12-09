@@ -244,7 +244,7 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 			meterIds := []string{}
 			for _, m := range participant.MeteringPoint {
 				meterIds = append(meterIds, m.MeteringPoint)
-				m.Status = model.ACTIVE
+				m.Status = model.S_ACTIVE
 			}
 			err := database.MeteringPointsSetStatus(db, tenant, model.ACTIVE, nil, meterIds, nil, nil)
 			if err != nil {

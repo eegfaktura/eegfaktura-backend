@@ -96,7 +96,6 @@ CREATE TABLE IF NOT EXISTS base.participant
     "tariffId"              uuid,
     CONSTRAINT ParticipantPK PRIMARY KEY (id)
 );
-
 CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_participant_tenant ON base.participant (id, tenant, version);
 
 CREATE TABLE IF NOT EXISTS base.contactdetail
@@ -203,6 +202,7 @@ CREATE TABLE IF NOT EXISTS base.notification
     id           SERIAL PRIMARY KEY,
     tenant       TEXT      NOT NULL,
     type         TEXT      NOT NULL DEFAULT 'MESSAGE',/* MESSAGE TYPE DESCRIBE 'ERROR' | 'MESSAGE' | 'NOTIFICATION' */
+    process      TEXT      NOT NULL DEFAULT 'EDA_PROCESS',
     notification json      NOT NULL DEFAULT '{}',
     date         TIMESTAMP NOT NULL DEFAULT now(),
     role         VARCHAR   NOT NULL DEFAULT 'ADMIN' /* 'USER' | 'ADMIN' */
@@ -228,7 +228,7 @@ CREATE TABLE IF NOT EXISTS base.gridoperators
     CONSTRAINT PK_GridOperators PRIMARY KEY (id, name)
 );
 
-CREATE VIEW base.activeMeteringPartition AS
+CREATE OR REPLACE VIEW base.activeMeteringPartition AS
 SELECT * FROM (
     SELECT *, ROW_NUMBER() OVER (
     PARTITION BY "metering_point_id", "participant_id"
@@ -264,76 +264,78 @@ WHERE id = x.tid
   AND version = x.tversion
   AND status != 'ARCHIVED';
 
-CREATE VIEW
+CREATE OR REPLACE VIEW
     base.billing_masterdata AS
-SELECT p.id                                                      participant_id,
-       p."titleBefore"                                           participant_title_before,
-       p.firstname                                               participant_firstname,
-       p."participantNumber"                                     participant_number,
-       p.lastname                                                participant_lastname,
-       p."titleAfter"                                            participant_title_after,
-       p."vatNumber"                                             participant_vat_id,
-       p."taxNumber"                                             participant_tax_id,
-       p."companyRegisterNumber"                                 participant_company_register_number,
-       p."participantNumber"                                     participant_sepa_mandate_reference,
-       p."participantSince"                                      participant_sepa_mandate_issue_date,
-       pm.metering_point_id                                      metering_point_id,
-       pm."equipmentNumber"                                      equipment_number,
-       pm."equipmentName"                                        metering_equipment_name,
-       (CASE WHEN pm.direction = 'GENERATION' THEN 0 ELSE 1 END) metering_point_type,
-       c.tenant                                                  eec_id,
-       c."rcNumber"                                              tenant_id,
-       c.description                                             eec_name,
-       c."vatNumber"                                             eec_vat_id,
-       c."taxNumber"                                             eec_tax_id,
-       c."businessNr"                                            eec_company_register_number,
-       c.subjecttovat                                            eec_subject_to_vat,
-       c.phone                                                   eec_phone,
-       c.email                                                   eec_email,
-       c.website                                                 eec_website,
-       concat(c.street, ' ', c."streetNumber")                   eec_street,
-       c.zip                                                     eec_zip_code,
-       c.city                                                    eec_city,
-       concat(p_address.street, ' ', p_address."streetNumber")   participant_street,
-       p_address.zip                                             participant_zip_code,
-       p_address.city                                            participant_city,
-       t.type                                                    tariff_type,
-       t.name                                                    tariff_name,
-       t."billingPeriod"                                         tariff_billing_period,
-       t."useVat"                                                tariff_use_vat,
-       t."vatSupplementaryText"                                  tariff_text,
-       t."vatInPercent"                                          tariff_vat_in_percent,
-       t."useMeteringPointFee"                                   tariff_use_metering_point_fee,
-       t."meteringPointFee"                                      tariff_metering_point_fee,
-       t."meteringPointVat"                                      tariff_metering_point_vat,
-       ''                                                        tariff_metering_point_fee_text,
-       ''                                                        tariff_participant_fee_text,
---       COALESCE(tp.id, '')                                       tariff_participant_id,
-       COALESCE(tp.version, 0)                                   tariff_participant_version,
-       COALESCE(tp."participantFee", 0)                          tariff_participant_fee,
-       COALESCE(tp."name", '')                                   tariff_participant_fee_name,
-       COALESCE(tp."useVat", false)                              tariff_participant_fee_use_vat,
-       COALESCE(tp."vatInPercent", 0)                            tariff_participant_fee_vat_in_percent,
-       COALESCE(tp.discount, 0)                                  tariff_participant_fee_discount,
-       t."baseFee"                                               tariff_basic_fee,
-       t.discount                                                tariff_discount,
-       t."centPerKWh"                                            tariff_working_fee_per_consumedkwh,
-       t."centPerKWh"                                            tariff_credit_amount_per_producedkwh,
-       t."freeKWh"                                               tariff_freekwh,
-       t.version                                                 tariff_version,
-       t.id                                                      tariff_id,
-       COALESCE(b."bankName", '')                                participant_bank_name,
-       b.iban                                                    participant_bank_iban,
-       b.owner                                                   participant_bank_owner,
-       SPLIT_PART(o.email, ';', 1)                               participant_email,
-       COALESCE(c."bankName", '')                                eec_bank_name,
-       c.iban                                                    eec_bank_iban,
-       c.owner                                                   eec_bank_owner
+SELECT p.id                                                    AS participant_id,
+       p."titleBefore"                                         AS participant_title_before,
+       p.firstname                                             AS participant_firstname,
+       p."participantNumber"                                   AS participant_number,
+       p.lastname                                              AS participant_lastname,
+       p."titleAfter"                                          AS participant_title_after,
+       p."vatNumber"                                           AS participant_vat_id,
+       p."taxNumber"                                           AS participant_tax_id,
+       p."companyRegisterNumber"                               AS participant_company_register_number,
+       p."participantNumber"                                   AS participant_sepa_mandate_reference,
+       p."participantSince"                                    AS participant_sepa_mandate_issue_date,
+       pm.metering_point_id,
+       pm."equipmentNumber"                                    AS equipment_number,
+       pm."equipmentName"                                      AS metering_equipment_name,
+       CASE
+           WHEN pm.direction = 'GENERATION'::text THEN 0
+           ELSE 1
+           END                                                 AS metering_point_type,
+       c.tenant                                                AS eec_id,
+       c."rcNumber"                                            AS tenant_id,
+       c.description                                           AS eec_name,
+       c."vatNumber"                                           AS eec_vat_id,
+       c."taxNumber"                                           AS eec_tax_id,
+       c."businessNr"                                          AS eec_company_register_number,
+       c.subjecttovat                                          AS eec_subject_to_vat,
+       c.phone                                                 AS eec_phone,
+       c.email                                                 AS eec_email,
+       c.website                                               AS eec_website,
+       concat(c.street, ' ', c."streetNumber")                 AS eec_street,
+       c.zip                                                   AS eec_zip_code,
+       c.city                                                  AS eec_city,
+       concat(p_address.street, ' ', p_address."streetNumber") AS participant_street,
+       p_address.zip                                           AS participant_zip_code,
+       p_address.city                                          AS participant_city,
+       t.type                                                  AS tariff_type,
+       t.name                                                  AS tariff_name,
+       t."billingPeriod"                                       AS tariff_billing_period,
+       t."useVat"                                              AS tariff_use_vat,
+       t."vatSupplementaryText"                                AS tariff_text,
+       t."vatInPercent"                                        AS tariff_vat_in_percent,
+       t."useMeteringPointFee"                                 AS tariff_use_metering_point_fee,
+       t."meteringPointFee"                                    AS tariff_metering_point_fee,
+       t."meteringPointVat"                                    AS tariff_metering_point_vat,
+       ''::text                                                AS tariff_metering_point_fee_text,
+       ''::text                                                AS tariff_participant_fee_text,
+       COALESCE(tp.version, 0)                                 AS tariff_participant_version,
+       COALESCE(tp."participantFee", 0::double precision)      AS tariff_participant_fee,
+       COALESCE(tp.name, ''::text)                             AS tariff_participant_fee_name,
+       COALESCE(tp."useVat", false)                            AS tariff_participant_fee_use_vat,
+       COALESCE(tp."vatInPercent", 0::numeric)                 AS tariff_participant_fee_vat_in_percent,
+       COALESCE(tp.discount, 0)                                AS tariff_participant_fee_discount,
+       t."baseFee"                                             AS tariff_basic_fee,
+       t.discount                                              AS tariff_discount,
+       t."centPerKWh"                                          AS tariff_working_fee_per_consumedkwh,
+       t."centPerKWh"                                          AS tariff_credit_amount_per_producedkwh,
+       t."freeKWh"                                             AS tariff_freekwh,
+       t.version                                               AS tariff_version,
+       t.id                                                    AS tariff_id,
+       COALESCE(b."bankName", ''::text)                        AS participant_bank_name,
+       b.iban                                                  AS participant_bank_iban,
+       b.owner                                                 AS participant_bank_owner,
+       split_part(o.email, ';'::text, 1)                       AS participant_email,
+       COALESCE(c."bankName", ''::text)                        AS eec_bank_name,
+       c.iban                                                  AS eec_bank_iban,
+       c.owner                                                 AS eec_bank_owner
 FROM base.participant p
-         LEFT JOIN base.eeg c ON c.tenant = p.tenant
+         LEFT JOIN base.eeg c ON c.tenant::text = p.tenant::text
          LEFT JOIN base.meteringpoint pm ON pm.participant_id = p.id
-         LEFT JOIN base.address p_address ON p.id = p_address.participant_id AND p_address.type = 'BILLING'
+         LEFT JOIN base.address p_address ON p.id = p_address.participant_id AND p_address.type = 'BILLING'::text
          LEFT JOIN base.activetariff t ON t.id = pm.tariff_id
-         LEFT JOIN base.activetariff tp ON tp.id = p."tariffId" AND tp.type = 'EEG'
+         LEFT JOIN base.activetariff tp ON tp.id = p."tariffId" AND tp.type::text = 'EEG'::text
          LEFT JOIN base.bankaccount b ON b.participant_id = p.id
-         LEFT JOIN base.contactdetail o ON o.participant_id = p.id;
+         LEFT JOIN base.contactdetail o ON o.participant_id = p.id

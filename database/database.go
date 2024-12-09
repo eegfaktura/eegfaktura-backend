@@ -20,41 +20,6 @@ var (
 	ErrTariffUtilized = errors.New("Tariff is currently used")
 )
 
-//func init() {
-//	loc, err := time.LoadLocation("Europe/Berlin")
-//	if err != nil {
-//		panic(err)
-//	}
-//
-//	goqu.SetTimeLocation(loc)
-//}
-
-var OpenTransaction = func() (*sqlx.Tx, error) {
-	return GetTx()
-}
-
-func GetTx() (*sqlx.Tx, error) {
-	db, err := ConnectToDatabase()
-	if err != nil {
-		return nil, err
-	}
-
-	tx, err := db.Beginx()
-	if err != nil {
-		log.Error(err)
-		return nil, err
-	}
-	return tx, nil
-}
-
-func GetDBConnection() (*sql.DB, error) {
-	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
-		"password=%s dbname=%s sslmode=disable",
-		viper.GetString("database.host"), viper.GetInt("database.port"), viper.GetString("database.user"),
-		viper.GetString("database.password"), viper.GetString("database.dbname"))
-	return sql.Open("postgres", psqlInfo)
-}
-
 var ConnectToDatabase = func() (*sqlx.DB, error) {
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=disable",
@@ -62,10 +27,6 @@ var ConnectToDatabase = func() (*sqlx.DB, error) {
 		viper.GetString("database.password"), viper.GetString("database.dbname"))
 	return sqlx.Open("postgres", psqlInfo)
 }
-
-//func GetDBXConnection() (*sqlx.DB, error) {
-//	return ConnectToDatabase()
-//}
 
 var pgDialect = goqu.Dialect("postgres")
 

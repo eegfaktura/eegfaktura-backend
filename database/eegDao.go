@@ -3,6 +3,7 @@ package database
 import (
 	"at.ourproject/vfeeg-backend/model"
 	dbsql "database/sql"
+	"encoding/json"
 	"github.com/doug-martin/goqu/v9"
 	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
@@ -100,7 +101,35 @@ func UpdateEegPartial(db *sqlx.DB, tenant string, fields map[string]interface{})
 //	return err
 //}
 
-func SaveNotification(dbOpen OpenDbXConnection, tenant string, notification string, msgType, role string) error {
+func SaveNotificationFromMap(db *sqlx.DB, notificationValue map[string]interface{}, tenant string,
+	notificationType model.NotificationType, process model.NotificationProcess, role string) error {
+	var msgBytes []byte
+	var err error
+	if msgBytes, err = json.Marshal(notificationValue); err == nil {
+		if err = createNotification(db, tenant, string(msgBytes), notificationType, process, role); err != nil {
+			log.Error(err)
+			return err
+		}
+	}
+	return nil
+}
+
+func createNotification(db *sqlx.DB, tenant, notification string,
+	msgType model.NotificationType, process model.NotificationProcess, role string) error {
+	stmt, _, err := pgDialect.Insert("base.notification").
+		Rows(
+			goqu.Record{"tenant": tenant, "notification": notification, "type": msgType, "role": role, "process": process},
+		).
+		ToSQL()
+	if err != nil {
+		return err
+	}
+
+	_, err = db.Exec(stmt)
+	return err
+}
+
+func SaveNotification(dbOpen OpenDbXConnection, tenant string, notification string, msgType model.NotificationType, process model.NotificationProcess, role string) error {
 	db, err := dbOpen()
 	if err != nil {
 		return err
@@ -109,8 +138,7 @@ func SaveNotification(dbOpen OpenDbXConnection, tenant string, notification stri
 		_ = db.Close()
 	}()
 
-	_, err = db.Exec("INSERT INTO base.notification (tenant, notification, date, type, role) VALUES ($1, $2, NOW(), $3, $4)", tenant, notification, msgType, role)
-	return err
+	return createNotification(db, tenant, notification, msgType, process, role)
 }
 
 func GetNotification(db *sqlx.DB, tenant string, start int64, isAdmin bool) ([]model.EegNotification, error) {

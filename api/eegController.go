@@ -195,11 +195,12 @@ func uploadMasterData() middleware.JWTHandlerFunc {
 
 		file, handler, err := r.FormFile("masterdatafile")
 		if err != nil {
-			log.WithField("tanant", tenant).Error(err)
+			log.WithField("tenant", tenant).Error(err)
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1051, err.Error()))
 			return
 		}
-		defer file.Close()
+		defer func() { _ = file.Close() }()
+
 		log.Infof("--- Upload File: %s, %s, %s\n", sheet, handler.Filename, tenant)
 
 		db, err := database.ConnectToDatabase()
@@ -210,11 +211,11 @@ func uploadMasterData() middleware.JWTHandlerFunc {
 		defer func() { _ = db.Close() }()
 
 		if err = database.ImportMasterdataFromExcel(db, file, handler.Filename, sheet, tenant); err != nil {
-			log.WithField("tanant", tenant).Error(err)
+			log.WithField("tenant", tenant).Error(err)
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1052, err.Error()))
 		} else {
 			log.Infof("Import File %s successful", handler.Filename)
-			w.WriteHeader(http.StatusOK)
+			respondWithStatus(w, http.StatusOK)
 		}
 	}
 }

@@ -110,7 +110,7 @@ func Test_confirmParticipantOnline(t *testing.T) {
 				ConsentId:        null.String{},
 				Transformer:      null.String{},
 				Direction:        model.GENERATOR,
-				Status:           model.INIT,
+				Status:           model.S_INIT,
 				StatusCode:       null.Int{},
 				TariffId:         null.String{},
 				EquipmentNumber:  null.String{},

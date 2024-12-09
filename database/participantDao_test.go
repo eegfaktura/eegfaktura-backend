@@ -146,7 +146,7 @@ func Test_GetParticipants(t *testing.T) {
 		MeteringPoint:    "AT0030000000000000000000030041725",
 		Transformer:      null.String{},
 		Direction:        model.GENERATOR,
-		Status:           model.ACTIVE,
+		Status:           model.S_ACTIVE,
 		ProcessState:     model.ACTIVE,
 		TariffId:         null.StringFrom("f9b640dc-efe3-11ed-9f81-6ad19f4af00f"),
 		EquipmentNumber:  null.StringFrom("GERZ02"),
@@ -288,7 +288,7 @@ func TestImportParticipant(t *testing.T) {
 				assert.Nil(t, m.State.InactiveSince.Ptr())
 
 				assert.Equal(t, model.NEW, p.Status)
-				assert.Equal(t, model.INIT, m.Status)
+				assert.Equal(t, model.S_INIT, m.Status)
 
 				assert.Equal(t, "Max", p.FirstName)
 			},
@@ -346,7 +346,7 @@ func TestImportParticipant(t *testing.T) {
 				assert.Equal(t, civil.DateFor(2999, 12, 31), m.State.InactiveSince.Date)
 
 				assert.Equal(t, model.ACTIVE, p.Status)
-				assert.Equal(t, model.ACTIVE, m.Status)
+				assert.Equal(t, model.S_ACTIVE, m.Status)
 
 				assert.Equal(t, "Maria", p.FirstName)
 			},
@@ -399,7 +399,7 @@ func TestImportParticipant(t *testing.T) {
 				assert.Nil(t, m.State.InactiveSince.Ptr())
 
 				assert.Equal(t, model.NEW, p.Status)
-				assert.Equal(t, model.INIT, m.Status)
+				assert.Equal(t, model.S_INIT, m.Status)
 
 				assert.Equal(t, "Helmut", p.FirstName)
 			},
@@ -422,6 +422,68 @@ func TestImportParticipant(t *testing.T) {
 			assert.NoError(t, err)
 
 			tt.test(t, p)
+		})
+	}
+}
+
+func TestUpdateParticipant1(t *testing.T) {
+	db, _ := openTestDb()
+	type args struct {
+		tenant      string
+		user        string
+		participant *model.EegParticipant
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr func(t *testing.T, p, e *model.EegParticipant)
+	}{
+		{
+			name: "Update Participant",
+			args: args{
+				tenant: "TE000001",
+				user:   "",
+				participant: &model.EegParticipant{
+					EegParticipantBase: model.EegParticipantBase{
+						Id:                    uuid.Parse("ea9942da-03da-11ee-b82b-5a985b4b033a"),
+						ParticipantNumber:     null.StringFrom("041"),
+						BusinessRole:          "EEG_PRIVATE",
+						Role:                  "EEG_USER",
+						FirstName:             "Peter",
+						LastName:              "Obermüller",
+						TitleBefore:           "",
+						TitleAfter:            "",
+						ParticipantSince:      civil.NullDate{},
+						VatNumber:             null.String{},
+						TaxNumber:             null.String{},
+						CompanyRegisterNumber: "",
+						TariffId:              null.String{},
+						Status:                "ACTIVE",
+						Version:               0,
+						CreatedBy:             "petero",
+					},
+					Contact:         model.ContactInfo{},
+					BillingAddress:  model.Address{Type: "BILLING"},
+					ResidentAddress: model.Address{Type: "RESIDENT"},
+					BankAccount:     model.BankInfo{},
+				},
+			},
+			wantErr: func(t *testing.T, underTest, org *model.EegParticipant) {
+				assert.Equal(t, "041", underTest.ParticipantNumber.String)
+				fmt.Printf("ParticipantSince %v\n", underTest.ParticipantSince.Date.String())
+				assert.Equal(t, civil.DateFor(2023, 10, 11), underTest.ParticipantSince.Date)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := UpdateParticipant(db, tt.args.tenant, tt.args.user, tt.args.participant)
+			assert.NoError(t, err)
+
+			pUnderTest, err := QueryParticipant(db, tt.args.participant.Id.String())
+			assert.NoError(t, err)
+
+			tt.wantErr(t, pUnderTest, tt.args.participant)
 		})
 	}
 }

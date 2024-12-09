@@ -66,6 +66,7 @@ const (
 	EBMS_OFFLINE_REG_COMPLETION EbMsMessageType = "ABSCHLUSS_ECOF"
 	EBMS_EEG_BASE_DATA          EbMsMessageType = "ANFORDERUNG_GN"
 	EBMS_ERROR_MESSAGE          EbMsMessageType = "ERROR_MESSAGE"
+	EBMS_ERROR_PROCESS          EbMsMessageType = "ERROR_PROCESS"
 )
 
 type EdaProtocol string
@@ -149,7 +150,7 @@ type EbmsMessage struct {
 	EcType             AreaType           `json:"ecType,omitempty"`
 	EcDisModel         AllocationModeType `json:"ecDisModel,omitempty"`
 	ResponseData       []ResponseData     `json:"responseData,omitempty"`
-	Energy             *Energy            `json:"energy,omitempty"`
+	Energy             []*Energy          `json:"energy,omitempty"`
 	Timeline           *Timeline          `json:"timeline,omitempty"`
 	MeterList          []Meter            `json:"meterList,omitempty"`
 	ErrorMessage       string             `json:"errorMessage,omitempty"`

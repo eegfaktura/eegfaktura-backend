@@ -40,6 +40,24 @@ func init() {
 	log.SetLevel(ll)
 }
 
+func captureOsInterrupt() chan bool {
+	quit := make(chan bool)
+	go func() {
+		c := make(chan os.Signal, 2)
+		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+
+		for sig := range c {
+			log.Infof("captured %v, stopping and exiting.", sig)
+
+			quit <- true
+			close(quit)
+
+			break
+		}
+	}()
+	return quit
+}
+
 func InitRouters() *mux.Router {
 
 	middleware.InitKeycloak()
@@ -70,8 +88,10 @@ func main() {
 	eda.InitEdaSubscription()
 	mqttclient.InitErrorSubscriptions()
 
-	mb.Start()
-	err = mb.Connect()
+	quit := captureOsInterrupt()
+
+	err = mb.Start()
+	//err = mb.Connect()
 	if err != nil {
 		panic(err)
 	}
@@ -110,7 +130,7 @@ func main() {
 	allowedMethods := handlers.AllowedMethods([]string{"GET", "HEAD", "POST", "PUT", "OPTIONS", "DELETE"})
 	allowedCredentials := handlers.AllowCredentials()
 
-	go services.StartGRPCServer()
+	go services.StartGRPCServer(quit)
 
 	log.Infof("VFEEG BACKEND Config:  host: %s  port: %d  database:%s  user:%s",
 		viper.GetString("database.host"),
@@ -128,8 +148,8 @@ func main() {
 	}
 	//log.Fatal(srv.ListenAndServe())
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
+	//ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	//defer stop()
 
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -137,13 +157,13 @@ func main() {
 		}
 	}()
 
-	<-ctx.Done()
+	<-quit
 	log.Println("got interruption signal")
-	if err := srv.Shutdown(context.TODO()); err != nil {
+	if err := srv.Shutdown(context.Background()); err != nil {
 		log.Printf("server shutdown returned an err: %v\n", err)
 	}
 
-	//mb.Stop()
+	mb.Stop()
 
 	log.Println("final")
 

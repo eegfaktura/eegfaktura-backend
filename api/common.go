@@ -73,7 +73,7 @@ func respondWithHttpError(w http.ResponseWriter, httpCode int, error *HttpError)
 func respondWith(w http.ResponseWriter, httpCode int, tenant string, data interface{}) {
 	switch e := data.(type) {
 	case *model.VfeegError:
-		log.WithField("tenant", tenant).Error(e.Error())
+		log.WithField("tenant", tenant).WithField("code", e.Code).WithError(e).Error(e.Error())
 		respondWithHttpError(w, httpCode, &HttpError{Error: e.Error(), Code: e.Code, Message: e.Error()})
 		return
 	default:
