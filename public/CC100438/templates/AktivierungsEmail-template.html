@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Aktivierung Zählpunkt</title>
+</head>
+<body>
+<p>Hallo {{.Participant.FirstName}},</p>
+<p>Wir haben deinen Registrierungsvorgang gestartet.</p>
+<img src="cid:process_2" style="max-height: 150px"/>
+
+<p>Damit deine Registrierung abgeschlossen werden kann, benötigen wir die Freigabe deiner Zählpunkte
+<ul>{{range .Meteringpoints }} <li>{{.}}</li> {{end}}</ul>
+Auf der Webseite deines Netzbetreibers kann diese Freigabe online mit dem Kundenaccount erteilt werden <br>
+  (falls noch kein Account vorhanden, kann er sehr einfach mit Kundennummer und
+Anlagennummer erstellt werden).</p>
+  
+
+<p>Die gängisten Stromanbieter haben hier ihre Kundenportale:</p>
+<ul>
+  <li>IKB: <a href="https://direkt.ikb.at/">https://direkt.ikb.at/</a></li>
+  <li>HallAG: <a href="https://kundenportal.hall.ag/ ">https://kundenportal.hall.ag/ </a></li>
+  <li>TINETZ/TIWAG: <a href="https://kundenportal.tinetz.at/">https://kundenportal.tinetz.at/ </a></li>
+</ul> 
+  
+Unten seht ihr die Anleitungen zur Freigabe für die Webseite der IKB.
+<p>Falls sich Probleme ergeben, helfen wir dir gerne unter <a href="mailto:info@gemeinwohlenergie-innsbruck.at">info@gemeinwohlenergie-innsbruck.at</a> </p>
+
+<p>Mit besten Grüßen,</p>
+<p>Gemeinwohlenergie Innsbruck </p>
+  
+<p><img src="cid:logo-1" style="max-height: 90px"/></p>
+  
+<p><img src="cid:ikb_screenshot1" style="max-width: 1000px"/></p>
+  
+<p>Powered by eegFaktura.at</p>
+<img src="cid:eegfaktura-logo-1" style="max-height: 90px"/>
+</body>
+</html>
