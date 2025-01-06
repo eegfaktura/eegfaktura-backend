@@ -1,11 +1,12 @@
 package api
 
 import (
-	"at.ourproject/vfeeg-backend/model"
 	"encoding/json"
 	"fmt"
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/eegfaktura/eegfaktura-backend/model"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMarschaling(t *testing.T) {

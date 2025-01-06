@@ -1,7 +1,7 @@
 package mqttclient
 
 import (
-	"at.ourproject/vfeeg-backend/model"
+	"github.com/eegfaktura/eegfaktura-backend/model"
 	"github.com/sirupsen/logrus"
 )
 

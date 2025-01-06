@@ -3,7 +3,7 @@ syntax = "proto3";
 option java_multiple_files = true;
 option java_package = "at.energydash.admin.mail";
 option java_outer_classname = "MailAdminProto";
-option go_package = "at.ourproject/vfeeg-backend/proto";
+option go_package = "github.com/eegfaktura/eegfaktura-backend/proto";
 
 package at.energydash;
 

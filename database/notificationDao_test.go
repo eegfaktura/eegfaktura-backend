@@ -1,12 +1,13 @@
 package database
 
 import (
-	"at.ourproject/vfeeg-backend/model"
 	"fmt"
-	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/stretchr/testify/require"
 	"testing"
 	"time"
+
+	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/eegfaktura/eegfaktura-backend/model"
+	"github.com/stretchr/testify/require"
 )
 
 func TestFetchEdaHistory(t *testing.T) {

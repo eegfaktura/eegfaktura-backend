@@ -1,12 +1,13 @@
 package gmodel
 
 import (
-	"at.ourproject/vfeeg-backend/model"
 	"encoding/json"
 	"fmt"
-	"github.com/99designs/gqlgen/graphql"
-	log "github.com/sirupsen/logrus"
 	"io"
+
+	"github.com/99designs/gqlgen/graphql"
+	"github.com/eegfaktura/eegfaktura-backend/model"
+	log "github.com/sirupsen/logrus"
 )
 
 func UnmarshalEegTariff(v interface{}) (model.Tariff, error) {

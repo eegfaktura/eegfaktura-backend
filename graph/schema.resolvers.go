@@ -7,12 +7,12 @@ import (
 	"context"
 	"fmt"
 
-	"at.ourproject/vfeeg-backend/api/middleware"
-	"at.ourproject/vfeeg-backend/database"
-	"at.ourproject/vfeeg-backend/graph/generated"
-	"at.ourproject/vfeeg-backend/graph/gmodel"
-	"at.ourproject/vfeeg-backend/model"
 	"github.com/99designs/gqlgen/graphql"
+	"github.com/eegfaktura/eegfaktura-backend/api/middleware"
+	"github.com/eegfaktura/eegfaktura-backend/database"
+	"github.com/eegfaktura/eegfaktura-backend/graph/generated"
+	"github.com/eegfaktura/eegfaktura-backend/graph/gmodel"
+	"github.com/eegfaktura/eegfaktura-backend/model"
 	log "github.com/sirupsen/logrus"
 )
 

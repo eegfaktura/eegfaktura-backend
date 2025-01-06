@@ -1,10 +1,11 @@
 package database
 
 import (
-	"at.ourproject/vfeeg-backend/model"
 	dbsql "database/sql"
 	"encoding/json"
+
 	"github.com/doug-martin/goqu/v9"
+	"github.com/eegfaktura/eegfaktura-backend/model"
 )
 
 func SaveEdaHistory(dbOpen OpenDbXConnection, history *model.EdaProcessHistory) error {

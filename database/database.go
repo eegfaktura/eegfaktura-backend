@@ -1,11 +1,12 @@
 package database
 
 import (
-	"at.ourproject/vfeeg-backend/model"
 	"database/sql"
 	"errors"
 	"fmt"
+
 	"github.com/doug-martin/goqu/v9"
+	"github.com/eegfaktura/eegfaktura-backend/model"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	"github.com/pborman/uuid"

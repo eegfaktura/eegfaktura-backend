@@ -1,19 +1,20 @@
 package database
 
 import (
-	"at.ourproject/vfeeg-backend/model"
 	dbsql "database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/doug-martin/goqu/v9"
+	"github.com/eegfaktura/eegfaktura-backend/model"
 	"github.com/jmoiron/sqlx"
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"strings"
-	"testing"
-	"time"
 )
 
 func TestUpdateParticipant(t *testing.T) {
@@ -75,9 +76,9 @@ func TestGetParticipant(t *testing.T) {
 		"id", "firstname", "lastname", "role", "businessRole", "titleBefore", "titleAfter", "participantSince",
 		"vatNumber", "taxNumber", "companyRegisterNumber", "status", "createdBy", //"createdDate", "lastModifiedBy", "lastModifiedDate",
 		"version", "tariffId", "participantNumber"}).
-			AddRow(uuid.New(), "Sepp", "Huber", "EEG_USER", "EEG_PRIVATE", "", "", time.Now(),
-				"", "", "", "NEW", "admin", //time.Now(), "petero", time.Now(),
-				1, uuid.New(), "001")
+		AddRow(uuid.New(), "Sepp", "Huber", "EEG_USER", "EEG_PRIVATE", "", "", time.Now(),
+			"", "", "", "NEW", "admin", //time.Now(), "petero", time.Now(),
+			1, uuid.New(), "001")
 	mockDb.Mock.ExpectQuery("SELECT (.+) FROM \"base\".\"participant\" (.+)").WillReturnRows(participantRows)
 
 	contactDetailsRows := sqlmock.NewRows([]string{"email", "phone"}).AddRow("mail@test.com", "+4325622 232311 32323")
@@ -96,8 +97,8 @@ func TestGetParticipant(t *testing.T) {
 
 	meterRows := sqlmock.NewRows([]string{"city", "direction", "equipmentName", "equipmentNumber", "inverterid", "metering_point_id",
 		"modifiedAt", "modifiedBy", "registeredSince", "status", "street", "streetNumber", "tariff_id", "transformer", "zip"}).
-			AddRow("Solarcity", "GENERATOR", "", "", "", "AT0020001110000010011111001",
-				time.Now(), "admin", time.Now(), "NEW", "Energieweg", "12a", uuid.New(), "", "1234")
+		AddRow("Solarcity", "GENERATOR", "", "", "", "AT0020001110000010011111001",
+			time.Now(), "admin", time.Now(), "NEW", "Energieweg", "12a", uuid.New(), "", "1234")
 	mockDb.Mock.ExpectQuery("SELECT (.+) FROM \"base\".\"meteringpoint\" (.+)").WillReturnRows(meterRows)
 
 	participants, err := GetParticipant(mockDb.OpenMockDb, "RC100298")

@@ -1,11 +1,12 @@
 package util
 
 import (
-	"at.ourproject/vfeeg-backend/graph/gmodel"
-	"at.ourproject/vfeeg-backend/model"
 	"fmt"
-	"github.com/mitchellh/mapstructure"
 	"testing"
+
+	"github.com/eegfaktura/eegfaktura-backend/graph/gmodel"
+	"github.com/eegfaktura/eegfaktura-backend/model"
+	"github.com/mitchellh/mapstructure"
 )
 
 func TestConvertStructToMap(t *testing.T) {

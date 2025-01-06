@@ -1,6 +1,6 @@
-module at.ourproject/vfeeg-backend
+module github.com/eegfaktura/eegfaktura-backend
 
-go 1.19
+go 1.20
 
 require (
 	github.com/99designs/gqlgen v0.17.20
@@ -32,7 +32,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/felixge/httpsnoop v1.0.1 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
-	github.com/gabriel-vasile/mimetype v1.4.2 // indirect
+	github.com/gabriel-vasile/mimetype v1.4.2
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
