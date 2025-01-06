@@ -1,12 +1,13 @@
 package mqttclient
 
 import (
-	"at.ourproject/vfeeg-backend/model"
 	"encoding/json"
 	"fmt"
-	mqtt "github.com/eclipse/paho.mqtt.golang"
-	log "github.com/sirupsen/logrus"
 	"strings"
+
+	mqtt "github.com/eclipse/paho.mqtt.golang"
+	"github.com/eegfaktura/eegfaktura-backend/model"
+	log "github.com/sirupsen/logrus"
 )
 
 type TopicType string

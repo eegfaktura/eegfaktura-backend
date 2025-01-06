@@ -1,11 +1,12 @@
 package config
 
 import (
-	"at.ourproject/vfeeg-backend/model"
 	"errors"
 	"fmt"
-	"github.com/BurntSushi/toml"
 	"os"
+
+	"github.com/BurntSushi/toml"
+	"github.com/eegfaktura/eegfaktura-backend/model"
 )
 
 // Reads info from config file

@@ -1,13 +1,14 @@
 package eda
 
 import (
-	"at.ourproject/vfeeg-backend/database"
-	"at.ourproject/vfeeg-backend/model"
 	"encoding/json"
+	"time"
+
+	"github.com/eegfaktura/eegfaktura-backend/database"
+	"github.com/eegfaktura/eegfaktura-backend/model"
 	"github.com/jmoiron/sqlx"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/guregu/null.v4"
-	"time"
 )
 
 type EdaRecording interface {

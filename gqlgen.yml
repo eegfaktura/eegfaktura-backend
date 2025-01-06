@@ -42,7 +42,7 @@ resolver:
 # gqlgen will search for any type names in the schema in these go packages
 # if they match it will use them, otherwise it will generate them.
 autobind:
-  - "at.ourproject/vfeeg-backend/graph/gmodel"
+  - "github.com/eegfaktura/eegfaktura-backend/graph/gmodel"
 
 # This section declares type mapping between the GraphQL and go type systems
 #
@@ -63,4 +63,4 @@ models:
       - github.com/99designs/gqlgen/graphql.Int32
   Eeg:
     model:
-      - at.ourproject/vfeeg-backend/graph/gmodel.Eeg
+      - github.com/eegfaktura/eegfaktura-backend/graph/gmodel.Eeg

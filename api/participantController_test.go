@@ -1,12 +1,13 @@
 package api
 
 import (
-	"at.ourproject/vfeeg-backend/model"
 	"encoding/json"
 	"fmt"
-	"github.com/stretchr/testify/require"
 	"strings"
 	"testing"
+
+	"github.com/eegfaktura/eegfaktura-backend/model"
+	"github.com/stretchr/testify/require"
 )
 
 func Test_registerParticipant(t *testing.T) {

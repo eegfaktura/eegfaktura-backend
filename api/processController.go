@@ -1,10 +1,11 @@
 package api
 
 import (
-	"at.ourproject/vfeeg-backend/api/middleware"
-	"at.ourproject/vfeeg-backend/database"
-	"github.com/gorilla/mux"
 	"net/http"
+
+	"github.com/eegfaktura/eegfaktura-backend/api/middleware"
+	"github.com/eegfaktura/eegfaktura-backend/database"
+	"github.com/gorilla/mux"
 )
 
 func InitProcessRouter(r *mux.Router, jwtWrapper middleware.JWTWrapperFunc) *mux.Router {

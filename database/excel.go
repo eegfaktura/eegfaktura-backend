@@ -1,17 +1,18 @@
 package database
 
 import (
-	"at.ourproject/vfeeg-backend/model"
 	"fmt"
-	"github.com/golang/glog"
-	log "github.com/sirupsen/logrus"
-	"github.com/xuri/excelize/v2"
-	"gopkg.in/guregu/null.v4"
 	"io"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/eegfaktura/eegfaktura-backend/model"
+	"github.com/golang/glog"
+	log "github.com/sirupsen/logrus"
+	"github.com/xuri/excelize/v2"
+	"gopkg.in/guregu/null.v4"
 )
 
 var netOperatorMatch = regexp.MustCompile(`^[A-Z]{2}[0-9]*$`)

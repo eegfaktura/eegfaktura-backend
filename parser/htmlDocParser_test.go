@@ -1,16 +1,17 @@
 package parser
 
 import (
-	"at.ourproject/vfeeg-backend/model"
-	"at.ourproject/vfeeg-backend/util"
 	"bytes"
-	"github.com/spf13/viper"
-	"github.com/stretchr/testify/assert"
-	"gopkg.in/guregu/null.v4"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/eegfaktura/eegfaktura-backend/model"
+	"github.com/eegfaktura/eegfaktura-backend/util"
+	"github.com/spf13/viper"
+	"github.com/stretchr/testify/assert"
+	"gopkg.in/guregu/null.v4"
 )
 
 func init() {
@@ -74,7 +75,7 @@ func TestParseTemplate(t *testing.T) {
 		ProviderBusinessNr: null.Int{},
 		TaxNumber:          null.String{},
 		VatNumber:          null.String{},
-		ContactPerson:      "Max Sonnenmann",
+		ContactPerson:      null.StringFrom("Max Sonnenmann"),
 		EegAddress:         model.EegAddress{},
 		AccountInfo:        model.AccountInfo{},
 		Contact: model.Contact{
@@ -191,7 +192,7 @@ func TestParseTemplate2(t *testing.T) {
 		ProviderBusinessNr: null.Int{},
 		TaxNumber:          null.String{},
 		VatNumber:          null.String{},
-		ContactPerson:      "Max Sonnenmann",
+		ContactPerson:      null.StringFrom("Max Sonnenmann"),
 		EegAddress:         model.EegAddress{},
 		AccountInfo:        model.AccountInfo{},
 		Contact: model.Contact{

@@ -1,11 +1,12 @@
 package database
 
 import (
-	"at.ourproject/vfeeg-backend/model"
+	"testing"
+
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/eegfaktura/eegfaktura-backend/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 func TestAddTariff(t *testing.T) {

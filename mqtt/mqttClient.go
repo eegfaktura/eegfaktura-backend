@@ -1,12 +1,13 @@
 package mqttclient
 
 import (
-	"at.ourproject/vfeeg-backend/model"
 	"errors"
+	"time"
+
 	mqtt "github.com/eclipse/paho.mqtt.golang"
+	"github.com/eegfaktura/eegfaktura-backend/model"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-	"time"
 )
 
 type MQTTStreamer struct {

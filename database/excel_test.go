@@ -1,15 +1,16 @@
 package database
 
 import (
-	"at.ourproject/vfeeg-backend/model"
 	"database/sql"
-	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"gopkg.in/guregu/null.v4"
 	"io"
 	"os"
 	"testing"
+
+	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/eegfaktura/eegfaktura-backend/model"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gopkg.in/guregu/null.v4"
 )
 
 func TestImportMasterdataFromExcel(t *testing.T) {

@@ -1,9 +1,9 @@
 package eda
 
 import (
-	"at.ourproject/vfeeg-backend/database"
-	"at.ourproject/vfeeg-backend/model"
-	mqttclient "at.ourproject/vfeeg-backend/mqtt"
+	"github.com/eegfaktura/eegfaktura-backend/database"
+	"github.com/eegfaktura/eegfaktura-backend/model"
+	mqttclient "github.com/eegfaktura/eegfaktura-backend/mqtt"
 	"github.com/sirupsen/logrus"
 )
 

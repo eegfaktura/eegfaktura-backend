@@ -1,9 +1,10 @@
 package eda
 
 import (
-	"at.ourproject/vfeeg-backend/model"
 	"errors"
 	"fmt"
+
+	"github.com/eegfaktura/eegfaktura-backend/model"
 )
 
 func extractResponseCodeAndMeteringPoint(ebmsMessage *model.EbmsMessage) ([]int16, []string, error) {

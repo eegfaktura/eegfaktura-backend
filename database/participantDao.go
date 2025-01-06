@@ -1,12 +1,13 @@
 package database
 
 import (
-	"at.ourproject/vfeeg-backend/model"
 	dbsql "database/sql"
+	"time"
+
 	"github.com/doug-martin/goqu/v9"
+	"github.com/eegfaktura/eegfaktura-backend/model"
 	"github.com/jmoiron/sqlx"
 	"github.com/pborman/uuid"
-	"time"
 )
 
 func GetParticipant(dbConn OpenDbXConnection, tenant string) ([]model.EegParticipant, error) {

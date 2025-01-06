@@ -1,15 +1,16 @@
 package database
 
 import (
-	"at.ourproject/vfeeg-backend/model"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"testing"
+
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/eegfaktura/eegfaktura-backend/model"
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"strings"
-	"testing"
 )
 
 //func TestGetMeteringPoint(t *testing.T) {

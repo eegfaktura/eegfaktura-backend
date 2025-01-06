@@ -1,18 +1,19 @@
 package parser
 
 import (
-	"at.ourproject/vfeeg-backend/config"
-	"at.ourproject/vfeeg-backend/model"
-	"at.ourproject/vfeeg-backend/util"
 	"bytes"
 	"embed"
 	"errors"
-	"github.com/gabriel-vasile/mimetype"
-	log "github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 	"html/template"
 	"os"
 	"path/filepath"
+
+	"github.com/eegfaktura/eegfaktura-backend/config"
+	"github.com/eegfaktura/eegfaktura-backend/model"
+	"github.com/eegfaktura/eegfaktura-backend/util"
+	"github.com/gabriel-vasile/mimetype"
+	log "github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 )
 
 //go:embed templates
@@ -86,7 +87,7 @@ func GetTemplateFor(templateType, tenant string) (string, error) {
 	case "ACTIVATION":
 		return filepath.Join(path, "AktivierungsEmail-templates.html"), nil
 	}
-	return "", errors.New("Template not found")
+	return "", errors.New("template not found")
 }
 
 func buildAttachments(templatePath string, a []model.InlinePicture) []*util.Attachment {

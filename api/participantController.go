@@ -1,18 +1,19 @@
 package api
 
 import (
-	"at.ourproject/vfeeg-backend/api/middleware"
-	"at.ourproject/vfeeg-backend/database"
-	"at.ourproject/vfeeg-backend/model"
-	mqttclient "at.ourproject/vfeeg-backend/mqtt"
-	"at.ourproject/vfeeg-backend/parser"
-	"at.ourproject/vfeeg-backend/util"
 	"encoding/json"
 	"fmt"
-	"github.com/gorilla/mux"
-	log "github.com/sirupsen/logrus"
 	"net/http"
 	"strings"
+
+	"github.com/eegfaktura/eegfaktura-backend/api/middleware"
+	"github.com/eegfaktura/eegfaktura-backend/database"
+	"github.com/eegfaktura/eegfaktura-backend/model"
+	mqttclient "github.com/eegfaktura/eegfaktura-backend/mqtt"
+	"github.com/eegfaktura/eegfaktura-backend/parser"
+	"github.com/eegfaktura/eegfaktura-backend/util"
+	"github.com/gorilla/mux"
+	log "github.com/sirupsen/logrus"
 )
 
 func InitParticipantRouter(r *mux.Router, jwtWrapper middleware.JWTWrapperFunc) *mux.Router {

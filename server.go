@@ -1,23 +1,24 @@
 package main
 
 import (
-	"at.ourproject/vfeeg-backend/api"
-	"at.ourproject/vfeeg-backend/api/middleware"
-	"at.ourproject/vfeeg-backend/config"
-	"at.ourproject/vfeeg-backend/eda"
-	"at.ourproject/vfeeg-backend/graph"
-	"at.ourproject/vfeeg-backend/graph/generated"
-	mqttclient "at.ourproject/vfeeg-backend/mqtt"
-	"at.ourproject/vfeeg-backend/util"
 	"flag"
 	"fmt"
+	"net/http"
+	"time"
+
 	"github.com/99designs/gqlgen/graphql/handler"
+	"github.com/eegfaktura/eegfaktura-backend/api"
+	"github.com/eegfaktura/eegfaktura-backend/api/middleware"
+	"github.com/eegfaktura/eegfaktura-backend/config"
+	"github.com/eegfaktura/eegfaktura-backend/eda"
+	"github.com/eegfaktura/eegfaktura-backend/graph"
+	"github.com/eegfaktura/eegfaktura-backend/graph/generated"
+	mqttclient "github.com/eegfaktura/eegfaktura-backend/mqtt"
+	"github.com/eegfaktura/eegfaktura-backend/util"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-	"net/http"
-	"time"
 )
 
 func InitRouters() *mux.Router {

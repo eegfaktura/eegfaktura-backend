@@ -1,13 +1,16 @@
 package util
 
 import (
-	"at.ourproject/vfeeg-backend/database"
-	"at.ourproject/vfeeg-backend/model"
-	protobuf "at.ourproject/vfeeg-backend/proto"
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"time"
+
+	"github.com/eegfaktura/eegfaktura-backend/database"
+	"github.com/eegfaktura/eegfaktura-backend/model"
+	protobuf "github.com/eegfaktura/eegfaktura-backend/proto"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
@@ -15,8 +18,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"gopkg.in/guregu/null.v4"
-	"net"
-	"time"
 )
 
 type SendMailFunc func(tenant, to, subject string, body *bytes.Buffer, attachments []*Attachment) error

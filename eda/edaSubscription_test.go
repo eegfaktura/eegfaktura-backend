@@ -1,14 +1,15 @@
 package eda
 
 import (
-	"at.ourproject/vfeeg-backend/database"
-	"at.ourproject/vfeeg-backend/model"
 	"encoding/json"
+	"testing"
+
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/eegfaktura/eegfaktura-backend/database"
+	"github.com/eegfaktura/eegfaktura-backend/model"
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 type RecorderMock struct {
