@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/jjeffery/civil"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/guregu/null.v4"
@@ -400,65 +401,97 @@ func TestParseTemplate2(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-//func TestManualSending(t *testing.T) {
-//	eeg := &model.Eeg{
-//		Id:                 "CC100438",
-//		Name:               "TE-EEG",
-//		Description:        "TEST EEG",
-//		BusinessNr:         null.String{},
-//		Area:               "",
-//		Legal:              "",
-//		OperatorName:       "",
-//		CommunityId:        "",
-//		GridOperator:       "",
-//		RcNumber:           "",
-//		AllocationMode:     "",
-//		SettlementInterval: "",
-//		ProviderBusinessNr: null.Int{},
-//		TaxNumber:          null.String{},
-//		VatNumber:          null.String{},
-//		ContactPerson:      null.StringFrom("Max Sonnenmann"),
-//		EegAddress:         model.EegAddress{},
-//		AccountInfo:        model.AccountInfo{},
-//		Contact: model.Contact{
-//			Phone: null.StringFrom("123456789"),
-//		},
-//		Optionals: model.Optionals{},
-//		Online:    false,
-//	}
-//
-//	participant := &model.EegParticipant{
-//		EegParticipantBase: model.EegParticipantBase{
-//			Id:                    nil,
-//			ParticipantNumber:     null.String{},
-//			BusinessRole:          "",
-//			FirstName:             "Max",
-//			LastName:              "Mustermann",
-//			TitleBefore:           "",
-//			TitleAfter:            "",
-//			ParticipantSince:      civil.NullDate{},
-//			VatNumber:             null.String{},
-//			TaxNumber:             null.String{},
-//			CompanyRegisterNumber: "",
-//			MeteringPoint:         nil,
-//			TariffId:              null.String{},
-//			Status:                "",
-//			Version:               0,
-//		},
-//		Contact: model.ContactInfo{
-//			Phone: null.String{},
-//			Email: null.StringFrom("obermueller.peter@gmail.com"),
-//		},
-//		BillingAddress:  model.Address{},
-//		ResidentAddress: model.Address{},
-//		BankAccount:     model.BankInfo{},
-//	}
-//
-//	var err error
-//	if err = SendActivationMailFromTemplate(services.SendMail,
-//		eeg.Id, "Aktivierung im Serviceportal", eeg, participant); err != nil {
-//		logrus.WithField("tenant", eeg.Id).WithError(err).Error("Error Sending Mail")
-//	}
-//
-//	assert.NoError(t, err)
-//}
+func TestManualSending(t *testing.T) {
+	eeg := &model.Eeg{
+		Id:                 "TE100100",
+		Name:               "TE-EEG",
+		Description:        "TEST EEG",
+		BusinessNr:         null.String{},
+		Area:               "",
+		Legal:              "",
+		OperatorName:       "",
+		CommunityId:        "",
+		GridOperator:       "",
+		RcNumber:           "",
+		AllocationMode:     "",
+		SettlementInterval: "",
+		ProviderBusinessNr: null.Int{},
+		TaxNumber:          null.String{},
+		VatNumber:          null.String{},
+		ContactPerson:      null.StringFrom("Max Sonnenmann"),
+		EegAddress: model.EegAddress{
+			Street:       "Solargasse",
+			StreetNumber: "2",
+			Zip:          "1111",
+			City:         "Solarcity",
+		},
+		AccountInfo: model.AccountInfo{},
+		Contact: model.Contact{
+			Phone: null.StringFrom("++43 123456789"),
+			Email: null.StringFrom("my@mail.com"),
+		},
+		Optionals: model.Optionals{Website: null.StringFrom("https://www.youtube.com")},
+		Online:    false,
+	}
+
+	participant := &model.EegParticipant{
+		EegParticipantBase: model.EegParticipantBase{
+			Id:                    nil,
+			ParticipantNumber:     null.String{},
+			BusinessRole:          "",
+			FirstName:             "Max",
+			LastName:              "Mustermann",
+			TitleBefore:           "",
+			TitleAfter:            "",
+			ParticipantSince:      civil.NullDate{},
+			VatNumber:             null.String{},
+			TaxNumber:             null.String{},
+			CompanyRegisterNumber: "",
+			MeteringPoint: []*model.MeteringPoint{{
+				MeteringPoint:    "AT00999900000000000000000000000333301",
+				ConsentId:        null.String{},
+				Transformer:      null.String{},
+				Direction:        "CONSUMPTION",
+				Status:           "",
+				StatusCode:       null.Int{},
+				TariffId:         null.String{},
+				EquipmentNumber:  null.String{},
+				EquipmentName:    null.String{},
+				InverterId:       null.String{},
+				Street:           null.String{},
+				StreetNumber:     null.String{},
+				City:             null.String{},
+				Zip:              null.String{},
+				RegisteredSince:  civil.Date{},
+				ModifiedAt:       civil.DateTime{},
+				ModifiedBy:       null.String{},
+				GridOperatorId:   null.String{},
+				GridOperatorName: null.String{},
+				ProcessState:     "",
+				State:            nil,
+				PartFact:         0,
+				ActivationMode:   "",
+				ActivationCode:   "",
+				AllocationFactor: null.Float{},
+			}},
+			TariffId: null.String{},
+			Status:   "",
+			Version:  0,
+		},
+		Contact: model.ContactInfo{
+			Phone: null.String{},
+			Email: null.StringFrom("obermueller.peter@gmail.com"),
+		},
+		BillingAddress:  model.Address{},
+		ResidentAddress: model.Address{},
+		BankAccount:     model.BankInfo{},
+	}
+
+	var err error
+	if err = SendActivationMailFromTemplate(services.SendMail,
+		eeg.Id, "Aktivierung im Serviceportal", eeg, participant); err != nil {
+		logrus.WithField("tenant", eeg.Id).WithError(err).Error("Error Sending Mail")
+	}
+
+	assert.NoError(t, err)
+}

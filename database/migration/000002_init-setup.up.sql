@@ -18,6 +18,10 @@ INSERT INTO base.eeg (tenant, name, description, periods, "rcNumber", area, lega
 INSERT INTO base.eeg (tenant, name, description, periods, "rcNumber", area, legal, gridoperator_code, gridoperator_name, "communityId", "businessNr", "allocationMode", "settlementInterval", "providerBusinessNr", "taxNumber", "vatNumber", subjecttovat, street, "streetNumber", city, zip, iban, owner, sepa, phone, email, website, online, "contactPerson", "bankName")
     VALUES ('TE100201', 'MY-TEST', 'Gemeinnütziger Verein', '[]', 'TE100201', 'BEG', 'verein', 'AT003000', 'Netz OOE', 'AT00300000000TC100201000000000001', '123456789', 'DYNAMIC', 'MONTHLY', null, '11 123/4567', null, null, 'Solarstraße', '9', 'Solarcity', '1111', 'AT011234000000321321', 'T-VIERE', false, '0043-664-1234567', 'test-eeg@gmx.at', 'test-eeg.at', false, 'Max Sonnenmann', null);
 
+-- Create Tenant for API Testing
+INSERT INTO base.eeg (tenant, name, description, periods, "rcNumber", area, legal, gridoperator_code, gridoperator_name, "communityId", "businessNr", "allocationMode", "settlementInterval", "providerBusinessNr", "taxNumber", "vatNumber", subjecttovat, street, "streetNumber", city, zip, iban, owner, sepa, phone, email, website, online, "contactPerson", "bankName")
+    VALUES ('TE001006', 'MY-TEST', 'Gemeinnütziger Verein', '[]', 'TE000006', 'LOCAL', 'verein', 'AT003000', 'Netz OOE', 'AT00300000000TC000006000000000001', '123456789', 'DYNAMIC', 'MONTHLY', null, '11 123/4567', null, null, 'Solarstraße', '9', 'Solarcity', '1111', 'AT011234000000321321', 'T-VIERE', false, '0043-664-1234567', 'test-eeg@gmx.at', 'test-eeg.at', false, 'Max Sonnenmann', null);
+
 -- Insert EEG for multi metering
 INSERT INTO base.eeg (tenant, name, description, periods, "rcNumber", area, legal, gridoperator_code, gridoperator_name, "communityId", "businessNr", "allocationMode", "settlementInterval", "providerBusinessNr", "taxNumber", "vatNumber", subjecttovat, street, "streetNumber", city, zip, iban, owner, sepa, phone, email, website, online, "contactPerson", "bankName")
     VALUES ('TE000015', 'MY-TEST-15', 'Gemeinnütziger Verein', '[]', 'TE000015', 'LOCAL', 'verein', 'AT003000', 'Netz OOE', 'AT00300000000TC000015000000000001', '123456789', 'DYNAMIC', 'MONTHLY', null, '11 123/4567', null, null, 'Solarstraße', '9', 'Solarcity', '1111', 'AT011234000000321321', 'T-VIERE', false, '0043-664-1234567', 'test-eeg@gmx.at', 'test-eeg.at', false, 'Max Sonnenmann', null);
@@ -153,6 +157,24 @@ INSERT INTO base.meteringpoint (metering_point_id, participant_id, tenant, trans
     VALUES ('AT0030000000000000000000000153012', 'ea1142dc-03da-16ee-b82b-5a985b4b033a', 'TE000016', null, 'CONSUMPTION', 'ACTIVE', 'ACTIVE', null, null, 'Vormarkt', '31', 'Neumarkt am Hausruck', '4720', 'GABN11', '2023-11-15 17:43:34.091375', 'petero', '2023-10-09', null, null, '2023-01-01', '2999-12-31', '123456789016');
 INSERT INTO base.meteringpoint (metering_point_id, participant_id, tenant, transformer, direction, status, process_state, inverterid, "equipmentName", street, "streetNumber", city, zip, "equipmentNumber", "modifiedAt", "modifiedBy", "registeredSince", grid_operator_id, grid_operator_name, activesince, inactivesince, consent_id)
     VALUES ('AT0030000000000000000000000153012', 'ea1142dc-03da-17ee-b82b-5a985b4b033a', 'TE000017', null, 'CONSUMPTION', 'ACTIVE', 'ACTIVE', null, null, 'Vormarkt', '31', 'Neumarkt am Hausruck', '4720', 'GABN11', '2023-11-15 17:43:34.091375', 'petero', '2023-10-09', null, null, '2023-01-01', '2999-12-31', '123456789017');
+
+
+-- Insert Participant for API Testing
+INSERT INTO base.participant (id, tenant, firstname, lastname, role, "businessRole", "titleBefore", "titleAfter", "participantSince", "vatNumber", "taxNumber", "companyRegisterNumber", status, "createdBy", "createdDate", "lastModifiedBy", "lastModifiedDate", version, "tariffId", "participantNumber")
+    VALUES ('04583ce3-5802-40b9-afd9-29d09b908f1f', 'TE001006', 'Peter', 'Obermüller', 'EEG_USER', 'EEG_PRIVATE', '', '', '2023-10-11', '', '', '', 'ACTIVE', 'petero', '2023-06-05', 'petero', '2023-06-05', 1, 'e6c241ad-f011-11ed-9f81-6ad19f4af00f', '048');
+
+INSERT INTO base.meteringpoint (metering_point_id, participant_id, tenant, transformer, direction, status, process_state, inverterid, "equipmentName", street, "streetNumber", city, zip, "equipmentNumber", "modifiedAt", "modifiedBy", "registeredSince", grid_operator_id, grid_operator_name, activesince, inactivesince, consent_id)
+    VALUES ('AT0030000000000000000000000953013', '04583ce3-5802-40b9-afd9-29d09b908f1f', 'TE001006', null, 'CONSUMPTION', 'ACTIVE', 'ACTIVE', null, null, 'Vormarkt', '31', 'Neumarkt am Hausruck', '4720', 'GABN11', '2023-11-15 17:43:34.091375', 'petero', '2023-10-09', null, null, '2024-01-01', '2999-12-31', '123456789015');
+INSERT INTO base.meteringpoint (metering_point_id, participant_id, tenant, transformer, direction, status, process_state, inverterid, "equipmentName", street, "streetNumber", city, zip, "equipmentNumber", "modifiedAt", "modifiedBy", "registeredSince", grid_operator_id, grid_operator_name, activesince, inactivesince, consent_id)
+    VALUES ('AT0030000000000000000000000953014', '04583ce3-5802-40b9-afd9-29d09b908f1f', 'TE001006', null, 'CONSUMPTION', 'ACTIVE', 'ACTIVE', null, null, 'Vormarkt', '31', 'Neumarkt am Hausruck', '4720', 'GABN11', '2023-11-15 17:43:34.091375', 'petero', '2023-10-09', null, null, '2024-01-01', '2024-05-28', '12345678901415');
+INSERT INTO base.meteringpoint (metering_point_id, participant_id, tenant, transformer, direction, status, process_state, inverterid, "equipmentName", street, "streetNumber", city, zip, "equipmentNumber", "modifiedAt", "modifiedBy", "registeredSince", grid_operator_id, grid_operator_name, activesince, inactivesince, consent_id)
+    VALUES ('AT0030000000000000000000000953015', '04583ce3-5802-40b9-afd9-29d09b908f1f', 'TE001006', null, 'CONSUMPTION', 'ACTIVE', 'ACTIVE', null, null, 'Vormarkt', '31', 'Neumarkt am Hausruck', '4720', 'GABN11', '2023-11-15 17:43:34.091375', 'petero', '2023-10-09', null, null, '2024-05-20', '2999-12-31', '123456789016');
+INSERT INTO base.meteringpoint (metering_point_id, participant_id, tenant, transformer, direction, status, process_state, inverterid, "equipmentName", street, "streetNumber", city, zip, "equipmentNumber", "modifiedAt", "modifiedBy", "registeredSince", grid_operator_id, grid_operator_name, activesince, inactivesince, consent_id)
+    VALUES ('AT0030000000000000000000000953016', '04583ce3-5802-40b9-afd9-29d09b908f1f', 'TE001006', null, 'CONSUMPTION', 'ACTIVE', 'ACTIVE', null, null, 'Vormarkt', '31', 'Neumarkt am Hausruck', '4720', 'GABN11', '2023-11-15 17:43:34.091375', 'petero', '2023-10-09', null, null, '2024-01-01', '2999-12-31', '123456789017');
+
+
+
+
 
 
 INSERT INTO base.metering_partition_factor (metering_point_id, tenant, participant_id, "partFact", "createdBy") SELECT metering_point_id, tenant, participant_id, 100, 'system' FROM base.meteringpoint;

@@ -377,18 +377,28 @@ func requestMeteringPointValues() middleware.JWTHandlerFunc {
 
 		if eeg.Online {
 			var errorList []string
-			meters, err := database.GetMeteringByIds(db, tenant, meters)
+			meters, err := database.FindMeteringByIds(db, tenant, meters)
 			if err != nil {
 				log.WithField("tenant", tenant).WithError(err).Error("failed to request metering point values.")
 				respondWith(w, http.StatusInternalServerError, tenant, err)
 				return
 			}
 			for _, m := range meters {
-				if m.Status != model.S_ACTIVE || m.State.Flag != model.F_ASSIGNED || !m.State.ActiveSince.Valid {
+				if m.Status == model.S_INIT || m.State.Flag != model.F_ASSIGNED || !m.State.ActiveSince.Valid || !m.State.InactiveSince.Valid {
 					continue
 				}
-				from := util.MaxTimeStamp(m.State.ActiveSince.Date.Unix()*1000, fromDate)
-				if err = mqttclient.RequestingEnergyData(eeg, m, from, toDate); err != nil {
+
+				_activeSince := m.State.ActiveSince.Date.Unix() * 1000
+				_inactiveSince := m.State.InactiveSince.Date.Unix() * 1000
+
+				if _activeSince > toDate || _inactiveSince < fromDate {
+					continue
+				}
+
+				from := util.MaxTimeStamp(_activeSince, fromDate)
+				to := util.MinTimeStamp(_inactiveSince, toDate)
+
+				if err = mqttclient.RequestingEnergyData(eeg, m, from, to); err != nil {
 					log.WithField("tenant", tenant).Errorf("request Metering values %v (%s - %s)", m,
 						time.UnixMilli(from).String(), time.UnixMilli(toDate).String())
 					errorList = append(errorList, fmt.Sprintf("%s: %s", m.MeteringPoint, err.Error()))
@@ -474,7 +484,7 @@ func requestRevokeMeteringPoint() middleware.JWTHandlerFunc {
 		log.WithField("tenant", tenant).Infof("revoke Metering %v (%s - %s)", request, time.UnixMilli(fromDate).String(), getReason(reason))
 		if eeg.Online {
 			errorList := []string{}
-			meters, err := database.GetMeteringByIds(db, tenant, meters)
+			meters, err := database.FindActiveMeteringByIds(db, tenant, meters)
 			if err != nil {
 				respondWith(w, http.StatusInternalServerError, tenant, err)
 				return
@@ -575,7 +585,7 @@ func requestChangePartitionFactor() middleware.JWTHandlerFunc {
 			//	meterIds = append(meterIds, m.MeteringPoint)
 			//}
 			//
-			//meters, err := database.GetMeteringByIds(db, tenant, meterIds)
+			//meters, err := database.FindActiveMeteringByIds(db, tenant, meterIds)
 			//if err != nil {
 			//	log.WithField("tenant", tenant).WithError(err).Errorf("failed to request metering point PRTFACT. Err: %v", request)
 			//	respondWith(w, http.StatusInternalServerError, tenant, err)

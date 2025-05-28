@@ -361,7 +361,7 @@ func Test_MeteringPointRevoke(t *testing.T) {
 	assert.Equal(t, consentEnd, meter.State.InactiveSince.Date)
 	assert.Equal(t, model.S_INACTIVE, meter.Status)
 
-	meters, err = GetMeteringByIds(db, "TE000015", []string{"AT0030000000000000000000000153013"})
+	meters, err = FindActiveMeteringByIds(db, "TE000015", []string{"AT0030000000000000000000000153013"})
 	assert.NoError(t, err)
 	require.Nil(t, meters)
 
@@ -378,7 +378,7 @@ func Test_GetMeteringsByIds(t *testing.T) {
 	db, err := openTestDb()
 	require.NoError(t, err)
 
-	meters, err := GetMeteringByIds(db, "TE000015", []string{"AT0030000000000000000000000153012"})
+	meters, err := FindActiveMeteringByIds(db, "TE000015", []string{"AT0030000000000000000000000153012"})
 	assert.NoError(t, err)
 	require.NotNil(t, meters)
 	require.Equal(t, 1, len(meters))
@@ -386,7 +386,7 @@ func Test_GetMeteringsByIds(t *testing.T) {
 
 	require.Equal(t, null.StringFrom("123456789015"), meter.ConsentId)
 
-	meters, err = GetMeteringByIds(db, "TE000015", []string{"AT0030000000000000000000000153014"})
+	meters, err = FindActiveMeteringByIds(db, "TE000015", []string{"AT0030000000000000000000000153014"})
 	assert.NoError(t, err)
 	require.NotNil(t, meters)
 	require.Equal(t, 1, len(meters))
@@ -394,7 +394,7 @@ func Test_GetMeteringsByIds(t *testing.T) {
 
 	require.Equal(t, null.StringFrom("12345678901415"), meter.ConsentId)
 
-	meters, err = GetMeteringByIds(db, "TE000017", []string{"AT0030000000000000000000000153013"})
+	meters, err = FindActiveMeteringByIds(db, "TE000017", []string{"AT0030000000000000000000000153013"})
 	assert.NoError(t, err)
 	require.NotNil(t, meters)
 	require.Equal(t, 1, len(meters))
@@ -655,7 +655,7 @@ func Test_MeteringPointIntegration(t *testing.T) {
 				require.NoError(t, err)
 				defer db.Close()
 
-				p, err := GetParticipants(db, "TE000004")
+				p, err := GetParticipants(db, tenant)
 				require.NoError(t, err)
 
 				pUnderTest := findParticipantUnderTest(p, "TestUser1")
@@ -677,7 +677,7 @@ func Test_MeteringPointIntegration(t *testing.T) {
 
 				now := civil.Today()
 				consentId := "1234567890"
-				return MeteringPointsSetStatus(db, "TE000004", model.ACTIVE, nil, []string{meter.MeteringPoint}, &now, &consentId)
+				return MeteringPointsSetStatus(db, tenant, model.ACTIVE, nil, []string{meter.MeteringPoint}, &now, &consentId)
 			},
 			valid: func(t *testing.T) {
 				pUnderTest := getParticipantUnderTest(t, "TestUser1")
@@ -700,7 +700,7 @@ func Test_MeteringPointIntegration(t *testing.T) {
 				require.NoError(t, err)
 				defer tx.Rollback()
 
-				err = RegisterParticipant(tx, "TE000004", "test", secondParticipant)
+				err = RegisterParticipant(tx, tenant, "test", secondParticipant)
 				require.Error(t, err)
 				return nil
 			},
@@ -715,7 +715,7 @@ func Test_MeteringPointIntegration(t *testing.T) {
 
 				return MeteringPointRevoke(
 					db,
-					"TE000004",
+					tenant,
 					meter.MeteringPoint,
 					civil.Today(),
 				)
@@ -742,16 +742,16 @@ func Test_MeteringPointIntegration(t *testing.T) {
 				require.NoError(t, err)
 				defer tx.Rollback()
 
-				err = RegisterParticipant(tx, "TE000004", "test", secondParticipant)
+				err = RegisterParticipant(tx, tenant, "test", secondParticipant)
 				require.NoError(t, err)
 				require.NoError(t, tx.Commit())
 
 				now := civil.Today().Add(2 * 24 * time.Hour)
 				consentId := "0987654321"
-				return MeteringPointsSetStatus(db, "TE000004", model.ACTIVE, nil, []string{meter.MeteringPoint}, &now, &consentId)
+				return MeteringPointsSetStatus(db, tenant, model.ACTIVE, nil, []string{meter.MeteringPoint}, &now, &consentId)
 			},
 			valid: func(t *testing.T) {
-				pUnderTest := getParticipantUnderTest(t, "TestUser2")
+				pUnderTest := getParticipantUnderTest(t, secondParticipant.LastName)
 
 				assert.Equal(t, model.PENDING, pUnderTest.Status)
 				assert.Equal(t, 1, len(pUnderTest.MeteringPoint))
@@ -761,7 +761,7 @@ func Test_MeteringPointIntegration(t *testing.T) {
 				assert.Equal(t, civil.Today().Add(2*24*time.Hour), pUnderTest.MeteringPoint[0].State.ActiveSince.Date)
 				assert.Equal(t, civil.DateOf(time.Date(2999, 12, 31, 23, 59, 59, 0, time.UTC)), pUnderTest.MeteringPoint[0].State.InactiveSince.Date)
 
-				pUnderTest1 := getParticipantUnderTest(t, "TestUser1")
+				pUnderTest1 := getParticipantUnderTest(t, newParticipant.LastName)
 				assert.Equal(t, model.S_INACTIVE, pUnderTest1.MeteringPoint[0].Status)
 				assert.Equal(t, model.F_MOVED, pUnderTest1.MeteringPoint[0].State.Flag)
 
@@ -793,7 +793,7 @@ func Test_MeteringPointIntegration(t *testing.T) {
 				require.NoError(t, err)
 				defer db.Close()
 
-				return MeteringPointsSetStatus(db, "TE000004", model.PENDING, nil, []string{meter.MeteringPoint}, nil, nil)
+				return MeteringPointsSetStatus(db, tenant, model.PENDING, nil, []string{meter.MeteringPoint}, nil, nil)
 			},
 			valid: func(t *testing.T) {
 				pUnderTest := getParticipantUnderTest(t, "TestUser2")
@@ -812,10 +812,10 @@ func Test_MeteringPointIntegration(t *testing.T) {
 				require.NoError(t, err)
 				defer db.Close()
 
-				return MeteringPointsSetStatus(db, "TE000004", model.APPROVED, nil, []string{meter.MeteringPoint}, nil, nil)
+				return MeteringPointsSetStatus(db, tenant, model.APPROVED, nil, []string{meter.MeteringPoint}, nil, nil)
 			},
 			valid: func(t *testing.T) {
-				pUnderTest := getParticipantUnderTest(t, "TestUser2")
+				pUnderTest := getParticipantUnderTest(t, secondParticipant.LastName)
 
 				require.Equal(t, 1, len(pUnderTest.MeteringPoint))
 				assert.Equal(t, model.S_INACTIVE, pUnderTest.MeteringPoint[0].Status)
@@ -833,14 +833,36 @@ func Test_MeteringPointIntegration(t *testing.T) {
 
 				now := civil.Today().Add(8 * 24 * time.Hour)
 				consentId := "1234567890"
-				return MeteringPointsSetStatus(db, "TE000004", model.ACTIVE, nil, []string{meter.MeteringPoint}, &now, &consentId)
+				return MeteringPointsSetStatus(db, tenant, model.ACTIVE, nil, []string{meter.MeteringPoint}, &now, &consentId)
 			},
 			valid: func(t *testing.T) {
-				pUnderTest := getParticipantUnderTest(t, "TestUser2")
+				pUnderTest := getParticipantUnderTest(t, secondParticipant.LastName)
 
 				require.Equal(t, 1, len(pUnderTest.MeteringPoint))
 				assert.Equal(t, model.S_ACTIVE, pUnderTest.MeteringPoint[0].Status)
 				assert.Equal(t, model.ACTIVE, pUnderTest.MeteringPoint[0].ProcessState)
+				assert.Equal(t, civil.DateOf(time.Date(2999, 12, 31, 23, 59, 59, 0, time.UTC)), pUnderTest.MeteringPoint[0].State.InactiveSince.Date)
+				assert.Equal(t, civil.Today().Add(2*24*time.Hour), pUnderTest.MeteringPoint[0].State.ActiveSince.Date)
+			},
+		},
+		{
+			name: "Send APPROVED after ACTIVE ",
+			test: func(t *testing.T) error {
+				db, err := openTestDb()
+				require.NoError(t, err)
+				defer db.Close()
+
+				now := civil.Today().Add(8 * 24 * time.Hour)
+				consentId := "1234567891"
+				return MeteringPointsSetStatus(db, tenant, model.APPROVED, nil, []string{meter.MeteringPoint}, &now, &consentId)
+			},
+			valid: func(t *testing.T) {
+				pUnderTest := getParticipantUnderTest(t, secondParticipant.LastName)
+
+				require.Equal(t, 1, len(pUnderTest.MeteringPoint))
+				assert.Equal(t, model.S_ACTIVE, pUnderTest.MeteringPoint[0].Status)
+				assert.Equal(t, model.ACTIVE, pUnderTest.MeteringPoint[0].ProcessState)
+				assert.Equal(t, "1234567891", pUnderTest.MeteringPoint[0].ConsentId.String)
 				assert.Equal(t, civil.DateOf(time.Date(2999, 12, 31, 23, 59, 59, 0, time.UTC)), pUnderTest.MeteringPoint[0].State.InactiveSince.Date)
 				assert.Equal(t, civil.Today().Add(2*24*time.Hour), pUnderTest.MeteringPoint[0].State.ActiveSince.Date)
 			},
@@ -1223,13 +1245,63 @@ func TestFindMeteringPointsActivePeriod(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	from := int64(1713411836000)
-	to := int64(1718682236000)
-	meters, err := FindMeteringPointsActivePeriod(db, "TE000002", from, to)
-	require.NoError(t, err)
-	require.Equal(t, 4, len(meters))
+	//from := int64(1713411836000) // Thu Apr 18 2024 05:43:56 GMT+0200 (Central European Summer Time)
+	//to := int64(1718682236000)   // Tue Jun 18 2024 05:43:56 GMT+0200 (Central European Summer Time)
+	//meters, err := FindMeteringPointsActivePeriod(db, "TE001006", from, to)
+	//require.NoError(t, err)
+	//require.Equal(t, 4, len(meters))
+	//
+	//fmt.Printf("MeteringPoints: %+v\n", meters)
 
-	fmt.Printf("MeteringPoints: %+v\n", meters)
+	type args struct {
+		from int64
+		to   int64
+	}
+
+	tests := []struct {
+		name     string
+		args     args
+		validate func(t *testing.T, meter []*model.MeteringPoint)
+	}{
+		{
+			name: "Period 1",
+			args: args{
+				from: int64(1713411836000), // Thu Apr 18 2024 05:43:56 GMT+0200 (Central European Summer Time)
+				to:   int64(1718682236000), // Tue Jun 18 2024 05:43:56 GMT+0200 (Central European Summer Time)
+			},
+			validate: func(t *testing.T, meters []*model.MeteringPoint) {
+				require.Equal(t, 4, len(meters))
+			},
+		},
+		{
+			name: "Period 2",
+			args: args{
+				from: int64(1716933600000), // Wed May 29 2024 00:00:00 GMT+0200 (Central European Summer Time)
+				to:   int64(1718682236000), // Tue Jun 18 2024 05:43:56 GMT+0200 (Central European Summer Time)
+			},
+			validate: func(t *testing.T, meters []*model.MeteringPoint) {
+				require.Equal(t, 3, len(meters))
+			},
+		},
+		{
+			name: "Period 3",
+			args: args{
+				from: int64(1708210800000), // Sun Feb 18 2024 00:00:00 GMT+0100 (Central European Standard Time)
+				to:   int64(1710716400000), // Mon Mar 18 2024 00:00:00 GMT+0100 (Central European Standard Time)
+			},
+			validate: func(t *testing.T, meters []*model.MeteringPoint) {
+				require.Equal(t, 3, len(meters))
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			meters, err := FindMeteringPointsActivePeriod(db, "TE001006", tt.args.from, tt.args.to)
+			require.NoError(t, err)
+			tt.validate(t, meters)
+		})
+	}
 }
 
 func TestMeteringPointRevokeByConsentId_INIT(t *testing.T) {

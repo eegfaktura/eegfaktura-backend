@@ -17,7 +17,7 @@ import (
 type EdaRecording interface {
 	saveNotification(db *sqlx.DB, tenant string, code model.EbMsMessageType, meters []string, errCodes []int16, protocol model.EdaProtocol)
 	saveHistory(db *sqlx.DB, tenant string, messageCode model.EbMsMessageType, conversationId, role, dir string, protocol model.EdaProtocol, msg interface{}) error
-	meteringPointPerformAnswerMsg(ecId string, meterId []string) error
+	meteringPointPerformAnswerMsg(sendMail services.SendMailFunc, ecId string, meterId []string) error
 	databaseConnectFunc() database.OpenDbXConnection
 	databaseConnection() (*sqlx.DB, error)
 }
@@ -74,7 +74,7 @@ func (r *EdaRecorder) saveHistory(db *sqlx.DB, tenant string, messageCode model.
 	return nil
 }
 
-func (r *EdaRecorder) meteringPointPerformAnswerMsg(ecId string, meterId []string) error {
+func (r *EdaRecorder) meteringPointPerformAnswerMsg(sendMail services.SendMailFunc, ecId string, meterId []string) error {
 
 	db, err := r.dbOpen()
 	if err != nil {
@@ -100,6 +100,16 @@ func (r *EdaRecorder) meteringPointPerformAnswerMsg(ecId string, meterId []strin
 		_ = tx.Rollback()
 	}()
 
+	meterFilter := func(meters []*model.MeteringPoint, f func(string) bool) []*model.MeteringPoint {
+		filtered := make([]*model.MeteringPoint, 0)
+		for _, m := range meters {
+			if f(m.MeteringPoint) {
+				filtered = append(filtered, m)
+			}
+		}
+		return filtered
+	}
+
 	for _, mid := range meterId {
 		participant, err := database.FindParticipantByMeteringPoint(db, eeg.Id, mid)
 		if err != nil {
@@ -109,10 +119,20 @@ func (r *EdaRecorder) meteringPointPerformAnswerMsg(ecId string, meterId []strin
 				logrus.WithField("tenant", eeg.Id).Warn(err)
 			}
 		}
+
 		if participant != nil && participant.Contact.Email.Valid {
-			if err = parser.SendActivationMailFromTemplate(services.SendMail,
-				eeg.Id, "Aktivierung im Serviceportal", eeg, participant); err != nil {
-				logrus.WithField("tenant", eeg.Id).WithError(err).Error("Error Sending Mail")
+
+			participant.MeteringPoint = meterFilter(participant.MeteringPoint, func(s string) bool {
+				return s == mid
+			})
+
+			if len(participant.MeteringPoint) > 0 {
+				if err = parser.SendActivationMailFromTemplate(sendMail,
+					eeg.Id, "Aktivierung im Serviceportal", eeg, participant); err != nil {
+					logrus.WithField("tenant", eeg.Id).WithError(err).Error("Error Sending Mail")
+				}
+			} else {
+				logrus.WithField("tenant", eeg.Id).Warn("No MeteringPoint for activation mail")
 			}
 		}
 	}

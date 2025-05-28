@@ -92,8 +92,12 @@ var (
 	REJECTED_IGNORE_CODES  = []int16{86}
 )
 
+//func InitEdaSubscription() {
+//	mqttclient.Subscribe(getSubsriptions()...)
+//}
+
 func InitEdaSubscription() {
-	mqttclient.Subscribe(getSubsriptions()...)
+	mqttclient.Broker().Subscribe(getSubsriptions()...)
 }
 
 func getSubsriptions() []model.Subscriptions {
@@ -300,7 +304,7 @@ func protocolEcReqOnlHandler(msg model.SubscribeMessage, recorder EdaRecording) 
 		for _, c := range codes {
 			if c == MESSAGE_RECEIVED {
 				status = model.PENDING
-				if err := recorder.meteringPointPerformAnswerMsg(msg.Payload.EcId, meters); err != nil {
+				if err := recorder.meteringPointPerformAnswerMsg(services.SendMail, msg.Payload.EcId, meters); err != nil {
 					logrus.WithField("error", err.Error()).Errorf("Perform Answer Message %+v", meters)
 				}
 			} else if c == NO_REMOTELY_READABLE_METER_INSTALLED_YET || c == SUM_OF_REPORTED_ALLOCATION_KEYS_EXCEEDS_100 {

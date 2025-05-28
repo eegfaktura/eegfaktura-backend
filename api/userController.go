@@ -18,7 +18,7 @@ func InitUserRouter(r *mux.Router) *mux.Router {
 
 func getUser() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
-		tenants := claims.Tenants
+		//tenants := claims.Tenants
 		db, err := database.ConnectToDatabase()
 		if err != nil {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
@@ -26,7 +26,13 @@ func getUser() middleware.JWTHandlerFunc {
 		}
 		defer func() { _ = db.Close() }()
 
-		tn, err := database.FetchTenantsName(db, tenants)
+		var tenants []string
+		su := middleware.IsSuperuser(claims.RealmAccess.Roles)
+		if !su {
+			tenants = claims.Tenants
+		}
+
+		tn, err := database.FetchTenantsName(db, tenants, su)
 		if err != nil {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrGetUser(err))
 			return

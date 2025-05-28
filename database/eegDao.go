@@ -190,9 +190,13 @@ type tenantsNameStruct struct {
 	Name   string `json:"name" db:"name"`
 }
 
-func FetchTenantsName(db *sqlx.DB, tenants []string) ([]tenantsNameStruct, error) {
+func FetchTenantsName(db *sqlx.DB, tenants []string, isSuperUser bool) ([]tenantsNameStruct, error) {
 	tenantsName := []tenantsNameStruct{}
-	stmt, _, err := pgDialect.From("base.eeg").Select(&tenantsName).Where(goqu.C("tenant").In(tenants)).ToSQL()
+	selectStmt := pgDialect.From("base.eeg").Select(&tenantsName)
+	if !isSuperUser {
+		selectStmt = selectStmt.Where(goqu.C("tenant").In(tenants))
+	}
+	stmt, _, err := selectStmt.ToSQL()
 	if err != nil {
 		return nil, err
 	}

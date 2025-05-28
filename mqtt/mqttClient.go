@@ -2,24 +2,49 @@ package mqttclient
 
 import (
 	"at.ourproject/vfeeg-backend/model"
-	"errors"
-	"fmt"
+	"context"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"strings"
 	"time"
 )
 
-type MQTTStreamer struct {
-	client mqtt.Client
+type TopicType string
+
+func (t TopicType) Tenant() string {
+	elems := strings.Split(string(t), "/")
+	if len(elems) > 4 {
+		return elems[2]
+	}
+	return string(t)
 }
-type Error string
 
-var (
-	MqttBrokerNotStarted = errors.New("Broker not running")
-)
+func (t TopicType) TypeInfo() (string, string) {
+	elems := strings.Split(string(t), "/")
+	if len(elems) > 4 {
+		return elems[2], elems[4]
+	}
+	return string(t), ""
+}
 
-func NewMqttClient() (mqtt.Client, error) {
+type InboundMessage struct {
+	tenant   string
+	protocol model.EdaProtocol
+	msg      []byte
+}
+
+type CommandMessage struct {
+	tenant string
+	cmd    string
+	msg    []byte
+}
+
+type ErrorMessage struct {
+	msg []byte
+}
+
+func NewMqttClient(broker IMessageBroker) (mqtt.Client, error) {
 	opts := mqtt.NewClientOptions()
 
 	brokerHost := viper.GetString("mqtt.host")
@@ -29,34 +54,34 @@ func NewMqttClient() (mqtt.Client, error) {
 
 	opts.AddBroker(brokerHost)
 	opts.SetClientID(brokerId)
+	opts.SetProtocolVersion(4)
+	opts.SetAutoAckDisabled(false)
+	opts.SetCleanSession(false)
 
-	opts.SetOrderMatters(true)            // Allow out of order messages (use this option unless in order delivery is essential)
+	opts.SetOrderMatters(false)           // Allow out of order messages (use this option unless in order delivery is essential)
 	opts.ConnectTimeout = 2 * time.Second // Minimal delays on connect
 	opts.WriteTimeout = 2 * time.Second   // Minimal delays on writes
 	opts.KeepAlive = 10                   // Keepalive every 10 seconds so we quickly detect network outages
-	opts.PingTimeout = 10 * time.Second   // local broker so response should be quick
+	opts.PingTimeout = time.Second        // local broker so response should be quick
 
 	// Automate connection management (will keep trying to connect and will reconnect if network drops)
 	opts.ConnectRetry = true
 	opts.AutoReconnect = true
-	opts.CleanSession = false
-	//opts.ProtocolVersion = 4
-	//opts.SetStore(mqtt.NewFileStore(":memory:"))
 
-	//opts.SetDefaultPublishHandler(func(client mqtt.Client, msg mqtt.Message) {
-	//	log.Infof("Default message handler: [%+v] %d", msg.Topic(), msg.Qos())
-	//})
+	ctx := context.Background()
 
 	// Log events
 	opts.OnConnectionLost = func(cl mqtt.Client, err error) {
 		log.Info("connection lost")
 	}
-	opts.OnConnect = func(mqtt.Client) {
-		log.Info("MQTT connection established")
+
+	opts.OnConnect = func(cl mqtt.Client) {
+		log.Info("MQTT connection established ...")
+		broker.OnConnect(ctx, cl)
 	}
 	//opts.OnConnect = onConnect
 	opts.OnReconnecting = func(cl mqtt.Client, co *mqtt.ClientOptions) {
-		log.Info("attempting to reconnect")
+		log.Info("attempting to reconnect ...")
 	}
 
 	//mqtt.ERROR = log.New()
@@ -67,35 +92,4 @@ func NewMqttClient() (mqtt.Client, error) {
 	client := mqtt.NewClient(opts)
 
 	return client, nil
-}
-
-func Subscribe(subscriptions ...model.Subscriptions) error {
-	if messageBroker != nil {
-		messageBroker.Subscribe(subscriptions...)
-		return nil
-	}
-	return MqttBrokerNotStarted
-}
-
-func Unsubscribe(subscriptions ...model.Subscriptions) error {
-	if messageBroker != nil {
-		messageBroker.Unsubscribe(subscriptions...)
-		return nil
-	}
-	return MqttBrokerNotStarted
-}
-
-func SendEbmsMessage(msg model.EbmsMessage) error {
-
-	version := viper.GetString(fmt.Sprintf("eda-process-versions.%s", msg.MessageCode))
-	if len(version) > 0 {
-		msg.MessageCodeVersion = version
-	}
-
-	if messageBroker != nil {
-		messageBroker.Outbound <- msg
-		log.WithField("tenant", msg.Sender).Infof("Message sent successfully")
-		return nil
-	}
-	return MqttBrokerNotStarted
 }

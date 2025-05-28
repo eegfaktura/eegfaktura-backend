@@ -27,6 +27,10 @@ func errorHandler(msg model.SubscribeMessage) {
 
 }
 
+//func InitErrorSubscriptions() {
+//	messageBroker.Subscribe(GetSubsriptions()...)
+//}
+
 func InitErrorSubscriptions() {
-	messageBroker.Subscribe(GetSubsriptions()...)
+	Broker().Subscribe(GetSubsriptions()...)
 }

@@ -42,6 +42,7 @@ func fetchParticipant() middleware.JWTHandlerFunc {
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
+		//time.Sleep(2 * time.Second)
 		respondWithJSON(w, 200, participant)
 	}
 }

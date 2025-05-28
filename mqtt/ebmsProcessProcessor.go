@@ -34,9 +34,10 @@ func sendRegistrationForParticipation(eeg *model.Eeg, meter *model.MeteringPoint
 		ebmsMessage.Meter.Share = util.ToFixed(meter.AllocationFactor.Float64/100.0, 4)
 	}
 
-	if err := SendEbmsMessage(ebmsMessage); err != nil {
-		return model.ErrEdaCommunication(err)
-	}
+	//if err := SendEbmsMessage(ebmsMessage); err != nil {
+	//	return model.ErrEdaCommunication(err)
+	//}
+	Broker().SendMessage(ebmsMessage)
 	return nil
 }
 
@@ -47,9 +48,11 @@ var RequestingEnergyData = func(eeg *model.Eeg, meter *model.MeteringPoint, from
 	ebmsMessage.Timeline = &model.Timeline{From: fromDate, To: toDate}
 
 	log.WithField("tenant", eeg.Id).Info("Start Metering sync")
-	if err := SendEbmsMessage(ebmsMessage); err != nil {
-		return err
-	}
+	//if err := SendEbmsMessage(ebmsMessage); err != nil {
+	//	return err
+	//}
+
+	Broker().SendMessage(ebmsMessage)
 	return nil
 }
 
@@ -66,9 +69,10 @@ func RevokeMeteringPoint(eeg *model.Eeg, meter *model.MeteringPoint, consentEnd 
 	ebmsMessage.Reason = reasonMsg
 
 	log.WithField("tenant", eeg.Id).Info("Revoke Meteringpoint")
-	if err := SendEbmsMessage(ebmsMessage); err != nil {
-		return err
-	}
+	//if err := SendEbmsMessage(ebmsMessage); err != nil {
+	//	return err
+	//}
+	Broker().SendMessage(ebmsMessage)
 	return nil
 }
 
@@ -84,9 +88,10 @@ func RequestingMeteringPointList(eeg *model.Eeg, receiver string, from, to int64
 	ebmsMessage.Receiver = receiver
 
 	log.WithField("tenant", eeg.Id).Info("Request MeteringPointList")
-	if err := SendEbmsMessage(ebmsMessage); err != nil {
-		return model.ErrEdaCommunication(err)
-	}
+	//if err := SendEbmsMessage(ebmsMessage); err != nil {
+	//	return model.ErrEdaCommunication(err)
+	//}
+	Broker().SendMessage(ebmsMessage)
 	return nil
 }
 
@@ -121,9 +126,7 @@ var ChangePartitionFactor = func(eeg *model.Eeg, meterReq []*model.ChangePartiti
 		ebmsMessage.MeterList = v
 
 		log.WithField("tenant", eeg.Id).Infof("Change Partition Factor. %+v", v)
-		if err := SendEbmsMessage(ebmsMessage); err != nil {
-			return model.ErrEdaCommunication(err)
-		}
+		Broker().SendMessage(ebmsMessage)
 	}
 	return nil
 }

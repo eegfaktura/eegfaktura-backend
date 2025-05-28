@@ -12,7 +12,8 @@ type mockClient struct {
 	connected bool
 	exit      chan bool
 
-	subs map[string][]mqtt.MessageHandler
+	subs   map[string][]mqtt.MessageHandler
+	broker IMessageBroker
 }
 
 type mockMessage struct {
@@ -24,7 +25,7 @@ type mockMessage struct {
 }
 
 var (
-	_ mqtt.Client  = newMockClient()
+	//_ mqtt.Client  = newMockClient(nil)
 	_ mqtt.Message = newMockMessage("mock", 0, false, nil)
 )
 
@@ -32,10 +33,11 @@ func init() {
 	rand.Seed(time.Now().UnixNano())
 }
 
-func newMockClient() mqtt.Client {
+func newMockClient(p IMessageBroker) (mqtt.Client, error) {
 	return &mockClient{
-		subs: make(map[string][]mqtt.MessageHandler),
-	}
+		subs:   make(map[string][]mqtt.MessageHandler),
+		broker: p,
+	}, nil
 }
 
 func newMockMessage(topic string, qos byte, retained bool, payload interface{}) mqtt.Message {

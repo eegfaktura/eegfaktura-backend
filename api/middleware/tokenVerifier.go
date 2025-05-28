@@ -3,46 +3,65 @@ package middleware
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/sirupsen/logrus"
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
+	"time"
 )
 
 var (
+	kcConfig map[string]*keycloakConfig
 	verifier *oidc.IDTokenVerifier
 )
 
-type keycloakConfig struct {
-	ClientId string `json:"resource"`
-	Realm    string `json:"realm"`
-	Host     string `json:"auth-server-url"`
-}
-
-func InitKeycloak() {
-	kcConfig, err := readKeycloakConfig()
+func init() {
+	var err error
+	kcConfig, err = readKeycloakConfig()
 	if err != nil {
 		logrus.WithField("error", "Init Keycloak").Errorf("E: %v", err)
 		panic(err)
 	}
 
-	clientID := kcConfig.ClientId
-	realm := kcConfig.Realm
-	host := strings.TrimRight(kcConfig.Host, "/")
+	if _, ok := kcConfig["api"]; !ok {
+		logrus.WithField("error", "Init Keycloak").Errorf("E: %v", errors.New("no client-id 'at.ourproject.vfeeg.api' available"))
+		panic(err)
+	}
+
+	clientIDApi := kcConfig["api"].ClientId
+	clientSecretApi := kcConfig["api"].Secret
+
+	realmApi := kcConfig["api"].Realm
+	host := strings.TrimRight(kcConfig["api"].Host, "/")
+
+	c := &http.Client{Timeout: time.Duration(1) * time.Second}
+	kcClientAPI, err = NewKeycloakClient(fmt.Sprintf("%s/realms/%s", host, realmApi), clientIDApi, clientSecretApi, c)
+	if err != nil {
+		panic(err)
+	}
+
+	/**
+	set up jwt token verifier
+	*/
+	clientIDApp := kcConfig["app"].ClientId
+	realmApp := kcConfig["app"].Realm
+	hostApp := strings.TrimRight(kcConfig["app"].Host, "/")
 
 	ctx := context.Background()
-	provider, err := oidc.NewProvider(ctx, fmt.Sprintf("%s/realms/%s", host, realm))
+	providerUriApp := fmt.Sprintf("%s/realms/%s", hostApp, realmApp)
+	provider, err := oidc.NewProvider(ctx, providerUriApp)
 	if err != nil {
 		logrus.Errorf("E: %v", err)
-		//panic(err)
 	}
-	verifier = provider.Verifier(&oidc.Config{ClientID: clientID, SkipClientIDCheck: true})
+	verifier = provider.Verifier(&oidc.Config{ClientID: clientIDApp, SkipClientIDCheck: true})
 }
 
-func readKeycloakConfig() (*keycloakConfig, error) {
+func readKeycloakConfig() (map[string]*keycloakConfig, error) {
 	kcPath, ok := os.LookupEnv("KEYCLOAK_CONFIG")
 	if !ok {
 		kcPath = "./keycloak.json"
@@ -60,9 +79,57 @@ func readKeycloakConfig() (*keycloakConfig, error) {
 
 	kcConfig := map[string]*keycloakConfig{}
 	err = json.Unmarshal(payload, &kcConfig)
-
-	return kcConfig["app"], err
+	return kcConfig, err
 }
+
+type keycloakConfig struct {
+	ClientId string `json:"resource"`
+	Secret   string `json:"secret,omitempty"`
+	Realm    string `json:"realm"`
+	Host     string `json:"auth-server-url"`
+}
+
+//func InitKeycloak() {
+//	kcConfig, err := readKeycloakConfig()
+//	if err != nil {
+//		logrus.WithField("error", "Init Keycloak").Errorf("E: %v", err)
+//		panic(err)
+//	}
+//
+//	clientID := kcConfig.ClientId
+//	realm := kcConfig.Realm
+//	host := strings.TrimRight(kcConfig.Host, "/")
+//
+//	ctx := context.Background()
+//	provider, err := oidc.NewProvider(ctx, fmt.Sprintf("%s/realms/%s", host, realm))
+//	if err != nil {
+//		logrus.Errorf("E: %v", err)
+//		//panic(err)
+//	}
+//	verifier = provider.Verifier(&oidc.Config{ClientID: clientID, SkipClientIDCheck: true})
+//}
+
+//func readKeycloakConfig() (*keycloakConfig, error) {
+//	kcPath, ok := os.LookupEnv("KEYCLOAK_CONFIG")
+//	if !ok {
+//		kcPath = "./keycloak.json"
+//	}
+//	kcConfigFile, err := os.Open(kcPath)
+//	if err != nil {
+//		return nil, err
+//	}
+//	defer kcConfigFile.Close()
+//
+//	payload, err := io.ReadAll(kcConfigFile)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	kcConfig := map[string]*keycloakConfig{}
+//	err = json.Unmarshal(payload, &kcConfig)
+//
+//	return kcConfig["app"], err
+//}
 
 func GQLProtect(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -94,20 +161,30 @@ func GQLProtect(next http.Handler) http.Handler {
 			return
 		}
 
+		//fmt.Printf("Claims: %+v\n", claims)
 		tenant := r.Header.Get("tenant")
-		if contains(claims.Tenants, tenant) == false {
-			logrus.WithField("tenant", tenant).Warnf("Unauthorized access with tenant %s", tenant)
-			w.WriteHeader(http.StatusUnauthorized)
-			return
+		superuser := hasRole(claims.RealmAccess.Roles, "superuser")
+		if !superuser {
+			if contains(claims.Tenants, tenant) == false {
+				logrus.WithField("tenant", tenant).Warnf("Unauthorized access with tenant %s", tenant)
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
 		}
 
 		// put it in context
-		ctx := context.WithValue(r.Context(), tenantCtxKey, strings.ToUpper(tenant))
+		ctx := context.WithValue(
+			context.WithValue(r.Context(), tenantCtxKey, strings.ToUpper(tenant)),
+			superUserCtxKey, superuser)
 
 		// and call the next with our new context
 		r = r.WithContext(ctx)
 		next.ServeHTTP(w, r)
 	})
+}
+
+func hasRole(roles []string, role string) bool {
+	return slices.Contains(roles, role)
 }
 
 //func Protect(handler JWTHandlerFunc) http.HandlerFunc {
@@ -194,10 +271,13 @@ func verifyRequest(handler JWTHandlerFunc) func(w http.ResponseWriter, r *http.R
 		}
 
 		tenant := r.Header.Get("tenant")
-		if contains(claims.Tenants, tenant) == false {
-			logrus.WithField("tenant", tenant).Warnf("Unauthorized access with tenant %s", tenant)
-			w.WriteHeader(http.StatusUnauthorized)
-			return
+		superuser := hasRole(claims.RealmAccess.Roles, "superuser")
+		if !superuser {
+			if contains(claims.Tenants, tenant) == false {
+				logrus.WithField("tenant", tenant).Warnf("Unauthorized access with tenant %s", tenant)
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
 		}
 
 		claims.Tenants = toUpper(claims.Tenants)

@@ -87,8 +87,8 @@ type ProcessStatusType string
 const (
 	NEW      ProcessStatusType = "NEW"
 	INIT     ProcessStatusType = "INIT"
-	PENDING  ProcessStatusType = "PENDING"
-	APPROVED ProcessStatusType = "APPROVED"
+	PENDING  ProcessStatusType = "PENDING"  // Answer Message from grid-provider was received
+	APPROVED ProcessStatusType = "APPROVED" // Participant has accepted in the grid-operator portal
 	ACTIVE   ProcessStatusType = "ACTIVE"
 	INACTIVE ProcessStatusType = "INACTIVE"
 	REJECTED ProcessStatusType = "REJECTED"
@@ -159,7 +159,7 @@ type MeteringPoint struct {
 type ChangePartitionFactorRequest struct {
 	MeteringPoint  string        `json:"meter"`
 	Direction      DirectionType `json:"direction"`
-	GridOperatorId null.String   `json:"gridOperatorId"`
+	GridOperatorId null.String   `json:"gridOperatorId,omitempty"`
 	Activation     civil.Date    `json:"activation"`
 	PartFact       int           `json:"partFact"`
 }

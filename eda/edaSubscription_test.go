@@ -3,6 +3,7 @@ package eda
 import (
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
+	"at.ourproject/vfeeg-backend/services"
 	"encoding/json"
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/jmoiron/sqlx"
@@ -42,8 +43,10 @@ func (_m *RecorderMock) databaseConnection() (*sqlx.DB, error) {
 	return _m.dbOpen()
 }
 
-func (_m *RecorderMock) meteringPointPerformAnswerMsg(tenant string, meterId []string) error {
-	return nil
+func (_m *RecorderMock) meteringPointPerformAnswerMsg(sendMail services.SendMailFunc, tenant string, meterId []string) error {
+	args := _m.Called(sendMail, tenant, meterId)
+	return args.Error(0)
+	//return nil
 }
 
 var extractMeters = func(p model.EbmsMessage, proto model.EbMsMessageType) []string {
@@ -311,7 +314,12 @@ func TestProtocolEcReqOnlHandler(t *testing.T) {
 					Tenant:      "TE1000001",
 					Payload:     model.EbmsMessage{},
 				}
-				message := `{"conversationId":"RC100298202308171692252620000000321","messageId":"AT003000202307070957427130168201034","sender":"AT003000","receiver":"RC100298","messageCode":"ANTWORT_ECON","requestId":"6P2EU64Z","responseData":[{"meteringPoint":"AT0030000000000000000000000410702","responseCode":[99]}]}`
+				message := `{
+"conversationId":"RC100298202308171692252620000000321",
+"messageId":"AT003000202307070957427130168201034",
+"ecId":"CC00000000000002221212121212","sender":"AT003000",
+"receiver":"RC100298","messageCode":"ANTWORT_ECON",
+"requestId":"6P2EU64Z","responseData":[{"meteringPoint":"AT0030000000000000000000000410702","responseCode":[99]}]}`
 				codes := []int16{MESSAGE_RECEIVED}
 				err = json.Unmarshal([]byte(message), &msg.Payload)
 				require.NoError(t, err)
@@ -333,6 +341,8 @@ func TestProtocolEcReqOnlHandler(t *testing.T) {
 				recorder.Mock.On("saveNotification", mock.Anything, "TE1000001", msg.MessageCode, extractMeters(msg.Payload, model.EBMS_ONLINE_REG_ANSWER), codes, model.EC_REQ_ONL).Return(nil)
 
 				recorder.Mock.On("saveHistory", mock.Anything, "TE1000001", msg.MessageCode, "RC100298202308171692252620000000321", "ADMIN", "IN", model.EC_REQ_ONL, msg.Payload).Return(nil)
+
+				recorder.Mock.On("meteringPointPerformAnswerMsg", "CC00000000000002221212121212", []string{"AT0030000000000000000000000410702"}).Return(nil)
 				return recorder, msg, mockDb.Mock
 			},
 		},

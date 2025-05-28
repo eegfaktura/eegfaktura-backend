@@ -24,6 +24,13 @@ func MaxTimeStamp(x, y int64) int64 {
 	return x
 }
 
+func MinTimeStamp(x, y int64) int64 {
+	if x < y {
+		return x
+	}
+	return y
+}
+
 var dateTimeLine = regexp.MustCompile(`^[0-9]{2}.[0-9]{2}.[0-9]{4}\s[0-9]{2}:[0-9]{2}:[0-9]{2}$`)
 var dateLine = regexp.MustCompile(`^[0-9]{2}.[0-9]{2}.[0-9]{4}$`)
 

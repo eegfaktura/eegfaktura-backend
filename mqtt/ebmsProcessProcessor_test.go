@@ -15,20 +15,29 @@ import (
 )
 
 func TestRegistrationForParticipation(t *testing.T) {
-	_, err := NewMessageBrokerMock()
-	require.NoError(t, err)
+	//_, err := NewMessageBrokerMock()
+	//require.NoError(t, err)
 
-	messageBroker.Start()
+	//messageBroker.Start()
+	//
+	//token := messageBroker.client.Connect()
+	//if token != nil {
+	//	token.Wait()
+	//	require.NoError(t, token.Error())
+	//}
+	//
+	//var currentMsg mqtt.Message
+	//var wg sync.WaitGroup
+	//messageBroker.client.Subscribe("eda/request", 1, func(c mqtt.Client, m mqtt.Message) {
+	//	currentMsg = m
+	//	wg.Done()
+	//})
 
-	token := messageBroker.client.Connect()
-	if token != nil {
-		token.Wait()
-		require.NoError(t, token.Error())
-	}
+	broker, _ := Broker().Init(newMockClient)
 
 	var currentMsg mqtt.Message
 	var wg sync.WaitGroup
-	messageBroker.client.Subscribe("eda/request", 1, func(c mqtt.Client, m mqtt.Message) {
+	broker.(*MessageBroker).cl.Subscribe("eda/request", 1, func(c mqtt.Client, m mqtt.Message) {
 		currentMsg = m
 		wg.Done()
 	})
@@ -159,20 +168,21 @@ func TestRegistrationForParticipation(t *testing.T) {
 }
 
 func TestChangePartitionFactor(t *testing.T) {
-	_, err := NewMessageBrokerMock()
-	require.NoError(t, err)
+	//_, err := NewMessageBrokerMock()
+	//require.NoError(t, err)
 
-	messageBroker.Start()
-
-	token := messageBroker.client.Connect()
-	if token != nil {
-		token.Wait()
-		require.NoError(t, token.Error())
-	}
+	//messageBroker.Start()
+	//
+	//token := messageBroker.client.Connect()
+	//if token != nil {
+	//	token.Wait()
+	//	require.NoError(t, token.Error())
+	//}
+	broker, _ := Broker().Init(newMockClient)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	messageBroker.client.Subscribe("eda/request", 1, func(c mqtt.Client, m mqtt.Message) {
+	broker.(*MessageBroker).cl.Subscribe("eda/request", 1, func(c mqtt.Client, m mqtt.Message) {
 		var msg model.EbmsMessage
 		require.NoError(t, json.Unmarshal(m.Payload(), &msg))
 		fmt.Printf("M: %+v\n", msg)

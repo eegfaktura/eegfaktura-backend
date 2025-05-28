@@ -13,6 +13,9 @@ type PlatformClaims struct {
 	Tenants      []string `json:"tenant"`
 	Username     string   `json:"preferred_username"`
 	AccessGroups []string `json:"access_groups"`
+	RealmAccess  struct {
+		Roles []string `json:"roles"`
+	} `json:"realm_access"`
 	jwt.StandardClaims
 }
 
@@ -48,4 +51,8 @@ func (c *AccessTokenGenJWT) ExtractClaims(accesstoken string) (*PlatformClaims, 
 
 	return token.Claims.(*PlatformClaims), nil
 
+}
+
+func IsSuperuser(roles []string) bool {
+	return hasRole(roles, "superuser")
 }
