@@ -246,7 +246,7 @@ func TestProtocolEcReqOnlHandler(t *testing.T) {
 				mockDb.Mock.ExpectQuery(stmt).WillReturnRows(rows)
 				//mockDb.Mock.ExpectExec("UPDATE (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
 				mockDb.Mock.ExpectExec(
-					`UPDATE "base"."meteringpoint" SET ("modifiedAt"='\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\dZ',"modifiedBy"='EVU',"process_state"='APPROVED') WHERE`).WillReturnResult(sqlmock.NewResult(1, 1))
+					`UPDATE "base"."meteringpoint" SET "modifiedAt"='\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\dZ',"modifiedBy"='EVU',"process_state"=` + "(.+)").WillReturnResult(sqlmock.NewResult(1, 1))
 
 				//recorder.Mock.On("saveNotification", map[string]interface{}{
 				//	"type":           msg.MessageCode,
@@ -287,7 +287,7 @@ func TestProtocolEcReqOnlHandler(t *testing.T) {
 				//mockDb.Mock.ExpectExec(fmt.Sprintf("UPDATE (.+) SET (.+) %s WHERE (.+)", regexp.QuoteMeta(`"process_state"='APPROVED'`))).WillReturnResult(sqlmock.NewResult(1, 1))
 				//mockDb.Mock.ExpectExec(fmt.Sprintf(`UPDATE \"base\".\"meteringpoint\" SET (.+) %s WHERE`, regexp.QuoteMeta(`"process_state"='APPROVED'`))).WillReturnResult(sqlmock.NewResult(1, 1))
 				mockDb.Mock.ExpectExec(
-					`UPDATE "base"."meteringpoint" SET ("consent_id"='1726617600000',"modifiedAt"='\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\dZ',"modifiedBy"='EVU',"process_state"='APPROVED') WHERE`).WillReturnResult(sqlmock.NewResult(1, 1))
+					`UPDATE "base"."meteringpoint" SET "consent_id"='1726617600000',"modifiedAt"='\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\dZ',"modifiedBy"='EVU',"process_state"=(.+) WHERE`).WillReturnResult(sqlmock.NewResult(1, 1))
 
 				//recorder.Mock.On("saveNotification", map[string]interface{}{
 				//	"type":           msg.MessageCode,
@@ -342,7 +342,7 @@ func TestProtocolEcReqOnlHandler(t *testing.T) {
 
 				recorder.Mock.On("saveHistory", mock.Anything, "TE1000001", msg.MessageCode, "RC100298202308171692252620000000321", "ADMIN", "IN", model.EC_REQ_ONL, msg.Payload).Return(nil)
 
-				recorder.Mock.On("meteringPointPerformAnswerMsg", "CC00000000000002221212121212", []string{"AT0030000000000000000000000410702"}).Return(nil)
+				recorder.Mock.On("meteringPointPerformAnswerMsg", mock.Anything, "CC00000000000002221212121212", []string{"AT0030000000000000000000000410702"}).Return(nil)
 				return recorder, msg, mockDb.Mock
 			},
 		},

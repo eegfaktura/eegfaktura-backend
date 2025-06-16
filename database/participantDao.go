@@ -8,6 +8,7 @@ import (
 	"github.com/doug-martin/goqu/v9"
 	"github.com/jjeffery/civil"
 	"github.com/jmoiron/sqlx"
+	"github.com/mitchellh/mapstructure"
 	"github.com/pborman/uuid"
 	log "github.com/sirupsen/logrus"
 	"strings"
@@ -73,7 +74,7 @@ func buildParticipantQueryStmt() *goqu.SelectDataset {
 	residentAddStmt := pgDialect.From("base.address").
 		Select(goqu.C("participant_id"), &model.Address{}).Where(goqu.Ex{"type": "RESIDENCE"})
 	bankAccountStmt := pgDialect.From("base.bankaccount").
-		Select(goqu.C("participant_id"), &model.AccountInfo{})
+		Select(goqu.C("participant_id"), &model.BankInfo{})
 	contactInfoStmt := pgDialect.From("base.contactdetail").Select(goqu.C("participant_id"), &model.ContactInfo{})
 
 	return pgDialect.From(TABLE_PARTICIPANT).
@@ -296,36 +297,84 @@ func ArchiveParticipant(db *sqlx.DB, user string, id string) error {
 	return nil
 }
 
+func decodeField(result interface{}, fields map[string]interface{}) (interface{}, error) {
+	cfg := &mapstructure.DecoderConfig{
+		Result:     result,
+		DecodeHook: StringToNullStringHookFunc,
+	}
+	decoder, err := mapstructure.NewDecoder(cfg)
+	if err != nil {
+		return nil, err
+	}
+	err = decoder.Decode(fields)
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
 func UpdateParticipantPartial(db *sqlx.DB, participantId, name string, value interface{}) error {
 
 	var stmt *goqu.UpdateDataset
 	var sql string
+	var updateValues interface{}
+	var err error
+
 	fields := map[string]interface{}{}
 
 	names := strings.Split(name, ".")
 	if len(names) == 2 {
+
+		fields[names[1]] = value
 		switch names[0] {
 		case "billingAddress":
+			var result model.Address
+			updateValues, err = decodeField(&result, fields)
+			if err != nil {
+				return err
+			}
 			stmt = pgDialect.Update("base.address").
 				Where(goqu.Ex{"participant_id": goqu.V(participantId)}, goqu.Ex{"type": goqu.V("BILLING")})
 		case "residentAddress":
+			var result model.Address
+			updateValues, err = decodeField(&result, fields)
+			if err != nil {
+				return err
+			}
 			stmt = pgDialect.Update("base.address").
 				Where(goqu.Ex{"participant_id": goqu.V(participantId)}, goqu.Ex{"type": goqu.V("RESIDENCE")})
 		case "contact":
+			var result model.ContactInfo
+			updateValues, err = decodeField(&result, fields)
+			if err != nil {
+				return err
+			}
 			stmt = pgDialect.Update("base.contactdetail").
 				Where(goqu.Ex{"participant_id": goqu.V(participantId)})
 		case "accountInfo":
+			var result model.BankInfo
+			updateValues, err = decodeField(&result, fields)
+			if err != nil {
+				return err
+			}
+
 			stmt = pgDialect.Update("base.bankaccount").
 				Where(goqu.Ex{"participant_id": goqu.V(participantId)})
 		default:
 			return model.ErrUpdateParticipant(errors.New(fmt.Sprintf("Can not update structure of %s", name)))
 		}
-		fields[names[1]] = value
-		sql, _, _ = stmt.Set(fields).ToSQL()
+
+		sql, _, _ = stmt.Set(updateValues).ToSQL()
 
 	} else if len(names) == 1 {
+		var result model.EegParticipantBase
 		fields[names[0]] = value
-		sql, _, _ = pgDialect.Update("base.participant").Set(fields).
+		updateValues, err = decodeField(&result, fields)
+		if err != nil {
+			return err
+		}
+		sql, _, _ = pgDialect.Update("base.participant").Set(updateValues).
 			Where(goqu.Ex{"id": goqu.V(participantId)}).ToSQL()
 	} else {
 		return model.ErrUpdateParticipant(errors.New(fmt.Sprintf("Can not update structure of %s", name)))
@@ -341,6 +390,7 @@ func UpdateParticipantPartial(db *sqlx.DB, participantId, name string, value int
 		}
 		return nil
 	} else {
+		log.WithError(err).Errorf("Update partial participant %s", sql)
 		return model.ErrUpdateParticipant(err)
 	}
 }
@@ -376,6 +426,7 @@ func InsertParticipantPartial(db *sqlx.DB, participantId, name string, value int
 
 	_, err := db.Exec(sql)
 	if err != nil {
+		log.WithError(err).Errorf("Insert partial participant %s", sql)
 		return model.ErrInsertParticipant(err)
 	}
 	return nil

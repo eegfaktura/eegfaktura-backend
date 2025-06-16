@@ -15,14 +15,20 @@ type KeycloakClient struct {
 	client       *http.Client
 }
 
-func NewKeycloakClient(issuer, clientID, clientSecret string, client *http.Client) (*KeycloakClient, error) {
+func NewKeycloakClient(issuer, clientID, clientSecret, issuerUrl string, client *http.Client) (*KeycloakClient, error) {
 	kc := &KeycloakClient{
 		clientID:     clientID,
 		clientSecret: clientSecret,
 		client:       client,
 	}
+
+	ctx := oidc.ClientContext(context.Background(), client)
+	if issuerUrl != "" {
+		ctx = oidc.InsecureIssuerURLContext(ctx, issuerUrl)
+	}
+
 	var err error
-	kc.oidc, err = oidc.NewProvider(oidc.ClientContext(context.Background(), client), issuer)
+	kc.oidc, err = oidc.NewProvider(ctx, issuer)
 	if err != nil {
 		return nil, err
 	}
@@ -34,6 +40,7 @@ type Credentials struct {
 	IDToken      string `json:"id_token,omitempty"`
 	AccessToken  string `json:"access_token,omitempty"`
 	RefreshToken string `json:"refresh_token,omitempty"`
+	IssueUrl     string `json:"issue_url,omitempty"`
 }
 
 func (kc *KeycloakClient) Authenticate() (*httputil2.ClientCreds, error) {

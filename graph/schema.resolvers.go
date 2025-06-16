@@ -24,7 +24,7 @@ func (r *mutationResolver) UpdateEegModel(ctx context.Context, tenant string, ee
 	}
 	defer func() { _ = db.Close() }()
 
-	eeg, err := database.GetEeg(db, tenant)
+	eeg, err := database.GetEegById(db, tenant)
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +63,7 @@ func (r *queryResolver) Eeg(ctx context.Context) (*model.Eeg, error) {
 	}
 	defer func() { _ = db.Close() }()
 
-	eeg, err := database.GetEeg(db, tenant)
+	eeg, err := database.GetEegById(db, tenant)
 	if err != nil {
 		return nil, err
 	}

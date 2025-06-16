@@ -30,22 +30,22 @@ type MeterState struct {
 
 type EegParticipantBase struct {
 	Id                    uuid.UUID         `json:"id" goqu:"skipupdate"`
-	ParticipantNumber     null.String       `json:"participantNumber" db:"participantNumber"`
-	BusinessRole          string            `json:"businessRole" db:"businessRole"`
-	Role                  string            `json:"role" db:"role"`
-	FirstName             string            `json:"firstname"`
-	LastName              string            `json:"lastname"`
-	TitleBefore           string            `json:"titleBefore" db:"titleBefore"`
-	TitleAfter            string            `json:"titleAfter" db:"titleAfter"`
+	ParticipantNumber     null.String       `json:"participantNumber" db:"participantNumber" goqu:"omitempty"`
+	BusinessRole          string            `json:"businessRole" db:"businessRole" goqu:"omitempty"`
+	Role                  string            `json:"role" db:"role" goqu:"omitempty"`
+	FirstName             string            `json:"firstname" goqu:"omitempty"`
+	LastName              string            `json:"lastname,omitempty" goqu:"omitempty"`
+	TitleBefore           null.String       `json:"titleBefore,omitempty" db:"titleBefore" goqu:"omitempty"`
+	TitleAfter            null.String       `json:"titleAfter,omitempty" db:"titleAfter" goqu:"omitempty"`
 	ParticipantSince      civil.NullDate    `json:"participantSince" db:"participantSince" goqu:"omitempty,defaultifempty"`
-	VatNumber             null.String       `json:"vatNumber" db:"vatNumber"`
-	TaxNumber             null.String       `json:"taxNumber" db:"taxNumber"`
-	CompanyRegisterNumber string            `json:"companyRegisterNumber" db:"companyRegisterNumber"`
-	MeteringPoint         []*MeteringPoint  `json:"meters" db:"-" goqu:"skipinsert"`
-	TariffId              null.String       `json:"tariffId" db:"tariffId" goqu:"skipinsert"`
-	Status                ProcessStatusType `json:"status" goqu:"defaultifempty"`
-	Version               int               `json:"version" goqu:"defaultifempty"`
-	CreatedBy             string            `json:"createdBy,omitempty" db:"createdBy"`
+	VatNumber             null.String       `json:"vatNumber,omitempty" db:"vatNumber" goqu:"omitempty"`
+	TaxNumber             null.String       `json:"taxNumber,omitempty" db:"taxNumber" goqu:"omitempty"`
+	CompanyRegisterNumber null.String       `json:"companyRegisterNumber,omitempty" db:"companyRegisterNumber" goqu:"omitempty"`
+	MeteringPoint         []*MeteringPoint  `json:"meters" db:"-" goqu:"skipupdate,skipinsert"`
+	TariffId              null.String       `json:"tariffId,omitempty" db:"tariffId" goqu:"omitempty,skipinsert"`
+	Status                ProcessStatusType `json:"status" goqu:"omitempty,defaultifempty"`
+	Version               int               `json:"version" goqu:"omitempty,defaultifempty"`
+	CreatedBy             string            `json:"createdBy" db:"createdBy" goqu:"skipupdate"`
 }
 
 type EegParticipant struct {
@@ -57,14 +57,17 @@ type EegParticipant struct {
 }
 
 type ContactInfo struct {
-	Phone null.String `json:"phone" db:"phone"`
-	Email null.String `json:"email" db:"email"`
+	Phone null.String `json:"phone" db:"phone" goqu:"omitempty"`
+	Email null.String `json:"email" db:"email" goqu:"omitempty"`
 }
 
 type BankInfo struct {
-	Iban     null.String `json:"iban"`
-	Owner    null.String `json:"owner"`
-	BankName null.String `json:"bankName" db:"bankName"`
+	Iban             null.String    `json:"iban" goqu:"omitempty"`
+	Owner            null.String    `json:"owner" goqu:"omitempty"`
+	BankName         null.String    `json:"bankName" db:"bankName" goqu:"omitempty"`
+	MandateReference null.String    `json:"mandateReference" db:"mandate_reference" goqu:"omitempty"`
+	MandateDate      civil.NullDate `json:"mandateDate" db:"mandate_date" goqu:"omitempty"`
+	SepaDirectDebit  null.String    `json:"sepaDirectDebit" db:"sepa_direct_debit" goqu:"omitempty"`
 }
 
 type DirectionType string

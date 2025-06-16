@@ -286,13 +286,16 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 	err = sw.SetColWidth(colNr+1, colNr+1, 25.0)
 	err = sw.SetColWidth(colNr+2, colNr+7, 20.0)
 	colNr, _ = excelize.ColumnNameToNumber("O")
+	err = sw.SetColWidth(colNr, colNr, 20.0)
+	err = sw.SetColWidth(colNr+1, colNr+1, 12.0)
+	colNr, _ = excelize.ColumnNameToNumber("R")
 	err = sw.SetColWidth(colNr, colNr+1, 20.0)
-	colNr, _ = excelize.ColumnNameToNumber("V")
+	colNr, _ = excelize.ColumnNameToNumber("Y")
 	err = sw.SetColWidth(colNr, colNr+1, 32.0)
 	err = sw.SetColWidth(colNr+3, colNr+3, 8.0)
 	err = sw.SetColWidth(colNr+4, colNr+4, 20.0)
 	err = sw.SetColWidth(colNr+6, colNr+6, 18.0)
-	colNr, _ = excelize.ColumnNameToNumber("AF")
+	colNr, _ = excelize.ColumnNameToNumber("AI")
 	err = sw.SetColWidth(colNr, colNr+1, 20.0)
 	err = sw.SetColWidth(colNr+3, colNr+4, 12.0)
 	err = sw.SetColWidth(colNr+5, colNr+5, 30.0)
@@ -313,6 +316,9 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 			excelize.Cell{Value: "IBAN."},
 			excelize.Cell{Value: "Kontoinhaber"},
 			excelize.Cell{Value: "Bankname"},
+			excelize.Cell{Value: "DebitType"},
+			excelize.Cell{Value: "Mandat-Ref."},
+			excelize.Cell{Value: "Mandat-Dat."},
 			excelize.Cell{Value: "PLZ"},
 			excelize.Cell{Value: "Ort"},
 			excelize.Cell{Value: "Straße"},
@@ -349,13 +355,19 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 					excelize.Cell{Value: c.LastName},
 					excelize.Cell{Value: func() string {
 						titles := []string{}
-						if len(c.TitleBefore) > 0 {
-							titles = append(titles, c.TitleBefore)
+						if c.TitleBefore.Valid && c.TitleBefore.String != "" {
+							titles = append(titles, c.TitleBefore.String)
 						}
-						if len(c.TitleAfter) > 0 {
-							titles = append(titles, c.TitleAfter)
+						if c.TitleAfter.Valid && c.TitleAfter.String != "" {
+							titles = append(titles, c.TitleAfter.String)
 						}
-						return strings.Join(titles, ",")
+						if len(titles) == 0 {
+							return ""
+						}
+						if len(titles) == 1 {
+							return titles[0]
+						}
+						return strings.Join(titles, ", ")
 					}()},
 					excelize.Cell{Value: c.Status},
 					excelize.Cell{Value: getNullDate(c.ParticipantSince), StyleID: styleIdDate},
@@ -366,11 +378,14 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 					excelize.Cell{Value: c.BankAccount.Iban.String},
 					excelize.Cell{Value: c.BankAccount.Owner.String},
 					excelize.Cell{Value: c.BankAccount.BankName.String},
+					excelize.Cell{Value: c.BankAccount.SepaDirectDebit.String},
+					excelize.Cell{Value: c.BankAccount.MandateReference.String},
+					excelize.Cell{Value: c.BankAccount.MandateDate.Date, StyleID: styleDateId},
 					excelize.Cell{Value: c.BillingAddress.Zip.String},
 					excelize.Cell{Value: c.BillingAddress.City.String},
 					excelize.Cell{Value: c.BillingAddress.Street.String},
 					excelize.Cell{Value: c.BillingAddress.StreetNumber.String},
-					excelize.Cell{Value: c.CompanyRegisterNumber},
+					excelize.Cell{Value: c.CompanyRegisterNumber.String},
 					excelize.Cell{Value: c.Role},
 					excelize.Cell{Value: func() string {
 						if c.BusinessRole == "EEG_PRIVATE" {
@@ -508,14 +523,21 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 		return s
 	}
 
-	getColumDate := func(cols []string, values map[string]int, deName, enName string, defaultValue civil.Date) civil.NullDate {
+	getCivilDatePtr := func(date civil.Date) *civil.Date {
+		return &date
+	}
+
+	getColumDate := func(cols []string, values map[string]int, deName, enName string, defaultValue *civil.Date) civil.NullDate {
 		v := getColumValue(cols, colMap, deName, enName, nil)
 		d, err := util.ParseTimeString(v)
 		if err != nil {
-			return civil.NullDate{
-				Date:  defaultValue,
-				Valid: true,
+			if defaultValue != nil {
+				return civil.NullDate{
+					Date:  *defaultValue,
+					Valid: true,
+				}
 			}
+			return civil.NullDate{}
 		}
 		return civil.NullDate{
 			Date:  d,
@@ -618,8 +640,8 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 									ParticipantNumber: null.StringFrom(getColumValue(cols, colMap, "MitgliedsNr", "ParticipantNr", nil)),
 									FirstName:         firstname,
 									LastName:          lastname,
-									TitleBefore:       getColumValue(cols, colMap, "TitelVor", "TitleBefor", nil),
-									TitleAfter:        getColumValue(cols, colMap, "TitelNach", "TitleAfter", nil),
+									TitleBefore:       null.StringFrom(getColumValue(cols, colMap, "TitelVor", "TitleBefor", nil)),
+									TitleAfter:        null.StringFrom(getColumValue(cols, colMap, "TitelNach", "TitleAfter", nil)),
 									BusinessRole:      businessRole(cols, colMap),
 									Status:            getParticipantStatus(cpStatus),
 									ParticipantSince:  participantSince,
@@ -643,9 +665,11 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 									City:         null.StringFrom(getColumValue(cols, colMap, "Ort", "City", nil)),
 								},
 								BankAccount: model.BankInfo{
-									Iban:     null.StringFrom(getColumValue(cols, colMap, "IBAN", "IBAN", nil)),
-									Owner:    null.StringFrom(getColumValue(cols, colMap, "Kontoinhaber", "Accountname", nil)),
-									BankName: null.StringFrom(getColumValue(cols, colMap, "Bankname", "Bankname", nil)),
+									Iban:             null.StringFrom(getColumValue(cols, colMap, "IBAN", "IBAN", nil)),
+									Owner:            null.StringFrom(getColumValue(cols, colMap, "Kontoinhaber", "Accountname", nil)),
+									BankName:         null.StringFrom(getColumValue(cols, colMap, "Bankname", "Bankname", nil)),
+									MandateReference: null.StringFrom(getColumValue(cols, colMap, "MandatRef", "MandateRef", nil)),
+									MandateDate:      getColumDate(cols, colMap, "MandatDat", "MandateDat", nil),
 								},
 								Contact: model.ContactInfo{
 									Email: null.StringFrom(getColumValue(cols, colMap, "email", "email", nil)),
@@ -675,7 +699,7 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 								City:             null.StringFrom(getColumValue(cols, colMap, "Ort", "City", nil)),
 								Zip:              null.StringFrom(getColumValue(cols, colMap, "PLZ", "ZIP", nil)),
 								State: &model.MeterState{
-									ActiveSince:   getColumDate(cols, colMap, "registriert seit", "registriert since", civil.DateFor(time.Now().Year(), 1, 1)),
+									ActiveSince:   getColumDate(cols, colMap, "registriert seit", "registriert since", getCivilDatePtr(civil.DateFor(time.Now().Year(), 1, 1))),
 									InactiveSince: civil.NullDate{Date: civil.DateFor(2999, 12, 31), Valid: true},
 									Active:        1,
 									Flag:          1,

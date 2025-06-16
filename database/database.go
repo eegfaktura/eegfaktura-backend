@@ -7,10 +7,13 @@ import (
 	"fmt"
 	"github.com/doug-martin/goqu/v9"
 	_ "github.com/jackc/pgx/v5"
+	"github.com/jjeffery/civil"
 	"github.com/jmoiron/sqlx"
 	"github.com/pborman/uuid"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"gopkg.in/guregu/null.v4"
+	"reflect"
 	"time"
 )
 
@@ -174,4 +177,59 @@ func UpdateTariff(dbConn OpenDbXConnection, tenant string, tariff *model.Tariff)
 	//	"UPDATE base.tariff SET \"billingPeriod\"=:billingperiod, \"useVat\"=:usevat, \"vatInPercent\"=:vatinpercent, \"accountNetAmount\"=:accountnetamount, \"accountGrossAmount\"=:accountgrossamount, \"participantFee\"=:participantfee, \"baseFee\"=:basefee, discount=:discount, \"businessNr\"=:businessnr, \"centPerKWh\"=:centperkwh, \"freeKWh\" = :freekwh, \"createdBy\"=:createdby, version=:version WHERE id = :id", &update)
 
 	return err
+}
+
+//func DateToCivilHookFunc(f reflect.Type, t reflect.Type, data interface{}) (interface{}, error) {
+//
+//
+//
+//}
+
+func StringToNullStringHookFunc(f reflect.Type, t reflect.Type, data interface{}) (interface{}, error) {
+	if f.Kind() == reflect.String {
+		var s null.String
+		if t == reflect.TypeOf(s) {
+			s = null.StringFrom(data.(string))
+			return s, nil
+		}
+
+		var d civil.NullDate
+		if t == reflect.TypeOf(d) {
+			date, err := civil.ParseDate(data.(string))
+			if err == nil {
+				d = civil.NullDateFrom(&date)
+				return d, nil
+			}
+		}
+
+		var dt civil.NullDateTime
+		if t == reflect.TypeOf(dt) {
+			date, err := civil.ParseDateTime(data.(string))
+			if err == nil {
+				dt = civil.NullDateTimeFrom(&date)
+				return dt, nil
+			}
+		}
+	}
+
+	if f.Kind() == reflect.Int {
+		var i null.Int
+		if t == reflect.TypeOf(i) {
+			switch data.(type) {
+			case int:
+				i = null.IntFrom(int64(data.(int)))
+			case int16:
+				i = null.IntFrom(int64(data.(int16)))
+			case int32:
+				i = null.IntFrom(int64(data.(int32)))
+			case int64:
+				i = null.IntFrom(data.(int64))
+			default:
+				return data, nil
+			}
+			return i, nil
+		}
+	}
+
+	return data, nil
 }

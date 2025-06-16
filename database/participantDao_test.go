@@ -8,6 +8,7 @@ import (
 	"github.com/doug-martin/goqu/v9"
 	"github.com/jjeffery/civil"
 	"github.com/jmoiron/sqlx"
+	"github.com/mitchellh/mapstructure"
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -451,12 +452,12 @@ func TestUpdateParticipant1(t *testing.T) {
 						Role:                  "EEG_USER",
 						FirstName:             "Peter",
 						LastName:              "Obermüller",
-						TitleBefore:           "",
-						TitleAfter:            "",
+						TitleBefore:           null.String{},
+						TitleAfter:            null.String{},
 						ParticipantSince:      civil.NullDate{},
 						VatNumber:             null.String{},
 						TaxNumber:             null.String{},
-						CompanyRegisterNumber: "",
+						CompanyRegisterNumber: null.String{},
 						TariffId:              null.String{},
 						Status:                "ACTIVE",
 						Version:               0,
@@ -486,4 +487,18 @@ func TestUpdateParticipant1(t *testing.T) {
 			tt.wantErr(t, pUnderTest, tt.args.participant)
 		})
 	}
+}
+
+func TestUpdateParticipantPartial(t *testing.T) {
+	input := map[string]interface{}{"mandateDate": "2025-06-04T08:14:39.000Z"}
+	var result model.BankInfo
+
+	cfg := &mapstructure.DecoderConfig{
+		Result:     &result,
+		DecodeHook: StringToNullStringHookFunc,
+	}
+	decoder, err := mapstructure.NewDecoder(cfg)
+	require.NoError(t, err)
+	err = decoder.Decode(input)
+	require.NoError(t, err)
 }

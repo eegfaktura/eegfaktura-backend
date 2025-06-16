@@ -1,5 +1,5 @@
 env "local" {
-  src = "./schema-masterdata.sql"
+  src = "file://schema.sql"
   dev = "docker://postgres/16/dev"
   migration {
     dir    = "file://migrations"

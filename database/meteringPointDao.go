@@ -407,6 +407,11 @@ func MeteringPointsSetStatus(db *sqlx.DB, tenant string, processState model.Proc
 		"modifiedAt":    civil.Now(),
 		"modifiedBy":    "EVU",
 	}
+
+	if processState == model.INIT {
+		updateRecord["activesince"] = goqu.V(nil)
+	}
+
 	if consentId != nil {
 		updateRecord["consent_id"] = *consentId
 	}
@@ -891,6 +896,7 @@ func FindMeteringPointsActivePeriod(db *sqlx.DB, tenant string, activeSince, ina
 		Where(goqu.I("inactivesince").Gte(civil.DateOf(time.UnixMilli(activeSince)))).
 		ToSQL()
 
+	fmt.Printf("FindMeteringPointsActivePeriod Stmt: %s\n", stmt)
 	mIds := []string{}
 	err := db.Select(&mIds, stmt)
 	if err != nil {

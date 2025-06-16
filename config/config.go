@@ -7,13 +7,22 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"io/ioutil"
+	"strings"
 )
 
 func ReadConfig(path string) {
+	log.Errorf("Read Config: %s", path)
+
 	viper.SetConfigName("config")
 	viper.AddConfigPath(path)
 	viper.AutomaticEnv()
 	viper.SetConfigType("yml")
+
+	viper.SetEnvPrefix("VFEEG_BACKEND")
+	replacer := strings.NewReplacer(".", "_")
+	viper.SetEnvKeyReplacer(replacer)
+	viper.AutomaticEnv()
+
 	if err := viper.ReadInConfig(); err != nil {
 		log.Fatalf("Error reading config file, %s", err)
 	}

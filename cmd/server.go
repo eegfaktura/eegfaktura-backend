@@ -37,6 +37,7 @@ var serverCmd = &cobra.Command{
 }
 
 func handleServer(cmd *cobra.Command, args []string) error {
+	middleware.InitKeycloak()
 	broker, err := mqttclient.Broker().Init(mqttclient.NewMqttClient)
 	if err != nil {
 		panic(err)

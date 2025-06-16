@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jmoiron/sqlx"
+	"io/ioutil"
 	"log"
 	"path/filepath"
 	"runtime"
@@ -116,7 +117,7 @@ func migrateDb(dbAddr string) error {
 	if !ok {
 		return fmt.Errorf("failed to get path")
 	}
-	pathToMigrationFiles := filepath.Dir(path) + "/migration"
+	pathToMigrationFiles := filepath.Dir(path) + "/../migrations"
 
 	databaseURL := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", DbUser, DbPass, dbAddr, DbName)
 	m, err := migrate.New(fmt.Sprintf("file:%s", pathToMigrationFiles), databaseURL)
@@ -131,6 +132,27 @@ func migrateDb(dbAddr string) error {
 	}
 
 	log.Println("migration done")
+	return loadSqlFile(databaseURL, path)
+}
 
-	return nil
+func loadSqlFile(connectionStr, path string) error {
+	// Read file
+	file, err := ioutil.ReadFile(filepath.Dir(path) + "/migration/000002_init-setup.up.sql")
+	if err != nil {
+		fmt.Println(err.Error())
+		return err
+	}
+
+	db, err := sqlx.Open("postgres", connectionStr)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	// Execute all
+	_, err = db.Exec(string(file))
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+	return err
 }

@@ -45,7 +45,7 @@ func getEEG() middleware.JWTHandlerFunc {
 		}
 		defer func() { _ = db.Close() }()
 
-		eeg, err := database.GetEeg(db, tenant)
+		eeg, err := database.GetEegById(db, tenant)
 		if err != nil {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
 			return
@@ -78,7 +78,7 @@ func updateEEG() middleware.JWTHandlerFunc {
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1002, err.Error()))
 			return
 		}
-		eeg, err := database.GetEeg(db, tenant)
+		eeg, err := database.GetEegById(db, tenant)
 		if err != nil {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
 			return

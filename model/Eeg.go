@@ -5,28 +5,28 @@ import (
 )
 
 type Eeg struct {
-	Id                 string             `json:"id" db:"tenant"`
-	Name               string             `json:"name,omitempty"`
-	Description        string             `json:"description"`
-	BusinessNr         null.String        `json:"businessNr,omitempty" db:"businessNr"`
-	Area               AreaType           `json:"area"` /* LOCAL | REGIONAL | BEG | GEA */
-	Legal              string             `json:"legal,omitempty"`
-	GridOperator       string             `json:"gridOperator,omitempty" db:"gridoperator_code"`
-	OperatorName       string             `json:"operatorName,omitempty" db:"gridoperator_name"`
-	CommunityId        string             `json:"communityId,omitempty" db:"communityId"`
-	RcNumber           string             `json:"rcNumber" db:"rcNumber"`
-	AllocationMode     AllocationModeType `json:"allocationMode,omitempty" db:"allocationMode"`
-	SettlementInterval string             `json:"settlementInterval,omitempty" db:"settlementInterval"`
-	ProviderBusinessNr null.Int           `json:"providerBusinessNr,omitempty" db:"providerBusinessNr"`
-	TaxNumber          null.String        `json:"taxNumber,omitempty" db:"taxNumber"`
-	VatNumber          null.String        `json:"vatNumber" db:"vatNumber"`
-	ContactPerson      null.String        `json:"contactPerson" db:"contactPerson"`
-	EegAddress         `json:"address,omitempty"`
-	AccountInfo        `json:"accountInfo,omitempty"`
-	Contact            `json:"contact,omitempty"`
-	Optionals          `json:"optionals,omitempty"`
+	Id                 string             `json:"id" db:"tenant" goqu:"skipupdate"`
+	Name               string             `json:"name,omitempty" goqu:"omitempty"`
+	Description        string             `json:"description" goqu:"omitempty"`
+	BusinessNr         null.String        `json:"businessNr,omitempty" db:"businessNr" goqu:"omitempty"`
+	Area               AreaType           `json:"area" goqu:"omitempty"` /* LOCAL | REGIONAL | BEG | GEA */
+	Legal              string             `json:"legal,omitempty" goqu:"omitempty"`
+	GridOperator       string             `json:"gridOperator,omitempty" db:"gridoperator_code" goqu:"omitempty"`
+	OperatorName       string             `json:"operatorName,omitempty" db:"gridoperator_name" goqu:"omitempty"`
+	CommunityId        string             `json:"communityId,omitempty" db:"communityId" goqu:"omitempty"`
+	RcNumber           string             `json:"rcNumber" db:"rcNumber" goqu:"skipupdate"`
+	AllocationMode     AllocationModeType `json:"allocationMode,omitempty" db:"allocationMode" goqu:"omitempty"`
+	SettlementInterval string             `json:"settlementInterval,omitempty" db:"settlementInterval" goqu:"omitempty"`
+	ProviderBusinessNr null.Int           `json:"providerBusinessNr,omitempty" db:"providerBusinessNr" goqu:"omitempty"`
+	TaxNumber          null.String        `json:"taxNumber,omitempty" db:"taxNumber" goqu:"omitempty"`
+	VatNumber          null.String        `json:"vatNumber" db:"vatNumber" goqu:"omitempty"`
+	ContactPerson      null.String        `json:"contactPerson" db:"contactPerson" goqu:"omitempty"`
+	EegAddress         `json:"address,omitempty" mapstructure:",squash" goqu:"omitempty"`
+	AccountInfo        `json:"accountInfo,omitempty" mapstructure:",squash" goqu:"omitempty"`
+	Contact            `json:"contact,omitempty" mapstructure:",squash" goqu:"omitempty"`
+	Optionals          `json:"optionals,omitempty" mapstructure:",squash" goqu:"omitempty"`
 	//Periods            []int16 `json:"periods" goqu:"skipinsert,defaultifempty"`
-	Online bool `json:"online"`
+	Online bool `json:"online" goqu:"skipupdate"`
 }
 
 type AllocationModeType string
@@ -53,32 +53,33 @@ const (
 )
 
 type Address struct {
-	Type         AddressType `json:"type, omitempty" goqu:"skipupdate"`
-	Street       null.String `json:"street,omitempty"`
-	StreetNumber null.String `json:"streetNumber,omitempty" db:"streetNumber"`
-	Zip          null.String `json:"zip,omitempty"`
-	City         null.String `json:"city,omitempty"`
+	Type         AddressType `json:"type,omitempty" goqu:"skipupdate"`
+	Street       null.String `json:"street,omitempty"  goqu:"omitempty"`
+	StreetNumber null.String `json:"streetNumber,omitempty" db:"streetNumber" goqu:"omitempty"`
+	Zip          null.String `json:"zip,omitempty" goqu:"omitempty"`
+	City         null.String `json:"city,omitempty" goqu:"omitempty"`
 }
 
 type EegAddress struct {
-	Street       string `json:"street,omitempty"`
-	StreetNumber string `json:"streetNumber,omitempty" db:"streetNumber"`
-	Zip          string `json:"zip,omitempty"`
-	City         string `json:"city,omitempty"`
+	Street       string `json:"street,omitempty" goqu:"omitempty"`
+	StreetNumber string `json:"streetNumber,omitempty" db:"streetNumber" goqu:"omitempty"`
+	Zip          string `json:"zip,omitempty" goqu:"omitempty"`
+	City         string `json:"city,omitempty" goqu:"omitempty"`
 }
 
 type Contact struct {
-	Phone null.String `json:"phone,omitempty"`
-	Email null.String `json:"email,omitempty"`
+	Phone null.String `json:"phone,omitempty" goqu:"omitempty"`
+	Email null.String `json:"email,omitempty" goqu:"omitempty"`
 }
 
 type AccountInfo struct {
-	Iban     null.String `json:"iban"`
-	Owner    null.String `json:"owner"`
-	BankName null.String `json:"bankName" db:"bankName"`
-	Sepa     bool        `json:"sepa" db:"-"`
+	Iban       null.String `json:"iban" goqu:"omitempty"`
+	Owner      null.String `json:"owner" goqu:"omitempty"`
+	BankName   null.String `json:"bankName" db:"bankName" goqu:"omitempty"`
+	CreditorId null.String `json:"creditorId" db:"creditor_id" goqu:"omitempty"`
+	Sepa       bool        `json:"sepa" db:"-" goqu:"omitempty"`
 }
 
 type Optionals struct {
-	Website null.String `json:"website,omitempty"`
+	Website null.String `json:"website,omitempty" goqu:"omitempty"`
 }

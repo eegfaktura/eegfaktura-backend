@@ -38,8 +38,6 @@ func (r *RegisterService) Register(ctx context.Context, eeg *protobuf.RegisterEe
 		AllocationMode:     model.AllocationModeType(eeg.Allocation.String()),
 		SettlementInterval: eeg.SettelmentInterval.String(),
 		ProviderBusinessNr: null.Int{},
-		TaxNumber:          null.StringFrom(eeg.TaxNumber),
-		VatNumber:          null.StringFrom(eeg.VatNumber),
 		EegAddress: model.EegAddress{
 			Street:       eeg.Street,
 			StreetNumber: eeg.StreetNumber,
@@ -47,10 +45,9 @@ func (r *RegisterService) Register(ctx context.Context, eeg *protobuf.RegisterEe
 			City:         eeg.City,
 		},
 		AccountInfo: model.AccountInfo{
-			Iban:     null.StringFrom(eeg.Iban),
-			Owner:    null.StringFrom(eeg.Owner),
-			Sepa:     eeg.Sepa,
-			BankName: null.StringFrom(eeg.BankName),
+			Iban:  null.StringFrom(eeg.Iban),
+			Owner: null.StringFrom(eeg.Owner),
+			Sepa:  eeg.Sepa,
 		},
 		Contact: model.Contact{
 			Phone: getOptionalField(eeg.Phone),

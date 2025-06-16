@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"github.com/doug-martin/goqu/v9"
 	"github.com/jmoiron/sqlx"
+	"github.com/mitchellh/mapstructure"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -78,11 +79,27 @@ func InsertEeg(db *sqlx.DB, tenant string, eeg *model.Eeg) error {
 }
 
 func UpdateEegPartial(db *sqlx.DB, tenant string, fields map[string]interface{}) error {
-	statement, _, _ := pgDialect.Update(TABLE_EEG).Set(fields).Where(goqu.Ex{"tenant": goqu.V(tenant)}).ToSQL()
 
-	log.Debugf("Update EEG VALUES: %s\n", statement)
+	var eeg model.Eeg
 
-	_, err := db.Exec(statement)
+	cfg := &mapstructure.DecoderConfig{
+		Result:     &eeg,
+		DecodeHook: StringToNullStringHookFunc,
+	}
+	decoder, err := mapstructure.NewDecoder(cfg)
+	if err != nil {
+		return err
+	}
+	err = decoder.Decode(fields)
+	if err != nil {
+		return err
+	}
+	statement, _, err := pgDialect.Update(TABLE_EEG).Set(eeg).Where(goqu.Ex{"tenant": goqu.V(tenant)}).ToSQL()
+	if err != nil {
+		log.WithError(err).Errorf("Update EEG VALUES: %s", statement)
+	}
+
+	_, err = db.Exec(statement)
 	return err
 }
 

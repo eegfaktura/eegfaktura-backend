@@ -5,6 +5,7 @@ import (
 	dbsql "database/sql"
 	"encoding/json"
 	"github.com/doug-martin/goqu/v9"
+	"github.com/jjeffery/civil"
 	"github.com/jmoiron/sqlx"
 	"github.com/sirupsen/logrus"
 	"time"
@@ -17,13 +18,14 @@ func SaveEdaHistory(db *sqlx.DB, history *model.EdaProcessHistory) error {
 }
 
 func FetchEdaHistory(db *sqlx.DB, tenant string, start, end int64) (map[string]map[string][]model.EdaProcessHistory, error) {
-	startDate := time.UnixMilli(start)
-	endDate := time.UnixMilli(end)
+	startDate := civil.DateOf(time.UnixMilli(start))
+	endDate := civil.DateOf(time.UnixMilli(end))
 
 	h := []model.EdaProcessHistory{}
 	stmt, _, err := pgDialect.From("base.processhistory").Select(&h).
-		Where(goqu.C("tenant").Eq(tenant), goqu.C("protocol").IsNotNull(), goqu.C("date").Between(goqu.Range(startDate, endDate))).ToSQL()
+		Where(goqu.C("tenant").Eq(tenant) /*goqu.C("protocol").IsNotNull(),*/, goqu.C("date").Between(goqu.Range(startDate, endDate))).ToSQL()
 
+	//fmt.Printf("STMT: %v\n", stmt)
 	err = db.Select(&h, stmt)
 	if err != nil && err != dbsql.ErrNoRows {
 		logrus.WithField("SQL", "SELECT").Errorf("Query History: %+v", stmt)
