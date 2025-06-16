@@ -4,21 +4,37 @@ import (
 	"at.ourproject/vfeeg-backend/api"
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"at.ourproject/vfeeg-backend/config"
+	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/eda"
 	"at.ourproject/vfeeg-backend/graph"
 	"at.ourproject/vfeeg-backend/graph/generated"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
+	"at.ourproject/vfeeg-backend/repository"
 	"at.ourproject/vfeeg-backend/services"
+	"context"
+	"embed"
+	"errors"
 	"flag"
 	"fmt"
 	"github.com/99designs/gqlgen/graphql/handler"
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/database/postgres"
+	"github.com/golang-migrate/migrate/v4/source"
+	"github.com/golang-migrate/migrate/v4/source/httpfs"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
+)
+
+var (
+	//go:embed migrations/*.sql
+	migrations embed.FS
 )
 
 func init() {
@@ -36,42 +52,116 @@ func init() {
 	log.SetLevel(ll)
 }
 
+func captureOsInterrupt() chan bool {
+	quit := make(chan bool)
+	go func() {
+		c := make(chan os.Signal, 2)
+		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+
+		for sig := range c {
+			log.Infof("captured %v, stopping and exiting.", sig)
+
+			quit <- true
+			close(quit)
+
+			break
+		}
+	}()
+	return quit
+}
+
 func InitRouters() *mux.Router {
 
-	jwtWrapper := middleware.JWTMiddleware(viper.GetString("jwt.pubKeyFile"))
+	//middleware.InitKeycloak()
 
 	//r := mux.NewRouter().PathPrefix("/api").Subrouter()
 	r := mux.NewRouter()
 	s := r.PathPrefix("/").Subrouter()
-	s = api.InitEegRouter(s, jwtWrapper)
-	s = api.InitParticipantRouter(s, jwtWrapper)
-	s = api.InitMeteringRouter(s, jwtWrapper)
-	s = api.InitProcessRouter(s, jwtWrapper)
+	s = api.InitEegRouter(s)
+	s = api.InitParticipantRouter(s)
+	s = api.InitMeteringRouter(s)
+	s = api.InitProcessRouter(s)
+	s = api.InitApiRouter(s)
 
 	return s
 }
 
+type driver struct {
+	httpfs.PartialDriver
+}
+
+func (d *driver) Open(rawURL string) (source.Driver, error) {
+	err := d.PartialDriver.Init(http.FS(migrations), "migrations")
+	if err != nil {
+		return nil, err
+	}
+
+	return d, nil
+}
 func main() {
 	var configPath = flag.String("configPath", ".", "Configfile Path")
 	flag.Parse()
 	config.ReadConfig(*configPath)
 
-	err := mqttclient.StartMessageBroker()
+	log.SetReportCaller(true)
+
+	//cmd.Execute()
+	//fmt.Printf("Program end: %s\n", "now")
+
+	if err := MigrateDatabase(); err != nil {
+		log.Fatalf("failed to migrate database")
+		os.Exit(1)
+	}
+
+	StartServer()
+}
+
+func MigrateDatabase() error {
+	log.Info("Start migration ...")
+	db, err := database.ConnectToDatabase()
+	if err != nil {
+		log.Fatal(err)
+		return err
+	}
+	defer func() { _ = db.Close() }()
+
+	source.Register("embed", &driver{})
+
+	dbDriver, err := postgres.WithInstance(db.DB, &postgres.Config{SchemaName: "base"})
+	if err != nil {
+		log.Fatal(err)
+		return err
+	}
+
+	m, err := migrate.NewWithDatabaseInstance(
+		"embed://",
+		"postgres", dbDriver)
+	if err != nil {
+		log.Fatal(err)
+		return err
+	}
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		log.Fatal(err)
+		return err
+	}
+	return nil
+}
+
+func StartServer() {
+	log.Info("Start server ...")
+	middleware.InitKeycloak()
+	broker, err := mqttclient.Broker().Init(mqttclient.NewMqttClient)
 	if err != nil {
 		panic(err)
 	}
-
-	log.SetReportCaller(true)
-
 	eda.InitEdaSubscription()
 	mqttclient.InitErrorSubscriptions()
 
-	gqlSrv := handler.NewDefaultServer(generated.NewExecutableSchema(generated.Config{Resolvers: &graph.Resolver{}}))
+	quit := captureOsInterrupt()
 	r := InitRouters()
-	r.Handle("/query", gqlSrv)
-	r.Use(middleware.GQLMiddleware(viper.GetString("jwt.pubKeyFile")))
 
-	//messageBroker.Subscribe(mqttclient.GetSubsriptions()...)
+	gqlSrv := handler.NewDefaultServer(generated.NewExecutableSchema(generated.Config{Resolvers: &graph.Resolver{}}))
+	r.Handle("/query", middleware.GQLProtect(gqlSrv))
 
 	allowedOrigins := handlers.AllowedOrigins([]string{"*"})
 	allowedHeaders := handlers.AllowedHeaders(
@@ -99,7 +189,8 @@ func main() {
 	allowedMethods := handlers.AllowedMethods([]string{"GET", "HEAD", "POST", "PUT", "OPTIONS", "DELETE"})
 	allowedCredentials := handlers.AllowCredentials()
 
-	go services.StartGRPCServer()
+	repository.InitRepositories()
+	go services.StartGRPCServer(quit)
 
 	log.Infof("VFEEG BACKEND Config:  host: %s  port: %d  database:%s  user:%s",
 		viper.GetString("database.host"),
@@ -115,5 +206,22 @@ func main() {
 		WriteTimeout: 180 * time.Second,
 		ReadTimeout:  180 * time.Second,
 	}
-	log.Fatal(srv.ListenAndServe())
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("listen and serve returned err: %v", err)
+		}
+	}()
+
+	<-quit
+	log.Println("got interruption signal")
+	if err := srv.Shutdown(context.Background()); err != nil {
+		log.Printf("server shutdown returned an err: %v\n", err)
+	}
+
+	broker.Stop()
+	repository.CloseRepositories()
+	log.Println("final")
+
+	fmt.Println("STOP PROGRAM")
 }

@@ -8,6 +8,7 @@ import (
 )
 
 var tenantCtxKey = &contextKey{"tenant"}
+var superUserCtxKey = &contextKey{"superuser"}
 
 type contextKey struct {
 	name string

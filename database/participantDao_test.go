@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/doug-martin/goqu/v9"
+	"github.com/jjeffery/civil"
 	"github.com/jmoiron/sqlx"
+	"github.com/mitchellh/mapstructure"
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -62,7 +64,7 @@ func TestRegisterParticipant(t *testing.T) {
 	mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
 	mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
 	mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
-	//	mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
+	mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
 	mockDb.Mock.ExpectCommit()
 
 	db, _ := mockDb.OpenMockDb()
@@ -76,6 +78,7 @@ func TestRegisterParticipant(t *testing.T) {
 
 func TestGetParticipant(t *testing.T) {
 	mockDb, err := GetDatabaseMock()
+	dbx := sqlx.NewDb(mockDb.db, "mock")
 
 	participantRows := sqlmock.NewRows([]string{
 		"id", "firstname", "lastname", "role", "businessRole", "titleBefore", "titleAfter", "participantSince",
@@ -106,7 +109,7 @@ func TestGetParticipant(t *testing.T) {
 			time.Now(), "admin", time.Now(), "NEW", "Energieweg", "12a", uuid.New(), "", "1234")
 	mockDb.Mock.ExpectQuery("SELECT (.+) FROM \"base\".\"participant_meter_state\" (.+)").WillReturnRows(meterRows)
 
-	participants, err := GetParticipants(mockDb.OpenMockDb, "RC100298")
+	participants, err := GetParticipants(dbx, "RC100298")
 	assert.NoError(t, err)
 
 	assert.NotEmpty(t, participants)
@@ -114,14 +117,22 @@ func TestGetParticipant(t *testing.T) {
 }
 
 func Test_GetParticipants(t *testing.T) {
-	participants, err := GetParticipants(openTestDb, "TE000002")
+	db, err := openTestDb()
+	require.NoError(t, err)
+	defer db.Close()
+
+	participants, err := GetParticipants(db, "TE000002")
 	require.NoError(t, err)
 
 	require.Equal(t, 1, len(participants))
 	p := participants[0]
 
 	assert.Equal(t, "Peter", p.FirstName)
-	assert.Equal(t, 4, len(p.MeteringPoint))
+	assert.Equal(t, "Schulberg", p.ResidentAddress.Street.String)
+	assert.Equal(t, "Sparberweg", p.BillingAddress.Street.String)
+	assert.Nil(t, p.BankAccount.Iban.Ptr())
+
+	assert.Equal(t, 5, len(p.MeteringPoint))
 
 	findMeter := func(m []*model.MeteringPoint, mid string) *model.MeteringPoint {
 		for i := range m {
@@ -133,10 +144,11 @@ func Test_GetParticipants(t *testing.T) {
 	}
 
 	expectedMeter := &model.MeteringPoint{
-		MeteringPoint:    "AT0030000000000000000000030041724",
+		MeteringPoint:    "AT0030000000000000000000030041725",
 		Transformer:      null.String{},
 		Direction:        model.GENERATOR,
-		Status:           model.ACTIVE,
+		Status:           model.S_ACTIVE,
+		ProcessState:     model.ACTIVE,
 		TariffId:         null.StringFrom("f9b640dc-efe3-11ed-9f81-6ad19f4af00f"),
 		EquipmentNumber:  null.StringFrom("GERZ02"),
 		EquipmentName:    null.String{},
@@ -145,17 +157,18 @@ func Test_GetParticipants(t *testing.T) {
 		StreetNumber:     null.StringFrom("9"),
 		City:             null.StringFrom("Waizenkirchen"),
 		Zip:              null.StringFrom("4730"),
-		RegisteredSince:  time.Date(2023, 8, 16, 0, 0, 0, 0, time.FixedZone("", 0)),
-		ModifiedAt:       time.Date(2023, 11, 15, 17, 42, 41, 335283000, time.FixedZone("", 0)),
+		RegisteredSince:  civil.DateFor(2023, 8, 16),
+		ModifiedAt:       civil.DateTimeFor(2023, 11, 15, 17, 42, 41),
 		ModifiedBy:       null.StringFrom("petero"),
 		GridOperatorId:   null.String{},
 		GridOperatorName: null.String{},
 		State: &model.MeterState{
-			ActiveSince:   time.Date(2023, 1, 1, 0, 0, 0, 0, time.FixedZone("", 0)),
-			InactiveSince: time.Date(2999, 12, 31, 0, 0, 0, 0, time.FixedZone("", 0)),
-			Active:        1,
-			Flag:          0,
+			ActiveSince:   civil.NullDate{Date: civil.DateOf(time.Date(2023, 1, 1, 0, 0, 0, 0, time.FixedZone("", 0))), Valid: true},
+			InactiveSince: civil.NullDate{Date: civil.DateOf(time.Date(2999, 12, 31, 0, 0, 0, 0, time.FixedZone("", 0))), Valid: true},
+			Active:        0,
+			Flag:          1,
 		},
+		PartFact: 100,
 	}
 	m := findMeter(p.MeteringPoint, expectedMeter.MeteringPoint)
 	assert.NotNil(t, m)
@@ -189,7 +202,7 @@ func Test_saveParticipant(t *testing.T) {
 	mock.ExpectExec("INSERT (.+) \"base\".\"bankaccount\"").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec("INSERT (.+) \"base\".\"address\"").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec("INSERT (.+) \"base\".\"meteringpoint\"").WillReturnResult(sqlmock.NewResult(1, 1))
-	//	mock.ExpectExec("INSERT (.+) \"base\".\"participant_meter_state\"").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("INSERT (.+) \"base\".\"metering_partition_factor\"").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
 	tests := []struct {
@@ -231,35 +244,37 @@ func TestImportParticipant(t *testing.T) {
 			name: "Test Import New Participant",
 			mp:   "AT00300000000000000000000000000001",
 			params: &model.EegParticipant{
-				ParticipantNumber: null.String{},
-				FirstName:         "Max",
-				LastName:          "Mustermann",
-				Contact:           model.ContactInfo{},
+				EegParticipantBase: model.EegParticipantBase{
+					ParticipantNumber: null.String{},
+					FirstName:         "Max",
+					LastName:          "Mustermann",
+					MeteringPoint: []*model.MeteringPoint{&model.MeteringPoint{
+						MeteringPoint: "AT00300000000000000000000000000001",
+						Transformer:   null.String{},
+						Direction:     model.GENERATOR,
+						Street:        null.StringFrom("Solargasse"),
+						StreetNumber:  null.StringFrom("11a"),
+						City:          null.StringFrom("Solarcity"),
+						Zip:           null.StringFrom("1111"),
+					}},
+					Status: model.NEW,
+				},
+				Contact: model.ContactInfo{},
 				BillingAddress: model.Address{
 					Type:         model.BILLING,
-					Street:       "Solargasse",
-					StreetNumber: "11a",
-					Zip:          "1111",
-					City:         "Solarcity",
+					Street:       null.StringFrom("Solargasse"),
+					StreetNumber: null.StringFrom("11a"),
+					Zip:          null.StringFrom("1111"),
+					City:         null.StringFrom("Solarcity"),
 				},
 				ResidentAddress: model.Address{
 					Type:         model.RESIDENCE,
-					Street:       "Solargasse",
-					StreetNumber: "11a",
-					Zip:          "1111",
-					City:         "Solarcity",
+					Street:       null.StringFrom("Solargasse"),
+					StreetNumber: null.StringFrom("11a"),
+					Zip:          null.StringFrom("1111"),
+					City:         null.StringFrom("Solarcity"),
 				},
 				BankAccount: model.BankInfo{},
-				MeteringPoint: []*model.MeteringPoint{&model.MeteringPoint{
-					MeteringPoint: "AT00300000000000000000000000000001",
-					Transformer:   null.String{},
-					Direction:     model.GENERATOR,
-					Street:        null.StringFrom("Solargasse"),
-					StreetNumber:  null.StringFrom("11a"),
-					City:          null.StringFrom("Solarcity"),
-					Zip:           null.StringFrom("1111"),
-				}},
-				Status: model.NEW,
 			},
 			test: func(t *testing.T, p *model.EegParticipant) {
 				assert.Equal(t, 1, len(p.MeteringPoint))
@@ -268,13 +283,13 @@ func TestImportParticipant(t *testing.T) {
 				fmt.Printf("P: %+v\n", p.ParticipantSince)
 				fmt.Printf("M: %+v\n", m)
 
-				assert.Equal(t, time.Now().Truncate(24*time.Hour), p.ParticipantSince.Local())
-				assert.Equal(t, time.Now().Truncate(24*time.Hour), m.RegisteredSince.Truncate(24*time.Hour).Local())
-				assert.Equal(t, time.Now().Truncate(24*time.Hour), m.State.ActiveSince.Truncate(24*time.Hour).Local())
-				assert.Equal(t, time.Date(2999, 12, 31, 1, 0, 0, 0, time.Local), m.State.InactiveSince.Local())
+				assert.Equal(t, civil.Today(), p.ParticipantSince.Date)
+				assert.Equal(t, civil.Today(), m.RegisteredSince)
+				assert.Nil(t, m.State.ActiveSince.Ptr())
+				assert.Nil(t, m.State.InactiveSince.Ptr())
 
 				assert.Equal(t, model.NEW, p.Status)
-				assert.Equal(t, model.NEW, m.Status)
+				assert.Equal(t, model.S_INIT, m.Status)
 
 				assert.Equal(t, "Max", p.FirstName)
 			},
@@ -283,38 +298,40 @@ func TestImportParticipant(t *testing.T) {
 			name: "Test Import Activated Participant",
 			mp:   "AT00300000000000000000000000000002",
 			params: &model.EegParticipant{
-				ParticipantNumber: null.String{},
-				FirstName:         "Maria",
-				LastName:          "Mustermann",
-				Contact:           model.ContactInfo{},
+				EegParticipantBase: model.EegParticipantBase{
+					ParticipantNumber: null.String{},
+					FirstName:         "Maria",
+					LastName:          "Mustermann",
+					ParticipantSince:  civil.NullDate{},
+					MeteringPoint: []*model.MeteringPoint{&model.MeteringPoint{
+						MeteringPoint:   "AT00300000000000000000000000000002",
+						Transformer:     null.String{},
+						Direction:       model.GENERATOR,
+						Street:          null.StringFrom("Solargasse"),
+						StreetNumber:    null.StringFrom("11a"),
+						City:            null.StringFrom("Solarcity"),
+						Zip:             null.StringFrom("1111"),
+						ProcessState:    model.ACTIVE,
+						RegisteredSince: civil.DateFor(2023, 10, 6),
+					}},
+					Status: model.ACTIVE,
+				},
+				Contact: model.ContactInfo{},
 				BillingAddress: model.Address{
 					Type:         model.BILLING,
-					Street:       "Solargasse",
-					StreetNumber: "11a",
-					Zip:          "1111",
-					City:         "Solarcity",
+					Street:       null.StringFrom("Solargasse"),
+					StreetNumber: null.StringFrom("11a"),
+					Zip:          null.StringFrom("1111"),
+					City:         null.StringFrom("Solarcity"),
 				},
 				ResidentAddress: model.Address{
 					Type:         model.RESIDENCE,
-					Street:       "Solargasse",
-					StreetNumber: "11a",
-					Zip:          "1111",
-					City:         "Solarcity",
+					Street:       null.StringFrom("Solargasse"),
+					StreetNumber: null.StringFrom("11a"),
+					Zip:          null.StringFrom("1111"),
+					City:         null.StringFrom("Solarcity"),
 				},
-				BankAccount:      model.BankInfo{},
-				ParticipantSince: time.Date(2023, 10, 6, 0, 0, 0, 0, time.UTC).Local(),
-				MeteringPoint: []*model.MeteringPoint{&model.MeteringPoint{
-					MeteringPoint:   "AT00300000000000000000000000000002",
-					Transformer:     null.String{},
-					Direction:       model.GENERATOR,
-					Street:          null.StringFrom("Solargasse"),
-					StreetNumber:    null.StringFrom("11a"),
-					City:            null.StringFrom("Solarcity"),
-					Zip:             null.StringFrom("1111"),
-					Status:          model.ACTIVE,
-					RegisteredSince: time.Date(2023, 10, 6, 0, 0, 0, 0, time.UTC),
-				}},
-				Status: model.ACTIVE,
+				BankAccount: model.BankInfo{},
 			},
 			test: func(t *testing.T, p *model.EegParticipant) {
 				assert.Equal(t, 1, len(p.MeteringPoint))
@@ -323,13 +340,14 @@ func TestImportParticipant(t *testing.T) {
 				fmt.Printf("P: %+v\n", p.ParticipantSince)
 				fmt.Printf("M: %+v\n", m)
 
-				assert.Equal(t, time.Date(2023, 10, 6, 0, 0, 0, 0, time.UTC).Local(), p.ParticipantSince.Local())
-				assert.Equal(t, time.Date(2023, 10, 6, 0, 0, 0, 0, time.UTC).Local(), m.RegisteredSince.Truncate(24*time.Hour).Local())
-				assert.Equal(t, time.Date(2023, 10, 6, 0, 0, 0, 0, time.UTC).Local(), m.State.ActiveSince.Truncate(24*time.Hour).Local())
-				assert.Equal(t, time.Date(2999, 12, 31, 1, 0, 0, 0, time.Local), m.State.InactiveSince.Local())
+				require.NotNil(t, p.ParticipantSince.Ptr())
+				assert.Equal(t, civil.Today(), p.ParticipantSince.Date)
+				assert.Equal(t, civil.DateFor(2023, 10, 6), m.RegisteredSince)
+				assert.Equal(t, civil.DateFor(2023, 10, 6), m.State.ActiveSince.Date)
+				assert.Equal(t, civil.DateFor(2999, 12, 31), m.State.InactiveSince.Date)
 
 				assert.Equal(t, model.ACTIVE, p.Status)
-				assert.Equal(t, model.ACTIVE, m.Status)
+				assert.Equal(t, model.S_ACTIVE, m.Status)
 
 				assert.Equal(t, "Maria", p.FirstName)
 			},
@@ -338,34 +356,36 @@ func TestImportParticipant(t *testing.T) {
 			name: "Test Import Participant - empty state",
 			mp:   "AT00300000000000000000000000000003",
 			params: &model.EegParticipant{
-				ParticipantNumber: null.String{},
-				FirstName:         "Helmut",
-				LastName:          "Mustermann",
-				Contact:           model.ContactInfo{},
+				EegParticipantBase: model.EegParticipantBase{
+					ParticipantNumber: null.String{},
+					FirstName:         "Helmut",
+					LastName:          "Mustermann",
+					MeteringPoint: []*model.MeteringPoint{&model.MeteringPoint{
+						MeteringPoint: "AT00300000000000000000000000000003",
+						Transformer:   null.String{},
+						Direction:     model.GENERATOR,
+						Street:        null.StringFrom("Solargasse"),
+						StreetNumber:  null.StringFrom("11a"),
+						City:          null.StringFrom("Solarcity"),
+						Zip:           null.StringFrom("1111"),
+					}},
+				},
+				Contact: model.ContactInfo{},
 				BillingAddress: model.Address{
 					Type:         model.BILLING,
-					Street:       "Solargasse",
-					StreetNumber: "11a",
-					Zip:          "1111",
-					City:         "Solarcity",
+					Street:       null.StringFrom("Solargasse"),
+					StreetNumber: null.StringFrom("11a"),
+					Zip:          null.StringFrom("1111"),
+					City:         null.StringFrom("Solarcity"),
 				},
 				ResidentAddress: model.Address{
 					Type:         model.RESIDENCE,
-					Street:       "Solargasse",
-					StreetNumber: "11a",
-					Zip:          "1111",
-					City:         "Solarcity",
+					Street:       null.StringFrom("Solargasse"),
+					StreetNumber: null.StringFrom("11a"),
+					Zip:          null.StringFrom("1111"),
+					City:         null.StringFrom("Solarcity"),
 				},
 				BankAccount: model.BankInfo{},
-				MeteringPoint: []*model.MeteringPoint{&model.MeteringPoint{
-					MeteringPoint: "AT00300000000000000000000000000003",
-					Transformer:   null.String{},
-					Direction:     model.GENERATOR,
-					Street:        null.StringFrom("Solargasse"),
-					StreetNumber:  null.StringFrom("11a"),
-					City:          null.StringFrom("Solarcity"),
-					Zip:           null.StringFrom("1111"),
-				}},
 			},
 			test: func(t *testing.T, p *model.EegParticipant) {
 				assert.Equal(t, 1, len(p.MeteringPoint))
@@ -374,13 +394,13 @@ func TestImportParticipant(t *testing.T) {
 				fmt.Printf("P: %+v\n", p.ParticipantSince)
 				fmt.Printf("M: %+v\n", m)
 
-				assert.Equal(t, time.Now().Truncate(24*time.Hour), p.ParticipantSince.Local())
-				assert.Equal(t, time.Now().Truncate(24*time.Hour), m.RegisteredSince.Truncate(24*time.Hour).Local())
-				assert.Equal(t, time.Now().Truncate(24*time.Hour), m.State.ActiveSince.Truncate(24*time.Hour).Local())
-				assert.Equal(t, time.Date(2999, 12, 31, 1, 0, 0, 0, time.Local), m.State.InactiveSince.Local())
+				assert.Equal(t, civil.Today(), p.ParticipantSince.Date)
+				assert.Equal(t, civil.Today(), m.RegisteredSince)
+				assert.Nil(t, m.State.ActiveSince.Ptr())
+				assert.Nil(t, m.State.InactiveSince.Ptr())
 
 				assert.Equal(t, model.NEW, p.Status)
-				assert.Equal(t, model.NEW, m.Status)
+				assert.Equal(t, model.S_INIT, m.Status)
 
 				assert.Equal(t, "Helmut", p.FirstName)
 			},
@@ -396,7 +416,8 @@ func TestImportParticipant(t *testing.T) {
 			err = ImportParticipant(tx, "TE000001", "test", tt.params)
 			assert.NoError(t, err)
 
-			tx.Commit()
+			err = tx.Commit()
+			require.NoError(t, err)
 
 			p, err := FindParticipantByMeteringPoint(db, "TE000001", tt.mp)
 			assert.NoError(t, err)
@@ -404,4 +425,80 @@ func TestImportParticipant(t *testing.T) {
 			tt.test(t, p)
 		})
 	}
+}
+
+func TestUpdateParticipant1(t *testing.T) {
+	db, _ := openTestDb()
+	type args struct {
+		tenant      string
+		user        string
+		participant *model.EegParticipant
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr func(t *testing.T, p, e *model.EegParticipant)
+	}{
+		{
+			name: "Update Participant",
+			args: args{
+				tenant: "TE000001",
+				user:   "",
+				participant: &model.EegParticipant{
+					EegParticipantBase: model.EegParticipantBase{
+						Id:                    uuid.Parse("ea9942da-03da-11ee-b82b-5a985b4b033a"),
+						ParticipantNumber:     null.StringFrom("041"),
+						BusinessRole:          "EEG_PRIVATE",
+						Role:                  "EEG_USER",
+						FirstName:             "Peter",
+						LastName:              "Obermüller",
+						TitleBefore:           null.String{},
+						TitleAfter:            null.String{},
+						ParticipantSince:      civil.NullDate{},
+						VatNumber:             null.String{},
+						TaxNumber:             null.String{},
+						CompanyRegisterNumber: null.String{},
+						TariffId:              null.String{},
+						Status:                "ACTIVE",
+						Version:               0,
+						CreatedBy:             "petero",
+					},
+					Contact:         model.ContactInfo{},
+					BillingAddress:  model.Address{Type: "BILLING"},
+					ResidentAddress: model.Address{Type: "RESIDENT"},
+					BankAccount:     model.BankInfo{},
+				},
+			},
+			wantErr: func(t *testing.T, underTest, org *model.EegParticipant) {
+				assert.Equal(t, "041", underTest.ParticipantNumber.String)
+				fmt.Printf("ParticipantSince %v\n", underTest.ParticipantSince.Date.String())
+				assert.Equal(t, civil.DateFor(2023, 10, 11), underTest.ParticipantSince.Date)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := UpdateParticipant(db, tt.args.tenant, tt.args.user, tt.args.participant)
+			assert.NoError(t, err)
+
+			pUnderTest, err := QueryParticipant(db, tt.args.participant.Id.String())
+			assert.NoError(t, err)
+
+			tt.wantErr(t, pUnderTest, tt.args.participant)
+		})
+	}
+}
+
+func TestUpdateParticipantPartial(t *testing.T) {
+	input := map[string]interface{}{"mandateDate": "2025-06-04T08:14:39.000Z"}
+	var result model.BankInfo
+
+	cfg := &mapstructure.DecoderConfig{
+		Result:     &result,
+		DecodeHook: StringToNullStringHookFunc,
+	}
+	decoder, err := mapstructure.NewDecoder(cfg)
+	require.NoError(t, err)
+	err = decoder.Decode(input)
+	require.NoError(t, err)
 }

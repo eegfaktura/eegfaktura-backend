@@ -3,15 +3,16 @@ package api
 import (
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"at.ourproject/vfeeg-backend/database"
+	"at.ourproject/vfeeg-backend/model"
 	"github.com/gorilla/mux"
 	"net/http"
 	"strconv"
 )
 
-func InitProcessRouter(r *mux.Router, jwtWrapper middleware.JWTWrapperFunc) *mux.Router {
+func InitProcessRouter(r *mux.Router) *mux.Router {
 	s := r.PathPrefix("/process").Subrouter()
 
-	s.HandleFunc("/history", jwtWrapper(fetchProcessHistory())).Methods("GET")
+	s.HandleFunc("/history", middleware.Protect(fetchProcessHistory())).Methods("GET")
 
 	return r
 }
@@ -25,7 +26,14 @@ func fetchProcessHistory() middleware.JWTHandlerFunc {
 			return
 		}
 
-		history, err := database.FetchEdaHistory(database.GetDBXConnection, tenant, start, end)
+		db, err := database.ConnectToDatabase()
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
+			return
+		}
+		defer func() { _ = db.Close() }()
+
+		history, err := database.FetchEdaHistory(db, tenant, start, end)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

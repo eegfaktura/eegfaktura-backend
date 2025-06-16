@@ -2,9 +2,15 @@ package database
 
 import (
 	"at.ourproject/vfeeg-backend/model"
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"github.com/jjeffery/civil"
+	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/xuri/excelize/v2"
 	"gopkg.in/guregu/null.v4"
 	"io"
 	"os"
@@ -25,7 +31,8 @@ func Test_transformExcelData(t *testing.T) {
 	rows, err := f.Rows("EEG Stammdaten")
 	require.NoError(t, err)
 
-	participants := transformExcelData(rows, func(id string) string { return id })
+	importLog := &model.Log{Operation: "Excel Master Data Import", Messages: []*model.LogMessage{}}
+	participants := transformExcelData(rows, func(id string) string { return id }, false, importLog)
 
 	findParticipant := func(n string, p []*model.EegParticipant) *model.EegParticipant {
 		for i := range p {
@@ -36,9 +43,9 @@ func Test_transformExcelData(t *testing.T) {
 		return &model.EegParticipant{}
 	}
 
-	assert.Equal(t, 5, len(participants))
+	assert.Equal(t, 7, len(participants))
 	assert.Equal(t, 2, len(findParticipant("Finnegan", participants).MeteringPoint))
-	assert.Equal(t, "001-3456", findParticipant("Finnegan", participants).TaxNumber)
+	assert.Equal(t, null.StringFrom("001-3456"), findParticipant("Finnegan", participants).TaxNumber)
 
 	assert.Equal(t, null.StringFrom("003"), findParticipant("Finnegan", participants).ParticipantNumber)
 	assert.Equal(t, null.StringFrom("005"), findParticipant("Beckett", participants).ParticipantNumber)
@@ -64,8 +71,12 @@ func TestImportMasterdataFromExcel(t *testing.T) {
 	require.NoError(t, err)
 	defer reader.Close()
 
+	dbx, err := openTestDb()
+	require.NoError(t, err)
+	defer dbx.Close()
+
 	type args struct {
-		dbConn   OpenDbXConnection
+		db       *sqlx.DB
 		r        io.Reader
 		filename string
 		sheet    string
@@ -80,7 +91,7 @@ func TestImportMasterdataFromExcel(t *testing.T) {
 		{
 			name: "import file",
 			args: args{
-				dbConn:   openTestDb,
+				db:       dbx,
 				r:        reader,
 				filename: "TE100200-Muster-Stammdatenimport.xlsx",
 				sheet:    "EEG Stammdaten",
@@ -90,20 +101,23 @@ func TestImportMasterdataFromExcel(t *testing.T) {
 
 			},
 			test: func(t *testing.T, args args) {
-				require.NoError(t, ImportMasterdataFromExcel(args.dbConn, args.r, args.filename, args.sheet, args.tenant))
-				ps, err := GetParticipants(args.dbConn, args.tenant)
+				require.NoError(t, ImportMasterdataFromExcel(args.db, args.r, args.filename, args.sheet, args.tenant))
+				ps, err := GetParticipants(args.db, args.tenant)
 				require.NoError(t, err)
-				assert.Equal(t, 5, len(ps))
+				assert.Equal(t, 7, len(ps))
 
 				p := findParticipant(ps, "Max", "Mustermann")
 				require.NotNil(t, p)
-				assert.Equal(t, 1, len(p.MeteringPoint))
+				require.Equal(t, 1, len(p.MeteringPoint))
+
+				fmt.Printf("ACTIVE-DATE: %v %v\n", p.MeteringPoint[0].State.ActiveSince.Valid, p.MeteringPoint[0].State.ActiveSince.Date)
 
 				assert.Equal(t, "Test Operator", p.MeteringPoint[0].GridOperatorName.String)
-				assert.Equal(t, time.Date(time.Now().Year(), 1, 1, 0, 0, 0, 0, time.UTC).Local(), p.MeteringPoint[0].State.ActiveSince.Local())
-				assert.Equal(t, time.Date(2999, 12, 31, 0, 0, 0, 0, time.UTC).Local(), p.MeteringPoint[0].State.InactiveSince.Local())
-				assert.Equal(t, 0, p.MeteringPoint[0].State.Flag)
-				assert.Equal(t, model.ACTIVE, p.MeteringPoint[0].Status)
+				assert.Equal(t, civil.DateOf(time.Date(time.Now().Year(), 1, 1, 0, 0, 0, 0, time.Local)), p.MeteringPoint[0].State.ActiveSince.Date)
+				assert.Equal(t, civil.DateOf(time.Date(2999, 12, 31, 0, 0, 0, 0, time.Local)), p.MeteringPoint[0].State.InactiveSince.Date)
+				assert.Equal(t, model.F_ASSIGNED, p.MeteringPoint[0].State.Flag)
+				assert.Equal(t, model.ACTIVE, p.MeteringPoint[0].ProcessState)
+				assert.Equal(t, model.S_ACTIVE, p.MeteringPoint[0].Status)
 			},
 		},
 	}
@@ -172,3 +186,79 @@ func TestImportMasterdataFromExcel(t *testing.T) {
 //		})
 //	}
 //}
+
+func TestExportMasterdataToExcel(t *testing.T) {
+	db, err := openTestDb()
+	require.NoError(t, err)
+	defer db.Close()
+
+	tenant := "TE000002"
+	eeg, err := GetEeg(db, tenant)
+	require.NoError(t, err)
+
+	participants, err := GetParticipants(db, tenant)
+	require.NoError(t, err)
+
+	tariffMap, err := GetTariffNameMap(db, tenant)
+	require.NoError(t, err)
+
+	type args struct {
+		participants []model.EegParticipant
+		eeg          *model.Eeg
+		tariffMap    map[string]string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		check   func(t *testing.T, bytes *bytes.Buffer)
+		wantErr assert.ErrorAssertionFunc
+	}{
+		{
+			name: "Export Tenant",
+			args: args{participants: participants, eeg: eeg, tariffMap: tariffMap},
+			check: func(t *testing.T, buff *bytes.Buffer) {
+				r := bytes.NewReader(buff.Bytes())
+				f, err := openReader(r, "test")
+				require.NoError(t, err)
+
+				rows, err := f.Rows("Mitglieder")
+				require.NoError(t, err)
+				defer rows.Close()
+
+				var cols [][]string
+				for rows.Next() {
+					c, err := rows.Columns(excelize.Options{RawCellValue: true})
+					require.NoError(t, err)
+					cols = append(cols, c)
+					fmt.Printf("Col: %+v\n", c)
+				}
+
+				fmt.Printf("Street %v\n", cols[1][16])
+				assert.Equal(t, 6, len(cols))
+				assert.Equal(t, "6", cols[1][16])
+			},
+			wantErr: assert.NoError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ExportMasterdataToExcel(tt.args.participants, tt.args.eeg, tt.args.tariffMap)
+			if !tt.wantErr(t, err, fmt.Sprintf("ExportMasterdataToExcel(%v, %v, %v)", tt.args.participants, tt.args.eeg, tt.args.tariffMap)) {
+				return
+			}
+			tt.check(t, got)
+		})
+	}
+}
+
+func TestExportZPListToExcel(t *testing.T) {
+	testMsg := `{"conversationId":"RC100417202404151713192460000008393","messageId":"AT002000202404151647464796647733092","sender":"AT002000","receiver":"RC100417","messageCode":"SENDEN_ECP","messageCodeVersion":"04.10","meterList":[{"meteringPoint":"AT0020000000000000000000100326383","direction":"GENERATION","activation":1708383600000,"partFact":100,"from":1708383600000,"to":253402210800000,"plantCategory":"SONNE"},{"meteringPoint":"AT0020000000000000000000100341356","direction":"GENERATION","activation":1673910000000,"partFact":100,"from":1673910000000,"to":253402210800000,"plantCategory":"SONNE"},{"meteringPoint":"AT0020000000000000000000100346220","direction":"GENERATION","activation":1673910000000,"partFact":100,"from":1673910000000,"to":253402210800000,"plantCategory":"SONNE"},{"meteringPoint":"AT0020000000000000000000100356673","direction":"GENERATION","activation":1700780400000,"partFact":100,"from":1700780400000,"to":253402210800000,"plantCategory":"SONNE"},{"meteringPoint":"AT0020000000000000000000100369058","direction":"GENERATION","activation":1700780400000,"partFact":100,"from":1700780400000,"to":253402210800000,"plantCategory":"SONNE"},{"meteringPoint":"AT0020000000000000000000020363290","direction":"CONSUMPTION","activation":1713132000000,"partFact":100,"from":1713132000000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000020368382","direction":"CONSUMPTION","activation":1710457200000,"partFact":100,"from":1710457200000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000020368542","direction":"CONSUMPTION","activation":1700780400000,"partFact":100,"from":1700780400000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000020370978","direction":"CONSUMPTION","activation":1687384800000,"partFact":100,"from":1687384800000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000020371090","direction":"CONSUMPTION","activation":1708038000000,"partFact":100,"from":1708038000000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000020371275","direction":"CONSUMPTION","activation":1690149600000,"partFact":100,"from":1690149600000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000020396712","direction":"CONSUMPTION","activation":1712527200000,"partFact":100,"from":1712527200000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000020397012","direction":"CONSUMPTION","activation":1690149600000,"partFact":100,"from":1690149600000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000021078996","direction":"CONSUMPTION","activation":1674687600000,"partFact":100,"from":1674687600000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000021124147","direction":"CONSUMPTION","activation":1713132000000,"partFact":100,"from":1713132000000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000021296887","direction":"CONSUMPTION","activation":1700780400000,"partFact":100,"from":1700780400000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000100058953","direction":"CONSUMPTION","activation":1712008800000,"partFact":100,"from":1712008800000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000100078028","direction":"CONSUMPTION","activation":1710457200000,"partFact":100,"from":1710457200000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000100097123","direction":"CONSUMPTION","activation":1708383600000,"partFact":100,"from":1708383600000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000100111690","direction":"CONSUMPTION","activation":1712527200000,"partFact":100,"from":1712527200000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000100125540","direction":"CONSUMPTION","activation":1689026400000,"partFact":100,"from":1689026400000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000100138318","direction":"CONSUMPTION","activation":1689026400000,"partFact":100,"from":1689026400000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000100251848","direction":"CONSUMPTION","activation":1713132000000,"partFact":100,"from":1713132000000,"to":253402210800000},{"meteringPoint":"AT0020000000000000000000100251849","direction":"CONSUMPTION","activation":1673910000000,"partFact":100,"from":1673910000000,"to":253402210800000}]}`
+	var ebmsMsgTest model.EbmsMessage
+
+	err := json.Unmarshal([]byte(testMsg), &ebmsMsgTest)
+	require.NoError(t, err)
+
+	buf, err := ExportZPListToExcel(&ebmsMsgTest)
+	err = os.WriteFile("./test.xlsx", buf.Bytes(), 0644)
+	require.NoError(t, err)
+}

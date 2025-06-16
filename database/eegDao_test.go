@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/jmoiron/sqlx"
+	"github.com/mitchellh/mapstructure"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/guregu/null.v4"
@@ -14,7 +15,10 @@ import (
 )
 
 func TestGetEeg(t *testing.T) {
-	eeg, err := GetEeg(openTestDb, "TE000001")
+	db, err := openTestDb()
+	require.NoError(t, err)
+
+	eeg, err := GetEeg(db, "TE000001")
 	assert.NoError(t, err)
 
 	expectedEeg := &model.Eeg{
@@ -51,8 +55,8 @@ func TestGetEeg(t *testing.T) {
 			Email: null.StringFrom("test-eeg@gmx.at"),
 		},
 		Optionals: model.Optionals{Website: null.StringFrom("test-eeg.at")},
-		Periods:   nil,
-		Online:    false,
+		//Periods:   nil,
+		Online: false,
 	}
 	assert.Equal(t, expectedEeg, eeg)
 }
@@ -129,11 +133,64 @@ func TestUpdateEeg(t *testing.T) {
 }
 
 func TestNotification(t *testing.T) {
-	err := SaveNotification(openTestDb, "TE000001", `{"msg":"hello world"}`, "NOTIFICATION", "ADMIN")
+	db, err := openTestDb()
+	require.NoError(t, err)
+	defer db.Close()
+
+	err = SaveNotification(openTestDb, "TE000001", `{"msg":"hello world"}`, model.N_TYPE_NOTIFICATION, model.N_PROCESS_EDA_PROCESS, "ADMIN")
 	assert.NoError(t, err)
 
-	not, err := GetNotification(openTestDb, "TE000001", 0, true)
+	not, err := GetNotification(db, "TE000001", 0, true)
 	assert.NoError(t, err)
 
 	assert.NotEmpty(t, not)
+}
+
+func TestGetEegById(t *testing.T) {
+	db, err := openTestDb()
+	require.NoError(t, err)
+	defer db.Close()
+
+	eeg, err := GetEegById(db, "TE000001")
+	assert.NoError(t, err)
+
+	println(eeg)
+}
+
+func TestUpdateEegPartial(t *testing.T) {
+	input := map[string]interface{}{"Owner": "EEG VIERE", "ProviderBusinessNr": 11}
+	var result model.Eeg
+
+	cfg := &mapstructure.DecoderConfig{
+		Result:     &result,
+		DecodeHook: StringToNullStringHookFunc,
+	}
+	decoder, err := mapstructure.NewDecoder(cfg)
+	require.NoError(t, err)
+	err = decoder.Decode(input)
+
+	//type Family struct {
+	//	LastName string
+	//}
+	//type Location struct {
+	//	City string
+	//}
+	//type Person struct {
+	//	Family    `mapstructure:",squash"`
+	//	Location  `mapstructure:",squash"`
+	//	FirstName string
+	//}
+	//
+	//input := map[string]interface{}{
+	//	"FirstName": "Mitchell",
+	//	"LastName":  "Hashimoto",
+	//	"City":      "San Francisco",
+	//}
+	//
+	//var result Person
+	//err := mapstructure.Decode(input, &result)
+
+	assert.NoError(t, err)
+
+	fmt.Printf("%+v\n", result)
 }

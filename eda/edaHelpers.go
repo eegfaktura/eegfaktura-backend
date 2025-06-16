@@ -4,34 +4,59 @@ import (
 	"at.ourproject/vfeeg-backend/model"
 	"errors"
 	"fmt"
+	"github.com/jjeffery/civil"
+	"time"
 )
 
 type responseCodesPerMeter struct {
 	meter      string
 	codes      []int16
-	consentEnd int64
+	consentEnd civil.Date
+	consentId  *string
 }
 
-func extractResponseCodeAndMeteringPoint(ebmsMessage *model.EbmsMessage) ([]int16, []string, error) {
+type completionMeters struct {
+	meter       string
+	activeSince time.Time
+	consentId   *string
+}
+
+func getConsentIdPtr(consentId string) *string {
+	if len(consentId) == 0 {
+		return nil
+	}
+	return &consentId
+}
+
+func extractResponseCodeAndMeteringPoint(ebmsMessage *model.EbmsMessage) ([]int16, []string, []string, error) {
 	meters := []string{}
+	consentIds := []string{}
 	codes := []int16{}
 	for _, rd := range ebmsMessage.ResponseData {
 		if len(rd.ResponseCode) > 0 {
 			meters = append(meters, rd.MeteringPoint)
 			codes = append(codes, rd.ResponseCode...)
+			consentIds = append(consentIds, rd.ConsentId)
 		}
 	}
 
 	if len(codes) == 0 {
-		return codes, meters, errors.New("wrong Response from EDA")
+		return codes, meters, consentIds, errors.New("wrong Response from EDA")
 	}
 
-	return codes, meters, nil
+	return codes, meters, consentIds, nil
 }
 
 func extractResponseCodeAndMeteringPointV2(ebmsMessage *model.EbmsMessage) ([]responseCodesPerMeter, error) {
 	codes := []int16{}
 	response := []responseCodesPerMeter{}
+
+	consentId := func(id string) *string {
+		if len(id) == 0 {
+			return nil
+		}
+		return &id
+	}
 
 	for _, rd := range ebmsMessage.ResponseData {
 		if len(rd.ResponseCode) > 0 {
@@ -41,7 +66,8 @@ func extractResponseCodeAndMeteringPointV2(ebmsMessage *model.EbmsMessage) ([]re
 		response = append(response, responseCodesPerMeter{
 			meter:      rd.MeteringPoint,
 			codes:      codes,
-			consentEnd: rd.ConsentEnd,
+			consentEnd: civil.DateOf(time.UnixMilli(rd.ConsentEnd)),
+			consentId:  consentId(rd.ConsentId),
 		})
 	}
 
@@ -52,15 +78,19 @@ func extractResponseCodeAndMeteringPointV2(ebmsMessage *model.EbmsMessage) ([]re
 	return response, nil
 }
 
-func extractMeterList(ebmsMessage *model.EbmsMessage) []string {
-	meters := []string{}
+func extractMeterList(ebmsMessage *model.EbmsMessage) []*completionMeters {
+	meters := []*completionMeters{}
 	for _, m := range ebmsMessage.MeterList {
-		meters = append(meters, m.MeteringPoint)
+		meters = append(meters, &completionMeters{meter: m.MeteringPoint, activeSince: time.UnixMilli(m.From), consentId: getConsentIdPtr(m.ConsentID)})
 	}
 	return meters
 }
 
 func codesContains(expected, codes []int16) bool {
+	return len(intersectCodes(expected, codes)) > 0
+}
+
+func intersectCodes(expected, codes []int16) []int16 {
 	var intersect []int16
 	for _, element1 := range codes {
 		for _, element2 := range expected {
@@ -69,7 +99,7 @@ func codesContains(expected, codes []int16) bool {
 			}
 		}
 	}
-	return len(intersect) > 0
+	return intersect
 }
 
 func convertCodes2Strings(codes []int16) []string {

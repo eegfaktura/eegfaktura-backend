@@ -9,13 +9,13 @@
 <p>vielen Dank für deinen Beitritt zur {{.Eeg.Description}}. Wir haben deinen Zählpunkt in unserer EEG hinterlegt. Damit deine Registrierung abgeschlossen werden kann, benötigen wir die Freigabe deiner Zählpunkte:
 <ul>{{range .Meteringpoints }} <li>{{.}}</li> {{end}}</ul>.
 <p>Hier findest du unsere Anleitung um diese Freigabe im Serviceportal von Salzburg Netz durchzuführen:</p>
-<p><a href="https://eeg-neumarkt.files.wordpress.com/2023/12/eeg-neumarkt-anleitung-datenfreigabe_2023-11.pdf">eeg-neumarkt-anleitung-datenfreigabe_2023-11.pdf</a></p>
+<p><a href="https://eeg-neumarkt.wordpress.com/downloads/">https://eeg-neumarkt.wordpress.com/downloads/</a></p>
 <br>
 
 <p>Mit besten Grüßen</p>
 <p>
 {{if .Eeg.ContactPerson.Valid}}
-<div>{{.Eeg.ContactPerson}}</div>
+<div>{{.Eeg.ContactPerson.String}}</div>
 {{end}}
 <div>{{.Eeg.Description}}</div>
 </p>

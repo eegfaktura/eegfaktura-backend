@@ -32,7 +32,7 @@ func ParseTemplate(templateFileName string, data interface{}) (*bytes.Buffer, er
 }
 
 func SendActivationMailFromTemplate(sendMail services.SendMailFunc,
-	tenant, subject string, eeg *model.Eeg, participant *model.EegParticipant) error {
+		tenant, subject string, eeg *model.Eeg, participant *model.EegParticipant) error {
 
 	templateConfigDir := filepath.Join(viper.GetString("file-content.templates"), tenant, "templates")
 	_, exists := os.Stat(templateConfigDir)
@@ -72,7 +72,10 @@ func sendMailFromTemplate(sendMail services.SendMailFunc, tenant, subject, templ
 	}
 
 	return sendMail(tenant, participant.Contact.Email.String,
-		subject, eeg.Email.Ptr(), buf, buildAttachments(templatePath, templateConfig.InlinePictures))
+		subject, eeg.Email.Ptr(), buf,
+		buildInlineContent(templatePath, templateConfig.InlinePictures),
+		buildAttachment(templatePath, templateConfig.Attachment.Name, templateConfig.Attachment.Mime),
+	)
 }
 
 func GetTemplateFor(templateType, tenant string) (string, error) {
@@ -89,7 +92,7 @@ func GetTemplateFor(templateType, tenant string) (string, error) {
 	return "", errors.New("Template not found")
 }
 
-func buildAttachments(templatePath string, a []model.InlinePicture) []*services.Attachment {
+func buildInlineContent(templatePath string, a []model.InlinePicture) []*services.Attachment {
 	attachments := []*services.Attachment{}
 	for i := range a {
 		att := a[i]
@@ -108,4 +111,26 @@ func buildAttachments(templatePath string, a []model.InlinePicture) []*services.
 		})
 	}
 	return attachments
+}
+
+func buildAttachment(templatePath string, fileName string, mime string) *services.Attachment {
+	var err error
+	var buff []byte
+	if len(fileName) == 0 {
+		return nil
+	}
+
+	buff, err = os.ReadFile(filepath.Join(templatePath, fileName)) // read the content of file
+	if err != nil {
+		log.Error(err)
+		return nil
+	}
+
+	return &services.Attachment{
+		Type:        "DEFAULT",
+		Filename:    fileName,
+		Filecontent: bytes.NewBuffer(buff),
+		MimeType:    mime,
+		ContentId:   nil,
+	}
 }

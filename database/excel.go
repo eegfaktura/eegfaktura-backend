@@ -2,8 +2,11 @@ package database
 
 import (
 	"at.ourproject/vfeeg-backend/model"
+	"at.ourproject/vfeeg-backend/util"
 	"bytes"
 	"fmt"
+	"github.com/jjeffery/civil"
+	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
 	"github.com/xuri/excelize/v2"
 	"gopkg.in/guregu/null.v4"
@@ -25,29 +28,21 @@ func openReader(r io.Reader, filename string, opt ...excelize.Options) (*exceliz
 	return f, nil
 }
 
-func ImportMasterdataFromExcel(dbConn OpenDbXConnection, r io.Reader, filename, sheet, tenant string) error {
+func ImportMasterdataFromExcel(db *sqlx.DB, r io.Reader, filename, sheet, tenant string) error {
 	var f *excelize.File
 	var err error
 
 	if f, err = openReader(r, filename); err != nil {
 		return err
 	}
-
-	defer f.Close()
-	log.Debug("Successfully open stream")
+	defer func() { _ = f.Close() }()
 
 	rows, err := f.Rows(sheet)
 	if err != nil {
 		log.Error(err)
 		return err
 	}
-
-	db, err := dbConn()
-	if err != nil {
-		log.Error(err)
-		return err
-	}
-	defer db.Close()
+	defer rows.Close()
 
 	gridOperators, err := GetGridOperators(db)
 	if err != nil {
@@ -62,7 +57,13 @@ func ImportMasterdataFromExcel(dbConn OpenDbXConnection, r io.Reader, filename, 
 		return ""
 	}
 
-	participants := transformExcelData(rows, gridOperatorName)
+	eeg, err := GetEegById(db, tenant)
+	if err != nil {
+		return err
+	}
+
+	importLog := &model.Log{Operation: "Excel Master Data Import", Messages: []*model.LogMessage{}}
+	participants := transformExcelData(rows, gridOperatorName, eeg.Online, importLog)
 	log.Debugf("Rows: %+v", rows)
 	log.Debugf("LEN _ Import participants: %v", len(participants))
 
@@ -71,24 +72,53 @@ func ImportMasterdataFromExcel(dbConn OpenDbXConnection, r io.Reader, filename, 
 		log.Error(err)
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	for _, p := range participants {
 		err = ImportParticipant(tx, strings.ToUpper(tenant), "excel", p)
 		if err != nil {
+			importLog.Messages = append(importLog.Messages, model.NewLogMessageFromVfeegError(
+				fmt.Sprintf("%s %s", p.FirstName, p.LastName),
+				err,
+			))
 			log.Errorf("Error Import Participant from Excel: %s", err.Error())
-			return err
+			return SaveNotificationFromMap(db, CreateNotificationMessageFromLog(importLog), tenant,
+				model.N_TYPE_NOTIFICATION, model.N_PROCESS_IMPORT_EXCEL, "ADMIN")
+		}
+	}
+
+	if len(importLog.Messages) > 0 {
+		err = SaveNotificationFromMap(db, CreateNotificationMessageFromLog(importLog), tenant,
+			model.N_TYPE_NOTIFICATION, model.N_PROCESS_IMPORT_EXCEL, "ADMIN")
+		if err != nil {
+			log.Error(err)
 		}
 	}
 
 	return tx.Commit()
 }
 
+func CreateNotificationMessageFromLog(logMsg *model.Log) map[string]interface{} {
+	//messageMap := func() map[string]interface{} {
+	//	ms := map[string]interface{}{}
+	//	for _, m := range logMsg.Messages {
+	//		ms["code"] = m.MessageCode
+	//		ms["identifier"] = m.Identifier
+	//	}
+	//	return ms
+	//}
+
+	return map[string]interface{}{
+		"type":     logMsg.Operation,
+		"messages": logMsg.Messages,
+	}
+}
+
 func ExportMasterdataToExcel(participants []model.EegParticipant, eeg *model.Eeg, tariffMap map[string]string) (*bytes.Buffer, error) {
 	f := excelize.NewFile()
 	defer func() {
 		if err := f.Close(); err != nil {
-			fmt.Println(err)
+			log.WithField("tenant", eeg.Id).WithError(err).Error("Error while closing file")
 		}
 	}()
 
@@ -220,6 +250,13 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 		return name
 	}
 
+	getNullDate := func(d civil.NullDate) string {
+		if !d.Valid {
+			return ""
+		}
+		return d.Date.String()
+	}
+
 	styleId, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Size: 10.0}})
 	styleDateId, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Size: 10.0}, NumFmt: 14})
 	styleIdHeader, err := f.NewStyle(&excelize.Style{
@@ -249,13 +286,16 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 	err = sw.SetColWidth(colNr+1, colNr+1, 25.0)
 	err = sw.SetColWidth(colNr+2, colNr+7, 20.0)
 	colNr, _ = excelize.ColumnNameToNumber("O")
+	err = sw.SetColWidth(colNr, colNr, 20.0)
+	err = sw.SetColWidth(colNr+1, colNr+1, 12.0)
+	colNr, _ = excelize.ColumnNameToNumber("R")
 	err = sw.SetColWidth(colNr, colNr+1, 20.0)
-	colNr, _ = excelize.ColumnNameToNumber("V")
+	colNr, _ = excelize.ColumnNameToNumber("Y")
 	err = sw.SetColWidth(colNr, colNr+1, 32.0)
 	err = sw.SetColWidth(colNr+3, colNr+3, 8.0)
 	err = sw.SetColWidth(colNr+4, colNr+4, 20.0)
 	err = sw.SetColWidth(colNr+6, colNr+6, 18.0)
-	colNr, _ = excelize.ColumnNameToNumber("AE")
+	colNr, _ = excelize.ColumnNameToNumber("AI")
 	err = sw.SetColWidth(colNr, colNr+1, 20.0)
 	err = sw.SetColWidth(colNr+3, colNr+4, 12.0)
 	err = sw.SetColWidth(colNr+5, colNr+5, 30.0)
@@ -276,6 +316,9 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 			excelize.Cell{Value: "IBAN."},
 			excelize.Cell{Value: "Kontoinhaber"},
 			excelize.Cell{Value: "Bankname"},
+			excelize.Cell{Value: "DebitType"},
+			excelize.Cell{Value: "Mandat-Ref."},
+			excelize.Cell{Value: "Mandat-Dat."},
 			excelize.Cell{Value: "PLZ"},
 			excelize.Cell{Value: "Ort"},
 			excelize.Cell{Value: "Straße"},
@@ -291,6 +334,7 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 			excelize.Cell{Value: "Zählpunktname"},
 			excelize.Cell{Value: "registriert"},
 			excelize.Cell{Value: "Bezugsrichtung"},
+			excelize.Cell{Value: "Teilnahme Fkt."},
 			excelize.Cell{Value: "WechselrichterNr."},
 			excelize.Cell{Value: "PLZ"},
 			excelize.Cell{Value: "Ort"},
@@ -311,28 +355,37 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 					excelize.Cell{Value: c.LastName},
 					excelize.Cell{Value: func() string {
 						titles := []string{}
-						if len(c.TitleBefore) > 0 {
-							titles = append(titles, c.TitleBefore)
+						if c.TitleBefore.Valid && c.TitleBefore.String != "" {
+							titles = append(titles, c.TitleBefore.String)
 						}
-						if len(c.TitleAfter) > 0 {
-							titles = append(titles, c.TitleAfter)
+						if c.TitleAfter.Valid && c.TitleAfter.String != "" {
+							titles = append(titles, c.TitleAfter.String)
 						}
-						return strings.Join(titles, ",")
+						if len(titles) == 0 {
+							return ""
+						}
+						if len(titles) == 1 {
+							return titles[0]
+						}
+						return strings.Join(titles, ", ")
 					}()},
 					excelize.Cell{Value: c.Status},
-					excelize.Cell{Value: c.ParticipantSince, StyleID: styleIdDate},
+					excelize.Cell{Value: getNullDate(c.ParticipantSince), StyleID: styleIdDate},
 					excelize.Cell{Value: c.Contact.Email.String},
 					excelize.Cell{Value: c.Contact.Phone.String},
-					excelize.Cell{Value: c.TaxNumber},
-					excelize.Cell{Value: c.VatNumber},
+					excelize.Cell{Value: c.TaxNumber.String},
+					excelize.Cell{Value: c.VatNumber.String},
 					excelize.Cell{Value: c.BankAccount.Iban.String},
 					excelize.Cell{Value: c.BankAccount.Owner.String},
 					excelize.Cell{Value: c.BankAccount.BankName.String},
-					excelize.Cell{Value: c.BillingAddress.Zip},
-					excelize.Cell{Value: c.BillingAddress.City},
-					excelize.Cell{Value: c.BillingAddress.Street},
-					excelize.Cell{Value: c.BillingAddress.StreetNumber},
-					excelize.Cell{Value: c.CompanyRegisterNumber},
+					excelize.Cell{Value: c.BankAccount.SepaDirectDebit.String},
+					excelize.Cell{Value: c.BankAccount.MandateReference.String},
+					excelize.Cell{Value: c.BankAccount.MandateDate.Date, StyleID: styleDateId},
+					excelize.Cell{Value: c.BillingAddress.Zip.String},
+					excelize.Cell{Value: c.BillingAddress.City.String},
+					excelize.Cell{Value: c.BillingAddress.Street.String},
+					excelize.Cell{Value: c.BillingAddress.StreetNumber.String},
+					excelize.Cell{Value: c.CompanyRegisterNumber.String},
 					excelize.Cell{Value: c.Role},
 					excelize.Cell{Value: func() string {
 						if c.BusinessRole == "EEG_PRIVATE" {
@@ -344,18 +397,19 @@ func generateParticipantMastersheet(f *excelize.File, participants []model.EegPa
 					excelize.Cell{Value: c.Status},
 					excelize.Cell{Value: getTariffName(c.TariffId.String), StyleID: styleDateId},
 					excelize.Cell{Value: m.MeteringPoint},
-					excelize.Cell{Value: m.Status},
+					excelize.Cell{Value: m.ProcessState},
 					excelize.Cell{Value: m.EquipmentNumber.String},
 					excelize.Cell{Value: m.EquipmentName.String},
 					excelize.Cell{Value: m.RegisteredSince, StyleID: styleDateId},
 					excelize.Cell{Value: m.Direction},
+					excelize.Cell{Value: fmt.Sprintf("%d %%", m.PartFact)},
 					excelize.Cell{Value: m.InverterId.String},
 					excelize.Cell{Value: m.Zip.String},
 					excelize.Cell{Value: m.City.String},
 					excelize.Cell{Value: m.Street.String},
 					excelize.Cell{Value: m.StreetNumber.String},
-					excelize.Cell{Value: m.State.ActiveSince, StyleID: styleDateId},
-					excelize.Cell{Value: m.State.InactiveSince, StyleID: styleDateId},
+					excelize.Cell{Value: getNullDate(m.State.ActiveSince), StyleID: styleDateId},
+					excelize.Cell{Value: getNullDate(m.State.InactiveSince), StyleID: styleDateId},
 					excelize.Cell{Value: getTariffName(m.TariffId.String), StyleID: styleDateId},
 					excelize.Cell{Value: m.Transformer.String},
 				}, excelize.RowOpts{StyleID: styleId})
@@ -431,9 +485,10 @@ func parseExcelDate(cell string) time.Time {
 	return time.Now()
 }
 
-func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) string) []*model.EegParticipant {
+func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) string, online bool, importLog *model.Log) []*model.EegParticipant {
 	colMap := map[string]int{}
 	participants := []*model.EegParticipant{}
+	defaultPartFact := "100"
 
 	businessRole := func(cols []string, values map[string]int) string {
 		val := getColumValue(cols, colMap, "BusinessRole", "BusinessRole", nil)
@@ -459,6 +514,58 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 		return null.String{}
 	}
 
+	partFact := func(cols []string, values map[string]int) int {
+		val := getColumValue(cols, colMap, "Teilnehmerfaktor", "PartFact", &defaultPartFact)
+		s, err := strconv.Atoi(val)
+		if err != nil {
+			return 100
+		}
+		return s
+	}
+
+	getCivilDatePtr := func(date civil.Date) *civil.Date {
+		return &date
+	}
+
+	getColumDate := func(cols []string, values map[string]int, deName, enName string, defaultValue *civil.Date) civil.NullDate {
+		v := getColumValue(cols, colMap, deName, enName, nil)
+		d, err := util.ParseTimeString(v)
+		if err != nil {
+			if defaultValue != nil {
+				return civil.NullDate{
+					Date:  *defaultValue,
+					Valid: true,
+				}
+			}
+			return civil.NullDate{}
+		}
+		return civil.NullDate{
+			Date:  d,
+			Valid: true,
+		}
+	}
+
+	getParticipantStatus := func(state string) model.ProcessStatusType {
+		if state == "NEW" {
+			return model.NEW
+		}
+		return model.ACTIVE
+	}
+
+	getMeteringPointProcessState := func(state string) model.ProcessStatusType {
+		if state == "NEW" {
+			return model.NEW
+		}
+		return model.ACTIVE
+	}
+
+	getMeteringPointStatus := func(state string) model.StatusType {
+		if state == "NEW" {
+			return model.S_INIT
+		}
+		return model.S_ACTIVE
+	}
+
 	for rows.Next() {
 		if cols, err := rows.Columns(excelize.Options{RawCellValue: true}); err == nil && len(cols) > 0 {
 			switch cols[0] {
@@ -468,7 +575,6 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 				for i, c := range cols {
 					colMap[strings.ToLower(c)] = i
 				}
-
 				continue
 			default:
 				switch {
@@ -491,7 +597,7 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 					}
 
 					role := model.UNKNOWN
-					switch getColumValue(cols, colMap, "Energierichtung", "Energy Direction", nil) {
+					switch strings.ToUpper(strings.Trim(getColumValue(cols, colMap, "Energierichtung", "Energy Direction", nil), " ")) {
 					case "GENERATION":
 						role = model.GENERATOR
 					case "CONSUMPTION":
@@ -501,88 +607,208 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 					}
 
 					streetNumber := getColumValue(cols, colMap, "Hausnummer", "Street Number", nil)
-					var participantSince time.Time
+					var participantSince civil.NullDate
 					docSignedAt := getColumValue(cols, colMap, "Dokument unterschrieben", "Document Signature Date", nil)
 					if len(docSignedAt) > 0 {
-						participantSince = parseExcelDate(docSignedAt)
+						excelDate := civil.DateOf(parseExcelDate(docSignedAt))
+						participantSince = civil.NullDateFrom(&excelDate)
 					} else {
-						participantSince = time.Now()
+						today := civil.Today()
+						participantSince = civil.NullDateFrom(&today)
 					}
 
-					var registeredSince time.Time
-					regDateAt := getColumValue(cols, colMap, "registriert seit", "registred since", nil)
-					if len(regDateAt) > 0 {
-						registeredSince = parseExcelDate(regDateAt)
+					var registeredSince civil.Date
+					if online {
+						registeredSince = civil.Today()
 					} else {
-						registeredSince = time.Date(time.Now().Year(), 1, 1, 0, 0, 0, 0, time.UTC)
+						regDateAt := getColumValue(cols, colMap, "Mitglied seit", "member since", nil)
+						if len(regDateAt) > 0 {
+							registeredSince = civil.DateOf(parseExcelDate(regDateAt))
+						} else {
+							registeredSince = civil.DateFor(time.Now().Year(), 1, 1)
+						}
 					}
 
 					cpStatus := getColumValue(cols, colMap, "Zählpunktstatus", "Metering Point State", nil)
-					if cpStatus == "ACTIVATED" || cpStatus == "REGISTERED" || len(cpStatus) == 0 {
+					if cpStatus == "ACTIVE" || cpStatus == "ACTIVATED" || cpStatus == "REGISTERED" || cpStatus == "NEW" {
 						var participant *model.EegParticipant
 						if p, ok := findParticipant(participants, firstname, lastname); ok {
 							participant = p
 						} else {
 							participant = &model.EegParticipant{
-								ParticipantNumber: null.StringFrom(getColumValue(cols, colMap, "MitgliedsNr", "ParticipantNr", nil)),
-								FirstName:         firstname,
-								LastName:          lastname,
-								TitleBefore:       getColumValue(cols, colMap, "TitelVor", "TitleBefor", nil),
-								TitleAfter:        getColumValue(cols, colMap, "TitelNach", "TitleAfter", nil),
-								BusinessRole:      businessRole(cols, colMap),
+								EegParticipantBase: model.EegParticipantBase{
+									ParticipantNumber: null.StringFrom(getColumValue(cols, colMap, "MitgliedsNr", "ParticipantNr", nil)),
+									FirstName:         firstname,
+									LastName:          lastname,
+									TitleBefore:       null.StringFrom(getColumValue(cols, colMap, "TitelVor", "TitleBefor", nil)),
+									TitleAfter:        null.StringFrom(getColumValue(cols, colMap, "TitelNach", "TitleAfter", nil)),
+									BusinessRole:      businessRole(cols, colMap),
+									Status:            getParticipantStatus(cpStatus),
+									ParticipantSince:  participantSince,
+									MeteringPoint:     []*model.MeteringPoint{},
+									TaxNumber:         null.StringFrom(getColumValue(cols, colMap, "SteuerNr", "taxNumber", nil)),
+									VatNumber:         null.StringFrom(getColumValue(cols, colMap, "UmsatzsteuerNr", "vatNumber", nil)),
+									Version:           0,
+								},
 								ResidentAddress: model.Address{
 									Type:         model.RESIDENCE,
-									Street:       getColumValue(cols, colMap, "Straße", "Street", nil),
-									StreetNumber: streetNumber,
-									Zip:          getColumValue(cols, colMap, "PLZ", "ZIP", nil),
-									City:         getColumValue(cols, colMap, "Ort", "City", nil),
+									Street:       null.StringFrom(getColumValue(cols, colMap, "Straße", "Street", nil)),
+									StreetNumber: null.StringFrom(streetNumber),
+									Zip:          null.StringFrom(getColumValue(cols, colMap, "PLZ", "ZIP", nil)),
+									City:         null.StringFrom(getColumValue(cols, colMap, "Ort", "City", nil)),
 								},
 								BillingAddress: model.Address{
 									Type:         model.BILLING,
-									Street:       getColumValue(cols, colMap, "Straße", "Street", nil),
-									StreetNumber: streetNumber,
-									Zip:          getColumValue(cols, colMap, "PLZ", "ZIP", nil),
-									City:         getColumValue(cols, colMap, "Ort", "City", nil),
+									Street:       null.StringFrom(getColumValue(cols, colMap, "Straße", "Street", nil)),
+									StreetNumber: null.StringFrom(streetNumber),
+									Zip:          null.StringFrom(getColumValue(cols, colMap, "PLZ", "ZIP", nil)),
+									City:         null.StringFrom(getColumValue(cols, colMap, "Ort", "City", nil)),
 								},
-								Status:           model.ACTIVE,
-								ParticipantSince: participantSince,
-								MeteringPoint:    []*model.MeteringPoint{},
 								BankAccount: model.BankInfo{
-									Iban:     null.StringFrom(getColumValue(cols, colMap, "IBAN", "IBAN", nil)),
-									Owner:    null.StringFrom(getColumValue(cols, colMap, "Kontoinhaber", "Accountname", nil)),
-									BankName: null.StringFrom(getColumValue(cols, colMap, "Bankname", "Bankname", nil)),
+									Iban:             null.StringFrom(getColumValue(cols, colMap, "IBAN", "IBAN", nil)),
+									Owner:            null.StringFrom(getColumValue(cols, colMap, "Kontoinhaber", "Accountname", nil)),
+									BankName:         null.StringFrom(getColumValue(cols, colMap, "Bankname", "Bankname", nil)),
+									MandateReference: null.StringFrom(getColumValue(cols, colMap, "MandatRef", "MandateRef", nil)),
+									MandateDate:      getColumDate(cols, colMap, "MandatDat", "MandateDat", nil),
 								},
 								Contact: model.ContactInfo{
 									Email: null.StringFrom(getColumValue(cols, colMap, "email", "email", nil)),
 									Phone: null.StringFrom(getColumValue(cols, colMap, "TelefonNr", "phonenr", nil)),
 								},
-								TaxNumber: getColumValue(cols, colMap, "SteuerNr", "taxNumber", nil),
-								VatNumber: getColumValue(cols, colMap, "UmsatzsteuerNr", "vatNumber", nil),
-								Version:   0,
 							}
 							participants = append(participants, participant)
 						}
-						participant.MeteringPoint = append(participant.MeteringPoint, &model.MeteringPoint{
-							GridOperatorId:   null.StringFrom(netOperatorId),
-							GridOperatorName: null.StringFrom(gridOperatorName(netOperatorId)),
-							MeteringPoint:    getColumValue(cols, colMap, "Zählpunkt", "MeteringPoint Id", nil),
-							Transformer:      null.String{},
-							Direction:        role,
-							Status:           model.ACTIVE,
-							TariffId:         null.String{},
-							EquipmentNumber:  equipmentNumber(cols, colMap),
-							EquipmentName:    equipmentName(cols, colMap),
-							RegisteredSince:  registeredSince,
-							InverterId:       null.String{},
-							Street:           null.StringFrom(getColumValue(cols, colMap, "Straße", "Street", nil)),
-							StreetNumber:     null.StringFrom(getColumValue(cols, colMap, "Hausnummer", "Street Number", nil)),
-							City:             null.StringFrom(getColumValue(cols, colMap, "Ort", "City", nil)),
-							Zip:              null.StringFrom(getColumValue(cols, colMap, "PLZ", "ZIP", nil)),
-						})
+						meteringPointId := strings.Trim(getColumValue(cols, colMap, "Zählpunkt", "MeteringPoint Id", nil), " ")
+						if len(meteringPointId) == 33 {
+							participant.MeteringPoint = append(participant.MeteringPoint, &model.MeteringPoint{
+								GridOperatorId:   null.StringFrom(netOperatorId),
+								GridOperatorName: null.StringFrom(gridOperatorName(netOperatorId)),
+								MeteringPoint:    meteringPointId,
+								Transformer:      null.String{},
+								Direction:        role,
+								Status:           getMeteringPointStatus(cpStatus),
+								ProcessState:     getMeteringPointProcessState(cpStatus),
+								TariffId:         null.String{},
+								EquipmentNumber:  equipmentNumber(cols, colMap),
+								EquipmentName:    equipmentName(cols, colMap),
+								RegisteredSince:  registeredSince,
+								InverterId:       null.String{},
+								PartFact:         partFact(cols, colMap),
+								Street:           null.StringFrom(getColumValue(cols, colMap, "Straße", "Street", nil)),
+								StreetNumber:     null.StringFrom(getColumValue(cols, colMap, "Hausnummer", "Street Number", nil)),
+								City:             null.StringFrom(getColumValue(cols, colMap, "Ort", "City", nil)),
+								Zip:              null.StringFrom(getColumValue(cols, colMap, "PLZ", "ZIP", nil)),
+								State: &model.MeterState{
+									ActiveSince:   getColumDate(cols, colMap, "registriert seit", "registriert since", getCivilDatePtr(civil.DateFor(time.Now().Year(), 1, 1))),
+									InactiveSince: civil.NullDate{Date: civil.DateFor(2999, 12, 31), Valid: true},
+									Active:        1,
+									Flag:          1,
+								},
+							})
+						} else {
+							importLog.Messages = append(importLog.Messages, model.NewLogMessage(
+								"ERROR",
+								meteringPointId,
+								"E_COUNTERPOINT_1000",
+								"Does not fulfill requirements! Len not equal 33. -> Not Included",
+							))
+							log.Warnf("Metering Point -%s- does not fulfill requirements! Len not equal 33. -> Not Included", meteringPointId)
+						}
+					} else {
+						importLog.Messages = append(importLog.Messages,
+							model.NewLogMessage(
+								"ERROR",
+								fmt.Sprintf("%s %s", firstname, lastname),
+								"E_PARTICIPANT_1000",
+								fmt.Sprintf("Does not fulfill requirements! Participant has wrong status: %s", cpStatus)))
+						log.Warnf("Participant -%s %s- does not fulfill requirements! Participant has wrong status: %s", firstname, lastname, cpStatus)
 					}
 				}
 			}
 		}
 	}
 	return participants
+}
+
+func ExportZPListToExcel(ebmsMsg *model.EbmsMessage) (*bytes.Buffer, error) {
+	f := excelize.NewFile()
+	defer func() {
+		if err := f.Close(); err != nil {
+			log.WithError(err).Error("Error closing file")
+		}
+	}()
+
+	err := generateZPListMastersheet(f, ebmsMsg)
+	if err != nil {
+		return nil, err
+	}
+
+	_ = f.DeleteSheet("Sheet1")
+	return f.WriteToBuffer()
+}
+
+func generateZPListMastersheet(f *excelize.File, ebmsMsg *model.EbmsMessage) error {
+	styleId, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Size: 10.0}})
+	//styleDateId, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Size: 10.0}, NumFmt: 14})
+	styleIdHeader, err := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Bold: true, Size: 10.0},
+		Alignment: &excelize.Alignment{Vertical: "top", WrapText: true},
+	})
+	styleIdDate, err := f.NewStyle(&excelize.Style{
+		Font:   &excelize.Font{Size: 10.0},
+		NumFmt: 14,
+	})
+
+	sheet := "ZP-List"
+	_, err = f.NewSheet(sheet)
+	if err != nil {
+		return err
+	}
+
+	sw, err := f.NewStreamWriter(sheet)
+	if err != nil {
+		return err
+	}
+
+	err = sw.SetColWidth(1, 1, 5.0)
+	err = sw.SetColWidth(2, 3, 30.0)
+	err = sw.SetColWidth(4, 4, 20.0)
+	err = sw.SetColWidth(5, 5, 9.5)
+	colNr, _ := excelize.ColumnNameToNumber("G")
+	err = sw.SetColWidth(colNr, colNr+3, 12.0)
+
+	line := 1
+	err = sw.SetRow(fmt.Sprintf("A%d", line),
+		[]interface{}{
+			excelize.Cell{Value: "Nr."},
+			excelize.Cell{Value: "Zählpunktname"},
+			excelize.Cell{Value: "ConsentID"},
+			excelize.Cell{Value: "Bezugsrichtung"},
+			excelize.Cell{Value: "Teilnahme-faktor"},
+			excelize.Cell{Value: "statische Aufteilung"},
+			excelize.Cell{Value: "aktiviert"},
+			excelize.Cell{Value: "aktiv seit"},
+			excelize.Cell{Value: "aktiv bis"},
+		}, excelize.RowOpts{StyleID: styleIdHeader, Height: 0.42 * 72})
+	idx := 0
+	for _, m := range ebmsMsg.MeterList {
+		line = line + 1
+		idx += 1
+		err = sw.SetRow(fmt.Sprintf("A%d", line),
+			[]interface{}{
+				excelize.Cell{Value: idx},
+				excelize.Cell{Value: m.MeteringPoint},
+				excelize.Cell{Value: m.ConsentID},
+				excelize.Cell{Value: m.Direction},
+				excelize.Cell{Value: m.PartFact},
+				excelize.Cell{Value: m.Share},
+				excelize.Cell{Value: time.UnixMilli(m.Activation), StyleID: styleIdDate},
+				excelize.Cell{Value: time.UnixMilli(m.From), StyleID: styleIdDate},
+				excelize.Cell{Value: time.UnixMilli(m.To), StyleID: styleIdDate},
+			}, excelize.RowOpts{StyleID: styleId})
+	}
+
+	err = f.AutoFilter(sheet, "A1:AH10", nil)
+	err = sw.Flush()
+	return err
 }

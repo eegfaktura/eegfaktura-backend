@@ -4,9 +4,12 @@ GOBUILD=$(GOCMD) build
 GOCLEAN=$(GOCMD) clean
 GOTEST=$(GOCMD) test
 GOGET=$(GOCMD) get
-BINARY_NAME=vfeeg-backend
 DOCKER=docker
-VERSION=v0.1.7
+VERSION=v0.2.33
+BINARY_NAME=vfeeg-backend
+ORGANISATION=vfeeg-development
+GLOBAL_ORG=eegfaktura
+PLATFORM=ghcr.io
 
 GOPATH := ${PWD}/..:${GOPATH}
 export GOPATH
@@ -24,13 +27,21 @@ run:
 	./$(BINARY_NAME)
 
 docker-clean:
-	$(DOCKER) rmi ghcr.io/vfeeg-development/vfeeg-backend:$(VERSION)
+	$(DOCKER) rmi ghcr.io/$(ORGANISATION)/$(BINARY_NAME):$(VERSION)
 
 docker:
-	$(DOCKER) build -t ghcr.io/vfeeg-development/vfeeg-backend:$(VERSION) .
+	$(DOCKER) build -t ghcr.io/$(ORGANISATION)/$(BINARY_NAME):$(VERSION) .
+	$(DOCKER) image tag ghcr.io/$(ORGANISATION)/$(BINARY_NAME):$(VERSION) ghcr.io/$(GLOBAL_ORG)/$(BINARY_NAME):latest
 
 push: docker
-	$(DOCKER) push ghcr.io/vfeeg-development/vfeeg-backend:$(VERSION)
+	$(DOCKER) push ghcr.io/$(ORGANISATION)/$(BINARY_NAME):$(VERSION)
+	$(DOCKER) push ghcr.io/$(GLOBAL_ORG)/$(BINARY_NAME):latest
 
 protoc:
 	protoc --experimental_allow_proto3_optional=true --proto_path=. --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative ./proto/*.proto
+
+altas-hash:
+	atlas migrate hash --env local
+
+altas-migrage:
+	atlas migrate diff --env local

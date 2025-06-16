@@ -15,9 +15,9 @@ import (
 )
 
 type EdaRecording interface {
-	saveNotification(notificationValue map[string]interface{}, tenant, notificationType, role string) error
-	saveHistory(tenant string, messageCode model.EbMsMessageType, conversationId, role, dir string, protocol model.EdaProtocol, msg interface{}) error
-	meteringPointPerformAnswerMsg(tenant string, meterId []string) error
+	saveNotification(db *sqlx.DB, tenant string, code model.EbMsMessageType, meters []string, errCodes []int16, protocol model.EdaProtocol)
+	saveHistory(db *sqlx.DB, tenant string, messageCode model.EbMsMessageType, conversationId, role, dir string, protocol model.EdaProtocol, msg interface{}) error
+	meteringPointPerformAnswerMsg(sendMail services.SendMailFunc, ecId string, meterId []string) error
 	databaseConnectFunc() database.OpenDbXConnection
 	databaseConnection() (*sqlx.DB, error)
 }
@@ -27,7 +27,7 @@ type EdaRecorder struct {
 }
 
 func NewEdaRecorder() *EdaRecorder {
-	return &EdaRecorder{dbOpen: database.GetDBXConnection}
+	return &EdaRecorder{dbOpen: database.ConnectToDatabase}
 }
 
 func (r *EdaRecorder) databaseConnectFunc() database.OpenDbXConnection {
@@ -38,24 +38,25 @@ func (r *EdaRecorder) databaseConnection() (*sqlx.DB, error) {
 	return r.dbOpen()
 }
 
-func (r *EdaRecorder) saveNotification(notificationValue map[string]interface{}, tenant, notificationType, role string) error {
-	var msgBytes []byte
+func (r *EdaRecorder) saveNotification(db *sqlx.DB, tenant string, code model.EbMsMessageType, meters []string, errCodes []int16, protocol model.EdaProtocol) {
 	var err error
-	if msgBytes, err = json.Marshal(notificationValue); err == nil {
-		if err = database.SaveNotification(r.dbOpen, tenant, string(msgBytes), notificationType, role); err != nil {
-			logrus.Error(err)
-			return err
-		}
+	notificationValue := map[string]interface{}{
+		"type":           code,
+		"meteringPoints": meters,
+		"responseCodes":  convertCodes2Strings(errCodes),
 	}
-	return nil
+
+	if err = database.SaveNotificationFromMap(db, notificationValue, tenant, model.N_TYPE_MESSAGE, model.N_PROCESS_EDA_PROCESS, "ADMIN"); err != nil {
+		logrus.WithField("PROTOCOL", protocol).Error(err)
+	}
 }
 
-func (r *EdaRecorder) saveHistory(tenant string, messageCode model.EbMsMessageType, conversationId, role, dir string, protocol model.EdaProtocol, msg interface{}) error {
+func (r *EdaRecorder) saveHistory(db *sqlx.DB, tenant string, messageCode model.EbMsMessageType, conversationId, role, dir string, protocol model.EdaProtocol, msg interface{}) error {
 
 	var err error
 	var msgBytes []byte
 	if msgBytes, err = json.Marshal(msg); err == nil {
-		if err = database.SaveEdaHistory(r.dbOpen, &model.EdaProcessHistory{
+		if err = database.SaveEdaHistory(db, &model.EdaProcessHistory{
 			Tenant:         tenant,
 			ConversationId: conversationId,
 			ProcessType:    messageCode,
@@ -73,12 +74,7 @@ func (r *EdaRecorder) saveHistory(tenant string, messageCode model.EbMsMessageTy
 	return nil
 }
 
-func (r *EdaRecorder) meteringPointPerformAnswerMsg(tenant string, meterId []string) error {
-
-	eeg, err := database.GetEeg(database.GetDBXConnection, tenant)
-	if err != nil {
-		return err
-	}
+func (r *EdaRecorder) meteringPointPerformAnswerMsg(sendMail services.SendMailFunc, ecId string, meterId []string) error {
 
 	db, err := r.dbOpen()
 	if err != nil {
@@ -91,6 +87,11 @@ func (r *EdaRecorder) meteringPointPerformAnswerMsg(tenant string, meterId []str
 		}
 	}()
 
+	eeg, err := database.GetEegByEcId(db, ecId)
+	if err != nil {
+		return err
+	}
+
 	tx, err := db.Beginx()
 	if err != nil {
 		return err
@@ -99,19 +100,39 @@ func (r *EdaRecorder) meteringPointPerformAnswerMsg(tenant string, meterId []str
 		_ = tx.Rollback()
 	}()
 
+	meterFilter := func(meters []*model.MeteringPoint, f func(string) bool) []*model.MeteringPoint {
+		filtered := make([]*model.MeteringPoint, 0)
+		for _, m := range meters {
+			if f(m.MeteringPoint) {
+				filtered = append(filtered, m)
+			}
+		}
+		return filtered
+	}
+
 	for _, mid := range meterId {
-		participant, err := database.FindParticipantByMeteringPoint(db, tenant, mid)
+		participant, err := database.FindParticipantByMeteringPoint(db, eeg.Id, mid)
 		if err != nil {
 			if !errors.Is(err, sql.ErrNoRows) {
 				return err
 			} else {
-				logrus.WithField("tenant", tenant).Warn(err)
+				logrus.WithField("tenant", eeg.Id).Warn(err)
 			}
 		}
+
 		if participant != nil && participant.Contact.Email.Valid {
-			if err = parser.SendActivationMailFromTemplate(services.SendMail,
-				tenant, "Aktivierung im Serviceportal", eeg, participant); err != nil {
-				logrus.Errorf("Error Sending Mail: %+v", err.Error())
+
+			participant.MeteringPoint = meterFilter(participant.MeteringPoint, func(s string) bool {
+				return s == mid
+			})
+
+			if len(participant.MeteringPoint) > 0 {
+				if err = parser.SendActivationMailFromTemplate(sendMail,
+					eeg.Id, "Aktivierung im Serviceportal", eeg, participant); err != nil {
+					logrus.WithField("tenant", eeg.Id).WithError(err).Error("Error Sending Mail")
+				}
+			} else {
+				logrus.WithField("tenant", eeg.Id).Warn("No MeteringPoint for activation mail")
 			}
 		}
 	}

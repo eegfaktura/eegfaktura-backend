@@ -1,0 +1,7 @@
+TemplateFile="AktivierungsEmail-template.html"
+InlinePictures = [
+  { Filepath="process_2.jpg", contentId="process_2"},
+  { Filepath="Logo_4c_cmyk.jpg", contentId="logo-1"},
+  { Filepath="ikb_screenshot1.jpg", contentId="ikb_screenshot1"},
+  { Filepath="eegfaktura-logo.png", contentId="eegfaktura-logo-1"},
+]

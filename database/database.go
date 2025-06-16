@@ -7,10 +7,14 @@ import (
 	"fmt"
 	"github.com/doug-martin/goqu/v9"
 	_ "github.com/jackc/pgx/v5"
+	"github.com/jjeffery/civil"
 	"github.com/jmoiron/sqlx"
 	"github.com/pborman/uuid"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"gopkg.in/guregu/null.v4"
+	"reflect"
+	"time"
 )
 
 type OpenDbXConnection func() (*sqlx.DB, error)
@@ -19,24 +23,7 @@ var (
 	ErrTariffUtilized = errors.New("Tariff is currently used")
 )
 
-func GetTx(db sqlx.DB) (*sqlx.Tx, error) {
-	tx, err := db.Beginx()
-	if err != nil {
-		log.Error(err)
-		return nil, err
-	}
-	return tx, nil
-}
-
-func GetDBConnection() (*sql.DB, error) {
-	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
-		"password=%s dbname=%s sslmode=disable",
-		viper.GetString("database.host"), viper.GetInt("database.port"), viper.GetString("database.user"),
-		viper.GetString("database.password"), viper.GetString("database.dbname"))
-	return sql.Open("postgres", psqlInfo)
-}
-
-func GetDBXConnection() (*sqlx.DB, error) {
+var ConnectToDatabase = func() (*sqlx.DB, error) {
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=disable",
 		viper.GetString("database.host"), viper.GetInt("database.port"), viper.GetString("database.user"),
@@ -46,26 +33,23 @@ func GetDBXConnection() (*sqlx.DB, error) {
 
 var pgDialect = goqu.Dialect("postgres")
 
-func GetTariff(tenant string) ([]model.Tariff, error) {
-
-	db, err := GetDBXConnection()
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-
-	tariff := []model.Tariff{}
-	err = db.Select(&tariff, `SELECT id, name, "billingPeriod", "useVat", "vatInPercent", "accountNetAmount", "accountGrossAmount", "participantFee", "baseFee", "businessNr", version, type, "centPerKWh", discount, "freeKWh" `+
+func GetTariff(db *sqlx.DB, tenant string) ([]model.Tariff, error) {
+	var tariff []model.Tariff
+	err := db.Select(&tariff, `SELECT id, name, "billingPeriod", "useVat", "vatInPercent", "accountNetAmount", "accountGrossAmount", "participantFee", "baseFee", "businessNr", version, type, "centPerKWh", discount, "freeKWh", "meteringPointFee", "meteringPointVat", "useMeteringPointFee", "vatSupplementaryText" `+
 		`FROM base.activetariff WHERE tenant = $1`, tenant)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) || tariff == nil {
 		return []model.Tariff{}, nil
 	}
 
-	return tariff, err
+	if err != nil {
+		log.WithField("tenant", tenant).Errorf("Error Query Tariff! %s", err.Error())
+		return tariff, model.ErrGetTariff(err)
+	}
+	return tariff, nil
 }
 
-func GetTariffNameMap(tenant string) (map[string]string, error) {
-	tariffs, err := GetTariff(tenant)
+func GetTariffNameMap(db *sqlx.DB, tenant string) (map[string]string, error) {
+	tariffs, err := GetTariff(db, tenant)
 	if err != nil {
 		return nil, err
 	}
@@ -76,21 +60,14 @@ func GetTariffNameMap(tenant string) (map[string]string, error) {
 	return tariffMap, nil
 }
 
-func ArchiveTariff(dbConn OpenDbXConnection, tenant string, id string) error {
-
-	db, err := dbConn()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
+func ArchiveTariff(db *sqlx.DB, tenant string, id string) error {
 	stmt, _, err := pgDialect.Select("id").From("base.participant").Where(goqu.Ex{"tariffId": id}).ToSQL()
 	if err != nil {
-		return err
+		return model.ErrGetTariff(err)
 	}
 	_, err = db.Query(stmt)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return ErrTariffUtilized
+		return model.ErrTariffUtilized(ErrTariffUtilized)
 	}
 
 	stmt, _, err = pgDialect.Select("metering_point_id").From("base.meteringpoint").Where(goqu.Ex{"tariff_id": id, "tenant": tenant}).ToSQL()
@@ -99,19 +76,17 @@ func ArchiveTariff(dbConn OpenDbXConnection, tenant string, id string) error {
 	}
 	_, err = db.Query(stmt)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return ErrTariffUtilized
+		return model.ErrTariffUtilized(ErrTariffUtilized)
 	}
 
-	_, err = db.Exec("UPDATE base.tariff SET status = 'ARCHIVED' WHERE tenant = $1 AND id = $2", tenant, id)
-	return err
+	_, err = db.Exec("UPDATE base.tariff SET status = 'ARCHIVED', \"lastModifiedDate\" = 'now()' WHERE tenant = $1 AND id = $2", tenant, id)
+	if err != nil {
+		return model.ErrUpdateTariff(err)
+	}
+	return nil
 }
 
-func AddTariff(dbConn OpenDbXConnection, tenant string, tariff *model.Tariff) error {
-	db, err := dbConn()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
+func AddTariff(db *sqlx.DB, tenant, user string, tariff *model.Tariff) error {
 
 	if len(tariff.Id.String()) == 0 {
 		tariff.Id = uuid.NewUUID()
@@ -120,27 +95,58 @@ func AddTariff(dbConn OpenDbXConnection, tenant string, tariff *model.Tariff) er
 	}
 
 	type updateType struct {
-		Tenant string `json:"tenant" db:"tenant"`
+		Tenant           string    `json:"tenant" db:"tenant"`
+		CreatedDate      time.Time `goqu:"omitempty" db:"createdDate"`
+		LastModifiedDate time.Time `goqu:"omitempty" db:"lastModifiedDate"`
+		CreatedBy        string    `db:"createdBy"`
 		*model.Tariff
 	}
+	update := updateType{tenant, time.Now(), time.Now(), user, tariff}
 
-	update := updateType{tenant, tariff}
-	log.Debugf("Tarrif: %+v\n", update)
-
-	sql, _, err := goqu.Insert("base.tariff").Rows(update).ToSQL()
+	tx, err := db.Beginx()
 	if err != nil {
 		return err
 	}
-	_, err = db.Exec(sql)
+	//defer func() { _ = tx.Rollback() }()
+	defer func() {
+		switch err {
+		case nil:
+			err = tx.Commit()
+		default:
+			err = tx.Rollback()
+		}
+	}()
+	var stmt string
+	stmt, _, err = goqu.Insert("base.tariff").Rows(update).ToSQL()
+	if err != nil {
+		return model.ErrUpdateTariff(err)
+	}
+	_, err = tx.Exec(stmt)
+	if err != nil {
+		log.WithField("SQL", "INSERT").Errorf("Stmt: %v", stmt)
+		return model.ErrUpdateTariff(err)
+	}
 
-	//_, err = db.NamedExec(
-	//	`INSERT INTO base.tariff (id, tenant, name, type, "billingPeriod", "useVat", "vatInPercent", "accountNetAmount", "accountGrossAmount", "participantFee", "baseFee", discount, "businessNr", "centPerKWh", "freeKWh", "createdBy", version) VALUES (:id, :tenant, :name, :type, :billingPeriod, :useVat, :vatInPercent, :accountNetAmount, :accountGrossAmount, :participantFee, :baseFee, :discount, :businessNr, :centPerKWh, :freeKWh, :tenant, :version)`, &update)
-
+	if tariff.Version > 0 {
+		stmt, _, err = goqu.Update("base.tariff").Set(
+			map[string]interface{}{"inactiveSince": time.Now(), "lastModifiedDate": time.Now()}).Where(goqu.Ex{
+			"version": tariff.Version - 1,
+			"id":      tariff.Id.String(),
+		}).ToSQL()
+		if err != nil {
+			log.WithField("tenant", tenant).Errorf("Update previous entry: %v", err)
+			return model.ErrUpdateTariff(err)
+		}
+		_, err = tx.Exec(stmt)
+	}
+	if err != nil {
+		return model.ErrUpdateTariff(err)
+	}
 	return err
 }
 
-func UpdateTariff(tenant string, tariff *model.Tariff) error {
-	db, err := GetDBXConnection()
+func UpdateTariff(dbConn OpenDbXConnection, tenant string, tariff *model.Tariff) error {
+	db, err := dbConn()
 	if err != nil {
 		return err
 	}
@@ -160,8 +166,70 @@ func UpdateTariff(tenant string, tariff *model.Tariff) error {
 	update := updateType{tenant, *tariff}
 
 	log.Debugf("Tarrif: %+v\n", update)
-	_, err = db.NamedExec(
-		"UPDATE base.tariff SET \"billingPeriod\"=:billingperiod, \"useVat\"=:usevat, \"vatInPercent\"=:vatinpercent, \"accountNetAmount\"=:accountnetamount, \"accountGrossAmount\"=:accountgrossamount, \"participantFee\"=:participantfee, \"baseFee\"=:basefee, discount=:discount, \"businessNr\"=:businessnr, \"centPerKWh\"=:centperkwh, \"freeKWh\" = :freekwh, \"createdBy\"=:createdby, version=:version WHERE id = :id", &update)
+
+	stmt, _, err := goqu.Update("base.tariff").Set(&update).Where(goqu.C("tenant").Eq(tenant)).ToSQL()
+	_, err = db.Exec(stmt)
+	if err != nil {
+		log.WithField("SQL", "UPDATE").Errorf("Stmt: %v", stmt)
+	}
+
+	//_, err = db.NamedExec(
+	//	"UPDATE base.tariff SET \"billingPeriod\"=:billingperiod, \"useVat\"=:usevat, \"vatInPercent\"=:vatinpercent, \"accountNetAmount\"=:accountnetamount, \"accountGrossAmount\"=:accountgrossamount, \"participantFee\"=:participantfee, \"baseFee\"=:basefee, discount=:discount, \"businessNr\"=:businessnr, \"centPerKWh\"=:centperkwh, \"freeKWh\" = :freekwh, \"createdBy\"=:createdby, version=:version WHERE id = :id", &update)
 
 	return err
+}
+
+//func DateToCivilHookFunc(f reflect.Type, t reflect.Type, data interface{}) (interface{}, error) {
+//
+//
+//
+//}
+
+func StringToNullStringHookFunc(f reflect.Type, t reflect.Type, data interface{}) (interface{}, error) {
+	if f.Kind() == reflect.String {
+		var s null.String
+		if t == reflect.TypeOf(s) {
+			s = null.StringFrom(data.(string))
+			return s, nil
+		}
+
+		var d civil.NullDate
+		if t == reflect.TypeOf(d) {
+			date, err := civil.ParseDate(data.(string))
+			if err == nil {
+				d = civil.NullDateFrom(&date)
+				return d, nil
+			}
+		}
+
+		var dt civil.NullDateTime
+		if t == reflect.TypeOf(dt) {
+			date, err := civil.ParseDateTime(data.(string))
+			if err == nil {
+				dt = civil.NullDateTimeFrom(&date)
+				return dt, nil
+			}
+		}
+	}
+
+	if f.Kind() == reflect.Int {
+		var i null.Int
+		if t == reflect.TypeOf(i) {
+			switch data.(type) {
+			case int:
+				i = null.IntFrom(int64(data.(int)))
+			case int16:
+				i = null.IntFrom(int64(data.(int16)))
+			case int32:
+				i = null.IntFrom(int64(data.(int32)))
+			case int64:
+				i = null.IntFrom(data.(int64))
+			default:
+				return data, nil
+			}
+			return i, nil
+		}
+	}
+
+	return data, nil
 }

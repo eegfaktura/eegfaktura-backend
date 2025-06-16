@@ -3,24 +3,19 @@ package database
 import (
 	"at.ourproject/vfeeg-backend/model"
 	dbsql "database/sql"
+	"encoding/json"
 	"github.com/doug-martin/goqu/v9"
 	"github.com/jmoiron/sqlx"
+	"github.com/mitchellh/mapstructure"
 	log "github.com/sirupsen/logrus"
 )
 
 const TABLE_EEG = "base.eeg"
 const TABLE_EEG_ADDRESS = "base.address"
 
-func GetEeg(dbOpen OpenDbXConnection, tenant string) (*model.Eeg, error) {
-
-	db, err := dbOpen()
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-
+func GetEeg(tx *sqlx.DB, tenant string) (*model.Eeg, error) {
 	var eeg model.Eeg
-	err = db.QueryRow(""+
+	err := tx.QueryRow(""+
 		"SELECT name, description, \"businessNr\", legal, gridoperator_name, \"communityId\", gridoperator_code, \"rcNumber\", area, \"allocationMode\", "+
 		"\"settlementInterval\", \"providerBusinessNr\", street, \"streetNumber\", zip, city, phone, email, website, iban, owner, sepa, \"bankName\", "+
 		"\"taxNumber\", \"vatNumber\", online, \"contactPerson\" FROM base.eeg WHERE tenant = $1", tenant).
@@ -32,10 +27,42 @@ func GetEeg(dbOpen OpenDbXConnection, tenant string) (*model.Eeg, error) {
 			&eeg.TaxNumber, &eeg.VatNumber, &eeg.Online, &eeg.ContactPerson,
 		)
 	if err == dbsql.ErrNoRows {
-		return &eeg, nil
+		return nil, nil
 	}
 	eeg.Id = tenant
 	return &eeg, err
+}
+
+func GetEegById(tx *sqlx.DB, tenant string) (*model.Eeg, error) {
+
+	var eeg model.Eeg
+	stmt, _, err := pgDialect.From("base.eeg").Select(&eeg).Where(goqu.C("tenant").Eq(tenant)).ToSQL()
+	if err != nil {
+		return nil, model.ErrGetEeg(err)
+	}
+
+	err = tx.Get(&eeg, stmt)
+	if err != nil {
+		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", stmt)
+		return nil, model.ErrGetEeg(err)
+	}
+	return &eeg, nil
+}
+
+func GetEegByEcId(tx *sqlx.DB, edId string) (*model.Eeg, error) {
+
+	var eeg model.Eeg
+	stmt, _, err := pgDialect.From("base.eeg").Select(&eeg).Where(goqu.C("communityId").Eq(edId)).ToSQL()
+	if err != nil {
+		return nil, model.ErrGetEeg(err)
+	}
+
+	err = tx.Get(&eeg, stmt)
+	if err != nil {
+		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", stmt)
+		return nil, model.ErrGetEeg(err)
+	}
+	return &eeg, nil
 }
 
 func InsertEeg(db *sqlx.DB, tenant string, eeg *model.Eeg) error {
@@ -44,43 +71,82 @@ func InsertEeg(db *sqlx.DB, tenant string, eeg *model.Eeg) error {
 	log.Printf("Stmt: %s", sql)
 	_, err = db.Exec(sql)
 	if err != nil {
+		log.WithField("SQL", "INSERT").Errorf("Stmt: %s", sql)
 		return err
 	}
 
 	return err
 }
 
-func UpdateEegPartial(tenant string, fields map[string]interface{}) error {
-	db, err := GetDBXConnection()
+func UpdateEegPartial(db *sqlx.DB, tenant string, fields map[string]interface{}) error {
+
+	var eeg model.Eeg
+
+	cfg := &mapstructure.DecoderConfig{
+		Result:     &eeg,
+		DecodeHook: StringToNullStringHookFunc,
+	}
+	decoder, err := mapstructure.NewDecoder(cfg)
 	if err != nil {
 		return err
 	}
-	defer db.Close()
-
-	statement, _, _ := pgDialect.Update(TABLE_EEG).Set(fields).Where(goqu.Ex{"tenant": goqu.V(tenant)}).ToSQL()
-
-	log.Debugf("Update EEG VALUES: %s\n", statement)
+	err = decoder.Decode(fields)
+	if err != nil {
+		return err
+	}
+	statement, _, err := pgDialect.Update(TABLE_EEG).Set(eeg).Where(goqu.Ex{"tenant": goqu.V(tenant)}).ToSQL()
+	if err != nil {
+		log.WithError(err).Errorf("Update EEG VALUES: %s", statement)
+	}
 
 	_, err = db.Exec(statement)
 	return err
 }
 
-func UpdateEegAddressPartial(tenant string, fields map[string]interface{}) error {
-	db, err := GetDBXConnection()
+//func UpdateEegAddressPartial(tenant string, fields map[string]interface{}) error {
+//	db, err := GetDBXConnection()
+//	if err != nil {
+//		return err
+//	}
+//	defer db.Close()
+//
+//	statement, _, _ := pgDialect.Update(TABLE_EEG_ADDRESS).Set(fields).Where(goqu.Ex{"tenant": goqu.V(tenant)}).ToSQL()
+//
+//	log.Debugf("Update EEG VALUES: %s\n", statement)
+//
+//	_, err = db.Exec(statement)
+//	return err
+//}
+
+func SaveNotificationFromMap(db *sqlx.DB, notificationValue map[string]interface{}, tenant string,
+	notificationType model.NotificationType, process model.NotificationProcess, role string) error {
+	var msgBytes []byte
+	var err error
+	if msgBytes, err = json.Marshal(notificationValue); err == nil {
+		if err = createNotification(db, tenant, string(msgBytes), notificationType, process, role); err != nil {
+			log.Error(err)
+			return err
+		}
+	}
+	return nil
+}
+
+func createNotification(db *sqlx.DB, tenant, notification string,
+	msgType model.NotificationType, process model.NotificationProcess, role string) error {
+	stmt, _, err := pgDialect.Insert("base.notification").
+		Rows(
+			goqu.Record{"tenant": tenant, "notification": notification, "type": msgType, "role": role, "process": process},
+		).
+		ToSQL()
 	if err != nil {
 		return err
 	}
-	defer db.Close()
 
-	statement, _, _ := pgDialect.Update(TABLE_EEG_ADDRESS).Set(fields).Where(goqu.Ex{"tenant": goqu.V(tenant)}).ToSQL()
-
-	log.Debugf("Update EEG VALUES: %s\n", statement)
-
-	_, err = db.Exec(statement)
+	_, err = db.Exec(stmt)
 	return err
 }
 
-func SaveNotification(dbOpen OpenDbXConnection, tenant string, notification string, msgType, role string) error {
+func SaveNotification(dbOpen OpenDbXConnection, tenant string, notification string, msgType model.NotificationType, process model.NotificationProcess, role string) error {
 	db, err := dbOpen()
 	if err != nil {
 		return err
@@ -89,17 +155,10 @@ func SaveNotification(dbOpen OpenDbXConnection, tenant string, notification stri
 		_ = db.Close()
 	}()
 
-	_, err = db.Exec("INSERT INTO base.notification (tenant, notification, date, type, role) VALUES ($1, $2, NOW(), $3, $4)", tenant, notification, msgType, role)
-	return err
+	return createNotification(db, tenant, notification, msgType, process, role)
 }
 
-func GetNotification(dbOpen OpenDbXConnection, tenant string, start int64, isAdmin bool) ([]model.EegNotification, error) {
-	db, err := dbOpen()
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-
+func GetNotification(db *sqlx.DB, tenant string, start int64, isAdmin bool) ([]model.EegNotification, error) {
 	n := []model.EegNotification{}
 
 	statement := pgDialect.From("base.notification").Select(&n).
@@ -141,4 +200,26 @@ func GetGridOperators(db *sqlx.DB) (map[string]string, error) {
 	}
 
 	return result, nil
+}
+
+type tenantsNameStruct struct {
+	Tenant string `json:"tenant" db:"tenant"`
+	Name   string `json:"name" db:"name"`
+}
+
+func FetchTenantsName(db *sqlx.DB, tenants []string, isSuperUser bool) ([]tenantsNameStruct, error) {
+	tenantsName := []tenantsNameStruct{}
+	selectStmt := pgDialect.From("base.eeg").Select(&tenantsName)
+	if !isSuperUser {
+		selectStmt = selectStmt.Where(goqu.C("tenant").In(tenants))
+	}
+	stmt, _, err := selectStmt.ToSQL()
+	if err != nil {
+		return nil, err
+	}
+	if err := db.Select(&tenantsName, stmt); err != nil {
+		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", stmt)
+		return nil, err
+	}
+	return tenantsName, nil
 }

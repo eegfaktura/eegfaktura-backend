@@ -23,10 +23,14 @@ func errorHandler(msg model.SubscribeMessage) {
 	//	}
 	//	return
 	//}
-	logrus.Errorf("Receive Error from EDA COMMUNICATION. Reason: %v", msg)
+	logrus.Errorf("Receive Error from EDA COMMUNICATION. Reason: %+v", msg)
 
 }
 
+//func InitErrorSubscriptions() {
+//	messageBroker.Subscribe(GetSubsriptions()...)
+//}
+
 func InitErrorSubscriptions() {
-	messageBroker.Subscribe(GetSubsriptions()...)
+	Broker().Subscribe(GetSubsriptions()...)
 }
