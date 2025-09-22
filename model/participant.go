@@ -34,9 +34,9 @@ type EegParticipantBase struct {
 	BusinessRole          string            `json:"businessRole" db:"businessRole" goqu:"omitempty"`
 	Role                  string            `json:"role" db:"role" goqu:"omitempty"`
 	FirstName             string            `json:"firstname" goqu:"omitempty"`
-	LastName              string            `json:"lastname,omitempty" goqu:"omitempty"`
-	TitleBefore           null.String       `json:"titleBefore,omitempty" db:"titleBefore" goqu:"omitempty"`
-	TitleAfter            null.String       `json:"titleAfter,omitempty" db:"titleAfter" goqu:"omitempty"`
+	LastName              string            `json:"lastname" goqu:"omitempty"`
+	TitleBefore           null.String       `json:"titleBefore" db:"titleBefore" goqu:"omitempty"`
+	TitleAfter            null.String       `json:"titleAfter" db:"titleAfter" goqu:"omitempty"`
 	ParticipantSince      civil.NullDate    `json:"participantSince" db:"participantSince" goqu:"omitempty,defaultifempty"`
 	VatNumber             null.String       `json:"vatNumber,omitempty" db:"vatNumber" goqu:"omitempty"`
 	TaxNumber             null.String       `json:"taxNumber,omitempty" db:"taxNumber" goqu:"omitempty"`
@@ -66,7 +66,7 @@ type BankInfo struct {
 	Owner            null.String    `json:"owner" goqu:"omitempty"`
 	BankName         null.String    `json:"bankName" db:"bankName" goqu:"omitempty"`
 	MandateReference null.String    `json:"mandateReference" db:"mandate_reference" goqu:"omitempty"`
-	MandateDate      civil.NullDate `json:"mandateDate" db:"mandate_date" goqu:"omitempty"`
+	MandateDate      civil.NullDate `json:"mandateDate,omitempty" db:"mandate_date" goqu:"omitempty"`
 	SepaDirectDebit  null.String    `json:"sepaDirectDebit" db:"sepa_direct_debit" goqu:"omitempty"`
 }
 
@@ -98,6 +98,8 @@ const (
 	REVOKED  ProcessStatusType = "REVOKED"
 	INVALID  ProcessStatusType = "INVALID"
 	ARCHIVED ProcessStatusType = "ARCHIVED"
+	ABORTED  ProcessStatusType = "ABORTED"
+	RESTORE  ProcessStatusType = "RESTORE"
 )
 
 type StatusType string
@@ -126,6 +128,7 @@ const (
 
 type MeteringPoint struct {
 	MeteringPoint    string            `json:"meteringPoint" db:"metering_point_id" goqu:"skipupdate"`
+	ParticipantId    string            `json:"participantId" db:"participant_id" goqu:"skipupdate,skipinsert"`
 	ConsentId        null.String       `json:"consentId" db:"consent_id" goqu:"skipupdate,omitnil"`
 	Transformer      null.String       `json:"transformer,omitempty"`
 	Direction        DirectionType     `json:"direction,omitempty"`

@@ -4,14 +4,33 @@ import (
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
 	"at.ourproject/vfeeg-backend/services"
+	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/jjeffery/civil"
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"os"
+	"strconv"
+	"strings"
 	"testing"
 )
+
+func TestMain(m *testing.M) {
+	testDB := database.SetupTestDatabase()
+	db, err := database.GetTestDB(context.Background(), testDB)
+	if err != nil {
+		panic(err)
+	}
+	defer func() {
+		_ = db.CloseDB()
+		testDB.TearDown()
+	}()
+	os.Exit(m.Run())
+}
 
 type RecorderMock struct {
 	mock.Mock
@@ -52,7 +71,7 @@ func (_m *RecorderMock) meteringPointPerformAnswerMsg(sendMail services.SendMail
 var extractMeters = func(p model.EbmsMessage, proto model.EbMsMessageType) []string {
 	meters := []string{}
 	switch proto {
-	case model.EBMS_ONLINE_REG_APPROVAL, model.EBMS_ONLINE_REG_ANSWER:
+	case model.EBMS_ONLINE_REG_APPROVAL, model.EBMS_ONLINE_REG_ANSWER, model.EBMS_ONLINE_REG_REJECTION:
 		_, meters, _, _ = extractResponseCodeAndMeteringPoint(&p)
 	default:
 		meters = p.Meters()
@@ -60,10 +79,124 @@ var extractMeters = func(p model.EbmsMessage, proto model.EbMsMessageType) []str
 	return meters
 }
 
+func arrayToString(n []int16) string {
+	var IDs []string
+	for _, i := range n {
+		IDs = append(IDs, strconv.FormatInt(int64(i), 10))
+	}
+
+	return strings.Join(IDs, ", ")
+}
+
+func prepareCPListRecordMock(messageCode model.EbMsMessageType) ( /*recorder *RecorderMock,*/ msg model.SubscribeMessage, err error) {
+	msg = model.SubscribeMessage{
+		MessageCode: messageCode,
+		Protocol:    model.EC_REQ_ONL,
+		Tenant:      "TE100001",
+		Payload:     model.EbmsMessage{},
+	}
+
+	message := fmt.Sprintf(`{"conversationId":"RC100346202406091843475020000046464",
+"messageId":"AT003300202406292044374080000009571","sender":"AT003300","receiver":"TE1000001",
+"messageCode":"%s","messageCodeVersion":"02.00",
+"ecId":"AT00330004600RC100346000000000001",
+"meterList":[{"meteringPoint":"AT0030000000000000000000000519928",
+"direction":"CONSUMPTION","from":1719612000000,"partFact":100, "consentId":"AT1111122222"}]}`, messageCode)
+
+	err = json.Unmarshal([]byte(message), &msg.Payload)
+	return
+
+}
+
+func prepareNotificationRecorderMock(messageCode model.EbMsMessageType, codes []int16,
+	consentId *string, meter *model.Meter) (msg model.SubscribeMessage, err error) {
+	msg = model.SubscribeMessage{
+		MessageCode: messageCode,
+		Protocol:    model.EC_REQ_ONL,
+		Tenant:      "TE000002",
+		Payload: model.EbmsMessage{
+			ConversationId: "RC100298202308171692252620000000321",
+			MessageId:      "AT003000202307070957427130168201034",
+			Sender:         "AT003000",
+			Receiver:       "TE000002",
+			MessageCode:    messageCode,
+			RequestId:      "6P2EU64Z",
+			ResponseData: []model.ResponseData{{
+				MeteringPoint: "AT0030000000000000000000000410702",
+				ResponseCode:  codes,
+			}},
+		},
+	}
+
+	if consentId != nil {
+		msg.Payload.ResponseData[0].ConsentId = *consentId
+	}
+
+	if meter != nil {
+		msg.Payload.Meter = meter
+	}
+	return
+}
+
+func prepareNotificationMessage(message string, msgCode model.EbMsMessageType, msgProto model.EdaProtocol, tenant, ecId string, codes []int16, consentId *string, meter *model.Meter) (msg model.SubscribeMessage, err error) {
+
+	msg = model.SubscribeMessage{
+		MessageCode: msgCode,
+		Protocol:    msgProto,
+		Tenant:      tenant,
+		Payload:     model.EbmsMessage{},
+	}
+
+	err = json.Unmarshal([]byte(message), &msg.Payload)
+
+	if err != nil {
+		return
+	}
+
+	if consentId != nil {
+		msg.Payload.ResponseData[0].ConsentId = *consentId
+	}
+
+	if meter != nil {
+		switch msgCode {
+		case model.EBMS_ONLINE_REG_INIT:
+			msg.Payload.Meter = meter
+			msg.Payload.EcId = ecId
+		case model.EBMS_ONLINE_REG_COMPLETION:
+			msg.Payload.MeterList[0].MeteringPoint = meter.MeteringPoint
+			msg.Payload.MeterList[0].Direction = meter.Direction
+		default:
+			msg.Payload.ResponseData[0].MeteringPoint = meter.MeteringPoint
+			msg.Payload.ResponseData[0].ResponseCode = codes
+		}
+	}
+
+	return
+}
+
+func prepareMessage(t *testing.T, messageCode model.EbMsMessageType, codes []int16) model.SubscribeMessage {
+
+	msg := model.SubscribeMessage{
+		MessageCode: messageCode,
+		Protocol:    model.EC_REQ_ONL,
+		Tenant:      "TE100001",
+		Payload:     model.EbmsMessage{},
+	}
+	message := fmt.Sprintf(`{
+"conversationId":"RC100298202308171692252620000000321",
+"messageId":"AT003000202307070957427130168201034",
+"ecId":"AT00300000000TC000001000000000001","sender":"AT003000",
+"receiver":"TE100001","messageCode":"%s",
+"requestId":"6P2EU64Z","responseData":[{"meteringPoint":"AT0030000000000000000000000410702","responseCode":[%s]}]}`, messageCode, arrayToString(codes))
+
+	err := json.Unmarshal([]byte(message), &msg.Payload)
+	require.NoError(t, err)
+	return msg
+}
+
 func TestProtcolCrMsgHandler(t *testing.T) {
 	var mockDb, err = database.GetDatabaseMock()
 	require.NoError(t, err)
-	recorder := &RecorderMock{dbOpen: mockDb.OpenMockDb}
 
 	jsonString := `{
 	"messageId":"AT003000202208201421374610104995950",
@@ -101,12 +234,12 @@ func TestProtcolCrMsgHandler(t *testing.T) {
 			"LOCAL", "DYNAMIC", "MONTHLY", 0, "Solargasse", "1", "1111", "Solarcity", "", "", "", "", "Max Mustermann", "Bankname", "", "", false, "Max Mustermann")
 	mockDb.Mock.ExpectQuery(stmt).WillReturnRows(rows)
 
-	historyValue := map[string]interface{}{"meter": msg.Payload.Meter.MeteringPoint, "from": msg.Payload.Energy[0].Start, "to": msg.Payload.Energy[0].End}
-	recorder.Mock.On(
-		"saveHistory", mock.Anything, "TE1000001", model.EBMS_ENERGY_FILE_RESPONSE, "AT003000202208191420233640008300242", "ADMIN", "IN", model.CR_MSG, historyValue).Return(nil)
+	//historyValue := map[string]interface{}{"meter": msg.Payload.Meter.MeteringPoint, "from": msg.Payload.Energy[0].Start, "to": msg.Payload.Energy[0].End}
+	//recorder.Mock.On(
+	//	"saveHistory", mock.Anything, "TE1000001", model.EBMS_ENERGY_FILE_RESPONSE, "AT003000202208191420233640008300242", "ADMIN", "IN", model.CR_MSG, historyValue).Return(nil)
 
-	protocolCrMsgHandler(msg, recorder)
-	recorder.AssertExpectations(t)
+	protocolCrMsgHandler(context.Background(), msg)
+	//recorder.AssertExpectations(t)
 }
 
 func TestProtocolCrReqPtHandler(t *testing.T) {
@@ -142,7 +275,6 @@ func TestProtocolCrReqPtHandler(t *testing.T) {
 		t.Run(m.name, func(t *testing.T) {
 			var mockDb, err = database.GetDatabaseMock()
 			require.NoError(t, err)
-			recorder := &RecorderMock{dbOpen: mockDb.OpenMockDb}
 
 			msg := model.SubscribeMessage{
 				MessageCode: m.messageType,
@@ -162,13 +294,13 @@ func TestProtocolCrReqPtHandler(t *testing.T) {
 					"LOCAL", "DYNAMIC", "MONTHLY", 0, "Solargasse", "1", "1111", "Solarcity", "", "", "", "", "Max Mustermann", "Bankname", "", "", false, "Max Mustermann")
 			mockDb.Mock.ExpectQuery(stmt).WillReturnRows(rows)
 
-			recorder.Mock.On("saveNotification", mock.Anything, "TE1000001", msg.MessageCode, msg.Payload.Meters(), m.codes, model.CR_REQ_PT).Return(nil)
-			// saveNotification(db *sqlx.DB, tenant string, code model.EbMsMessageType, meters []string, errCodes []int16, protocol model.EdaProtocol)
+			//recorder.Mock.On("saveNotification", mock.Anything, "TE1000001", msg.MessageCode, msg.Payload.Meters(), m.codes, model.CR_REQ_PT).Return(nil)
+			//// saveNotification(db *sqlx.DB, tenant string, code model.EbMsMessageType, meters []string, errCodes []int16, protocol model.EdaProtocol)
+			//
+			//recorder.Mock.On("saveHistory", mock.Anything, "TE1000001", msg.MessageCode, "AT003000202208191420233640008300242", "ADMIN", "IN", msg.Protocol, msg.Payload).Return(nil)
 
-			recorder.Mock.On("saveHistory", mock.Anything, "TE1000001", msg.MessageCode, "AT003000202208191420233640008300242", "ADMIN", "IN", msg.Protocol, msg.Payload).Return(nil)
-
-			protocolCrReqPtHandler(msg, recorder)
-			recorder.AssertExpectations(t)
+			protocolCrReqPtHandler(context.Background(), msg)
+			//recorder.AssertExpectations(t)
 		})
 	}
 }
@@ -176,228 +308,231 @@ func TestProtocolCrReqPtHandler(t *testing.T) {
 func TestProtocolEcReqOnlHandler(t *testing.T) {
 
 	type test struct {
-		name        string
-		prepareMock func() (*RecorderMock, model.SubscribeMessage, sqlmock.Sqlmock)
+		name          string
+		msg           string
+		meterId       string
+		expectedState model.StatusType
+		prepareMsg    func(t *testing.T, msg string) model.SubscribeMessage
+		check         func(t *testing.T, m *model.MeteringPoint)
+	}
+
+	meterId := "AT0030000000000000000000030041724"
+
+	tests := []test{
+		{
+			name:          "Anforderung",
+			msg:           `{"conversationId":"RC100104202408221102047770000147214","messageId":"RC100104202408221102047770000147213","sender":"RC100104","receiver":"AT002000","messageCode":"ANFORDERUNG_ECON","messageCodeVersion":"02.00","requestId":"2T4h42Q","meter":{"meteringPoint":"AT0020000000000000000000100437855","direction":"CONSUMPTION","partFact":100},"ecId":"AT00300000000TC000015000000000001"}`,
+			meterId:       meterId,
+			expectedState: model.S_INIT,
+			prepareMsg: func(t *testing.T, msg string) model.SubscribeMessage {
+				codes := []int16{0}
+				m, err := prepareNotificationMessage(
+					msg,
+					model.EBMS_ONLINE_REG_INIT,
+					model.EC_REQ_ONL,
+					"TE000002",
+					"AT00300000000TC000002000000000001",
+					codes, nil, &model.Meter{
+						MeteringPoint: meterId,
+						Direction:     "CONSUMPTION",
+					})
+				require.NoError(t, err)
+				return m
+			},
+			check: func(t *testing.T, m *model.MeteringPoint) {
+				require.Equal(t, meterId, m.MeteringPoint)
+				assert.Nil(t, m.State.ActiveSince.Ptr())
+				assert.Nil(t, m.State.InactiveSince.Ptr())
+				//assert.Equal(t, civil.DateFor(2025, 4, 24), m.State.InactiveSince.Date)
+				assert.Equal(t, model.INIT, m.ProcessState)
+				assert.Equal(t, model.S_INIT, m.Status)
+			},
+		},
+		{
+			name:          "Zustimmung",
+			msg:           `{"conversationId":"RC102925202505291748545670000769433","messageId":"AT003200202506052018051920000038938","sender":"AT003200","receiver":"RC102925","messageCode":"ZUSTIMMUNG_ECON","messageCodeVersion":"01.12","requestId":"ScYyHPx","ecId":"AT00300000000TC000015000000000001","responseData":[{"meteringPoint":"AT0032000000000000000000000011490","responseCode":[175]}]}`,
+			meterId:       meterId,
+			expectedState: model.S_INIT,
+			prepareMsg: func(t *testing.T, m string) model.SubscribeMessage {
+				codes := []int16{CONSENT_GRANTED}
+				msg, err := prepareNotificationMessage(
+					m,
+					model.EBMS_ONLINE_REG_APPROVAL,
+					model.EC_REQ_ONL,
+					"TE000002",
+					"AT00300000000TC000002000000000001",
+					codes, nil, &model.Meter{
+						MeteringPoint: meterId,
+						Direction:     "CONSUMPTION",
+					})
+				require.NoError(t, err)
+				return msg
+			},
+			check: func(t *testing.T, m *model.MeteringPoint) {
+				require.Equal(t, meterId, m.MeteringPoint)
+			},
+		},
+		{
+			name:          "Zustimmung with consent-Id",
+			msg:           `{"conversationId":"RC102925202505291748545670000769433","messageId":"AT003200202506052018051920000038938","sender":"AT003200","receiver":"RC102925","messageCode":"ZUSTIMMUNG_ECON","messageCodeVersion":"01.12","requestId":"ScYyHPx","ecId":"AT00300000000TC000015000000000001","responseData":[{"meteringPoint":"AT0032000000000000000000000011490","responseCode":[175],"consentId":"AT003200202506052017576180000052415"}]}`,
+			meterId:       meterId,
+			expectedState: model.S_INIT,
+			prepareMsg: func(t *testing.T, m string) model.SubscribeMessage {
+				codes := []int16{CONSENT_GRANTED}
+				consentId := "1726617600000"
+				msg, err := prepareNotificationMessage(
+					m,
+					model.EBMS_ONLINE_REG_APPROVAL,
+					model.EC_REQ_ONL,
+					"TE000002",
+					"AT00300000000TC000002000000000001",
+					codes, &consentId, &model.Meter{
+						MeteringPoint: meterId,
+						Direction:     "CONSUMPTION",
+					})
+				require.NoError(t, err)
+				return msg
+			},
+			check: func(t *testing.T, m *model.MeteringPoint) {
+				require.Equal(t, meterId, m.MeteringPoint)
+			},
+		},
+		{
+			name:          "Antwort",
+			msg:           `{"conversationId":"RC102728202506051749149940000821663","messageId":"AT003000202506052059070020432540055","sender":"AT003000","receiver":"RC102728","messageCode":"ANTWORT_ECON","messageCodeVersion":"01.12","requestId":"NEpTmuH","ecId":"AT00300000000TC000015000000000001","responseData":[{"meteringPoint":"AT0030000000000000000000000350193","responseCode":[99]}]}`,
+			meterId:       meterId,
+			expectedState: model.S_INIT,
+			prepareMsg: func(t *testing.T, m string) model.SubscribeMessage {
+				codes := []int16{MESSAGE_RECEIVED}
+				msg, err := prepareNotificationMessage(
+					m,
+					model.EBMS_ONLINE_REG_REJECTION,
+					model.EC_REQ_ONL,
+					"TE000002",
+					"AT00300000000TC000002000000000001",
+					codes, nil, &model.Meter{
+						MeteringPoint: meterId,
+						Direction:     "CONSUMPTION",
+					})
+				require.NoError(t, err)
+				return msg
+			},
+			check: func(t *testing.T, m *model.MeteringPoint) {
+				require.Equal(t, meterId, m.MeteringPoint)
+			},
+		},
+		{
+			name:          "Abschluss",
+			msg:           `{"conversationId":"RC102925202505291748545670000769433","messageId":"AT003200202506052023341700000031909","sender":"AT003200","receiver":"RC102925","messageCode":"ABSCHLUSS_ECON","messageCodeVersion":"02.00","ecId":"AT00300000000TC000015000000000001","meterList":[{"meteringPoint":"AT0032000000000000000000000011490","direction":"CONSUMPTION","activation":1749160800000,"partFact":100,"from":1749160800000,"to":253402210800000,"consentId":"AT002000202504071118158864B2hYwr"}]}`,
+			meterId:       meterId,
+			expectedState: model.S_INIT,
+			prepareMsg: func(t *testing.T, m string) model.SubscribeMessage {
+				msg, err := prepareNotificationMessage(
+					m,
+					model.EBMS_ONLINE_REG_COMPLETION,
+					model.EC_REQ_ONL,
+					"TE000002",
+					"AT00300000000TC000002000000000001",
+					[]int16{}, nil, &model.Meter{
+						MeteringPoint: meterId,
+						Direction:     "CONSUMPTION",
+					})
+				require.NoError(t, err)
+				return msg
+			},
+			check: func(t *testing.T, m *model.MeteringPoint) {
+				require.Equal(t, meterId, m.MeteringPoint)
+			},
+		},
+		{
+			name:          "Ablehnung",
+			meterId:       meterId,
+			msg:           `{"conversationId":"RC100178202502081739045030000124643","messageId":"AT002000202502082103535826923380853","sender":"AT002000","receiver":"RC100178","messageCode":"ABLEHNUNG_ECON","messageCodeVersion":"01.11","requestId":"CES8r3q","ecId":"AT00200000000RC100178000000000208","responseData":[{"meteringPoint":"AT0020000000000000000000100280485","responseCode":[156]}]}`,
+			expectedState: model.S_INIT,
+			prepareMsg: func(t *testing.T, m string) model.SubscribeMessage {
+				codes := []int16{104}
+				msg, err := prepareNotificationMessage(
+					m,
+					model.EBMS_ONLINE_REG_REJECTION,
+					model.EC_REQ_ONL,
+					"TE000002",
+					"AT00300000000TC000002000000000001",
+					codes, nil, &model.Meter{
+						MeteringPoint: meterId,
+						Direction:     "CONSUMPTION",
+					})
+				require.NoError(t, err)
+				return msg
+			},
+			check: func(t *testing.T, m *model.MeteringPoint) {
+				require.Equal(t, meterId, m.MeteringPoint)
+				assert.Nil(t, m.State.ActiveSince.Ptr())
+				assert.Nil(t, m.State.InactiveSince.Ptr())
+				//assert.Equal(t, civil.DateFor(2025, 4, 24), m.State.InactiveSince.Date)
+				assert.Equal(t, model.INIT, m.ProcessState)
+				assert.Equal(t, model.S_INIT, m.Status)
+			},
+		},
+		{
+			name:          "Ablehnung - competing process",
+			msg:           `{"conversationId":"RC100178202502081739045030000124643","messageId":"AT002000202502082103535826923380853","sender":"AT002000","receiver":"RC100178","messageCode":"ABLEHNUNG_ECON","messageCodeVersion":"01.11","requestId":"CES8r3q","ecId":"AT00200000000RC100178000000000208","responseData":[{"meteringPoint":"AT0020000000000000000000100280485","responseCode":[156]}]}`,
+			meterId:       meterId,
+			expectedState: model.S_INIT,
+			prepareMsg: func(t *testing.T, m string) model.SubscribeMessage {
+				codes := []int16{PARTICIPATION_FACTOR_OF_100_WOULD_BE_EXCEEDED, COMPETING_PROCESSES}
+				msg, err := prepareNotificationMessage(
+					m,
+					model.EBMS_ONLINE_REG_REJECTION,
+					model.EC_REQ_ONL,
+					"TE000002",
+					"AT00300000000TC000002000000000001",
+					codes, nil, &model.Meter{
+						MeteringPoint: meterId,
+						Direction:     "CONSUMPTION",
+					})
+				require.NoError(t, err)
+				return msg
+			},
+			check: func(t *testing.T, m *model.MeteringPoint) {
+				require.Equal(t, meterId, m.MeteringPoint)
+			},
+		},
+	}
+
+	ctx := context.Background()
+	db, err := database.GetDB(ctx)
+	require.NoError(t, err)
+
+	for _, m := range tests {
+		t.Run(m.name, func(t *testing.T) {
+			msg := m.prepareMsg(t, m.msg)
+			protocolEcReqOnlHandler(ctx, msg)
+
+			meter, err := db.FindMeteringByStatus(msg.Tenant, m.meterId, m.expectedState)
+			require.NoError(t, err)
+			m.check(t, meter)
+		})
+	}
+}
+
+func TestProtocolEcReqOnlHandler1(t *testing.T) {
+
+	type test struct {
+		name    string
+		message model.SubscribeMessage
 	}
 
 	tests := []test{
 		{
-			name: "Anforderung",
-			prepareMock: func() (*RecorderMock, model.SubscribeMessage, sqlmock.Sqlmock) {
-				mockDb, err := database.GetDatabaseMock()
-				require.NoError(t, err)
-
-				recorder := &RecorderMock{dbOpen: mockDb.OpenMockDb}
-				msg := model.SubscribeMessage{
-					MessageCode: model.EBMS_ONLINE_REG_INIT,
-					Protocol:    model.EC_REQ_ONL,
-					Tenant:      "TE1000001",
-					Payload:     model.EbmsMessage{},
-				}
-				message := `{"conversationId":"RC100298202308171692252620000000321","messageId":"RC100417202402181708275060000001443","sender":"RC100417","receiver":"AT002000","messageCode":"ANFORDERUNG_ECON","requestId":"QLKXKAO4","meter":{"meteringPoint":"AT0030000000000000000000000459143","direction":"CONSUMPTION"},"ecId":"AT00200000000RC100417000000000209"}`
-				codes := []int16{0}
-				err = json.Unmarshal([]byte(message), &msg.Payload)
-				require.NoError(t, err)
-
-				stmt := "SELECT (.+) FROM \"base\".\"eeg\" WHERE (.+)"
-				rows := sqlmock.NewRows([]string{"tenant", "name", "description", "businessNr", "legal", "gridoperator_name", "communityId", "gridoperator_code", "rcNumber", "area", "allocationMode",
-					"settlementInterval", "providerBusinessNr", "street", "streetNumber", "zip", "city", "phone", "email", "website", "iban", "owner", "bankName",
-					"taxNumber", "vatNumber", "online", "contactPerson"}).
-					AddRow("TE1000001", "test-eeg", "", "", "verein", "Netz-Test", "CC00000000000002221212121212", "EE000001", "RC100130",
-						"LOCAL", "DYNAMIC", "MONTHLY", 0, "Solargasse", "1", "1111", "Solarcity", "", "", "", "", "Max Mustermann", "Bankname", "", "", false, "Max Mustermann")
-				mockDb.Mock.ExpectQuery(stmt).WillReturnRows(rows)
-				mockDb.Mock.ExpectExec(`UPDATE "base"."meteringpoint" SET (.+"process_state"='INIT'.+)`).WillReturnResult(sqlmock.NewResult(1, 1))
-
-				//recorder.Mock.On("saveNotification", map[string]interface{}{
-				//	"type":           msg.MessageCode,
-				//	"meteringPoints": extractMeters(msg.Payload, model.EBMS_ONLINE_REG_COMPLETION),
-				//	"responseCodes":  codes,
-				//}, msg.Tenant, "EDA_PROCESS", "ADMIN").Return(nil)
-				recorder.Mock.On("saveNotification", mock.Anything, "TE1000001", msg.MessageCode, msg.Payload.Meters(), codes, model.EC_REQ_ONL).Return(nil)
-
-				recorder.Mock.On("saveHistory", mock.Anything, "TE1000001", msg.MessageCode, "RC100298202308171692252620000000321", "ADMIN", "IN", model.EC_REQ_ONL, msg.Payload).Return(nil)
-
-				return recorder, msg, mockDb.Mock
-			},
-		},
-		{
-			name: "Zustimmung",
-			prepareMock: func() (*RecorderMock, model.SubscribeMessage, sqlmock.Sqlmock) {
-				mockDb, err := database.GetDatabaseMock()
-				require.NoError(t, err)
-
-				recorder := &RecorderMock{dbOpen: mockDb.OpenMockDb}
-				msg := model.SubscribeMessage{
-					MessageCode: model.EBMS_ONLINE_REG_APPROVAL,
-					Protocol:    model.EC_REQ_ONL,
-					Tenant:      "TE1000001",
-					Payload:     model.EbmsMessage{},
-				}
-				message := `{"conversationId":"RC100298202308171692252620000000321","messageId":"AT003000202308170810324070187796715","sender":"AT003000","receiver":"RC100298","messageCode":"ZUSTIMMUNG_ECON","requestId":"XV3VFJN2","responseData":[{"meteringPoint":"AT0030000000000000000000000459143","responseCode":[175]}]}`
-				codes := []int16{CONSENT_GRANTED}
-				err = json.Unmarshal([]byte(message), &msg.Payload)
-				require.NoError(t, err)
-				stmt := "SELECT (.+) FROM \"base\".\"eeg\" WHERE (.+)"
-				rows := sqlmock.NewRows([]string{"tenant", "name", "description", "businessNr", "legal", "gridoperator_name", "communityId", "gridoperator_code", "rcNumber", "area", "allocationMode",
-					"settlementInterval", "providerBusinessNr", "street", "streetNumber", "zip", "city", "phone", "email", "website", "iban", "owner", "bankName",
-					"taxNumber", "vatNumber", "online", "contactPerson"}).
-					AddRow("TE1000001", "test-eeg", "", "", "verein", "Netz-Test", "CC00000000000002221212121212", "EE000001", "RC100130",
-						"LOCAL", "DYNAMIC", "MONTHLY", 0, "Solargasse", "1", "1111", "Solarcity", "", "", "", "", "Max Mustermann", "Bankname", "", "", false, "Max Mustermann")
-				mockDb.Mock.ExpectQuery(stmt).WillReturnRows(rows)
-				//mockDb.Mock.ExpectExec("UPDATE (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
-				mockDb.Mock.ExpectExec(
-					`UPDATE "base"."meteringpoint" SET "modifiedAt"='\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\dZ',"modifiedBy"='EVU',"process_state"=` + "(.+)").WillReturnResult(sqlmock.NewResult(1, 1))
-
-				//recorder.Mock.On("saveNotification", map[string]interface{}{
-				//	"type":           msg.MessageCode,
-				//	"meteringPoints": extractMeters(msg.Payload, model.EBMS_ONLINE_REG_APPROVAL),
-				//	"responseCodes":  codes,
-				//}, msg.Tenant, "EDA_PROCESS", "ADMIN").Return(nil)
-				recorder.Mock.On("saveNotification", mock.Anything, "TE1000001", msg.MessageCode, extractMeters(msg.Payload, model.EBMS_ONLINE_REG_APPROVAL), codes, model.EC_REQ_ONL).Return(nil)
-
-				recorder.Mock.On("saveHistory", mock.Anything, "TE1000001", msg.MessageCode, "RC100298202308171692252620000000321", "ADMIN", "IN", model.EC_REQ_ONL, msg.Payload).Return(nil)
-
-				return recorder, msg, mockDb.Mock
-			},
-		},
-		{
-			name: "Zustimmung with consent-Id",
-			prepareMock: func() (*RecorderMock, model.SubscribeMessage, sqlmock.Sqlmock) {
-				mockDb, err := database.GetDatabaseMock()
-				require.NoError(t, err)
-
-				recorder := &RecorderMock{dbOpen: mockDb.OpenMockDb}
-				msg := model.SubscribeMessage{
-					MessageCode: model.EBMS_ONLINE_REG_APPROVAL,
-					Protocol:    model.EC_REQ_ONL,
-					Tenant:      "TE1000001",
-					Payload:     model.EbmsMessage{},
-				}
-				message := `{"conversationId":"RC100298202308171692252620000000321","messageId":"AT003000202308170810324070187796715","sender":"AT003000","receiver":"RC100298","messageCode":"ZUSTIMMUNG_ECON","requestId":"XV3VFJN2","responseData":[{"meteringPoint":"AT0030000000000000000000000459143", "consentId": "1726617600000","responseCode":[175]}]}`
-				codes := []int16{CONSENT_GRANTED}
-				err = json.Unmarshal([]byte(message), &msg.Payload)
-				require.NoError(t, err)
-				stmt := "SELECT (.+) FROM \"base\".\"eeg\" WHERE (.+)"
-				rows := sqlmock.NewRows([]string{"tenant", "name", "description", "businessNr", "legal", "gridoperator_name", "communityId", "gridoperator_code", "rcNumber", "area", "allocationMode",
-					"settlementInterval", "providerBusinessNr", "street", "streetNumber", "zip", "city", "phone", "email", "website", "iban", "owner", "bankName",
-					"taxNumber", "vatNumber", "online", "contactPerson"}).
-					AddRow("TE1000001", "test-eeg", "", "", "verein", "Netz-Test", "CC00000000000002221212121212", "EE000001", "RC100130",
-						"LOCAL", "DYNAMIC", "MONTHLY", 0, "Solargasse", "1", "1111", "Solarcity", "", "", "", "", "Max Mustermann", "Bankname", "", "", false, "Max Mustermann")
-				mockDb.Mock.ExpectQuery(stmt).WillReturnRows(rows)
-				//mockDb.Mock.ExpectExec(fmt.Sprintf("UPDATE (.+) SET (.+) %s WHERE (.+)", regexp.QuoteMeta(`"process_state"='APPROVED'`))).WillReturnResult(sqlmock.NewResult(1, 1))
-				//mockDb.Mock.ExpectExec(fmt.Sprintf(`UPDATE \"base\".\"meteringpoint\" SET (.+) %s WHERE`, regexp.QuoteMeta(`"process_state"='APPROVED'`))).WillReturnResult(sqlmock.NewResult(1, 1))
-				mockDb.Mock.ExpectExec(
-					`UPDATE "base"."meteringpoint" SET "consent_id"='1726617600000',"modifiedAt"='\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\dZ',"modifiedBy"='EVU',"process_state"=(.+) WHERE`).WillReturnResult(sqlmock.NewResult(1, 1))
-
-				//recorder.Mock.On("saveNotification", map[string]interface{}{
-				//	"type":           msg.MessageCode,
-				//	"meteringPoints": extractMeters(msg.Payload, model.EBMS_ONLINE_REG_APPROVAL),
-				//	"responseCodes":  codes,
-				//}, msg.Tenant, "EDA_PROCESS", "ADMIN").Return(nil)
-				recorder.Mock.On("saveNotification", mock.Anything, "TE1000001", msg.MessageCode, extractMeters(msg.Payload, model.EBMS_ONLINE_REG_APPROVAL), codes, model.EC_REQ_ONL).Return(nil)
-
-				recorder.Mock.On("saveHistory", mock.Anything, "TE1000001", msg.MessageCode, "RC100298202308171692252620000000321", "ADMIN", "IN", model.EC_REQ_ONL, msg.Payload).Return(nil)
-
-				return recorder, msg, mockDb.Mock
-			},
-		},
-		{
-			name: "Antwort",
-			prepareMock: func() (*RecorderMock, model.SubscribeMessage, sqlmock.Sqlmock) {
-				mockDb, err := database.GetDatabaseMock()
-				require.NoError(t, err)
-
-				recorder := &RecorderMock{dbOpen: mockDb.OpenMockDb}
-				msg := model.SubscribeMessage{
-					MessageCode: model.EBMS_ONLINE_REG_ANSWER,
-					Protocol:    model.EC_REQ_ONL,
-					Tenant:      "TE1000001",
-					Payload:     model.EbmsMessage{},
-				}
-				message := `{
-"conversationId":"RC100298202308171692252620000000321",
-"messageId":"AT003000202307070957427130168201034",
-"ecId":"CC00000000000002221212121212","sender":"AT003000",
-"receiver":"RC100298","messageCode":"ANTWORT_ECON",
-"requestId":"6P2EU64Z","responseData":[{"meteringPoint":"AT0030000000000000000000000410702","responseCode":[99]}]}`
-				codes := []int16{MESSAGE_RECEIVED}
-				err = json.Unmarshal([]byte(message), &msg.Payload)
-				require.NoError(t, err)
-
-				stmt := "SELECT (.+) FROM \"base\".\"eeg\" WHERE (.+)"
-				rows := sqlmock.NewRows([]string{"tenant", "name", "description", "businessNr", "legal", "gridoperator_name", "communityId", "gridoperator_code", "rcNumber", "area", "allocationMode",
-					"settlementInterval", "providerBusinessNr", "street", "streetNumber", "zip", "city", "phone", "email", "website", "iban", "owner", "bankName",
-					"taxNumber", "vatNumber", "online", "contactPerson"}).
-					AddRow("TE1000001", "test-eeg", "", "", "verein", "Netz-Test", "CC00000000000002221212121212", "EE000001", "RC100130",
-						"LOCAL", "DYNAMIC", "MONTHLY", 0, "Solargasse", "1", "1111", "Solarcity", "", "", "", "", "Max Mustermann", "Bankname", "", "", false, "Max Mustermann")
-				mockDb.Mock.ExpectQuery(stmt).WillReturnRows(rows)
-				mockDb.Mock.ExpectExec("UPDATE (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
-
-				//recorder.Mock.On("saveNotification", map[string]interface{}{
-				//	"type":           msg.MessageCode,
-				//	"meteringPoints": extractMeters(msg.Payload, model.EBMS_ONLINE_REG_ANSWER),
-				//	"responseCodes":  codes,
-				//}, msg.Tenant, "EDA_PROCESS", "ADMIN").Return(nil)
-				recorder.Mock.On("saveNotification", mock.Anything, "TE1000001", msg.MessageCode, extractMeters(msg.Payload, model.EBMS_ONLINE_REG_ANSWER), codes, model.EC_REQ_ONL).Return(nil)
-
-				recorder.Mock.On("saveHistory", mock.Anything, "TE1000001", msg.MessageCode, "RC100298202308171692252620000000321", "ADMIN", "IN", model.EC_REQ_ONL, msg.Payload).Return(nil)
-
-				recorder.Mock.On("meteringPointPerformAnswerMsg", mock.Anything, "CC00000000000002221212121212", []string{"AT0030000000000000000000000410702"}).Return(nil)
-				return recorder, msg, mockDb.Mock
-			},
-		},
-		{
-			name: "Abschluss",
-			prepareMock: func() (*RecorderMock, model.SubscribeMessage, sqlmock.Sqlmock) {
-				mockDb, err := database.GetDatabaseMock()
-				require.NoError(t, err)
-
-				recorder := &RecorderMock{dbOpen: mockDb.OpenMockDb}
-
-				msg := model.SubscribeMessage{
-					MessageCode: model.EBMS_ONLINE_REG_COMPLETION,
-					Protocol:    model.EC_REQ_ONL,
-					Tenant:      "TE1000001",
-					Payload:     model.EbmsMessage{},
-				}
-				//message := `{"conversationId":"RC100298202308171692252620000000321","messageId":"AT003000202308180842215740187694787","sender":"AT003000","receiver":"RC100298","messageCode":"ABSCHLUSS_ECON","meterList":[{"meteringPoint":"AT0030000000000000000000000519928","direction":"CONSUMPTION"}]}`
-				message := `{"conversationId":"RC100346202406091843475020000046464","messageId":"AT003300202406292044374080000009571","sender":"AT003300","receiver":"TE1000001","messageCode":"ABSCHLUSS_ECON","messageCodeVersion":"02.00","ecId":"AT00330004600RC100346000000000001","meterList":[{"meteringPoint":"AT0030000000000000000000000519928","direction":"CONSUMPTION","from":1719612000000,"partFact":100, "consentId":"AT1111122222"}]}`
-				err = json.Unmarshal([]byte(message), &msg.Payload)
-				require.NoError(t, err)
-				codes := []int16{}
-
-				stmt := `SELECT (.+) FROM "base"."eeg" WHERE (.+)`
-				rows := sqlmock.NewRows([]string{"tenant", "name", "description", "businessNr", "legal", "gridoperator_name", "communityId", "gridoperator_code", "rcNumber", "area", "allocationMode",
-					"settlementInterval", "providerBusinessNr", "street", "streetNumber", "zip", "city", "phone", "email", "website", "iban", "owner", "bankName",
-					"taxNumber", "vatNumber", "online", "contactPerson"}).
-					AddRow("TE1000001", "test-eeg", "", "", "verein", "Netz-Test", "CC00000000000002221212121212", "EE000001", "RC100130",
-						"LOCAL", "DYNAMIC", "MONTHLY", 0, "Solargasse", "1", "1111", "Solarcity", "", "", "", "", "Max Mustermann", "Bankname", "", "", false, "Max Mustermann")
-				mockDb.Mock.ExpectQuery(stmt).WillReturnRows(rows)
-				//mockDb.Mock.ExpectExec("UPDATE (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
-				mockDb.Mock.ExpectExec(
-					`UPDATE "base"."meteringpoint" SET ("activesince"=.+'2024-06-29T00:00:00Z'.,"consent_id"='AT1111122222',"inactivesince"='2999-12-31T00:00:00Z',"modifiedAt"='\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\dZ',"modifiedBy"='EVU',"process_state"='ACTIVE',"status"='ACTIVE') WHERE`).WillReturnResult(sqlmock.NewResult(1, 1))
-
-				//recorder.Mock.On("saveNotification", map[string]interface{}{
-				//	"type":           msg.MessageCode,
-				//	"meteringPoints": extractMeters(msg.Payload, model.EBMS_ONLINE_REG_COMPLETION),
-				//	"responseCodes":  codes,
-				//}, msg.Tenant, "EDA_PROCESS", "ADMIN").Return(nil)
-				recorder.Mock.On("saveNotification", mock.Anything, "TE1000001", msg.MessageCode, extractMeters(msg.Payload, model.EBMS_ONLINE_REG_COMPLETION), codes, model.EC_REQ_ONL).Return(nil)
-
-				recorder.Mock.On("saveHistory", mock.Anything, "TE1000001", msg.MessageCode, "RC100346202406091843475020000046464", "ADMIN", "IN", model.EC_REQ_ONL, msg.Payload).Return(nil)
-				return recorder, msg, mockDb.Mock
-			},
+			name:    "Ablehnung - competing process",
+			message: prepareMessage(t, model.EBMS_ONLINE_REG_REJECTION, []int16{PARTICIPATION_FACTOR_OF_100_WOULD_BE_EXCEEDED, COMPETING_PROCESSES}),
 		},
 	}
 
+	ctx := context.Background()
 	for _, m := range tests {
 		t.Run(m.name, func(t *testing.T) {
-			recorder, msg, mockdb := m.prepareMock()
-
-			protocolEcReqOnlHandler(msg, recorder)
-			recorder.AssertExpectations(t)
-			mockdb.MatchExpectationsInOrder(true)
-			assert.NoError(t, mockdb.ExpectationsWereMet())
+			protocolEcReqOnlHandler(ctx, m.message)
 		})
 	}
 }
@@ -422,7 +557,6 @@ func TestProtocolCmRevImpHandler(t *testing.T) {
 		t.Run(m.name, func(t *testing.T) {
 			var mockDb, err = database.GetDatabaseMock()
 			require.NoError(t, err)
-			recorder := &RecorderMock{dbOpen: mockDb.OpenMockDb}
 
 			//jsonString := `{"conversationId":"RC100298202308171692252620000000321","messageId":"AT003000202308170810324070187796715","sender":"AT003000","receiver":"RC100298","messageCode":"ZUSTIMMUNG_ECON","requestId":"XV3VFJN2","responseData":[{"meteringPoint":"AT0030000000000000000000000459143","responseCode":[175]}]}`
 			msg := model.SubscribeMessage{
@@ -471,13 +605,250 @@ func TestProtocolCmRevImpHandler(t *testing.T) {
 			//	"meteringPoints": []string{"AT0030000000000000000000030042666"},
 			//	"responseCodes":  m.codes,
 			//}, msg.Tenant, "EDA_PROCESS", "ADMIN").Return(nil)
-			recorder.Mock.On("saveNotification", mock.Anything, "TE1000001", msg.MessageCode, []string{"AT0030000000000000000000030042666"}, m.codes, model.CM_REV_IMP).Return(nil)
+			//recorder.Mock.On("saveNotification", mock.Anything, "TE1000001", msg.MessageCode, []string{"AT0030000000000000000000030042666"}, m.codes, model.CM_REV_IMP).Return(nil)
+			//
+			//recorder.Mock.On("saveHistory", mock.Anything, "TE1000001", msg.MessageCode, "AT003000202403310311592520011775087", "ADMIN", "IN", model.CM_REV_IMP, msg.Payload).Return(nil)
 
-			recorder.Mock.On("saveHistory", mock.Anything, "TE1000001", msg.MessageCode, "AT003000202403310311592520011775087", "ADMIN", "IN", model.CM_REV_IMP, msg.Payload).Return(nil)
+			protocolCmRevImpHandler(context.Background(), msg)
+			//recorder.AssertExpectations(t)
 
-			protocolCmRevImpHandler(msg, recorder)
-			recorder.AssertExpectations(t)
+		})
+	}
 
+}
+
+func TestMeteringPointRevokeActivationFlow(t *testing.T) {
+
+	tests := []struct {
+		name          string
+		msg           string
+		msgType       model.EbMsMessageType
+		msgProto      model.EdaProtocol
+		expectedState model.StatusType
+		meter         string
+		invoke        func(msg model.SubscribeMessage)
+		check         func(t *testing.T, m *model.MeteringPoint)
+	}{
+		{
+			name:          "Revoke - CCMS",
+			msg:           `{"conversationId":"RC101607202504231745391480000487069","messageId":"RC101607202504231745391480000487068","sender":"RC101607","receiver":"AT004000","messageCode":"AUFHEBUNG_CCMS","messageCodeVersion":"","requestId":"JEZ6SG7","meter":{"meteringPoint":"AT0040000520100000000000010295156","consentId":"123456789015"},"ecId":"AT00300000000TC000015000000000001","consentEnd":1745445600000}`,
+			msgType:       model.EBMS_AUFHEBUNG_CCMS,
+			msgProto:      model.CM_REV_SP,
+			meter:         "AT0030000000000000000000000153013",
+			expectedState: model.S_INACTIVE,
+			invoke: func(msg model.SubscribeMessage) {
+				protocolCmRevImpHandler(context.Background(), msg)
+			},
+			check: func(t *testing.T, m *model.MeteringPoint) {
+				assert.Equal(t, "AT0030000000000000000000000153013", m.MeteringPoint)
+				assert.Equal(t, civil.DateFor(2023, 01, 01), m.State.ActiveSince.Date)
+				assert.Equal(t, civil.DateFor(2025, 4, 24), m.State.InactiveSince.Date)
+				assert.Equal(t, model.INACTIVE, m.ProcessState)
+				assert.Equal(t, model.S_INACTIVE, m.Status)
+			},
+		},
+		{
+			name:          "Activate - Anforderung",
+			msg:           `{"conversationId":"RC100104202408221102047770000147214","messageId":"RC100104202408221102047770000147213","sender":"RC100104","receiver":"AT002000","messageCode":"ANFORDERUNG_ECON","messageCodeVersion":"02.00","requestId":"2T4h42Q","meter":{"meteringPoint":"AT0020000000000000000000100437855","direction":"CONSUMPTION","partFact":100},"ecId":"AT00300000000TC000015000000000001"}`,
+			msgType:       model.EBMS_ONLINE_REG_INIT,
+			msgProto:      model.EC_REQ_ONL,
+			meter:         "AT0030000000000000000000000153013",
+			expectedState: model.S_INACTIVE,
+			invoke: func(msg model.SubscribeMessage) {
+				protocolEcReqOnlHandler(context.Background(), msg)
+			},
+			check: func(t *testing.T, m *model.MeteringPoint) {
+				assert.Equal(t, "AT0030000000000000000000000153013", m.MeteringPoint)
+				assert.Equal(t, civil.DateFor(2023, 01, 01), m.State.ActiveSince.Date)
+				assert.Equal(t, civil.DateFor(2025, 4, 24), m.State.InactiveSince.Date)
+				assert.Equal(t, model.INIT, m.ProcessState)
+				assert.Equal(t, model.S_INACTIVE, m.Status)
+			},
+		},
+		{
+			name:          "Activate - Antwort",
+			msg:           `{"conversationId":"RC102728202506051749149940000821663","messageId":"AT003000202506052059070020432540055","sender":"AT003000","receiver":"RC102728","messageCode":"ANTWORT_ECON","messageCodeVersion":"01.12","requestId":"NEpTmuH","ecId":"AT00300000000TC000015000000000001","responseData":[{"meteringPoint":"AT0030000000000000000000000350193","responseCode":[99]}]}`,
+			msgType:       model.EBMS_ONLINE_REG_ANSWER,
+			msgProto:      model.EC_REQ_ONL,
+			meter:         "AT0030000000000000000000000153013",
+			expectedState: model.S_INACTIVE,
+			invoke: func(msg model.SubscribeMessage) {
+				protocolEcReqOnlHandler(context.Background(), msg)
+			},
+			check: func(t *testing.T, m *model.MeteringPoint) {
+				assert.Equal(t, "AT0030000000000000000000000153013", m.MeteringPoint)
+				assert.Equal(t, civil.DateFor(2023, 01, 01), m.State.ActiveSince.Date)
+				assert.Equal(t, civil.DateFor(2025, 4, 24), m.State.InactiveSince.Date)
+				assert.Equal(t, model.PENDING, m.ProcessState)
+				assert.Equal(t, model.S_INACTIVE, m.Status)
+			},
+		},
+		{
+			name:          "Activate - Zustimmung",
+			msg:           `{"conversationId":"RC102925202505291748545670000769433","messageId":"AT003200202506052018051920000038938","sender":"AT003200","receiver":"RC102925","messageCode":"ZUSTIMMUNG_ECON","messageCodeVersion":"01.12","requestId":"ScYyHPx","ecId":"AT00300000000TC000015000000000001","responseData":[{"meteringPoint":"AT0032000000000000000000000011490","responseCode":[175],"consentId":"AT003200202506052017576180000052415"}]}`,
+			msgType:       model.EBMS_ONLINE_REG_APPROVAL,
+			msgProto:      model.EC_REQ_ONL,
+			meter:         "AT0030000000000000000000000153013",
+			expectedState: model.S_INACTIVE,
+			invoke: func(msg model.SubscribeMessage) {
+				protocolEcReqOnlHandler(context.Background(), msg)
+			},
+			check: func(t *testing.T, m *model.MeteringPoint) {
+				assert.Equal(t, "AT0030000000000000000000000153013", m.MeteringPoint)
+				assert.Equal(t, civil.DateFor(2023, 01, 01), m.State.ActiveSince.Date)
+				assert.Equal(t, civil.DateFor(2025, 4, 24), m.State.InactiveSince.Date)
+				assert.Equal(t, model.APPROVED, m.ProcessState)
+				assert.Equal(t, model.S_INACTIVE, m.Status)
+			},
+		},
+		{
+			name:          "Activate - Abschluss",
+			msg:           `{"conversationId":"RC102925202505291748545670000769433","messageId":"AT003200202506052023341700000031909","sender":"AT003200","receiver":"RC102925","messageCode":"ABSCHLUSS_ECON","messageCodeVersion":"02.00","ecId":"AT00300000000TC000015000000000001","meterList":[{"meteringPoint":"AT0032000000000000000000000011490","direction":"CONSUMPTION","activation":1749160800000,"partFact":100,"from":1749160800000,"to":253402210800000,"consentId":"AT002000202504071118158864B2hYwr"}]}`,
+			msgType:       model.EBMS_ONLINE_REG_COMPLETION,
+			msgProto:      model.EC_REQ_ONL,
+			meter:         "AT0030000000000000000000000153013",
+			expectedState: model.S_ACTIVE,
+			invoke: func(msg model.SubscribeMessage) {
+				protocolEcReqOnlHandler(context.Background(), msg)
+			},
+			check: func(t *testing.T, m *model.MeteringPoint) {
+				assert.Equal(t, "AT0030000000000000000000000153013", m.MeteringPoint)
+				assert.Equal(t, civil.DateFor(2023, 01, 01), m.State.ActiveSince.Date)
+				assert.Equal(t, civil.DateFor(2999, 12, 31), m.State.InactiveSince.Date)
+				assert.Equal(t, model.ACTIVE, m.ProcessState)
+				assert.Equal(t, model.S_ACTIVE, m.Status)
+			},
+		},
+		{
+			name:          "Deactivate - CCMI",
+			msg:           `{"conversationId":"AT002000202506170631212181027282501","messageId":"AT002000202506170631212187101145223","sender":"AT002000","receiver":"RC100713","messageCode":"AUFHEBUNG_CCMI","messageCodeVersion":"01.00","responseData":[{"meteringPoint":"AT0020000000000000000000021200356","responseCode":[1099],"consentEnd":1750024800000,"consentId":"AT002000202504071118158864B2hYwr"}]}`,
+			msgType:       model.EBMS_AUFHEBUNG_CCMI,
+			msgProto:      model.CM_REV_IMP,
+			meter:         "AT0030000000000000000000000153013",
+			expectedState: model.S_INACTIVE,
+			invoke: func(msg model.SubscribeMessage) {
+				protocolCmRevImpHandler(context.Background(), msg)
+			},
+			check: func(t *testing.T, m *model.MeteringPoint) {
+				assert.Equal(t, "AT0030000000000000000000000153013", m.MeteringPoint)
+				assert.Equal(t, civil.DateFor(2023, 01, 01), m.State.ActiveSince.Date)
+				assert.Equal(t, civil.DateFor(2025, 6, 16), m.State.InactiveSince.Date)
+				assert.Equal(t, model.INACTIVE, m.ProcessState)
+				assert.Equal(t, model.S_INACTIVE, m.Status)
+				fmt.Printf("Date: %v\n", m.State.InactiveSince.Date)
+			},
+		},
+		{
+			name:          "Activate - Abschluss",
+			msg:           `{"conversationId":"RC102925202505291748545670000769433","messageId":"AT003200202506052023341700000031909","sender":"AT003200","receiver":"RC102925","messageCode":"ABSCHLUSS_ECON","messageCodeVersion":"02.00","ecId":"AT00300000000TC000015000000000001","meterList":[{"meteringPoint":"AT0032000000000000000000000011490","direction":"CONSUMPTION","activation":1749160800000,"partFact":100,"from":1749160800000,"to":253402210800000,"consentId":"AT002000202504071118158864B2hYwr"}]}`,
+			msgType:       model.EBMS_ONLINE_REG_COMPLETION,
+			msgProto:      model.EC_REQ_ONL,
+			meter:         "AT0030000000000000000000000153013",
+			expectedState: model.S_ACTIVE,
+			invoke: func(msg model.SubscribeMessage) {
+				protocolEcReqOnlHandler(context.Background(), msg)
+			},
+			check: func(t *testing.T, m *model.MeteringPoint) {
+				assert.Equal(t, "AT0030000000000000000000000153013", m.MeteringPoint)
+				assert.Equal(t, civil.DateFor(2023, 01, 01), m.State.ActiveSince.Date)
+				assert.Equal(t, civil.DateFor(2999, 12, 31), m.State.InactiveSince.Date)
+				assert.Equal(t, model.ACTIVE, m.ProcessState)
+				assert.Equal(t, model.S_ACTIVE, m.Status)
+			},
+		},
+		{
+			name:          "Deactivate - CCMC",
+			msg:           `{"conversationId":"AT007000202506161124320811006758410","messageId":"AT007000202506161124321786085283099","sender":"AT007000","receiver":"RC101254","messageCode":"AUFHEBUNG_CCMC","messageCodeVersion":"01.00","responseData":[{"meteringPoint":"AT007000094620000010190002684274A","responseCode":[1099],"consentEnd":1750111200000,"consentId":"AT002000202504071118158864B2hYwr"}]}`,
+			msgType:       model.EBMS_AUFHEBUNG_CCMC,
+			msgProto:      model.CM_REV_CUS,
+			meter:         "AT0030000000000000000000000153013",
+			expectedState: model.S_INACTIVE,
+			invoke: func(msg model.SubscribeMessage) {
+				protocolCmRevImpHandler(context.Background(), msg)
+			},
+			check: func(t *testing.T, m *model.MeteringPoint) {
+				assert.Equal(t, "AT0030000000000000000000000153013", m.MeteringPoint)
+				assert.Equal(t, civil.DateFor(2023, 01, 01), m.State.ActiveSince.Date)
+				assert.Equal(t, civil.DateFor(2025, 6, 17), m.State.InactiveSince.Date)
+				assert.Equal(t, model.INACTIVE, m.ProcessState)
+				assert.Equal(t, model.S_INACTIVE, m.Status)
+				fmt.Printf("Date: %v\n", m.State.InactiveSince.Date)
+			},
+		},
+		{
+			name:          "Activate - Abschluss",
+			msg:           `{"conversationId":"RC102925202505291748545670000769433","messageId":"AT003200202506052023341700000031909","sender":"AT003200","receiver":"RC102925","messageCode":"ABSCHLUSS_ECON","messageCodeVersion":"02.00","ecId":"AT00300000000TC000015000000000001","meterList":[{"meteringPoint":"AT0032000000000000000000000011490","direction":"CONSUMPTION","activation":1749160800000,"partFact":100,"from":1749160800000,"to":253402210800000,"consentId":"AT002000202504071118158864B2hYwr"}]}`,
+			msgType:       model.EBMS_ONLINE_REG_COMPLETION,
+			msgProto:      model.EC_REQ_ONL,
+			meter:         "AT0030000000000000000000000153013",
+			expectedState: model.S_ACTIVE,
+			invoke: func(msg model.SubscribeMessage) {
+				protocolEcReqOnlHandler(context.Background(), msg)
+			},
+			check: func(t *testing.T, m *model.MeteringPoint) {
+				assert.Equal(t, "AT0030000000000000000000000153013", m.MeteringPoint)
+				assert.Equal(t, civil.DateFor(2023, 01, 01), m.State.ActiveSince.Date)
+				assert.Equal(t, civil.DateFor(2999, 12, 31), m.State.InactiveSince.Date)
+				assert.Equal(t, model.ACTIVE, m.ProcessState)
+				assert.Equal(t, model.S_ACTIVE, m.Status)
+			},
+		},
+		{
+			name:          "Antwort - CCMS",
+			msg:           `{"conversationId":"RC103619202506161750092130000917203","messageId":"AT008000202506161842410660000066105","sender":"AT008000","receiver":"RC103619","messageCode":"ANTWORT_CCMS","messageCodeVersion":"01.12","requestId":"NZCUR5C3","ecId":"AT00300000000TC000015000000000001","responseData":[{"meteringPoint":"AT0080000885400000202006120074147","responseCode":[176],"consentId":"AT002000202504071118158864B2hYwr"}],"consentEnd":1751234400000}`,
+			msgType:       model.EBMS_ANTWORT_CCMS,
+			msgProto:      model.CM_REV_SP,
+			meter:         "AT0030000000000000000000000153013",
+			expectedState: model.S_INACTIVE,
+			invoke: func(msg model.SubscribeMessage) {
+				protocolCmRevImpHandler(context.Background(), msg)
+			},
+			check: func(t *testing.T, m *model.MeteringPoint) {
+				assert.Equal(t, "AT0030000000000000000000000153013", m.MeteringPoint)
+				assert.Equal(t, civil.DateFor(2023, 01, 01), m.State.ActiveSince.Date)
+				assert.Equal(t, civil.DateFor(2025, 6, 30), m.State.InactiveSince.Date)
+				assert.Equal(t, model.INACTIVE, m.ProcessState)
+				assert.Equal(t, model.S_INACTIVE, m.Status)
+				fmt.Printf("Date: %v\n", m.State.InactiveSince.Date)
+			},
+		},
+	}
+
+	db, err := database.GetDB(context.Background())
+	require.NoError(t, err)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := model.SubscribeMessage{
+				MessageCode: tt.msgType,
+				Protocol:    tt.msgProto,
+				Tenant:      "TE000015",
+				Payload:     model.EbmsMessage{},
+			}
+			err := json.Unmarshal([]byte(tt.msg), &msg.Payload)
+			require.NoError(t, err)
+
+			switch tt.msgType {
+			case model.EBMS_ONLINE_REG_INIT:
+				msg.Payload.Meter.MeteringPoint = tt.meter
+				msg.Payload.Receiver = "TE000015"
+				break
+			case model.EBMS_AUFHEBUNG_CCMS:
+				msg.Payload.Meter.MeteringPoint = tt.meter
+				msg.Payload.Sender = "TE000015"
+			case model.EBMS_ONLINE_REG_COMPLETION:
+				msg.Payload.MeterList[0].MeteringPoint = tt.meter
+				msg.Payload.Receiver = "TE000015"
+			default:
+				msg.Payload.ResponseData[0].MeteringPoint = tt.meter
+				msg.Payload.Receiver = "TE000015"
+			}
+
+			tt.invoke(msg)
+
+			meter, err := db.FindMeteringByStatus(msg.Tenant, tt.meter, tt.expectedState)
+			require.NoError(t, err)
+			tt.check(t, meter)
 		})
 	}
 

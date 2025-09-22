@@ -14,8 +14,6 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres" // used by migrator
 	_ "github.com/golang-migrate/migrate/v4/source/file"       // used by migrator
-	//"github.com/jackc/pgx/v4/pgxpool"
-	//_ "github.com/jackc/pgx/v4/stdlib" // used by migrator
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
@@ -25,6 +23,31 @@ const (
 	DbUser = "test_user"
 	DbPass = "test_password"
 )
+
+var testDbInstance *sqlx.DB
+var testDB *TestDatabase
+
+func GetTestDB(ctx context.Context, dbInstance *TestDatabase) (Database, error) {
+	db.Do(func() {
+		_ = dbInstance.Open(ctx)
+		//db.Database = &sqlDatabase{db: dbInstance.DbInstance}
+	})
+	db.Database = &sqlDatabase{db: dbInstance.DbInstance}
+
+	if db.Database == nil {
+		return nil, errors.New("database was not initialized")
+	}
+	return db.Database, nil
+}
+
+func SetTestDb(testDb *sqlx.DB) {
+	db.Database = &sqlDatabase{db: testDb}
+}
+
+func InitTestDb(testDb *sqlx.DB) {
+	db.Do(func() {})
+	db.Database = &sqlDatabase{db: testDb}
+}
 
 type TestDatabase struct {
 	DbAddress        string
@@ -56,8 +79,10 @@ func SetupTestDatabase() *TestDatabase {
 	}
 }
 
-func (tdb *TestDatabase) Open() {
-	tdb.DbInstance, _ = sqlx.Open("postgres", tdb.connectionString)
+func (tdb *TestDatabase) Open(ctx context.Context) error {
+	var err error
+	tdb.DbInstance, err = sqlx.ConnectContext(ctx, "postgres", tdb.connectionString)
+	return err
 }
 
 func (tdb *TestDatabase) TearDown() {
@@ -143,14 +168,14 @@ func loadSqlFile(connectionStr, path string) error {
 		return err
 	}
 
-	db, err := sqlx.Open("postgres", connectionStr)
+	dbm, err := sqlx.Open("postgres", connectionStr)
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer dbm.Close()
 
 	// Execute all
-	_, err = db.Exec(string(file))
+	_, err = dbm.Exec(string(file))
 	if err != nil {
 		fmt.Println(err.Error())
 	}

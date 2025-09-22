@@ -2,13 +2,13 @@ package database
 
 import (
 	"at.ourproject/vfeeg-backend/model"
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/doug-martin/goqu/v9"
 	"github.com/jjeffery/civil"
 	"github.com/jmoiron/sqlx"
-	"github.com/mitchellh/mapstructure"
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -48,7 +48,8 @@ func TestUpdateParticipant(t *testing.T) {
 
 func TestRegisterParticipant(t *testing.T) {
 
-	mockDb, err := GetDatabaseMock()
+	mockDb, err := GetMockDb()
+	require.NoError(t, err)
 
 	participantJson := `{"businessRole":"EEG_PRIVATE","firstname":"Peter","lastname":"Obermüller","residentAddress":{"street":"Lambacherstraße","streetNumber":"39","zip":"4680","city":"Haag am Hausruck","type":"RESIDENCE"},"contact":{"phone":"06603611758","email":"obermueller.peter@gmail.com"},"accountInfo":{},"optionals":{},"status":"NEW","id":"e98b8619-7b6a-4836-baff-5489fb539535","role":"EEG_USER","billingAddress":{"street":"Lambacherstraße","streetNumber":"39","zip":"4680","city":"Haag am Hausruck","type":"BILLING"},"meters":[{"direction":"CONSUMPTION","status":"NEW","meteringPoint":"AT48124817243712897412","participantId":"e98b8619-7b6a-4836-baff-5489fb539535","tariffId":"a48d1990-a5a2-40c9-8d0a-77bed8e7dbcd","street":"Lambacherstraße","streetNumber":"39","zip":"4680","city":"Haag am Hausruck"}]}`
 
@@ -67,18 +68,19 @@ func TestRegisterParticipant(t *testing.T) {
 	mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
 	mockDb.Mock.ExpectCommit()
 
-	db, _ := mockDb.OpenMockDb()
-	tx, err := db.Beginx()
+	db, err := GetDB(context.Background())
+	require.NoError(t, err)
 
-	err = RegisterParticipant(tx, "RC200200", "petero", &p)
-
-	assert.NoError(t, tx.Commit())
+	err = db.RegisterParticipant("RC200200", "petero", &p)
 	assert.NoError(t, err)
 }
 
 func TestGetParticipant(t *testing.T) {
-	mockDb, err := GetDatabaseMock()
-	dbx := sqlx.NewDb(mockDb.db, "mock")
+	mockDb, err := GetMockDb()
+	require.NoError(t, err)
+
+	db, err := GetDB(context.Background())
+	require.NoError(t, err)
 
 	participantRows := sqlmock.NewRows([]string{
 		"id", "firstname", "lastname", "role", "businessRole", "titleBefore", "titleAfter", "participantSince",
@@ -109,7 +111,7 @@ func TestGetParticipant(t *testing.T) {
 			time.Now(), "admin", time.Now(), "NEW", "Energieweg", "12a", uuid.New(), "", "1234")
 	mockDb.Mock.ExpectQuery("SELECT (.+) FROM \"base\".\"participant_meter_state\" (.+)").WillReturnRows(meterRows)
 
-	participants, err := GetParticipants(dbx, "RC100298")
+	participants, err := db.GetParticipants("RC100298")
 	assert.NoError(t, err)
 
 	assert.NotEmpty(t, participants)
@@ -117,11 +119,13 @@ func TestGetParticipant(t *testing.T) {
 }
 
 func Test_GetParticipants(t *testing.T) {
-	db, err := openTestDb()
-	require.NoError(t, err)
-	defer db.Close()
+	//_, err := GetMockDb()
+	//require.NoError(t, err)
 
-	participants, err := GetParticipants(db, "TE000002")
+	db, err := GetTestDB(context.Background(), testDB)
+	require.NoError(t, err)
+
+	participants, err := db.GetParticipants("TE000002")
 	require.NoError(t, err)
 
 	require.Equal(t, 1, len(participants))
@@ -407,19 +411,16 @@ func TestImportParticipant(t *testing.T) {
 		},
 	}
 
+	db, err := GetDB(context.Background())
+	assert.NoError(t, err)
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			db, _ := openTestDb()
-			tx, err := db.Beginx()
+
+			err = db.ImportParticipant("TE000001", "test", tt.params)
 			assert.NoError(t, err)
 
-			err = ImportParticipant(tx, "TE000001", "test", tt.params)
-			assert.NoError(t, err)
-
-			err = tx.Commit()
-			require.NoError(t, err)
-
-			p, err := FindParticipantByMeteringPoint(db, "TE000001", tt.mp)
+			p, err := db.FindParticipantByMeteringPoint("TE000001", tt.mp)
 			assert.NoError(t, err)
 
 			tt.test(t, p)
@@ -428,7 +429,9 @@ func TestImportParticipant(t *testing.T) {
 }
 
 func TestUpdateParticipant1(t *testing.T) {
-	db, _ := openTestDb()
+	db, err := GetDB(context.Background())
+	require.NoError(t, err)
+
 	type args struct {
 		tenant      string
 		user        string
@@ -478,10 +481,10 @@ func TestUpdateParticipant1(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := UpdateParticipant(db, tt.args.tenant, tt.args.user, tt.args.participant)
+			err := db.UpdateParticipant(tt.args.tenant, tt.args.user, tt.args.participant)
 			assert.NoError(t, err)
 
-			pUnderTest, err := QueryParticipant(db, tt.args.participant.Id.String())
+			pUnderTest, err := db.QueryParticipant(tt.args.participant.Id.String())
 			assert.NoError(t, err)
 
 			tt.wantErr(t, pUnderTest, tt.args.participant)
@@ -490,15 +493,84 @@ func TestUpdateParticipant1(t *testing.T) {
 }
 
 func TestUpdateParticipantPartial(t *testing.T) {
-	input := map[string]interface{}{"mandateDate": "2025-06-04T08:14:39.000Z"}
-	var result model.BankInfo
-
-	cfg := &mapstructure.DecoderConfig{
-		Result:     &result,
-		DecodeHook: StringToNullStringHookFunc,
+	var tests = []struct {
+		name          string
+		participantId string
+		param         string
+		value         interface{}
+		test          func(t *testing.T, p *model.EegParticipant)
+	}{
+		{
+			name:          "Set Mandate-Date to 2025-06-04",
+			participantId: "ea9942da-03da-11ee-b82b-5a985b4b033a",
+			param:         "accountInfo.mandateDate",
+			value:         "2025-06-04",
+			test: func(t *testing.T, p *model.EegParticipant) {
+				mandateDate, err := civil.ParseDate("2025-06-04")
+				require.NoError(t, err)
+				assert.Equal(t, civil.NullDateFrom(&mandateDate), p.BankAccount.MandateDate)
+			},
+		},
+		{
+			name:          "Clear Mandate-Date to 2025-06-04",
+			participantId: "ea9942da-03da-11ee-b82b-5a985b4b033a",
+			param:         "accountInfo.mandateDate",
+			value:         nil,
+			test: func(t *testing.T, p *model.EegParticipant) {
+				assert.Equal(t, false, p.BankAccount.MandateDate.Valid)
+			},
+		},
+		{
+			name:          "Set Tariff-ID",
+			participantId: "ea9942da-03da-11ee-b82b-5a985b4b033a",
+			param:         "tariffId",
+			value:         "557d439d-4f61-42f2-ae54-9698e774381f",
+			test: func(t *testing.T, p *model.EegParticipant) {
+				assert.Equal(t, "557d439d-4f61-42f2-ae54-9698e774381f", p.TariffId.String)
+			},
+		},
+		{
+			name:          "Clear Tariff-ID",
+			participantId: "ea9942da-03da-11ee-b82b-5a985b4b033a",
+			param:         "tariffId",
+			value:         nil,
+			test: func(t *testing.T, p *model.EegParticipant) {
+				assert.Equal(t, false, p.TariffId.Valid)
+			},
+		},
+		{
+			name:          "Set Phone-Nr",
+			participantId: "ea9942da-03da-11ee-b82b-5a985b4b033a",
+			param:         "contact.phone",
+			value:         "000101101",
+			test: func(t *testing.T, p *model.EegParticipant) {
+				assert.Equal(t, "000101101", p.Contact.Phone.String)
+			},
+		},
+		{
+			name:          "Clear Phone-Nr",
+			participantId: "ea9942da-03da-11ee-b82b-5a985b4b033a",
+			param:         "contact.phone",
+			value:         nil,
+			test: func(t *testing.T, p *model.EegParticipant) {
+				assert.Equal(t, false, p.Contact.Phone.Valid)
+			},
+		},
 	}
-	decoder, err := mapstructure.NewDecoder(cfg)
-	require.NoError(t, err)
-	err = decoder.Decode(input)
-	require.NoError(t, err)
+
+	db, err := GetDB(context.Background())
+	assert.NoError(t, err)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+
+			err = db.UpdateParticipantPartial(tt.participantId, tt.param, tt.value)
+			assert.NoError(t, err)
+
+			p, err := db.GetParticipant(tt.participantId)
+			assert.NoError(t, err)
+
+			tt.test(t, p)
+		})
+	}
 }

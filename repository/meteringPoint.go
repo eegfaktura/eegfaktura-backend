@@ -3,6 +3,7 @@ package repository
 import (
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
+	"context"
 	"errors"
 	"github.com/jjeffery/civil"
 	"github.com/jmoiron/sqlx"
@@ -16,6 +17,7 @@ func (mrepo *MeteringPointRepository) UpdateProcessStatus(
 	tenant string, meters []string,
 	processState model.ProcessStatusType, statusCode *int16, activeSince, inactiveSince *civil.Date, consentId *string) error {
 
+	db, _ := database.GetDB(context.Background())
 	var defaultStatusCode int16 = 0
 
 	switch processState {
@@ -24,19 +26,19 @@ func (mrepo *MeteringPointRepository) UpdateProcessStatus(
 	case model.PENDING:
 		fallthrough
 	case model.INIT:
-		return database.MeteringPointsSetStatus(mrepo.db, tenant, processState, &defaultStatusCode, meters, nil, nil)
+		return db.MeteringPointsSetStatus(tenant, processState, &defaultStatusCode, meters, nil, nil)
 	case model.APPROVED:
-		return database.MeteringPointsSetStatus(mrepo.db, tenant, processState, &defaultStatusCode, meters, nil, consentId)
+		return db.MeteringPointsSetStatus(tenant, processState, &defaultStatusCode, meters, nil, consentId)
 	case model.ACTIVE:
-		return database.MeteringPointsSetStatus(mrepo.db, tenant, processState, &defaultStatusCode, meters, activeSince, consentId)
+		return db.MeteringPointsSetStatus(tenant, processState, &defaultStatusCode, meters, activeSince, consentId)
 	case model.REVOKED:
-		return database.MeteringPointsSetStatus(mrepo.db, tenant, processState, statusCode, meters, nil, nil)
+		return db.MeteringPointsSetStatus(tenant, processState, statusCode, meters, nil, nil)
 	case model.INACTIVE:
 		if inactiveSince == nil {
 			today := civil.Today()
 			inactiveSince = &today
 		}
-		return database.MeteringPointRevoke(mrepo.db, tenant, meters[0], *inactiveSince)
+		return db.MeteringPointRevoke(tenant, meters[0], *inactiveSince)
 	}
 	return errors.New("invalid process state")
 }

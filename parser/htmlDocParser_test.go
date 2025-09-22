@@ -139,27 +139,26 @@ func TestParseTemplate(t *testing.T) {
         </head>
         <body>
         <p>Hallo Max,</p>
-        <p>damit deine Registrierung abgeschlossen werden kann,
-            benötigen wir die Freigabe deiner Zählpunkte
+        <p>damit dein Zählpunkt tatsächlich Energie mit den anderen Mitgliedern austauschen kann, muss der EEG noch der Zugriff auf deine Energiedaten gewährt werden.</p>
+        <p>Benötigt wird das für folgenden Zählpunkt:
         <ul> <li>AT0010000000000000000000000111</li> </ul>
-        Auf der Webseite deines Netzbetreibers kann diese Freigabe online erteilt werden.</p>
-        <br>
-        
-        <p>Mit besten Grüßen</p>
-        <p>deine VFEEG Team. Im Auftrag von, </p>
+        Welche Schritte dafür konkret ausgeführt werden müssen, findest du auf folgender Webseite:</p>
         <p>
-            
-        <div>Max Sonnenmann</div>
+            <a href="https://docs.eegfaktura.at/shelves/netz-betreiber-infos">https://docs.eegfaktura.at/shelves/netz-betreiber-infos</a>
+        </p>
+        <p>Wähle einfach deinen Netzbetreiber aus und folge der beschriebenen Vorgehensweise.</p>
+        <p>Wir freuen uns, dass du bei uns mitmachst!</p>
+        <p>Mit besten Grüßen</p>
+        <div>TEST EEG</div>
+        <div> ,  </div>
+        
+        <div>T: 123456789</div>
         
         
-        <div>123456789</div>
         
         </p>
-        <div>Erneuerbare Energie Gemeinschaft:</div>
-        <div>TE-EEG</div>
-        <div>TEST EEG</div>
         
-        <p>Powered by eegFaktura.at</p>
+        <p>versandt durch</p>
         <img src="cid:eegfaktura-logo-1" style="max-height: 90px"/>
         </body>
         </html>`, " ")),

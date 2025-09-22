@@ -2,18 +2,15 @@ package database
 
 import (
 	"at.ourproject/vfeeg-backend/model"
-	"fmt"
 	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/require"
 	"testing"
 	"time"
 )
 
 func TestFetchEdaHistory(t *testing.T) {
-	var mockDb, err = GetDatabaseMock()
+	var mDB, mock, err = InitMockDatabase()
 	require.NoError(t, err)
-	dbx := sqlx.NewDb(mockDb.db, "mock")
 
 	start, _ := time.Parse(time.RFC3339Nano, "2023-10-03T17:00:00.000Z")
 	end, _ := time.Parse(time.RFC3339Nano, "2023-10-04T18:00:00.000Z")
@@ -23,15 +20,9 @@ func TestFetchEdaHistory(t *testing.T) {
 
 	rows := sqlmock.NewRows([]string{"conversationId", "date", "direction", "issuer", "message", "protocol", "tenant", "type"}).
 		AddRow("1", time.Now(), "CONSUMPTION", "ADMIN", "{}", "CR_MSG", "RC100298", model.EBMS_ONLINE_REG_APPROVAL)
-	mockDb.Mock.ExpectQuery(stmt).WillReturnRows(rows)
+	mock.ExpectQuery(stmt).WillReturnRows(rows)
 	//res, err := FetchEdaHistory(mockDb.OpenMockDb, "RC100298", (time.Now().Add(25 * time.Hour * -1)).UnixMilli(), time.Now().UnixMilli())
-	res, err := FetchEdaHistory(dbx, "RC100298", start.UnixMilli(), end.UnixMilli())
+	res, err := mDB.FetchEdaHistory("RC100298", "", start.UnixMilli(), end.UnixMilli(), 0)
 	require.NoError(t, err)
-
-	for k, v := range res {
-		fmt.Printf("K: %v\n", k)
-		for _, e := range v {
-			fmt.Printf("    V: %v\n", e)
-		}
-	}
+	require.NotNil(t, res)
 }

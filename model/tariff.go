@@ -36,10 +36,10 @@ type Tariff struct {
 	AccountGrossAmount   int             `json:"accountGrossAmount,string"  db:"accountGrossAmount"`
 	ParticipantFee       float32         `json:"participantFee" db:"participantFee"`
 	BaseFee              int             `json:"baseFee,string" db:"baseFee"`
-	BusinessNr           int             `json:"businessNr,string" db:"businessNr"`
+	BusinessNr           null.Int        `json:"businessNr,string" db:"businessNr"`
 	CentPerKWh           float32         `json:"centPerKWh" db:"centPerKWh"`
-	FreeKWh              int             `json:"freeKWh,string" db:"freeKWh"`
-	Discount             int             `json:"discount,string"`
+	FreeKWh              null.Int        `json:"freeKWh,omitempty,omitzero" db:"freeKWh"`
+	Discount             null.Int        `json:"discount,omitempty,omitzero" db:"discount"`
 	UseMeteringFee       bool            `json:"useMeteringPointFee"  db:"useMeteringPointFee"`
 	MeteringFee          null.Float      `json:"meteringPointFee" db:"meteringPointFee"`
 	MeteringVat          null.Int        `json:"meteringPointVat" db:"meteringPointVat"`

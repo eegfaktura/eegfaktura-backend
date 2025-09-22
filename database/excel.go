@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/jjeffery/civil"
-	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
 	"github.com/xuri/excelize/v2"
 	"gopkg.in/guregu/null.v4"
@@ -16,6 +15,10 @@ import (
 	"strings"
 	"time"
 )
+
+type ExcelRepository interface {
+	ImportMasterdataFromExcel(r io.Reader, filename, sheet, tenant string) error
+}
 
 var netOperatorMatch = regexp.MustCompile(`^[A-Z]{2}[0-9]*$`)
 
@@ -28,7 +31,7 @@ func openReader(r io.Reader, filename string, opt ...excelize.Options) (*exceliz
 	return f, nil
 }
 
-func ImportMasterdataFromExcel(db *sqlx.DB, r io.Reader, filename, sheet, tenant string) error {
+func (db *sqlDatabase) ImportMasterdataFromExcel(r io.Reader, filename, sheet, tenant string) error {
 	var f *excelize.File
 	var err error
 
@@ -44,7 +47,7 @@ func ImportMasterdataFromExcel(db *sqlx.DB, r io.Reader, filename, sheet, tenant
 	}
 	defer rows.Close()
 
-	gridOperators, err := GetGridOperators(db)
+	gridOperators, err := db.GetGridOperators()
 	if err != nil {
 		return err
 	}
@@ -57,7 +60,7 @@ func ImportMasterdataFromExcel(db *sqlx.DB, r io.Reader, filename, sheet, tenant
 		return ""
 	}
 
-	eeg, err := GetEegById(db, tenant)
+	eeg, err := db.GetEegById(tenant)
 	if err != nil {
 		return err
 	}
@@ -67,35 +70,28 @@ func ImportMasterdataFromExcel(db *sqlx.DB, r io.Reader, filename, sheet, tenant
 	log.Debugf("Rows: %+v", rows)
 	log.Debugf("LEN _ Import participants: %v", len(participants))
 
-	tx, err := db.Beginx()
-	if err != nil {
-		log.Error(err)
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-
 	for _, p := range participants {
-		err = ImportParticipant(tx, strings.ToUpper(tenant), "excel", p)
+		err = db.ImportParticipant(strings.ToUpper(tenant), "excel", p)
 		if err != nil {
 			importLog.Messages = append(importLog.Messages, model.NewLogMessageFromVfeegError(
 				fmt.Sprintf("%s %s", p.FirstName, p.LastName),
 				err,
 			))
 			log.Errorf("Error Import Participant from Excel: %s", err.Error())
-			return SaveNotificationFromMap(db, CreateNotificationMessageFromLog(importLog), tenant,
+			return db.SaveNotificationFromMap(CreateNotificationMessageFromLog(importLog), tenant,
 				model.N_TYPE_NOTIFICATION, model.N_PROCESS_IMPORT_EXCEL, "ADMIN")
 		}
 	}
 
 	if len(importLog.Messages) > 0 {
-		err = SaveNotificationFromMap(db, CreateNotificationMessageFromLog(importLog), tenant,
+		err = db.SaveNotificationFromMap(CreateNotificationMessageFromLog(importLog), tenant,
 			model.N_TYPE_NOTIFICATION, model.N_PROCESS_IMPORT_EXCEL, "ADMIN")
 		if err != nil {
 			log.Error(err)
 		}
 	}
 
-	return tx.Commit()
+	return err
 }
 
 func CreateNotificationMessageFromLog(logMsg *model.Log) map[string]interface{} {

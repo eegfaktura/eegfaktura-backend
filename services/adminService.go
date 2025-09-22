@@ -1,9 +1,9 @@
 package services
 
 import (
+	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
 	protobuf "at.ourproject/vfeeg-backend/proto"
-	"at.ourproject/vfeeg-backend/repository"
 	"context"
 	"github.com/jjeffery/civil"
 	"github.com/sirupsen/logrus"
@@ -37,9 +37,13 @@ func (r *AdminService) UpdateValue(ctx context.Context, request *protobuf.Update
 		}
 	}
 
+	db, err := database.GetDB(context.Background())
+	if err != nil {
+		return nil, err
+	}
+
 	switch request.UpdateClass {
 	case protobuf.UpdateEegRequest_PROCESSSTATUS:
-
 		var processState string
 		if processState, exists = request.Value["processState"]; !exists {
 			return &protobuf.UpdateEegReply{Status: 502, Message: "Can not update PROCESSSTATUS due to ProcessStatus Value is missing!"}, nil
@@ -49,7 +53,7 @@ func (r *AdminService) UpdateValue(ctx context.Context, request *protobuf.Update
 			return &protobuf.UpdateEegReply{Status: 502, Message: "Can not update PROCESSSTATUS due to MeteringPoint Id is missing!"}, nil
 		}
 
-		if err := repository.DbRepos.MeteringPointRepo.UpdateProcessStatus(
+		if err := db.UpdateProcessStatus(
 			request.Tenant,
 			[]string{*request.MeteringPoint},
 			model.ProcessStatusType(processState), nil,
@@ -61,7 +65,7 @@ func (r *AdminService) UpdateValue(ctx context.Context, request *protobuf.Update
 		if request.ParticipantId == nil || request.MeteringPoint == nil || !activeSince.Valid {
 			return &protobuf.UpdateEegReply{Status: 501, Message: "Can not update ACTIVESINCE due to MeteringPoint Id or Participant Id is missing!"}, nil
 		}
-		if err := repository.DbRepos.MeteringPointRepo.UpdateActiveSinceDate(
+		if err := db.UpdateActiveSinceDate(
 			request.Tenant,
 			*request.ParticipantId,
 			*request.MeteringPoint, "admin", activeSince.Ptr()); err != nil {
@@ -74,7 +78,7 @@ func (r *AdminService) UpdateValue(ctx context.Context, request *protobuf.Update
 			return &protobuf.UpdateEegReply{Status: 501, Message: "Can not update INACTIVESINCE due to MeteringPoint Id or Participant Id is missing!"}, nil
 		}
 
-		if err := repository.DbRepos.MeteringPointRepo.UpdateInActiveSinceDate(
+		if err := db.UpdateInActiveSinceDate(
 			request.Tenant,
 			*request.ParticipantId,
 			*request.MeteringPoint, "admin", inactiveSince.Ptr()); err != nil {
@@ -87,9 +91,9 @@ func (r *AdminService) UpdateValue(ctx context.Context, request *protobuf.Update
 			return &protobuf.UpdateEegReply{Status: 501, Message: "Can not update PARTICIPANT due to Participant Id is missing!"}, nil
 		}
 
-		if err := repository.DbRepos.ParticipantRepo.UpdateParticipant(
-			request.Tenant,
+		if err := db.UpdateParticipantValues(
 			*request.ParticipantId,
+			request.Tenant,
 			request.Value); err != nil {
 			logrus.Error(err)
 			return &protobuf.UpdateEegReply{Status: 500, Message: "Can not update PARTICIPANT due to a database issue!"}, err
@@ -104,7 +108,12 @@ func (r *AdminService) UpdateValue(ctx context.Context, request *protobuf.Update
 			return &protobuf.UpdateEegReply{Status: 501, Message: "Can not update EEG due to Values is missing!"}, nil
 		}
 
-		if err := repository.DbRepos.EegRepo.UpdatePartial(request.Tenant, request.Value); err != nil {
+		fields := map[string]interface{}{}
+		for k, v := range request.Value {
+			fields[k] = v
+		}
+
+		if err = db.UpdateEegPartial(request.Tenant, fields); err != nil {
 			logrus.Error(err)
 			return &protobuf.UpdateEegReply{Status: 500, Message: "Can not update EEG due to a database issue!"}, err
 		}

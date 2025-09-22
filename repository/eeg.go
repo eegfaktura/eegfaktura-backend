@@ -2,11 +2,10 @@ package repository
 
 import (
 	"at.ourproject/vfeeg-backend/database"
-	"github.com/jmoiron/sqlx"
 )
 
 type EegRepository struct {
-	db *sqlx.DB
+	db database.Database
 }
 
 func (er *EegRepository) UpdatePartial(tenant string, values map[string]string) error {
@@ -17,7 +16,7 @@ func (er *EegRepository) UpdatePartial(tenant string, values map[string]string) 
 		fields[k] = v
 	}
 
-	if err = database.UpdateEegPartial(er.db, tenant, fields); err != nil {
+	if err = er.db.UpdateEegPartial(tenant, fields); err != nil {
 		return err
 	}
 	return nil

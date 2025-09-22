@@ -44,6 +44,7 @@ var ErrInsertParticipant = PartialWrap(1103)
 var ErrRegisterParticipant = PartialWrap(1104)
 var ErrArchiveParticipant = PartialWrap(1105)
 var ErrFindParticipant = PartialWrap(1106)
+var ErrDeleteParticipant = PartialWrap(1107)
 
 var ErrRemoveMeteringPoint = PartialWrap(1201)
 var ErrStatusMeter = PartialWrap(1202)

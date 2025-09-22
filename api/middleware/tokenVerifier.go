@@ -5,14 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/coreos/go-oidc/v3/oidc"
-	"github.com/sirupsen/logrus"
 	"io"
 	"net/http"
 	"os"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/sirupsen/logrus"
 )
 
 var (
@@ -171,6 +172,9 @@ func GQLProtect(next http.Handler) http.Handler {
 
 		//fmt.Printf("Claims: %+v\n", claims)
 		tenant := r.Header.Get("tenant")
+		if len(tenant) == 0 {
+			tenant = r.Header.Get("X-Tenant")
+		}
 		superuser := hasRole(claims.RealmAccess.Roles, "superuser")
 		if !superuser {
 			if contains(claims.Tenants, tenant) == false {
@@ -279,6 +283,9 @@ func verifyRequest(handler JWTHandlerFunc) func(w http.ResponseWriter, r *http.R
 		}
 
 		tenant := r.Header.Get("tenant")
+		if len(tenant) == 0 {
+			tenant = r.Header.Get("X-Tenant")
+		}
 		superuser := hasRole(claims.RealmAccess.Roles, "superuser")
 		if !superuser {
 			if contains(claims.Tenants, tenant) == false {

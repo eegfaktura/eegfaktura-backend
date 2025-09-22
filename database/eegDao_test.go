@@ -2,10 +2,10 @@ package database
 
 import (
 	"at.ourproject/vfeeg-backend/model"
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/jmoiron/sqlx"
 	"github.com/mitchellh/mapstructure"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -14,11 +14,29 @@ import (
 	"testing"
 )
 
-func TestGetEeg(t *testing.T) {
-	db, err := openTestDb()
+func TestNewDatabase(t *testing.T) {
+
+	ctx := context.Background()
+	db, err := GetDB(ctx)
 	require.NoError(t, err)
 
-	eeg, err := GetEeg(db, "TE000001")
+	eeg, err := db.GetEegByEcId("AT00300000000TC000001000000000001")
+	require.NoError(t, err)
+
+	assert.Equal(t, "MY-TEST", eeg.Name)
+
+	participants, err := db.GetParticipants("TE000001")
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, len(participants))
+
+}
+
+func TestGetEeg(t *testing.T) {
+	db, err := GetDB(context.Background())
+	require.NoError(t, err)
+
+	eeg, err := db.GetEegById("TE000001")
 	assert.NoError(t, err)
 
 	expectedEeg := &model.Eeg{
@@ -62,7 +80,7 @@ func TestGetEeg(t *testing.T) {
 }
 
 func TestUpdateEeg(t *testing.T) {
-	mDB, mock, err := sqlmock.New()
+	mDB, mock, err := InitMockDatabase()
 	require.NoError(t, err)
 
 	eegJson := `{
@@ -108,8 +126,6 @@ func TestUpdateEeg(t *testing.T) {
 	err = json.NewDecoder(strings.NewReader(eegJson)).Decode(&eeg)
 	assert.NoError(t, err)
 
-	mdb := sqlx.NewDb(mDB, "mock")
-
 	type args struct {
 		tenant string
 		eeg    *model.Eeg
@@ -119,39 +135,27 @@ func TestUpdateEeg(t *testing.T) {
 		args    args
 		wantErr assert.ErrorAssertionFunc
 	}{
-		{name: "Update EEG", // TODO: Add test cases.
+		{
+			name:    "Update EEG",
 			args:    args{tenant: "TE100100", eeg: &eeg},
-			wantErr: assert.NoError}}
+			wantErr: assert.NoError,
+		},
+	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mock.ExpectExec("INSERT INTO (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
-			tt.wantErr(t, InsertEeg(mdb, tt.args.tenant, tt.args.eeg), fmt.Sprintf("InsertEeg(%v, %+v)", tt.args.tenant, tt.args.eeg))
+			tt.wantErr(t, mDB.InsertEeg(tt.args.tenant, tt.args.eeg), fmt.Sprintf("InsertEeg(%v, %+v)", tt.args.tenant, tt.args.eeg))
 			assert.NoError(t, mock.ExpectationsWereMet())
 			require.NoError(t, err)
 		})
 	}
 }
 
-func TestNotification(t *testing.T) {
-	db, err := openTestDb()
-	require.NoError(t, err)
-	defer db.Close()
-
-	err = SaveNotification(openTestDb, "TE000001", `{"msg":"hello world"}`, model.N_TYPE_NOTIFICATION, model.N_PROCESS_EDA_PROCESS, "ADMIN")
-	assert.NoError(t, err)
-
-	not, err := GetNotification(db, "TE000001", 0, true)
-	assert.NoError(t, err)
-
-	assert.NotEmpty(t, not)
-}
-
 func TestGetEegById(t *testing.T) {
-	db, err := openTestDb()
+	db, err := GetDB(context.Background())
 	require.NoError(t, err)
-	defer db.Close()
 
-	eeg, err := GetEegById(db, "TE000001")
+	eeg, err := db.GetEegById("TE000001")
 	assert.NoError(t, err)
 
 	println(eeg)
@@ -193,4 +197,102 @@ func TestUpdateEegPartial(t *testing.T) {
 	assert.NoError(t, err)
 
 	fmt.Printf("%+v\n", result)
+}
+
+func TestEegOnline(t *testing.T) {
+	input := map[string]interface{}{"online": true}
+	var result model.Eeg
+
+	cfg := &mapstructure.DecoderConfig{
+		Result:     &result,
+		DecodeHook: StringToNullStringHookFunc,
+	}
+	decoder, err := mapstructure.NewDecoder(cfg)
+	require.NoError(t, err)
+	err = decoder.Decode(input)
+
+	assert.NoError(t, err)
+
+	fmt.Printf("%+v\n", result)
+}
+
+func TestUpdateEegPartial1(t *testing.T) {
+	var tests = []struct {
+		name  string
+		eeg   string
+		param map[string]interface{}
+		test  func(t *testing.T, eeg *model.Eeg)
+	}{
+		{
+			name:  "Set EEG Business-Nr",
+			eeg:   "TE000001",
+			param: map[string]interface{}{"businessNr": "1234567890"},
+			test: func(t *testing.T, eeg *model.Eeg) {
+				assert.Equal(t, "1234567890", eeg.BusinessNr.String)
+			},
+		},
+		{
+			name:  "Set EEG Online true",
+			eeg:   "TE000001",
+			param: map[string]interface{}{"online": true},
+			test: func(t *testing.T, eeg *model.Eeg) {
+				assert.Equal(t, true, eeg.Online)
+			},
+		},
+		{
+			name:  "Set EEG Online false",
+			eeg:   "TE000001",
+			param: map[string]interface{}{"online": false},
+			test: func(t *testing.T, eeg *model.Eeg) {
+				assert.Equal(t, false, eeg.Online)
+			},
+		},
+		{
+			name:  "Set EEG IBAN",
+			eeg:   "TE000001",
+			param: map[string]interface{}{"iban": "AT11 1111 1111 1111 11"},
+			test: func(t *testing.T, eeg *model.Eeg) {
+				assert.Equal(t, "AT11 1111 1111 1111 11", eeg.Iban.String)
+			},
+		},
+		{
+			name:  "Set EEG Bankaccount Owner",
+			eeg:   "TE000001",
+			param: map[string]interface{}{"owner": "Max Mustermann"},
+			test: func(t *testing.T, eeg *model.Eeg) {
+				assert.Equal(t, "Max Mustermann", eeg.Owner.String)
+			},
+		},
+		{
+			name:  "Clear EEG Bankaccount Owner",
+			eeg:   "TE000001",
+			param: map[string]interface{}{"owner": nil},
+			test: func(t *testing.T, eeg *model.Eeg) {
+				assert.Equal(t, false, eeg.Owner.Valid)
+			},
+		},
+		{
+			name:  "Set EEG Bank creditorId",
+			eeg:   "TE000001",
+			param: map[string]interface{}{"creditor_id": "creditorId-1234"},
+			test: func(t *testing.T, eeg *model.Eeg) {
+				assert.Equal(t, "creditorId-1234", eeg.CreditorId.String)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db, err := GetDB(context.Background())
+			assert.NoError(t, err)
+
+			err = db.UpdateEegPartial(tt.eeg, tt.param)
+			assert.NoError(t, err)
+
+			eeg, err := db.GetEegById(tt.eeg)
+			assert.NoError(t, err)
+
+			tt.test(t, eeg)
+		})
+	}
 }

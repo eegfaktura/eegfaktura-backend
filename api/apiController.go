@@ -5,6 +5,7 @@ import (
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
+	"context"
 	"encoding/json"
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
@@ -45,15 +46,14 @@ func updateParticipantFactorAPI() middleware.JWTHandlerFunc {
 			return
 		}
 
-		db, err := database.ConnectToDatabase()
+		db, err := database.GetDB(context.Background())
 		if err != nil {
 			log.WithField("tenant", tenant).WithError(err).Error("failed to request metering point PRTFACT")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
 			return
 		}
-		defer func() { _ = db.Close() }()
 
-		eeg, err := database.GetEeg(db, tenant)
+		eeg, err := db.GetEegById(tenant)
 		if err != nil {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
 			return
