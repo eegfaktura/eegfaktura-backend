@@ -5,6 +5,7 @@ import (
 	"github.com/doug-martin/goqu/v9"
 	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
+	"gopkg.in/guregu/null.v4"
 )
 
 const TABLE_EEG = "base.eeg"
@@ -12,6 +13,7 @@ const TABLE_EEG_ADDRESS = "base.address"
 
 type EegRepository interface {
 	GetEegById(tenant string) (*model.Eeg, error)
+	GetEegByIdForUser(tenant string) (*model.Eeg, error)
 	GetEegByEcId(edId string) (*model.Eeg, error)
 	UpdateEegPartial(tenant string, fields map[string]interface{}) error
 	GetGridOperators() (map[string]string, error)
@@ -22,6 +24,21 @@ type EegRepository interface {
 
 func (db *sqlDatabase) GetEegById(tenant string) (*model.Eeg, error) {
 	return getEegById(db.db, tenant)
+}
+func (db *sqlDatabase) GetEegByIdForUser(tenant string) (*model.Eeg, error) {
+	eeg, err := getEegById(db.db, tenant)
+	if err != nil {
+		return nil, err
+	}
+	eeg.CommunityId = ""
+	eeg.BankName = null.String{}
+	eeg.BusinessNr = null.String{}
+	eeg.Contact = model.Contact{}
+	eeg.Phone = null.String{}
+	eeg.TaxNumber = null.String{}
+	eeg.VatNumber = null.String{}
+
+	return eeg, nil
 }
 
 func (db *sqlDatabase) GetEegByEcId(edId string) (*model.Eeg, error) {

@@ -1,22 +1,23 @@
 package api
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
 	"at.ourproject/vfeeg-backend/util"
-	"context"
-	"encoding/json"
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
-	"net/http"
 )
 
 func InitParticipantRouter(r *mux.Router) *mux.Router {
 	s := r.PathPrefix("/participant").Subrouter()
 
-	s.HandleFunc("", middleware.Protect(fetchParticipant())).Methods("GET")
+	s.HandleFunc("", middleware.ConditionProtect(fetchParticipantAll(), fetchParticipant())).Methods("GET")
 	s.HandleFunc("", middleware.Protect(registerParticipant())).Methods("POST")
 	s.HandleFunc("/{id}", middleware.Protect(updateParticipant())).Methods("PUT")
 	// Commit a participant to be a member of a EEG
@@ -25,6 +26,27 @@ func InitParticipantRouter(r *mux.Router) *mux.Router {
 	s.HandleFunc("/v2/{id}", middleware.Protect(deleteParticipant())).Methods("DELETE")
 
 	return r
+}
+
+func fetchParticipantAll() middleware.JWTHandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
+		db, err := database.GetDB(context.Background())
+		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to fetch participant.")
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
+			return
+		}
+
+		if claims.AccessGroups.IsAdmin() {
+			participant, err := db.GetParticipants(tenant)
+			if err != nil {
+				log.WithField("tenant", tenant).WithError(err).Error("failed to fetch participant.")
+				respondWith(w, http.StatusBadRequest, tenant, err)
+				return
+			}
+			respondWithJSON(w, 200, participant)
+		}
+	}
 }
 
 func fetchParticipant() middleware.JWTHandlerFunc {
@@ -36,13 +58,12 @@ func fetchParticipant() middleware.JWTHandlerFunc {
 			return
 		}
 
-		participant, err := db.GetParticipants(tenant)
+		participant, err := db.GetParticipantByName(tenant, claims.Email)
 		if err != nil {
 			log.WithField("tenant", tenant).WithError(err).Error("failed to fetch participant.")
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
-		//time.Sleep(2 * time.Second)
 		respondWithJSON(w, 200, participant)
 	}
 }

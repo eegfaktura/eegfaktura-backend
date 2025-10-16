@@ -1,22 +1,26 @@
 package database
 
 import (
-	"at.ourproject/vfeeg-backend/model"
 	dbsql "database/sql"
 	"errors"
 	"fmt"
+
+	"strings"
+
+	"at.ourproject/vfeeg-backend/model"
 	"github.com/doug-martin/goqu/v9"
 	"github.com/jjeffery/civil"
 	"github.com/jmoiron/sqlx"
+
 	//"github.com/mitchellh/mapstructure"
 	"github.com/pborman/uuid"
 	log "github.com/sirupsen/logrus"
-	"strings"
 )
 
 type ParticipantRepository interface {
 	GetParticipants(tenant string) ([]model.EegParticipant, error)
 	GetParticipant(participantId string) (*model.EegParticipant, error)
+	GetParticipantByName(tenant string, email string) ([]*model.EegParticipant, error)
 	ConfirmParticipant(username, participantId string) error
 	RegisterParticipant(tenant, username string, participant *model.EegParticipant) error
 	QueryParticipant(participantId string) (*model.EegParticipant, error)
@@ -34,6 +38,10 @@ func (db *sqlDatabase) GetParticipants(tenant string) ([]model.EegParticipant, e
 
 func (db *sqlDatabase) GetParticipant(participantId string) (*model.EegParticipant, error) {
 	return getParticipant(db.db, participantId)
+}
+
+func (db *sqlDatabase) GetParticipantByName(tenant, email string) ([]*model.EegParticipant, error) {
+	return getParticipantByName(db.db, tenant, email)
 }
 
 func (db *sqlDatabase) RegisterParticipant(tenant, username string, participant *model.EegParticipant) error {
@@ -152,6 +160,41 @@ func getParticipant(db *sqlx.DB, participantId string) (*model.EegParticipant, e
 	}
 
 	return participant, nil
+}
+
+func getParticipantByName(db *sqlx.DB, tenant, email string) ([]*model.EegParticipant, error) {
+	var participants []*model.EegParticipant
+
+	subquery := goqu.
+		From("base.contactdetail").
+		Select("participant_id").
+		Where(goqu.L("LOWER(email) = ?", strings.ToLower(email)))
+
+	stmt, _, err := buildParticipantQueryStmt().
+		Where(goqu.C("tenant").Eq(tenant),
+			goqu.C("id").In(subquery)).
+		ToSQL()
+
+	if err != nil {
+		return nil, model.ErrGetParticipant(err)
+	}
+
+	err = db.Select(&participants, stmt)
+	if err != nil {
+		return nil, model.ErrGetParticipant(err)
+	}
+
+	for i, _ := range participants {
+		err = completeParticipant(db, participants[i])
+		if err != nil {
+			log.WithField("tenant", tenant).Errorf("Cannot fetch Participant correct: %s", err.Error())
+		}
+		if participants[i].MeteringPoint == nil {
+			participants[i].MeteringPoint = make([]*model.MeteringPoint, 0)
+		}
+	}
+
+	return participants, nil
 }
 
 func queryParticipant(db *sqlx.DB, participantId string) (*model.EegParticipant, error) {

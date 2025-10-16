@@ -19,10 +19,11 @@ import (
 func InitEegRouter(r *mux.Router) *mux.Router {
 	s := r.PathPrefix("/eeg").Subrouter()
 
-	s.HandleFunc("", middleware.Protect(getEEG())).Methods("GET")
+	s.HandleFunc("", middleware.ConditionProtect(getEEG(), getEEG())).Methods("GET")
 	s.HandleFunc("", middleware.Protect(updateEEG())).Methods("POST")
 	s.HandleFunc("/tariff", middleware.Protect(getTariff())).Methods("GET")
 	s.HandleFunc("/tariff", middleware.Protect(addTariff())).Methods("POST")
+	s.HandleFunc("/tariff/{id}", middleware.Protect(fetchTariffHistory())).Methods("GET")
 	s.HandleFunc("/tariff/{id}", middleware.Protect(archiveTariff())).Methods("DELETE")
 	s.HandleFunc("/sync/participants/{oid}", middleware.Protect(syncParticipantsEda())).Methods("POST")
 	s.HandleFunc("/import/masterdata", middleware.Protect(uploadMasterData())).Methods("POST")
@@ -46,11 +47,18 @@ func getEEG() middleware.JWTHandlerFunc {
 			return
 		}
 
-		eeg, err := db.GetEegById(tenant)
+		var eeg *model.Eeg
+		if claims.AccessGroups.IsAdmin() {
+			eeg, err = db.GetEegById(tenant)
+		} else {
+			eeg, err = db.GetEegByIdForUser(tenant)
+		}
+
 		if err != nil {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
 			return
 		}
+
 		if eeg == nil {
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1001, fmt.Sprintf("EEG %s is not existing yet!", tenant)))
 			return
@@ -126,6 +134,26 @@ func addTariff() middleware.JWTHandlerFunc {
 			return
 		}
 		respondWithJSON(w, http.StatusCreated, t)
+	}
+}
+
+func fetchTariffHistory() middleware.JWTHandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
+		vars := mux.Vars(r)
+		idStr := vars["id"]
+
+		db, err := database.GetDB(context.Background())
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
+			return
+		}
+
+		var data []model.Tariff
+		if data, err = db.GetTariffHistory(tenant, idStr); err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, err)
+			return
+		}
+		respondWithJSON(w, http.StatusOK, data)
 	}
 }
 

@@ -23,6 +23,7 @@ type TariffRepository interface {
 	GetTariffNameMap(tenant string) (map[string]string, error)
 	AddTariff(tenant, user string, tariff *model.Tariff) error
 	ArchiveTariff(tenant string, id string) error
+	GetTariffHistory(tenant, id string) ([]model.Tariff, error)
 }
 
 func (db *sqlDatabase) GetTariff(tenant string) ([]model.Tariff, error) {
@@ -39,6 +40,28 @@ func (db *sqlDatabase) AddTariff(tenant, user string, tariff *model.Tariff) erro
 
 func (db *sqlDatabase) ArchiveTariff(tenant string, id string) error {
 	return archiveTariff(db.db, tenant, id)
+}
+
+func (db *sqlDatabase) GetTariffHistory(tenant, id string) ([]model.Tariff, error) {
+	var tariff model.Tariff
+	stmt, _, err := goqu.Dialect("postgres").From("base.tariff").Select(&tariff).
+		Where(
+			goqu.C("tenant").Eq(tenant),
+			goqu.C("id").Eq(id)).
+		Order(goqu.C("version").Desc()).
+		ToSQL()
+	if err != nil {
+		return []model.Tariff{}, model.ErrGetTariff(err)
+	}
+
+	tariffHistory := []model.Tariff{}
+	err = db.db.Select(&tariffHistory, stmt)
+	if (err != nil) || len(tariffHistory) == 0 {
+		log.Errorf("GetTariffHistory err: %v: %s", err, stmt)
+		return []model.Tariff{}, model.ErrGetTariff(err)
+	}
+
+	return tariffHistory, nil
 }
 
 var (
@@ -68,6 +91,44 @@ func GetTariff(db *sqlx.DB, tenant string) ([]model.Tariff, error) {
 		return tariff, model.ErrGetTariff(err)
 	}
 	return tariff, nil
+}
+
+func GetTariffHistory(db *sqlx.DB, tenant string, id string) ([]model.Tariff, error) {
+
+	//ds := goqu.Dialect("postgres").From("base.tariff").
+	//	Select(
+	//		goqu.I("users.id"),
+	//		goqu.I("users.name"),
+	//		goqu.L("COALESCE(array_agg(DISTINCT roles.role), '{}')").As("roles"),
+	//		goqu.L("COALESCE(array_agg(DISTINCT emails.email), '{}')").As("emails"),
+	//		goqu.L(`COALESCE(json_agg(
+	//                   DISTINCT jsonb_build_object(
+	//                       'street', addresses.street,
+	//                       'city', addresses.city
+	//                   )
+	//               ) FILTER (WHERE addresses.id IS NOT NULL), '[]')`).As("addresses"),
+	//	).
+	//	LeftJoin(goqu.T("roles"), goqu.On(goqu.I("roles.user_id").Eq(goqu.I("users.id")))).
+	//	LeftJoin(goqu.T("emails"), goqu.On(goqu.I("emails.user_id").Eq(goqu.I("users.id")))).
+	//	LeftJoin(goqu.T("addresses"), goqu.On(goqu.I("addresses.user_id").Eq(goqu.I("users.id")))).
+	//	GroupBy(goqu.I("users.id"), goqu.I("users.name"))
+
+	stmt, _, err := goqu.Dialect("postgres").From("base.tariff").
+		Where(
+			goqu.C("tenant").Eq(tenant),
+			goqu.C("id").Eq(id)).
+		ToSQL()
+	if err != nil {
+		return []model.Tariff{}, model.ErrGetTariff(err)
+	}
+
+	tariffHistory := []model.Tariff{}
+	err = db.Get(&tariffHistory, stmt)
+	if (err != nil) || len(tariffHistory) == 0 {
+		return []model.Tariff{}, model.ErrGetTariff(err)
+	}
+
+	return tariffHistory, nil
 }
 
 func GetTariffNameMap(db *sqlx.DB, tenant string) (map[string]string, error) {

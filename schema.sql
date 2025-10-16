@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS base.EEG
     periods              JSON             DEFAULT ('[]'),
     "rcNumber"           TEXT    NOT NULL,
     area                 TEXT    NOT NULL, /* Ortsgebiet (LOCAL | REGIONAL) | BEG | GEA */
-    legal                TEXT    NOT NULL DEFAULT 'verein', /* Unternehmensform ("verein" | "genossenschaft" | "geselschaft") */
+    legal                TEXT    NOT NULL DEFAULT 'verein', /* Unternehmensform ("verein" | "genossenschaft" | "gesellschaft") */
     gridoperator_code    TEXT    NOT NULL,
     gridoperator_name    TEXT    NOT NULL,
     "communityId"        TEXT    NOT NULL,

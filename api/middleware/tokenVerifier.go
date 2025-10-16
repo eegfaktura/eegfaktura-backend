@@ -240,6 +240,69 @@ func hasRole(roles []string, role string) bool {
 //	}
 //}
 
+// ConditionProtect Routes respectivly to AccessGroups. Distinguish between admin route and user Route. ToDo: check body for refactoring.
+func ConditionProtect(admin JWTHandlerFunc, user JWTHandlerFunc) http.HandlerFunc {
+	toUpper := func(ss []string) []string {
+		rss := make([]string, len(ss))
+		for i, s := range ss {
+			rss[i] = strings.ToUpper(s)
+		}
+		return rss
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		jwtToken := r.Header.Get("Authorization")
+		if len(jwtToken) == 0 {
+			logrus.WithField("error", "JWT-Token").Printf("No Access_token in request!\n")
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+
+		if strings.HasPrefix(jwtToken, BEARER_SCHEMA) {
+			jwtToken = jwtToken[len(BEARER_SCHEMA):]
+		} else {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		idToken, err := verifier.Verify(context.Background(), jwtToken)
+		if err != nil {
+			logrus.WithField("error", "JWT-Token").Errorf("%v", err)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		claims := PlatformClaims{}
+		if err := idToken.Claims(&claims); err != nil {
+			logrus.WithField("error", "Claims").Errorf("%v", err)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		tenant := r.Header.Get("tenant")
+		if len(tenant) == 0 {
+			tenant = r.Header.Get("X-Tenant")
+		}
+		superuser := hasRole(claims.RealmAccess.Roles, "superuser")
+		if !superuser {
+			if contains(claims.Tenants, tenant) == false {
+				logrus.WithField("tenant", tenant).Warnf("Unauthorized access with tenant %s", tenant)
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+		}
+
+		claims.Tenants = toUpper(claims.Tenants)
+		if claims.AccessGroups.IsAdmin() {
+			admin(w, r, &claims, strings.ToUpper(tenant))
+		} else if claims.AccessGroups.IsUser() {
+			user(w, r, &claims, strings.ToUpper(tenant))
+		} else {
+			w.WriteHeader(http.StatusUnauthorized)
+		}
+	}
+}
+
 func Protect(handler JWTHandlerFunc) http.HandlerFunc {
 	return verifyRequest(handler)
 }
@@ -295,7 +358,12 @@ func verifyRequest(handler JWTHandlerFunc) func(w http.ResponseWriter, r *http.R
 			}
 		}
 
-		claims.Tenants = toUpper(claims.Tenants)
-		handler(w, r, &claims, strings.ToUpper(tenant))
+		if claims.AccessGroups.IsAdmin() {
+			claims.Tenants = toUpper(claims.Tenants)
+			handler(w, r, &claims, strings.ToUpper(tenant))
+		} else {
+			w.WriteHeader(http.StatusUnauthorized)
+		}
+
 	}
 }

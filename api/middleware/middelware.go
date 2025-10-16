@@ -5,14 +5,36 @@ import (
 	"crypto/rsa"
 	"errors"
 	"fmt"
-	"github.com/golang-jwt/jwt"
 	"net/http"
+
+	"github.com/golang-jwt/jwt"
 )
 
+type AccessGroups []string
+
+func (ag AccessGroups) IsAdmin() bool {
+	for _, s := range ag {
+		if s == "/EEG_ADMIN" {
+			return true
+		}
+	}
+	return false
+}
+
+func (ag AccessGroups) IsUser() bool {
+	for _, s := range ag {
+		if s == "/EEG_USER" {
+			return true
+		}
+	}
+	return false
+}
+
 type PlatformClaims struct {
-	Tenants      []string `json:"tenant"`
-	Username     string   `json:"preferred_username"`
-	AccessGroups []string `json:"access_groups"`
+	Tenants      []string     `json:"tenant"`
+	Username     string       `json:"preferred_username"`
+	Email        string       `json:"email"`
+	AccessGroups AccessGroups `json:"access_groups"`
 	RealmAccess  struct {
 		Roles []string `json:"roles"`
 	} `json:"realm_access"`
@@ -25,7 +47,10 @@ type Middleware interface {
 	WrapHandler(handler SecHandlerFunc) http.HandlerFunc
 }
 
+// JWTHandlerFunc Protected HTTP Callback function containing JWT Claims and the tenant.
 type JWTHandlerFunc func(http.ResponseWriter, *http.Request, *PlatformClaims, string)
+
+type JWTConditionalFunc func(admin JWTHandlerFunc, user JWTHandlerFunc)
 
 type JWTWrapperFunc func(handlerFunc JWTHandlerFunc) http.HandlerFunc
 
