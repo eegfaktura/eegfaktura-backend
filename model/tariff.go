@@ -59,9 +59,9 @@ type Tariff struct {
 	Version              int             `json:"version" db:"version"`
 	Type                 TariffModelType `json:"type"`
 	Name                 string          `json:"name"`
-	BillingPeriod        string          `json:"billingPeriod" db:"billingPeriod"`
+	BillingPeriod        string          `json:"billingPeriod,omitempty" db:"billingPeriod" goqu:"omitempty"`
 	UseVat               bool            `json:"useVat" db:"useVat"`
-	VatSupplementaryText string          `json:"vatSupplementaryText" db:"vatSupplementaryText" goqu:"omitempty"`
+	VatSupplementaryText string          `json:"vatSupplementaryText,omitempty" db:"vatSupplementaryText" goqu:"omitempty"`
 	VatInPercent         IntOrString     `json:"vatInPercent" db:"vatInPercent"`
 	AccountNetAmount     IntOrString     `json:"accountNetAmount" db:"accountNetAmount"`
 	AccountGrossAmount   IntOrString     `json:"accountGrossAmount"  db:"accountGrossAmount"`
