@@ -196,7 +196,7 @@ CREATE TABLE IF NOT EXISTS base.notification
     type         TEXT      NOT NULL DEFAULT 'MESSAGE',/* MESSAGE TYPE DESCRIBE 'ERROR' | 'MESSAGE' | 'NOTIFICATION' */
     process      TEXT      NOT NULL DEFAULT 'EDA_PROCESS',
     notification json      NOT NULL DEFAULT '{}',
-    date         TIMESTAMP NOT NULL DEFAULT (now())::date,
+    date         TIMESTAMP NOT NULL DEFAULT (now()),
     role         VARCHAR   NOT NULL DEFAULT 'ADMIN' /* 'USER' | 'ADMIN' */
 );
 
@@ -206,7 +206,7 @@ CREATE TABLE IF NOT EXISTS base.processhistory
     tenant           TEXT      NOT NULL,
     "conversationId" TEXT      NOT NULL,
     type             TEXT      NOT NULL,
-    date             TIMESTAMP NOT NULL             DEFAULT (now())::date,
+    date             TIMESTAMP NOT NULL             DEFAULT (now()),
     issuer           TEXT      NOT NULL,
     message          json      NOT NULL             DEFAULT '{}',
     direction        TEXT      NOT NULL             DEFAULT 'OUT', /* MESSAGE DIRECTION 'OUT' | 'IN' */

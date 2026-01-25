@@ -54,10 +54,10 @@ const (
 
 type Address struct {
 	Type         AddressType `json:"type,omitempty" goqu:"skipupdate"`
-	Street       null.String `json:"street,omitempty"  goqu:"omitempty"`
-	StreetNumber null.String `json:"streetNumber,omitempty" db:"streetNumber" goqu:"omitempty"`
-	Zip          null.String `json:"zip,omitempty" goqu:"omitempty"`
-	City         null.String `json:"city,omitempty" goqu:"omitempty"`
+	Street       null.String `json:"street,omitempty"  goqu:"omitempty,omitnil"`
+	StreetNumber null.String `json:"streetNumber,omitempty" db:"streetNumber" goqu:"omitempty,omitnil"`
+	Zip          null.String `json:"zip,omitempty" goqu:"omitempty,omitnil"`
+	City         null.String `json:"city,omitempty" goqu:"omitempty,omitnil"`
 }
 
 type EegAddress struct {

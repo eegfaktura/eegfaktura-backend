@@ -1,19 +1,20 @@
 package database
 
 import (
-	"at.ourproject/vfeeg-backend/model"
-	"at.ourproject/vfeeg-backend/util"
 	"bytes"
 	"fmt"
-	"github.com/jjeffery/civil"
-	log "github.com/sirupsen/logrus"
-	"github.com/xuri/excelize/v2"
-	"gopkg.in/guregu/null.v4"
 	"io"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"at.ourproject/vfeeg-backend/model"
+	"at.ourproject/vfeeg-backend/util"
+	"github.com/jjeffery/civil"
+	log "github.com/sirupsen/logrus"
+	"github.com/xuri/excelize/v2"
+	"gopkg.in/guregu/null.v4"
 )
 
 type ExcelRepository interface {
@@ -110,7 +111,7 @@ func CreateNotificationMessageFromLog(logMsg *model.Log) map[string]interface{} 
 	}
 }
 
-func ExportMasterdataToExcel(participants []model.EegParticipant, eeg *model.Eeg, tariffMap map[string]string) (*bytes.Buffer, error) {
+func ExportMasterdataToExcel(participants []*model.EegParticipant, eeg *model.Eeg, tariffMap map[string]string) (*bytes.Buffer, error) {
 	f := excelize.NewFile()
 	defer func() {
 		if err := f.Close(); err != nil {
@@ -236,7 +237,7 @@ func generateEegMastersheet(f *excelize.File, eeg *model.Eeg) error {
 	return nil
 }
 
-func generateParticipantMastersheet(f *excelize.File, participants []model.EegParticipant, tariffMap map[string]string) error {
+func generateParticipantMastersheet(f *excelize.File, participants []*model.EegParticipant, tariffMap map[string]string) error {
 
 	getTariffName := func(id string) string {
 		name, ok := tariffMap[id]

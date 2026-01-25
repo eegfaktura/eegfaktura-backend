@@ -30,7 +30,6 @@ func (db *sqlDatabase) GetEegByIdForUser(tenant string) (*model.Eeg, error) {
 	if err != nil {
 		return nil, err
 	}
-	eeg.CommunityId = ""
 	eeg.BankName = null.String{}
 	eeg.BusinessNr = null.String{}
 	eeg.Contact = model.Contact{}

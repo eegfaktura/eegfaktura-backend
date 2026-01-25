@@ -465,10 +465,10 @@ func Test_AddMultipleMeteringPoints(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 3, len(names))
 
-	findP := func(p []model.EegParticipant, firstname, lastname string) *model.EegParticipant {
+	findP := func(p []*model.EegParticipant, firstname, lastname string) *model.EegParticipant {
 		for i := range p {
 			if p[i].FirstName == firstname && p[i].LastName == lastname {
-				return &p[i]
+				return p[i]
 			}
 		}
 		return nil
@@ -552,10 +552,10 @@ func Test_MeteringPointIntegration(t *testing.T) {
 	db, err := GetDB(context.Background())
 	require.NoError(t, err)
 
-	findParticipantUnderTest := func(pp []model.EegParticipant, l string) *model.EegParticipant {
+	findParticipantUnderTest := func(pp []*model.EegParticipant, l string) *model.EegParticipant {
 		for _, p := range pp {
 			if p.FirstName == "Registration" && p.LastName == l {
-				return &p
+				return p
 			}
 		}
 		return nil
@@ -837,7 +837,7 @@ func Test_ActivateRevokedMeteringPoint(t *testing.T) {
 		require.NoError(t, err)
 		for _, p := range ps {
 			if p.FirstName == f && p.LastName == l {
-				return &p
+				return p
 			}
 		}
 		require.NoError(t, errors.New("not found"))
@@ -915,11 +915,11 @@ func Test_RegistrationProcess(t *testing.T) {
 		},
 	}
 
-	findParticipantUnderTest := func(pp []model.EegParticipant) *model.EegParticipant {
+	findParticipantUnderTest := func(pp []*model.EegParticipant) *model.EegParticipant {
 		var pUt *model.EegParticipant
 		for _, p := range pp {
 			if p.FirstName == "Registration" && p.LastName == "Test" {
-				pUt = &p
+				pUt = p
 				break
 			}
 		}

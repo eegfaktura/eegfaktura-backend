@@ -1,21 +1,22 @@
 package database
 
 import (
-	"at.ourproject/vfeeg-backend/model"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
+	"testing"
+	"time"
+
+	"at.ourproject/vfeeg-backend/model"
 	"github.com/jjeffery/civil"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/xuri/excelize/v2"
 	"gopkg.in/guregu/null.v4"
-	"io"
-	"os"
-	"testing"
-	"time"
 )
 
 func Test_transformExcelData(t *testing.T) {
@@ -58,10 +59,10 @@ func Test_transformExcelData(t *testing.T) {
 func TestImportMasterdataFromExcel(t *testing.T) {
 	log.SetLevel(log.DebugLevel)
 
-	findParticipant := func(ps []model.EegParticipant, firstname, lastname string) *model.EegParticipant {
+	findParticipant := func(ps []*model.EegParticipant, firstname, lastname string) *model.EegParticipant {
 		for _, p := range ps {
 			if p.FirstName == firstname && p.LastName == lastname {
-				return &p
+				return p
 			}
 		}
 		return nil
@@ -199,7 +200,7 @@ func TestExportMasterdataToExcel(t *testing.T) {
 	require.NoError(t, err)
 
 	type args struct {
-		participants []model.EegParticipant
+		participants []*model.EegParticipant
 		eeg          *model.Eeg
 		tariffMap    map[string]string
 	}

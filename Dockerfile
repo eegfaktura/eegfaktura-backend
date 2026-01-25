@@ -13,7 +13,7 @@ RUN go build -o /usr/local/bin/vfeeg-backend -ldflags="-s -w" server.go
 
 COPY config.yaml /etc/backend/
 
-VOLUME /opt/public
+VOLUME /opt/storage
 
 RUN rm -r ./*
 

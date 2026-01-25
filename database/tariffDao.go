@@ -12,7 +12,6 @@ import (
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/guregu/null.v4"
 	"reflect"
-	"strings"
 	"time"
 )
 
@@ -162,6 +161,7 @@ func archiveTariff(db *sqlx.DB, tenant string, id string) error {
 		return model.ErrTariffUtilized(ErrTariffUtilized)
 	}
 
+	// todo: use goqu for sql statement creation
 	_, err = db.Exec("UPDATE base.tariff SET status = 'ARCHIVED', \"lastModifiedDate\" = 'now()' WHERE tenant = $1 AND id = $2", tenant, id)
 	if err != nil {
 		return model.ErrUpdateTariff(err)
@@ -315,44 +315,4 @@ func StringToNullStringHookFunc(f reflect.Type, t reflect.Type, data interface{}
 	}
 
 	return data, nil
-}
-
-func buildRecordMap(t interface{}, values map[string]interface{}) (goqu.Record, error) {
-	val := reflect.ValueOf(t)
-	if val.Kind() != reflect.Struct && val.Kind() != reflect.Ptr {
-		return nil, errors.New("type must be a struct")
-	}
-
-	if val.Kind() == reflect.Ptr {
-		val = val.Elem()
-	}
-
-	updateMap := goqu.Record{}
-	typ := val.Type()
-
-	searchTag := func(p string) string {
-		for i := 0; i < val.NumField(); i++ {
-			field := typ.Field(i)
-			jsonTags := field.Tag.Get("json")
-			if jsonTags != "" {
-				jsonTag := strings.TrimSpace(strings.Split(jsonTags, ",")[0])
-				if jsonTag == p {
-					dbTags := field.Tag.Get("db")
-					if dbTags == "" {
-						return jsonTag
-					}
-
-					return strings.TrimSpace(strings.Split(dbTags, ",")[0])
-				}
-			}
-		}
-		return p
-	}
-
-	for key, value := range values {
-		name := searchTag(key)
-		updateMap[name] = value
-	}
-
-	return updateMap, nil
 }

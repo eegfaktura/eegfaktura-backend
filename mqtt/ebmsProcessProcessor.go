@@ -1,11 +1,12 @@
 package mqttclient
 
 import (
+	"errors"
+	"strings"
+
 	"at.ourproject/vfeeg-backend/model"
 	"at.ourproject/vfeeg-backend/util"
-	"errors"
 	log "github.com/sirupsen/logrus"
-	"strings"
 )
 
 var RegistrationForParticipation = func(eeg *model.Eeg, meter *model.MeteringPoint, from *int64) error {
@@ -78,14 +79,17 @@ func RevokeMeteringPoint(eeg *model.Eeg, meter *model.MeteringPoint, consentEnd 
 
 func RequestingMeteringPointList(eeg *model.Eeg, receiver string, from, to int64) error {
 
-	if eeg.GridOperator == "" {
-		return model.ErrEdaCommunication(errors.New("no Grid Operator specified"))
-	}
-
 	ebmsMessage := createEbmsMessage(eeg, nil, model.EBMS_ZP_LIST)
 	ebmsMessage.Meter = &model.Meter{MeteringPoint: eeg.CommunityId}
 	ebmsMessage.Timeline = &model.Timeline{From: from, To: to}
 	ebmsMessage.Receiver = receiver
+
+	if eeg.Area != model.BEG {
+		if eeg.GridOperator == "" {
+			return model.ErrEdaCommunication(errors.New("no Grid Operator specified"))
+		}
+		ebmsMessage.Receiver = eeg.GridOperator
+	}
 
 	log.WithField("tenant", eeg.Id).Info("Request MeteringPointList")
 	//if err := SendEbmsMessage(ebmsMessage); err != nil {

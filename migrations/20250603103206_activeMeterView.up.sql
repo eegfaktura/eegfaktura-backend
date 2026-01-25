@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS "base"."notification"
     "type"         text              NOT NULL DEFAULT 'MESSAGE',
     "process"      text              NOT NULL DEFAULT 'EDA_PROCESS',
     "notification" json              NOT NULL DEFAULT '{}',
-    "date"         timestamp         NOT NULL DEFAULT (now())::date,
+    "date"         timestamp         NOT NULL DEFAULT now(),
     "role"         character varying NOT NULL DEFAULT 'ADMIN',
     PRIMARY KEY ("id")
 );
@@ -92,7 +92,7 @@ CREATE TABLE IF NOT EXISTS "base"."processhistory"
     "tenant"         text              NOT NULL,
     "conversationId" text              NOT NULL,
     "type"           text              NOT NULL,
-    "date"           timestamp         NOT NULL DEFAULT (now())::date,
+    "date"           timestamp         NOT NULL DEFAULT (now()),
     "issuer"         text              NOT NULL,
     "message"        json              NOT NULL DEFAULT '{}',
     "direction"      text              NOT NULL DEFAULT 'OUT',

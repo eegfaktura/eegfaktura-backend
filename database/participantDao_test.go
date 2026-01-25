@@ -91,25 +91,27 @@ func TestGetParticipant(t *testing.T) {
 			1, uuid.New(), "001")
 	mockDb.Mock.ExpectQuery("SELECT (.+) FROM \"base\".\"participant\" (.+)").WillReturnRows(participantRows)
 
-	contactDetailsRows := sqlmock.NewRows([]string{"email", "phone"}).AddRow("mail@test.com", "+4325622 232311 32323")
-	mockDb.Mock.ExpectQuery("SELECT (.+) FROM \"base\".\"contactdetail\" (.+)").WillReturnRows(contactDetailsRows)
-
-	bankaccountRows := sqlmock.NewRows([]string{"iban", "owner"}).AddRow("AT12 3456 7987 9887 7765", "Sepp Huber")
-	mockDb.Mock.ExpectQuery("SELECT (.+) FROM \"base\".\"bankaccount\" (.+)").WillReturnRows(bankaccountRows)
-
-	addressRows := sqlmock.NewRows([]string{"city", "street", "streetNumber", "type", "zip"}).
-		AddRow("Solarcity", "Energieweg", "12a", "BILLING", "1234")
-	mockDb.Mock.ExpectQuery("SELECT (.+) FROM \"base\".\"address\" (.+)").WillReturnRows(addressRows)
-
-	addressResidenceRows := sqlmock.NewRows([]string{"city", "street", "streetNumber", "type", "zip"}).
-		AddRow("Solarcity", "Energieweg", "12a", "RESIDENCE", "1234")
-	mockDb.Mock.ExpectQuery("SELECT (.+) FROM \"base\".\"address\" (.+)").WillReturnRows(addressResidenceRows)
-
+	//contactDetailsRows := sqlmock.NewRows([]string{"email", "phone"}).AddRow("mail@test.com", "+4325622 232311 32323")
+	//mockDb.Mock.ExpectQuery("SELECT (.+) FROM \"base\".\"contactdetail\" (.+)").WillReturnRows(contactDetailsRows)
+	//
+	//bankaccountRows := sqlmock.NewRows([]string{"iban", "owner"}).AddRow("AT12 3456 7987 9887 7765", "Sepp Huber")
+	//mockDb.Mock.ExpectQuery("SELECT (.+) FROM \"base\".\"bankaccount\" (.+)").WillReturnRows(bankaccountRows)
+	//
+	//addressRows := sqlmock.NewRows([]string{"city", "street", "streetNumber", "type", "zip"}).
+	//	AddRow("Solarcity", "Energieweg", "12a", "BILLING", "1234")
+	//mockDb.Mock.ExpectQuery("SELECT (.+) FROM \"base\".\"address\" (.+)").WillReturnRows(addressRows)
+	//
+	//addressResidenceRows := sqlmock.NewRows([]string{"city", "street", "streetNumber", "type", "zip"}).
+	//	AddRow("Solarcity", "Energieweg", "12a", "RESIDENCE", "1234")
+	//mockDb.Mock.ExpectQuery("SELECT (.+) FROM \"base\".\"address\" (.+)").WillReturnRows(addressResidenceRows)
+	//
 	meterRows := sqlmock.NewRows([]string{"city", "direction", "equipmentName", "equipmentNumber", "inverterid", "metering_point_id",
 		"modifiedAt", "modifiedBy", "registeredSince", "status", "street", "streetNumber", "tariff_id", "transformer", "zip"}).
 		AddRow("Solarcity", "GENERATOR", "", "", "", "AT0020001110000010011111001",
 			time.Now(), "admin", time.Now(), "NEW", "Energieweg", "12a", uuid.New(), "", "1234")
-	mockDb.Mock.ExpectQuery("SELECT (.+) FROM \"base\".\"participant_meter_state\" (.+)").WillReturnRows(meterRows)
+	//mockDb.Mock.ExpectQuery("SELECT (.+) FROM \"base\".\"participant_meter_state\" (.+)").WillReturnRows(meterRows)
+
+	mockDb.Mock.ExpectQuery("SELECT (.+) FROM \"base\".\"meteringpoint\", (.+)").WillReturnRows(meterRows)
 
 	participants, err := db.GetParticipants("RC100298")
 	assert.NoError(t, err)
@@ -175,6 +177,7 @@ func Test_GetParticipants(t *testing.T) {
 		PartFact: 100,
 	}
 	m := findMeter(p.MeteringPoint, expectedMeter.MeteringPoint)
+	m.ParticipantId = ""
 	assert.NotNil(t, m)
 	assert.Equal(t, *expectedMeter.State, *m.State)
 	assert.Equal(t, expectedMeter, m)
@@ -407,6 +410,55 @@ func TestImportParticipant(t *testing.T) {
 				assert.Equal(t, model.S_INIT, m.Status)
 
 				assert.Equal(t, "Helmut", p.FirstName)
+			},
+		},
+		{
+			name: "Test Import Participant - only billing address",
+			mp:   "AT00300000000000000000000000000004",
+			params: &model.EegParticipant{
+				EegParticipantBase: model.EegParticipantBase{
+					ParticipantNumber: null.String{},
+					FirstName:         "Clara",
+					LastName:          "Mustermann",
+					MeteringPoint: []*model.MeteringPoint{&model.MeteringPoint{
+						MeteringPoint: "AT00300000000000000000000000000004",
+						Transformer:   null.String{},
+						Direction:     model.GENERATOR,
+						Street:        null.StringFrom("Solargasse"),
+						StreetNumber:  null.StringFrom("11a"),
+						City:          null.StringFrom("Solarcity"),
+						Zip:           null.StringFrom("1111"),
+					}},
+				},
+				Contact: model.ContactInfo{},
+				BillingAddress: model.Address{
+					Type:         model.BILLING,
+					Street:       null.StringFrom("Solargasse"),
+					StreetNumber: null.StringFrom("11a"),
+					Zip:          null.StringFrom("1111"),
+					City:         null.StringFrom("Solarcity"),
+				},
+				ResidentAddress: model.Address{
+					Type: model.RESIDENCE,
+				},
+				BankAccount: model.BankInfo{},
+			},
+			test: func(t *testing.T, p *model.EegParticipant) {
+				assert.Equal(t, 1, len(p.MeteringPoint))
+				m := p.MeteringPoint[0]
+
+				fmt.Printf("P: %+v\n", p.ParticipantSince)
+				fmt.Printf("M: %+v\n", m)
+
+				assert.Equal(t, civil.Today(), p.ParticipantSince.Date)
+				assert.Equal(t, civil.Today(), m.RegisteredSince)
+				assert.Nil(t, m.State.ActiveSince.Ptr())
+				assert.Nil(t, m.State.InactiveSince.Ptr())
+
+				assert.Equal(t, model.NEW, p.Status)
+				assert.Equal(t, model.S_INIT, m.Status)
+
+				assert.Equal(t, "Clara", p.FirstName)
 			},
 		},
 	}

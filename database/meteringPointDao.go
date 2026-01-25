@@ -911,6 +911,10 @@ func findAssignedMetering(db *sqlx.DB, tenant string, meterId string) (*model.Me
 func findMeteringByIdAndState(db *sqlx.DB, tenant string, meterIds []string, status *model.StatusType) ([]*model.MeteringPoint, error) {
 	var m []*model.MeteringPoint
 
+	if len(meterIds) == 0 {
+		return m, fmt.Errorf("no metering points found for tenant %s", tenant)
+	}
+
 	stateStmt := pgDialect.From(TABLE_METERINGPOINT).
 		Select(
 			goqu.C("activesince"),
@@ -1142,7 +1146,7 @@ func findMeteringPointsActivePeriod(db *sqlx.DB, tenant string, activeSince, ina
 		Where(goqu.I("inactivesince").Gte(civil.DateOf(time.UnixMilli(activeSince)))).
 		ToSQL()
 
-	fmt.Printf("FindMeteringPointsActivePeriod Stmt: %s\n", stmt)
+	//fmt.Printf("FindMeteringPointsActivePeriod Stmt: %s\n", stmt)
 	mIds := []string{}
 	err := db.Select(&mIds, stmt)
 	if err != nil {
