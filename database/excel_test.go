@@ -1,21 +1,22 @@
 package database
 
 import (
-	"at.ourproject/vfeeg-backend/model"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
+	"testing"
+	"time"
+
+	"at.ourproject/vfeeg-backend/model"
 	"github.com/jjeffery/civil"
-	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/xuri/excelize/v2"
 	"gopkg.in/guregu/null.v4"
-	"io"
-	"os"
-	"testing"
-	"time"
 )
 
 func Test_transformExcelData(t *testing.T) {
@@ -58,10 +59,10 @@ func Test_transformExcelData(t *testing.T) {
 func TestImportMasterdataFromExcel(t *testing.T) {
 	log.SetLevel(log.DebugLevel)
 
-	findParticipant := func(ps []model.EegParticipant, firstname, lastname string) *model.EegParticipant {
+	findParticipant := func(ps []*model.EegParticipant, firstname, lastname string) *model.EegParticipant {
 		for _, p := range ps {
 			if p.FirstName == firstname && p.LastName == lastname {
-				return &p
+				return p
 			}
 		}
 		return nil
@@ -71,12 +72,10 @@ func TestImportMasterdataFromExcel(t *testing.T) {
 	require.NoError(t, err)
 	defer reader.Close()
 
-	dbx, err := openTestDb()
+	db, err := GetDB(context.Background())
 	require.NoError(t, err)
-	defer dbx.Close()
 
 	type args struct {
-		db       *sqlx.DB
 		r        io.Reader
 		filename string
 		sheet    string
@@ -91,7 +90,6 @@ func TestImportMasterdataFromExcel(t *testing.T) {
 		{
 			name: "import file",
 			args: args{
-				db:       dbx,
 				r:        reader,
 				filename: "TE100200-Muster-Stammdatenimport.xlsx",
 				sheet:    "EEG Stammdaten",
@@ -101,8 +99,8 @@ func TestImportMasterdataFromExcel(t *testing.T) {
 
 			},
 			test: func(t *testing.T, args args) {
-				require.NoError(t, ImportMasterdataFromExcel(args.db, args.r, args.filename, args.sheet, args.tenant))
-				ps, err := GetParticipants(args.db, args.tenant)
+				require.NoError(t, db.ImportMasterdataFromExcel(args.r, args.filename, args.sheet, args.tenant))
+				ps, err := db.GetParticipants(args.tenant)
 				require.NoError(t, err)
 				assert.Equal(t, 7, len(ps))
 
@@ -188,22 +186,21 @@ func TestImportMasterdataFromExcel(t *testing.T) {
 //}
 
 func TestExportMasterdataToExcel(t *testing.T) {
-	db, err := openTestDb()
+	db, err := GetDB(context.Background())
 	require.NoError(t, err)
-	defer db.Close()
 
 	tenant := "TE000002"
-	eeg, err := GetEeg(db, tenant)
+	eeg, err := db.GetEegById(tenant)
 	require.NoError(t, err)
 
-	participants, err := GetParticipants(db, tenant)
+	participants, err := db.GetParticipants(tenant)
 	require.NoError(t, err)
 
-	tariffMap, err := GetTariffNameMap(db, tenant)
+	tariffMap, err := db.GetTariffNameMap(tenant)
 	require.NoError(t, err)
 
 	type args struct {
-		participants []model.EegParticipant
+		participants []*model.EegParticipant
 		eeg          *model.Eeg
 		tariffMap    map[string]string
 	}
@@ -233,9 +230,8 @@ func TestExportMasterdataToExcel(t *testing.T) {
 					fmt.Printf("Col: %+v\n", c)
 				}
 
-				fmt.Printf("Street %v\n", cols[1][16])
 				assert.Equal(t, 6, len(cols))
-				assert.Equal(t, "6", cols[1][16])
+				assert.Equal(t, "6", cols[1][19])
 			},
 			wantErr: assert.NoError,
 		},

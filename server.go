@@ -9,7 +9,6 @@ import (
 	"at.ourproject/vfeeg-backend/graph"
 	"at.ourproject/vfeeg-backend/graph/generated"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
-	"at.ourproject/vfeeg-backend/repository"
 	"at.ourproject/vfeeg-backend/services"
 	"context"
 	"embed"
@@ -23,6 +22,7 @@ import (
 	"github.com/golang-migrate/migrate/v4/source/httpfs"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
+	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"net/http"
@@ -98,6 +98,7 @@ func (d *driver) Open(rawURL string) (source.Driver, error) {
 
 	return d, nil
 }
+
 func main() {
 	var configPath = flag.String("configPath", ".", "Configfile Path")
 	flag.Parse()
@@ -108,22 +109,33 @@ func main() {
 	//cmd.Execute()
 	//fmt.Printf("Program end: %s\n", "now")
 
-	if err := MigrateDatabase(); err != nil {
+	source.Register("embed", &driver{})
+
+	db, err := database.GetDB(context.Background())
+	if err != nil {
+		panic(err)
+	}
+
+	if err = db.MigrateDB(); err != nil {
 		log.Fatalf("failed to migrate database")
 		os.Exit(1)
 	}
 
+	//if err := MigrateDatabase(); err != nil {
+	//	log.Fatalf("failed to migrate database")
+	//	os.Exit(1)
+	//}
+
 	StartServer()
+
+	err = db.CloseDB()
+	if err != nil {
+		log.Fatalf("failed to close database")
+	}
 }
 
-func MigrateDatabase() error {
+func MigrateDatabase(db *sqlx.DB) error {
 	log.Info("Start migration ...")
-	db, err := database.ConnectToDatabase()
-	if err != nil {
-		log.Fatal(err)
-		return err
-	}
-	defer func() { _ = db.Close() }()
 
 	source.Register("embed", &driver{})
 
@@ -154,7 +166,10 @@ func StartServer() {
 	if err != nil {
 		panic(err)
 	}
-	eda.InitEdaSubscription()
+
+	ctx := context.Background()
+
+	eda.InitEdaSubscription(ctx)
 	mqttclient.InitErrorSubscriptions()
 
 	quit := captureOsInterrupt()
@@ -189,7 +204,7 @@ func StartServer() {
 	allowedMethods := handlers.AllowedMethods([]string{"GET", "HEAD", "POST", "PUT", "OPTIONS", "DELETE"})
 	allowedCredentials := handlers.AllowCredentials()
 
-	repository.InitRepositories()
+	//repository.InitRepositories()
 	go services.StartGRPCServer(quit)
 
 	log.Infof("VFEEG BACKEND Config:  host: %s  port: %d  database:%s  user:%s",
@@ -220,7 +235,7 @@ func StartServer() {
 	}
 
 	broker.Stop()
-	repository.CloseRepositories()
+	//repository.CloseRepositories()
 	log.Println("final")
 
 	fmt.Println("STOP PROGRAM")

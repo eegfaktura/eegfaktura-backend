@@ -229,14 +229,13 @@ func (m *MessageBroker) command(cmd CommandMessage) {
 		online, ok := msg["online"]
 		if ok {
 			log.Infof("Update EEG Online State to %v", online)
-			db, err := database.ConnectToDatabase()
+			db, err := database.GetDB(context.Background())
 			if err != nil {
 				log.WithField("tenant", cmd.tenant).Error(err.Error())
 				return
 			}
-			defer func() { _ = db.Close() }()
 
-			if err := database.UpdateEegPartial(db, strings.ToUpper(cmd.tenant), map[string]interface{}{"online": online}); err != nil {
+			if err := db.UpdateOnlineState(strings.ToUpper(cmd.tenant), online.(bool)); err != nil {
 				log.Errorf("Error Command: %+v", err)
 			}
 		}

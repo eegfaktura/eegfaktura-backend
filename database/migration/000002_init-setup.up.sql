@@ -60,6 +60,9 @@ VALUES ('ea1142dc-03da-16ee-b82b-5a985b4b033a', 'TE000016', 'Peter', 'Obermülle
 INSERT INTO base.participant (id, tenant, firstname, lastname, role, "businessRole", "titleBefore", "titleAfter", "participantSince", "vatNumber", "taxNumber", "companyRegisterNumber", status, "createdBy", "createdDate", "lastModifiedBy", "lastModifiedDate", version, "tariffId", "participantNumber")
 VALUES ('ea1142dc-03da-17ee-b82b-5a985b4b033a', 'TE000017', 'Peter', 'Obermüller', 'EEG_USER', 'EEG_PRIVATE', '', '', '2023-10-11', '', '', '', 'ACTIVE', 'petero', '2023-06-05', 'petero', '2023-06-05', 1, 'e6c241ad-f011-11ed-9f81-6ad19f4af00f', '048');
 
+INSERT INTO base.bankaccount (participant_id) VALUES ('ea9942da-03da-11ee-b82b-5a985b4b033a');
+INSERT INTO base.tariff (id, type, name, tenant, version) VAlUES ('557d439d-4f61-42f2-ae54-9698e774381f', 'EEG', 'TEST TARIFF', 'TE000001', 1);
+
 -- Extend Participant with meta info
 INSERT INTO base.address (id, participant_id, type, street, "streetNumber", city, zip)
     VALUES ('b78bc938-cf22-49ba-93ab-015f6fef51c9', 'ea9942da-03da-11ee-b82b-5a985b4b033a', 'RESIDENCE', 'Schulberg', '1', 'Waizenkirchen', '4730');
@@ -112,7 +115,7 @@ INSERT INTO base.address (participant_id, type, street, "streetNumber", city, zi
 
 -- Insert Meteringpoint TE000002
 INSERT INTO base.meteringpoint (metering_point_id, participant_id, tenant, transformer, direction, status, process_state, tariff_id, inverterid, "equipmentName", street, "streetNumber", city, zip, "equipmentNumber", "modifiedAt", "modifiedBy", "registeredSince", grid_operator_id, grid_operator_name, activesince, inactivesince)
-    VALUES ('AT0030000000000000000000030041724', 'ea9942db-03da-11ee-b82b-5a985b4b033a', 'TE000002', null, 'GENERATION', 'ACTIVE', 'ACTIVE', 'f9b640dc-efe3-11ed-9f81-6ad19f4af00f', null, null, 'Imperndorf', '9', 'Waizenkirchen', '4730', 'GERZ02', '2023-11-15 17:42:41.335283', 'petero', '2023-08-16', null, null, '2023-01-01', '2999-12-31');
+    VALUES ('AT0030000000000000000000030041724', 'ea9942db-03da-11ee-b82b-5a985b4b033a', 'TE000002', null, 'GENERATION', 'INIT', 'NEW', 'f9b640dc-efe3-11ed-9f81-6ad19f4af00f', null, null, 'Imperndorf', '9', 'Waizenkirchen', '4730', 'GERZ02', '2023-11-15 17:42:41.335283', 'petero', '2023-08-16', null, null, null, null);
 INSERT INTO base.meteringpoint (metering_point_id, participant_id, tenant, transformer, direction, status, process_state, tariff_id, inverterid, "equipmentName", street, "streetNumber", city, zip, "equipmentNumber", "modifiedAt", "modifiedBy", "registeredSince", grid_operator_id, grid_operator_name, activesince, inactivesince)
     VALUES ('AT0030000000000000000000000902309', 'ea9942db-03da-11ee-b82b-5a985b4b033a', 'TE000002', null, 'CONSUMPTION', 'ACTIVE', 'ACTIVE', 'dd54d509-d159-11ed-a05d-5ab455bae278', null, '', 'Imperndorf', '9', 'Waizenkirchen', '4730', 'GABN05', '2023-11-15 17:44:02.405953', 'petero', '2023-08-16', null, null, '2023-01-01', '2999-12-31');
 INSERT INTO base.meteringpoint (metering_point_id, participant_id, tenant, transformer, direction, status, process_state, tariff_id, inverterid, "equipmentName", street, "streetNumber", city, zip, "equipmentNumber", "modifiedAt", "modifiedBy", "registeredSince", grid_operator_id, grid_operator_name, activesince, inactivesince)

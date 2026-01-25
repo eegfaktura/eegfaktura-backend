@@ -18,13 +18,12 @@ import (
 
 // UpdateEegModel is the resolver for the updateEegModel field.
 func (r *mutationResolver) UpdateEegModel(ctx context.Context, tenant string, eegModel *gmodel.EegModel) (*model.Eeg, error) {
-	db, err := database.ConnectToDatabase()
+	db, err := database.GetDB(context.Background())
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = db.Close() }()
 
-	eeg, err := database.GetEegById(db, tenant)
+	eeg, err := db.GetEegById(tenant)
 	if err != nil {
 		return nil, err
 	}
@@ -41,13 +40,12 @@ func (r *mutationResolver) UpdateEegModel(ctx context.Context, tenant string, ee
 
 // MasterDataUpload is the resolver for the masterDataUpload field.
 func (r *mutationResolver) MasterDataUpload(ctx context.Context, tenant string, sheet string, file graphql.Upload) (bool, error) {
-	db, err := database.ConnectToDatabase()
+	db, err := database.GetDB(ctx)
 	if err != nil {
 		return false, err
 	}
-	defer func() { _ = db.Close() }()
 
-	if err = database.ImportMasterdataFromExcel(db, file.File, file.Filename, sheet, tenant); err != nil {
+	if err = db.ImportMasterdataFromExcel(file.File, file.Filename, sheet, tenant); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -57,13 +55,12 @@ func (r *mutationResolver) MasterDataUpload(ctx context.Context, tenant string, 
 func (r *queryResolver) Eeg(ctx context.Context) (*model.Eeg, error) {
 	tenant := middleware.ForContextTenant(ctx)
 
-	db, err := database.ConnectToDatabase()
+	db, err := database.GetDB(context.Background())
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = db.Close() }()
 
-	eeg, err := database.GetEegById(db, tenant)
+	eeg, err := db.GetEegById(tenant)
 	if err != nil {
 		return nil, err
 	}

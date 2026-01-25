@@ -21,12 +21,12 @@ type Eeg struct {
 	TaxNumber          null.String        `json:"taxNumber,omitempty" db:"taxNumber" goqu:"omitempty"`
 	VatNumber          null.String        `json:"vatNumber" db:"vatNumber" goqu:"omitempty"`
 	ContactPerson      null.String        `json:"contactPerson" db:"contactPerson" goqu:"omitempty"`
+	Online             bool               `json:"online" goqu:"skipupdate"`
 	EegAddress         `json:"address,omitempty" mapstructure:",squash" goqu:"omitempty"`
 	AccountInfo        `json:"accountInfo,omitempty" mapstructure:",squash" goqu:"omitempty"`
 	Contact            `json:"contact,omitempty" mapstructure:",squash" goqu:"omitempty"`
 	Optionals          `json:"optionals,omitempty" mapstructure:",squash" goqu:"omitempty"`
 	//Periods            []int16 `json:"periods" goqu:"skipinsert,defaultifempty"`
-	Online bool `json:"online" goqu:"skipupdate"`
 }
 
 type AllocationModeType string
@@ -54,10 +54,10 @@ const (
 
 type Address struct {
 	Type         AddressType `json:"type,omitempty" goqu:"skipupdate"`
-	Street       null.String `json:"street,omitempty"  goqu:"omitempty"`
-	StreetNumber null.String `json:"streetNumber,omitempty" db:"streetNumber" goqu:"omitempty"`
-	Zip          null.String `json:"zip,omitempty" goqu:"omitempty"`
-	City         null.String `json:"city,omitempty" goqu:"omitempty"`
+	Street       null.String `json:"street,omitempty"  goqu:"omitempty,omitnil"`
+	StreetNumber null.String `json:"streetNumber,omitempty" db:"streetNumber" goqu:"omitempty,omitnil"`
+	Zip          null.String `json:"zip,omitempty" goqu:"omitempty,omitnil"`
+	City         null.String `json:"city,omitempty" goqu:"omitempty,omitnil"`
 }
 
 type EegAddress struct {
@@ -73,11 +73,13 @@ type Contact struct {
 }
 
 type AccountInfo struct {
-	Iban       null.String `json:"iban" goqu:"omitempty"`
-	Owner      null.String `json:"owner" goqu:"omitempty"`
-	BankName   null.String `json:"bankName" db:"bankName" goqu:"omitempty"`
-	CreditorId null.String `json:"creditorId" db:"creditor_id" goqu:"omitempty"`
-	Sepa       bool        `json:"sepa" db:"-" goqu:"omitempty"`
+	Iban        null.String `json:"iban" goqu:"omitempty"`
+	Owner       null.String `json:"owner" goqu:"omitempty"`
+	BankName    null.String `json:"bankName" db:"bankName" goqu:"omitempty"`
+	CreditorId  null.String `json:"creditorId" db:"creditor_id" goqu:"omitempty"`
+	Bic         null.String `json:"bic" db:"bic" goqu:"omitempty"`
+	Sepa        bool        `json:"sepa" db:"sepa" goqu:"omitempty"`
+	BankPurpose null.String `json:"bankPurpose" db:"bankPurpose" goqu:"omitempty"`
 }
 
 type Optionals struct {

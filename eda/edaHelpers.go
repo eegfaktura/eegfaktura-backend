@@ -58,17 +58,28 @@ func extractResponseCodeAndMeteringPointV2(ebmsMessage *model.EbmsMessage) ([]re
 		return &id
 	}
 
-	for _, rd := range ebmsMessage.ResponseData {
-		if len(rd.ResponseCode) > 0 {
-			codes = append(codes, rd.ResponseCode...)
-		}
+	switch ebmsMessage.MessageCode {
+	case model.EBMS_AUFHEBUNG_CCMS, model.EBMS_ABLEHNUNG_CCMS:
+		codes = append(codes, 99)
+		response = []responseCodesPerMeter{{
+			meter:      ebmsMessage.Meter.MeteringPoint,
+			codes:      []int16{99},
+			consentEnd: civil.DateOf(time.UnixMilli(ebmsMessage.ConsentEnd)),
+			consentId:  consentId(ebmsMessage.Meter.ConsentID),
+		}}
+	default:
+		for _, rd := range ebmsMessage.ResponseData {
+			if len(rd.ResponseCode) > 0 {
+				codes = append(codes, rd.ResponseCode...)
+			}
 
-		response = append(response, responseCodesPerMeter{
-			meter:      rd.MeteringPoint,
-			codes:      codes,
-			consentEnd: civil.DateOf(time.UnixMilli(rd.ConsentEnd)),
-			consentId:  consentId(rd.ConsentId),
-		})
+			response = append(response, responseCodesPerMeter{
+				meter:      rd.MeteringPoint,
+				codes:      codes,
+				consentEnd: civil.DateOf(time.UnixMilli(rd.ConsentEnd)),
+				consentId:  consentId(rd.ConsentId),
+			})
+		}
 	}
 
 	if len(codes) == 0 {

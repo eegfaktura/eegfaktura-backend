@@ -4,6 +4,7 @@ import (
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
+	"context"
 	"github.com/gorilla/mux"
 	"net/http"
 )
@@ -19,12 +20,11 @@ func InitUserRouter(r *mux.Router) *mux.Router {
 func getUser() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
 		//tenants := claims.Tenants
-		db, err := database.ConnectToDatabase()
+		db, err := database.GetDB(context.Background())
 		if err != nil {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
 			return
 		}
-		defer func() { _ = db.Close() }()
 
 		var tenants []string
 		su := middleware.IsSuperuser(claims.RealmAccess.Roles)
@@ -32,7 +32,7 @@ func getUser() middleware.JWTHandlerFunc {
 			tenants = claims.Tenants
 		}
 
-		tn, err := database.FetchTenantsName(db, tenants, su)
+		tn, err := db.FetchTenantsName(tenants, su)
 		if err != nil {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrGetUser(err))
 			return

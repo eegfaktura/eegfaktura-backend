@@ -12,17 +12,16 @@ type ApiService struct {
 }
 
 func (api *ApiService) MasterData_MeteringPoint(ctx context.Context, meterRequest *protobuf.MeteringRequest) (*protobuf.MeteringPointReply, error) {
-	db, err := database.ConnectToDatabase()
+	db, err := database.GetDB(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = db.Close() }()
 
 	var meters []*model.MeteringPoint
 	if meterRequest.From == nil || meterRequest.To == nil {
-		meters, err = database.FindMeteringPointsForTenant(db, meterRequest.Tenant)
+		meters, err = db.FindMeteringPointsForTenant(meterRequest.Tenant)
 	} else {
-		meters, err = database.FindMeteringPointsActivePeriod(db, meterRequest.Tenant, int64(*meterRequest.From), int64(*meterRequest.To))
+		meters, err = db.FindMeteringPointsActivePeriod(meterRequest.Tenant, int64(*meterRequest.From), int64(*meterRequest.To))
 	}
 	if err != nil {
 		return nil, err

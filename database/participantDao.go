@@ -1,51 +1,213 @@
 package database
 
 import (
-	"at.ourproject/vfeeg-backend/model"
 	dbsql "database/sql"
 	"errors"
 	"fmt"
+
+	"strings"
+
+	"at.ourproject/vfeeg-backend/model"
 	"github.com/doug-martin/goqu/v9"
 	"github.com/jjeffery/civil"
 	"github.com/jmoiron/sqlx"
-	"github.com/mitchellh/mapstructure"
+
+	//"github.com/mitchellh/mapstructure"
 	"github.com/pborman/uuid"
 	log "github.com/sirupsen/logrus"
-	"strings"
-	"time"
 )
+
+type ParticipantRepository interface {
+	GetParticipants(tenant string) ([]*model.EegParticipant, error)
+	GetParticipant(participantId string) (*model.EegParticipant, error)
+	GetParticipantByName(tenant string, email string) ([]*model.EegParticipant, error)
+	ConfirmParticipant(username, participantId string) error
+	RegisterParticipant(tenant, username string, participant *model.EegParticipant) error
+	QueryParticipant(participantId string) (*model.EegParticipant, error)
+	ImportParticipant(tenant, username string, participant *model.EegParticipant) error
+	FindParticipantByMeteringPoint(tenant, meteringPoint string) (*model.EegParticipant, error)
+	UpdateParticipant(tenant, user string, participant *model.EegParticipant) error
+	UpdateParticipantPartial(participantId, name string, value interface{}) error
+	UpdateParticipantValues(participantId, tenant string, values map[string]string) error
+	DeleteParticipant(participantId string) error
+}
+
+func (db *sqlDatabase) GetParticipants(tenant string) ([]*model.EegParticipant, error) {
+	return getParticipants(db.db, tenant)
+}
+
+func (db *sqlDatabase) GetParticipant(participantId string) (*model.EegParticipant, error) {
+	return getParticipant(db.db, participantId)
+}
+
+func (db *sqlDatabase) GetParticipantByName(tenant, email string) ([]*model.EegParticipant, error) {
+	return getParticipantByName(db.db, tenant, email)
+}
+
+func (db *sqlDatabase) RegisterParticipant(tenant, username string, participant *model.EegParticipant) error {
+	tx, err := db.db.Beginx()
+	if err != nil {
+		return err
+	}
+
+	err = registerParticipant(tx, tenant, username, participant)
+	if err != nil {
+		return errors.Join(err, tx.Rollback())
+	}
+	return tx.Commit()
+}
+
+func (db *sqlDatabase) ConfirmParticipant(username, participantId string) error {
+	return confirmParticipant(db.db, username, participantId)
+}
+
+func (db *sqlDatabase) QueryParticipant(participantId string) (*model.EegParticipant, error) {
+	return queryParticipant(db.db, participantId)
+}
+
+func (db *sqlDatabase) ImportParticipant(tenant, username string, participant *model.EegParticipant) error {
+	tx, err := db.db.Beginx()
+	if err != nil {
+		return err
+	}
+
+	err = importParticipant(tx, tenant, username, participant)
+	if err != nil {
+		return errors.Join(err, tx.Rollback())
+	}
+	return tx.Commit()
+}
+
+func (db *sqlDatabase) FindParticipantByMeteringPoint(tenant, meteringPoint string) (*model.EegParticipant, error) {
+	return findParticipantByMeteringPoint(db.db, tenant, meteringPoint)
+}
+
+func (db *sqlDatabase) UpdateParticipant(tenant, user string, participant *model.EegParticipant) error {
+	return updateParticipant(db.db, tenant, user, participant)
+}
+
+func (db *sqlDatabase) UpdateParticipantPartial(participantId, name string, value interface{}) error {
+	return updateParticipantPartial(db.db, participantId, name, value)
+}
+
+func (db *sqlDatabase) UpdateParticipantValues(participantId, tenant string, values map[string]string) error {
+	var err error
+	for k, v := range values {
+		if err = updateParticipantPartial(db.db, participantId, k, v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (db *sqlDatabase) DeleteParticipant(participantId string) error {
+	return deleteParticipant(db.db, participantId)
+}
 
 const TABLE_PARTICIPANT = "base.participant"
 
-func GetParticipants(db *sqlx.DB, tenant string) ([]model.EegParticipant, error) {
-	var participants []model.EegParticipant = []model.EegParticipant{}
+func getParticipants(db *sqlx.DB, tenant string) ([]*model.EegParticipant, error) {
+	var participants []*model.EegParticipant = []*model.EegParticipant{}
 
 	stmt, _, err := buildParticipantQueryStmt().
 		Where(goqu.C("tenant").Eq(tenant)).
 		ToSQL()
 	if err != nil {
-		return []model.EegParticipant{}, model.ErrGetParticipant(err)
+		return []*model.EegParticipant{}, model.ErrGetParticipant(err)
 	}
 
 	err = db.Select(&participants, stmt)
 	if err != nil {
-		return []model.EegParticipant{}, model.ErrGetParticipant(err)
+		return []*model.EegParticipant{}, model.ErrGetParticipant(err)
 	}
 
-	for i, _ := range participants {
-		err = completeParticipant(db, &participants[i])
-		if err != nil {
-			log.WithField("tenant", tenant).Errorf("Cannot fetch Participant correct: %s", err.Error())
-		}
-		if participants[i].MeteringPoint == nil {
-			participants[i].MeteringPoint = make([]*model.MeteringPoint, 0)
-		}
+	err = completeParticipants(db, tenant, participants)
+	if err != nil {
+		return []*model.EegParticipant{}, model.ErrGetParticipant(err)
 	}
+
+	//for i, _ := range participants {
+	//	err = completeParticipant(db, &participants[i])
+	//	if err != nil {
+	//		log.WithField("tenant", tenant).Errorf("Cannot fetch Participant correct: %s", err.Error())
+	//	}
+	//	if participants[i].MeteringPoint == nil {
+	//		participants[i].MeteringPoint = make([]*model.MeteringPoint, 0)
+	//	}
+	//}
 
 	return participants, nil
 }
 
-func QueryParticipant(db *sqlx.DB, participantId string) (*model.EegParticipant, error) {
+func getParticipant(db *sqlx.DB, participantId string) (*model.EegParticipant, error) {
+	participant := &model.EegParticipant{}
+
+	stmt, _, err := buildParticipantQueryStmt().
+		Where(goqu.C("id").Eq(participantId)).
+		ToSQL()
+	if err != nil {
+		return participant, model.ErrGetParticipant(err)
+	}
+
+	err = db.Get(participant, stmt)
+	if err != nil {
+		return participant, model.ErrGetParticipant(err)
+	}
+
+	if participant != nil {
+		err = completeParticipant(db, participant)
+		if err != nil {
+			log.Errorf("Cannot fetch Participant correct: %s", err.Error())
+		}
+		if participant.MeteringPoint == nil {
+			participant.MeteringPoint = make([]*model.MeteringPoint, 0)
+		}
+	}
+
+	return participant, nil
+}
+
+func getParticipantByName(db *sqlx.DB, tenant, email string) ([]*model.EegParticipant, error) {
+	var participants []*model.EegParticipant
+
+	subquery := goqu.
+		From("base.contactdetail").
+		Select("participant_id").
+		Where(goqu.L("LOWER(email) = ?", strings.ToLower(email)))
+
+	stmt, _, err := buildParticipantQueryStmt().
+		Where(goqu.C("tenant").Eq(tenant),
+			goqu.C("id").In(subquery)).
+		ToSQL()
+
+	if err != nil {
+		return nil, model.ErrGetParticipant(err)
+	}
+
+	err = db.Select(&participants, stmt)
+	if err != nil {
+		return nil, model.ErrGetParticipant(err)
+	}
+
+	err = completeParticipants(db, tenant, participants)
+	if err != nil {
+		return nil, model.ErrGetParticipant(err)
+	}
+
+	//for i, _ := range participants {
+	//	err = completeParticipant(db, participants[i])
+	//	if err != nil {
+	//		log.WithField("tenant", tenant).Errorf("Cannot fetch Participant correct: %s", err.Error())
+	//	}
+	//	if participants[i].MeteringPoint == nil {
+	//		participants[i].MeteringPoint = make([]*model.MeteringPoint, 0)
+	//	}
+	//}
+
+	return participants, nil
+}
+
+func queryParticipant(db *sqlx.DB, participantId string) (*model.EegParticipant, error) {
 	var participant model.EegParticipant = model.EegParticipant{}
 
 	sql, _, err := buildParticipantQueryStmt().
@@ -84,7 +246,7 @@ func buildParticipantQueryStmt() *goqu.SelectDataset {
 		LeftJoin(contactInfoStmt.As("contact"), goqu.On(goqu.Ex{"participant.id": goqu.I("contact.participant_id")})).Select(&model.EegParticipant{})
 }
 
-func UpdateParticipant(db *sqlx.DB, tenant, user string, participant *model.EegParticipant) error {
+func updateParticipant(db *sqlx.DB, tenant, user string, participant *model.EegParticipant) error {
 
 	updateValues := struct {
 		model.EegParticipantBase
@@ -165,7 +327,7 @@ func UpdateParticipant(db *sqlx.DB, tenant, user string, participant *model.EegP
 //}
 
 // RegisterParticipant func RegisterParticipant(dbConn OpenDbXConnection, tenant, username string, participant *model.EegParticipant) error {
-func RegisterParticipant(tx *sqlx.Tx, tenant, username string, participant *model.EegParticipant) error {
+func registerParticipant(tx *sqlx.Tx, tenant, username string, participant *model.EegParticipant) error {
 	participant.Status = model.PENDING
 	participant.Id = uuid.NewUUID()
 	//participant.ParticipantSince = time.Now()
@@ -174,7 +336,7 @@ func RegisterParticipant(tx *sqlx.Tx, tenant, username string, participant *mode
 }
 
 // ImportParticipant func ImportParticipant(dbConn OpenDbXConnection, tenant, username string, participant *model.EegParticipant) error {
-func ImportParticipant(tx *sqlx.Tx, tenant, username string, participant *model.EegParticipant) error {
+func importParticipant(tx *sqlx.Tx, tenant, username string, participant *model.EegParticipant) error {
 
 	// check if User already exists
 	stmt, _, err := pgDialect.From("base.participant").
@@ -196,7 +358,7 @@ func ImportParticipant(tx *sqlx.Tx, tenant, username string, participant *model.
 	return saveParticipant(tx, tenant, username, participant, ImportMeteringPoints)
 }
 
-func ConfirmParticipant(db *sqlx.DB, username, participantId string) error {
+func confirmParticipant(db *sqlx.DB, username, participantId string) error {
 
 	sql, _, err := pgDialect.Update(TABLE_PARTICIPANT).
 		Set(goqu.Ex{"status": model.ACTIVE, "lastModifiedDate": civil.Now(), "lastModifiedBy": username}).
@@ -212,6 +374,19 @@ func ConfirmParticipant(db *sqlx.DB, username, participantId string) error {
 	if err != nil {
 		log.WithField("SQL", "UPDATE").WithError(err).Error(sql)
 		return model.ErrCompleteParticipant(err)
+	}
+	return nil
+}
+
+func deleteParticipant(db *sqlx.DB, participantId string) error {
+	stmt, _, err := pgDialect.Delete(TABLE_PARTICIPANT).
+		Where(goqu.Ex{"id": participantId}).ToSQL()
+	if err != nil {
+		return model.ErrDeleteParticipant(err)
+	}
+	_, err = db.Exec(stmt)
+	if err != nil {
+		return model.ErrDeleteParticipant(err)
 	}
 	return nil
 }
@@ -241,36 +416,29 @@ func saveParticipant(tx *sqlx.Tx, tenant, username string, participant *model.Ee
 		return model.ErrRegisterParticipant(err)
 	}
 
-	contactEntry := struct {
-		model.ContactInfo
-		Participant_id string
-	}{participant.Contact, participantId}
-	sql, _, _ = pgDialect.Insert("base.contactdetail").Rows(contactEntry).ToSQL()
+	extra := map[string]interface{}{"participant_id": participantId}
+
+	sql, _, _ = pgDialect.Insert("base.contactdetail").Rows(toRecord(participant.Contact, extra)).ToSQL()
 	_, err = tx.Exec(sql)
 	if err != nil {
 		return model.ErrRegisterParticipant(err)
 	}
 
-	bankInfoEntry := struct {
-		model.BankInfo
-		Participant_id string
-	}{participant.BankAccount, participantId}
-
-	sql, _, _ = pgDialect.Insert("base.bankaccount").Rows(bankInfoEntry).ToSQL()
+	sql, _, _ = pgDialect.Insert("base.bankaccount").Rows(toRecord(participant.BankAccount, extra)).ToSQL()
 	_, err = tx.Exec(sql)
 	if err != nil {
 		return model.ErrRegisterParticipant(err)
 	}
 
-	billingAddrEntry := struct {
-		model.Address
-		Participant_id string
-	}{participant.BillingAddress, participantId}
-	residenceAddrEntry := struct {
-		model.Address
-		Participant_id string
-	}{participant.ResidentAddress, participantId}
-	sql, _, _ = pgDialect.Insert("base.address").Rows(billingAddrEntry, residenceAddrEntry).ToSQL()
+	sql, _, err = pgDialect.Insert("base.address").Rows(
+		toRecord(participant.BillingAddress, extra),
+		toRecord(participant.ResidentAddress, extra),
+	).ToSQL()
+
+	if err != nil {
+		log.WithField("STMT", "INSERT").WithError(err).Error(sql)
+		return model.ErrRegisterParticipant(err)
+	}
 	_, err = tx.Exec(sql)
 	if err != nil {
 		return model.ErrRegisterParticipant(err)
@@ -283,38 +451,24 @@ func saveParticipant(tx *sqlx.Tx, tenant, username string, participant *model.Ee
 	return nil
 }
 
-func ArchiveParticipant(db *sqlx.DB, user string, id string) error {
-	stmt, _, err := pgDialect.Update(TABLE_PARTICIPANT).
-		Set(goqu.Record{"status": "ARCHIVED", "lastModifiedDate": time.Now(), "lastModifiedBy": user}).
-		Where(goqu.Ex{"id": id}).ToSQL()
-	if err != nil {
-		return model.ErrArchiveParticipant(err)
-	}
-	_, err = db.Exec(stmt)
-	if err != nil {
-		return model.ErrArchiveParticipant(err)
-	}
-	return nil
-}
+//func decodeField(result interface{}, fields map[string]interface{}) (interface{}, error) {
+//	cfg := &mapstructure.DecoderConfig{
+//		Result:     result,
+//		DecodeHook: StringToNullStringHookFunc,
+//	}
+//	decoder, err := mapstructure.NewDecoder(cfg)
+//	if err != nil {
+//		return nil, err
+//	}
+//	err = decoder.Decode(fields)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	return result, nil
+//}
 
-func decodeField(result interface{}, fields map[string]interface{}) (interface{}, error) {
-	cfg := &mapstructure.DecoderConfig{
-		Result:     result,
-		DecodeHook: StringToNullStringHookFunc,
-	}
-	decoder, err := mapstructure.NewDecoder(cfg)
-	if err != nil {
-		return nil, err
-	}
-	err = decoder.Decode(fields)
-	if err != nil {
-		return nil, err
-	}
-
-	return result, nil
-}
-
-func UpdateParticipantPartial(db *sqlx.DB, participantId, name string, value interface{}) error {
+func updateParticipantPartial(db *sqlx.DB, participantId, name string, value interface{}) error {
 
 	var stmt *goqu.UpdateDataset
 	var sql string
@@ -330,7 +484,7 @@ func UpdateParticipantPartial(db *sqlx.DB, participantId, name string, value int
 		switch names[0] {
 		case "billingAddress":
 			var result model.Address
-			updateValues, err = decodeField(&result, fields)
+			updateValues, err = buildRecordMap(&result, fields)
 			if err != nil {
 				return err
 			}
@@ -338,7 +492,7 @@ func UpdateParticipantPartial(db *sqlx.DB, participantId, name string, value int
 				Where(goqu.Ex{"participant_id": goqu.V(participantId)}, goqu.Ex{"type": goqu.V("BILLING")})
 		case "residentAddress":
 			var result model.Address
-			updateValues, err = decodeField(&result, fields)
+			updateValues, err = buildRecordMap(&result, fields)
 			if err != nil {
 				return err
 			}
@@ -346,7 +500,7 @@ func UpdateParticipantPartial(db *sqlx.DB, participantId, name string, value int
 				Where(goqu.Ex{"participant_id": goqu.V(participantId)}, goqu.Ex{"type": goqu.V("RESIDENCE")})
 		case "contact":
 			var result model.ContactInfo
-			updateValues, err = decodeField(&result, fields)
+			updateValues, err = buildRecordMap(&result, fields)
 			if err != nil {
 				return err
 			}
@@ -354,7 +508,7 @@ func UpdateParticipantPartial(db *sqlx.DB, participantId, name string, value int
 				Where(goqu.Ex{"participant_id": goqu.V(participantId)})
 		case "accountInfo":
 			var result model.BankInfo
-			updateValues, err = decodeField(&result, fields)
+			updateValues, err = buildRecordMap(&result, fields)
 			if err != nil {
 				return err
 			}
@@ -365,16 +519,22 @@ func UpdateParticipantPartial(db *sqlx.DB, participantId, name string, value int
 			return model.ErrUpdateParticipant(errors.New(fmt.Sprintf("Can not update structure of %s", name)))
 		}
 
-		sql, _, _ = stmt.Set(updateValues).ToSQL()
+		sql, _, err = stmt.Set(updateValues).ToSQL()
 
 	} else if len(names) == 1 {
 		var result model.EegParticipantBase
 		fields[names[0]] = value
-		updateValues, err = decodeField(&result, fields)
+		if names[0] == "businessRole" && value == "EEG_BUSINESS" {
+			fields["lastname"] = ""
+			fields["titleBefore"] = ""
+			fields["titleAfter"] = ""
+		}
+		updateValues, err = buildRecordMap(&result, fields)
 		if err != nil {
 			return err
 		}
-		sql, _, _ = pgDialect.Update("base.participant").Set(updateValues).
+
+		sql, _, err = pgDialect.Update("base.participant").Set(updateValues).
 			Where(goqu.Ex{"id": goqu.V(participantId)}).ToSQL()
 	} else {
 		return model.ErrUpdateParticipant(errors.New(fmt.Sprintf("Can not update structure of %s", name)))
@@ -383,7 +543,7 @@ func UpdateParticipantPartial(db *sqlx.DB, participantId, name string, value int
 	res, err := db.Exec(sql)
 	if err == nil {
 		if rows, err := res.RowsAffected(); rows == 0 || err != nil {
-			err = InsertParticipantPartial(db, participantId, name, value)
+			err = insertParticipantPartial(db, participantId, name, value)
 			if err != nil {
 				return err
 			}
@@ -395,7 +555,7 @@ func UpdateParticipantPartial(db *sqlx.DB, participantId, name string, value int
 	}
 }
 
-func InsertParticipantPartial(db *sqlx.DB, participantId, name string, value interface{}) error {
+func insertParticipantPartial(db *sqlx.DB, participantId, name string, value interface{}) error {
 
 	var stmt *goqu.InsertDataset
 	var sql string
@@ -404,22 +564,46 @@ func InsertParticipantPartial(db *sqlx.DB, participantId, name string, value int
 	names := strings.Split(name, ".")
 	if len(names) == 2 {
 		fields["participant_id"] = participantId
+		fields[names[1]] = value
+
 		switch names[0] {
 		case "billingAddress":
-			stmt = pgDialect.Insert("base.address")
+			var result model.Address
 			fields["type"] = "BILLING"
+			insertValues, err := buildRecordMap(&result, fields)
+			if err != nil {
+				return err
+			}
+			stmt = pgDialect.Insert("base.address").Rows(insertValues)
 		case "residentAddress":
-			stmt = pgDialect.Insert("base.address")
+			var result model.Address
 			fields["type"] = "RESIDENCE"
+			insertValues, err := buildRecordMap(&result, fields)
+			if err != nil {
+				return err
+			}
+			stmt = pgDialect.Insert("base.address").Rows(insertValues)
 		case "contact":
-			stmt = pgDialect.Insert("base.contactdetail")
+			var result model.ContactInfo
+			insertValues, err := buildRecordMap(&result, fields)
+			if err != nil {
+				return err
+			}
+			stmt = pgDialect.Insert("base.contactdetail").Rows(insertValues)
 		case "accountInfo":
-			stmt = pgDialect.Insert("base.bankaccount")
+			result := struct {
+				model.BankInfo
+				ParticipantId string `json:"participant_id" db:"participant_id"`
+			}{}
+			insertValues, err := buildRecordMap(&result, fields)
+			if err != nil {
+				return err
+			}
+			stmt = pgDialect.Insert("base.bankaccount").Rows(insertValues)
 		default:
 			return model.ErrInsertParticipant(errors.New(fmt.Sprintf("Can not update structure of %s", name)))
 		}
-		fields[names[1]] = value
-		sql, _, _ = stmt.Rows(fields).ToSQL()
+		sql, _, _ = stmt.ToSQL()
 	} else {
 		return model.ErrInsertParticipant(errors.New(fmt.Sprintf("Can not update structure of %s", name)))
 	}
@@ -432,8 +616,7 @@ func InsertParticipantPartial(db *sqlx.DB, participantId, name string, value int
 	return nil
 }
 
-func completeParticipant(db *sqlx.DB, participant *model.EegParticipant) error {
-	participantId := participant.Id.String()
+func buildGetParticipantQuery() *goqu.SelectDataset {
 	stateStmt := pgDialect.From("base.meteringpoint").
 		Select(
 			goqu.C("activesince"),
@@ -448,17 +631,102 @@ func completeParticipant(db *sqlx.DB, participant *model.EegParticipant) error {
 			goqu.C("metering_point_id").As("mpfmid"),
 			goqu.C("participant_id").As("mpfpid"))
 
-	stmt, _, err := pgDialect.From("base.meteringpoint", stateStmt.As("state"), partFactStmt.As("mpfpF1")).Select(&participant.MeteringPoint).
+	stmt := pgDialect.From("base.meteringpoint", stateStmt.As("state"), partFactStmt.As("mpfpF1")).Select(&model.MeteringPoint{}).
 		Where(
-			goqu.C("participant_id").Table("meteringpoint").Schema("base").Eq(participantId),
+			//goqu.C("tenant").Table("meteringpoint").Schema("base").Eq(tenant),
 			goqu.C("mid").Eq(goqu.C("metering_point_id")),
 			goqu.C("pid").Eq(goqu.C("participant_id")),
 			goqu.C("mpfmid").Eq(goqu.C("metering_point_id")),
 			goqu.C("mpfpid").Eq(goqu.C("participant_id")),
-		).ToSQL()
+		)
+
+	return stmt
+}
+
+func completeParticipants(db *sqlx.DB, tenant string, participants []*model.EegParticipant) error {
+	//stateStmt := pgDialect.From("base.meteringpoint").
+	//	Select(
+	//		goqu.C("activesince"),
+	//		goqu.C("inactivesince"),
+	//		goqu.C("flag"),
+	//		goqu.C("metering_point_id").As("mid"),
+	//		goqu.C("participant_id").As("pid"))
+	//
+	//partFactStmt := pgDialect.From(TABLE_PARTITION_FACT_VIEW).
+	//	Select(
+	//		goqu.C("partFact"),
+	//		goqu.C("metering_point_id").As("mpfmid"),
+	//		goqu.C("participant_id").As("mpfpid"))
+	//
+	//stmt, _, err := pgDialect.From("base.meteringpoint", stateStmt.As("state"), partFactStmt.As("mpfpF1")).Select(&model.MeteringPoint{}).
+	//	Where(
+	//		goqu.C("tenant").Table("meteringpoint").Schema("base").Eq(tenant),
+	//		goqu.C("mid").Eq(goqu.C("metering_point_id")),
+	//		goqu.C("pid").Eq(goqu.C("participant_id")),
+	//		goqu.C("mpfmid").Eq(goqu.C("metering_point_id")),
+	//		goqu.C("mpfpid").Eq(goqu.C("participant_id")),
+	//	).ToSQL()
+
+	stmt, _, err := buildGetParticipantQuery().
+		Where(goqu.C("tenant").Table("meteringpoint").Schema("base").Eq(tenant)).ToSQL()
+
 	if err != nil {
 		return model.ErrCompleteParticipant(err)
 	}
+
+	meteringPoints := []model.MeteringPoint{}
+
+	err = db.Select(&meteringPoints, stmt)
+	if err != nil && !errors.Is(err, dbsql.ErrNoRows) {
+		return model.ErrCompleteParticipant(err)
+	}
+
+	meteringPointsMap := make(map[string][]*model.MeteringPoint)
+	for i, meteringPoint := range meteringPoints {
+		meteringPointsMap[meteringPoint.ParticipantId] = append(meteringPointsMap[meteringPoint.ParticipantId], &meteringPoints[i])
+	}
+
+	for i, participant := range participants {
+		m, ok := meteringPointsMap[participant.Id.String()]
+		if !ok {
+			participants[i].MeteringPoint = []*model.MeteringPoint{}
+		} else {
+			participants[i].MeteringPoint = m
+		}
+	}
+	return nil
+}
+
+func completeParticipant(db *sqlx.DB, participant *model.EegParticipant) error {
+	participantId := participant.Id.String()
+	//stateStmt := pgDialect.From("base.meteringpoint").
+	//	Select(
+	//		goqu.C("activesince"),
+	//		goqu.C("inactivesince"),
+	//		goqu.C("flag"),
+	//		goqu.C("metering_point_id").As("mid"),
+	//		goqu.C("participant_id").As("pid"))
+	//
+	//partFactStmt := pgDialect.From(TABLE_PARTITION_FACT_VIEW).
+	//	Select(
+	//		goqu.C("partFact"),
+	//		goqu.C("metering_point_id").As("mpfmid"),
+	//		goqu.C("participant_id").As("mpfpid"))
+	//
+	//stmt, _, err := pgDialect.From("base.meteringpoint", stateStmt.As("state"), partFactStmt.As("mpfpF1")).Select(&participant.MeteringPoint).
+	//	Where(
+	//		goqu.C("participant_id").Table("meteringpoint").Schema("base").Eq(participantId),
+	//		goqu.C("mid").Eq(goqu.C("metering_point_id")),
+	//		goqu.C("pid").Eq(goqu.C("participant_id")),
+	//		goqu.C("mpfmid").Eq(goqu.C("metering_point_id")),
+	//		goqu.C("mpfpid").Eq(goqu.C("participant_id")),
+	//	).ToSQL()
+	stmt, _, err := buildGetParticipantQuery().Where(
+		goqu.C("participant_id").Table("meteringpoint").Schema("base").Eq(participantId)).ToSQL()
+	if err != nil {
+		return model.ErrCompleteParticipant(err)
+	}
+
 	err = db.Select(&participant.MeteringPoint, stmt)
 	if err != nil && !errors.Is(err, dbsql.ErrNoRows) {
 		return model.ErrCompleteParticipant(err)
@@ -471,7 +739,7 @@ func completeParticipant(db *sqlx.DB, participant *model.EegParticipant) error {
 	return nil
 }
 
-func FindParticipantByMeteringPoint(db *sqlx.DB, tenant, meteringPoint string) (*model.EegParticipant, error) {
+func findParticipantByMeteringPoint(db *sqlx.DB, tenant, meteringPoint string) (*model.EegParticipant, error) {
 
 	participant := model.EegParticipant{}
 
