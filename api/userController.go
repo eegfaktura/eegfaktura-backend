@@ -1,18 +1,19 @@
 package api
 
 import (
+	"context"
+	"net/http"
+
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
-	"context"
 	"github.com/gorilla/mux"
-	"net/http"
 )
 
 func InitUserRouter(r *mux.Router) *mux.Router {
 	s := r.PathPrefix("/user").Subrouter()
 
-	s.HandleFunc("get-user", middleware.Protect(getUser())).Methods("GET")
+	s.HandleFunc("/get-user", middleware.Protect(getUser())).Methods("GET")
 
 	return r
 }

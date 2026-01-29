@@ -18,7 +18,12 @@ func NewErrUnanticipatedResponse(resp *http.Response) *ErrUnanticipatedResponse 
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		panic(err)
+		// prefer returning an error representation instead of panicking
+		return &ErrUnanticipatedResponse{
+			Status:      resp.StatusCode,
+			ContentType: resp.Header.Get("Content-Type"),
+			Body:        "<failed to read body: " + err.Error() + ">",
+		}
 	}
 	return &ErrUnanticipatedResponse{
 		Status:      resp.StatusCode,
@@ -26,7 +31,6 @@ func NewErrUnanticipatedResponse(resp *http.Response) *ErrUnanticipatedResponse 
 		Body:        string(body),
 	}
 }
-
 func (err ErrUnanticipatedResponse) Error() string {
 	return fmt.Sprintf(
 		"unanticipated response %d: (%s) %s",

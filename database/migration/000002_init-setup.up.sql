@@ -20,7 +20,7 @@ INSERT INTO base.eeg (tenant, name, description, periods, "rcNumber", area, lega
 
 -- Create Tenant for API Testing
 INSERT INTO base.eeg (tenant, name, description, periods, "rcNumber", area, legal, gridoperator_code, gridoperator_name, "communityId", "businessNr", "allocationMode", "settlementInterval", "providerBusinessNr", "taxNumber", "vatNumber", subjecttovat, street, "streetNumber", city, zip, iban, owner, sepa, phone, email, website, online, "contactPerson", "bankName")
-    VALUES ('TE001006', 'MY-TEST', 'Gemeinnütziger Verein', '[]', 'TE000006', 'LOCAL', 'verein', 'AT003000', 'Netz OOE', 'AT00300000000TC000006000000000001', '123456789', 'DYNAMIC', 'MONTHLY', null, '11 123/4567', null, null, 'Solarstraße', '9', 'Solarcity', '1111', 'AT011234000000321321', 'T-VIERE', false, '0043-664-1234567', 'test-eeg@gmx.at', 'test-eeg.at', false, 'Max Sonnenmann', null);
+    VALUES ('TE001006', 'MY-TEST', 'Gemeinnütziger Verein', '[]', 'TE000006', 'LOCAL', 'verein', 'AT003000', 'Netz OOE', 'AT00300000000TC000006000000000001', '123456789', 'DYNAMIC', 'MONTHLY', null, '11 123/4567', null, null, 'Solarstraße', '9', 'Solarcity', '1111', 'AT011234000000321321', 'T-VIERE', false, '0043-664-1234567', 'test-eeg@gmx.at', 'test-eeg.at', true, 'Max Sonnenmann', null);
 
 -- Insert EEG for multi metering
 INSERT INTO base.eeg (tenant, name, description, periods, "rcNumber", area, legal, gridoperator_code, gridoperator_name, "communityId", "businessNr", "allocationMode", "settlementInterval", "providerBusinessNr", "taxNumber", "vatNumber", subjecttovat, street, "streetNumber", city, zip, iban, owner, sepa, phone, email, website, online, "contactPerson", "bankName")

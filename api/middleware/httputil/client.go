@@ -17,13 +17,13 @@ type ClientCreds struct {
 	expiresTime time.Time
 }
 
-func (c *ClientCreds) setExpiresTime() {
+func (c *ClientCreds) SetExpiresTime() {
 	if c.expiresTime.IsZero() {
 		c.expiresTime = time.Now().Add(time.Second * time.Duration(c.ExpiresIn))
 	}
 }
 
-func (c *ClientCreds) expired() bool {
+func (c *ClientCreds) Expired() bool {
 	return c.expiresTime.Before(time.Now())
 }
 
