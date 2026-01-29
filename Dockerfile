@@ -13,10 +13,16 @@ RUN go build -o /usr/local/bin/vfeeg-backend -ldflags="-s -w" server.go
 
 COPY config.yaml /etc/backend/
 
+# Copy the entrypoint
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+# Make it executable
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
 VOLUME /opt/storage
 
 RUN rm -r ./*
 
 EXPOSE 8080
 
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["vfeeg-backend", "-configPath", "/etc/backend/"]

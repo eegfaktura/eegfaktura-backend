@@ -1,21 +1,24 @@
 package api
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"time"
+
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
-	"context"
-	"encoding/json"
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
-	"net/http"
 )
 
 func InitApiRouter(r *mux.Router) *mux.Router {
 	s := r.PathPrefix("/master").Subrouter()
 
 	s.HandleFunc("/updatepartfact", middleware.ProtectApi(updateParticipantFactorAPI())).Methods("POST")
+	s.HandleFunc("/masterdata", middleware.ProtectApi(fetchMasterDataAPI())).Methods("GET")
 	s.HandleFunc("/test", testApi).Methods("GET")
 	return r
 }
@@ -70,5 +73,66 @@ func updateParticipantFactorAPI() middleware.JWTHandlerFunc {
 			return
 		}
 		respondWithStatus(w, http.StatusCreated)
+	}
+}
+
+func fetchMasterDataAPI() middleware.JWTHandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
+
+		db, err := database.GetDB(context.Background())
+		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to request metering point PRTFACT")
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
+			return
+		}
+
+		//eeg, err := db.GetEegById(tenant)
+		//if err != nil {
+		//	respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
+		//	return
+		//}
+		//
+		participants, err := db.GetParticipants(tenant)
+		if err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, err)
+			return
+		}
+
+		//tariffMap, err := db.GetTariffNameMap(tenant)
+		//if err != nil {
+		//	respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1059, err.Error()))
+		//	return
+		//}
+
+		masterdata := make([]model.MasterDataParticipant, len(participants))
+		for i := range participants {
+			masterdata[i].FirstName = participants[i].FirstName
+			masterdata[i].LastName = participants[i].LastName
+			masterdata[i].TitleAfter = participants[i].TitleAfter.String
+			masterdata[i].TitleBefore = participants[i].TitleBefore.String
+			masterdata[i].ParticipantSince = time.Unix(participants[i].ParticipantSince.Date.Unix(), 0)
+			masterdata[i].ParticipantNumber = participants[i].ParticipantNumber.String
+			masterdata[i].Status = participants[i].Status
+			masterdata[i].MeteringPoint = make([]model.MasterDataMeter, len(participants[i].MeteringPoint))
+			for j := range participants[i].MeteringPoint {
+				masterdata[i].MeteringPoint[j] = model.MasterDataMeter{
+					MeteringPoint:    participants[i].MeteringPoint[j].MeteringPoint,
+					ConsentId:        participants[i].MeteringPoint[j].ConsentId.String,
+					Direction:        participants[i].MeteringPoint[j].Direction,
+					Status:           participants[i].MeteringPoint[j].Status,
+					EquipmentNumber:  participants[i].MeteringPoint[j].EquipmentNumber.String,
+					EquipmentName:    participants[i].MeteringPoint[j].EquipmentName.String,
+					InverterId:       participants[i].MeteringPoint[j].InverterId.String,
+					RegisteredSince:  participants[i].MeteringPoint[j].RegisteredSince.String(),
+					GridOperatorId:   participants[i].MeteringPoint[j].GridOperatorId.String,
+					GridOperatorName: participants[i].MeteringPoint[j].GridOperatorName.String,
+					ActiveSince:      time.Unix(participants[i].MeteringPoint[j].State.ActiveSince.Date.Unix(), 0),
+					InactiveSince:    time.Unix(participants[i].MeteringPoint[j].State.InactiveSince.Date.Unix(), 0),
+					PartFact:         participants[i].MeteringPoint[j].PartFact,
+					AllocationFactor: participants[i].MeteringPoint[j].AllocationFactor.Float64,
+				}
+			}
+		}
+		respondWithJSON(w, http.StatusOK, masterdata)
 	}
 }
