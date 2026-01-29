@@ -1,13 +1,14 @@
 package api
 
 import (
+	"context"
+	"net/http"
+	"strconv"
+
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
-	"context"
 	"github.com/gorilla/mux"
-	"net/http"
-	"strconv"
 )
 
 func InitProcessRouter(r *mux.Router) *mux.Router {
@@ -20,9 +21,33 @@ func InitProcessRouter(r *mux.Router) *mux.Router {
 
 func fetchProcessHistory() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
-		start, err := strconv.ParseInt(r.URL.Query().Get("start"), 10, 64)
-		end, err := strconv.ParseInt(r.URL.Query().Get("end"), 10, 64)
-		pageSize, err := strconv.ParseInt(r.URL.Query().Get("ps"), 10, 16)
+		
+		// parse parameters with separate checks
+		startStr := r.URL.Query().Get("start")
+		if startStr == "" {
+			respondWithError(w, http.StatusBadRequest, "missing start")
+			return
+		}
+		start, err := strconv.ParseInt(startStr, 10, 64)
+		if err != nil {
+			respondWithError(w, http.StatusBadRequest, "invalid start")
+			return
+		}
+
+		endStr := r.URL.Query().Get("end")
+		end, err := strconv.ParseInt(endStr, 10, 64)
+		if err != nil {
+			respondWithError(w, http.StatusBadRequest, "invalid end")
+			return
+		}
+
+		psStr := r.URL.Query().Get("ps")
+		pageSize, err := strconv.ParseInt(psStr, 10, 64)
+		if err != nil {
+			respondWithError(w, http.StatusBadRequest, "invalid page size")
+			return
+		}
+
 		protocol := r.URL.Query().Get("protocol")
 		if err != nil {
 			respondWithError(w, http.StatusBadRequest, err.Error())

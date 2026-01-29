@@ -2,205 +2,88 @@ package middleware
 
 import (
 	"context"
-	"crypto/tls"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net"
 	"net/http"
-	"net/url"
-	"os"
-	"slices"
 	"strings"
-	"time"
 
-	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/golang-jwt/jwt"
 	"github.com/sirupsen/logrus"
 )
 
 var (
-	kcConfig map[string]*keycloakConfig
-	verifier *oidc.IDTokenVerifier
+	// VerifyTokenClaims pluggable verification function used by middlewares and tests.
+	// InitKeycloak should set this to the real verifier at startup.
+	// Tests override it to avoid network calls.
+	VerifyTokenClaims func(ctx context.Context, token string) (*PlatformClaims, error)
 )
 
-func InitKeycloak() {
-	var err error
-	kcConfig, err = readKeycloakConfig()
-	if err != nil {
-		logrus.WithField("error", "Init Keycloak").Errorf("E: %v", err)
-		panic(err)
-	}
+type PlatformClaims struct {
+	Tenants      []string     `json:"tenant"`
+	Username     string       `json:"preferred_username"`
+	Email        string       `json:"email"`
+	AccessGroups AccessGroups `json:"access_groups"`
+	RealmAccess  struct {
+		Roles []string `json:"roles"`
+	} `json:"realm_access"`
+	jwt.StandardClaims
+}
+type AccessGroups []string
 
-	if _, ok := kcConfig["api"]; !ok {
-		logrus.WithField("error", "Init Keycloak").Errorf("E: %v", errors.New("no client-id 'at.ourproject.vfeeg.api' available"))
-		panic(err)
-	}
-
-	clientIDApi := kcConfig["api"].ClientId
-	clientSecretApi := kcConfig["api"].Secret
-
-	realmApi := kcConfig["api"].Realm
-	host := strings.TrimRight(kcConfig["api"].Host, "/")
-	issuerUrl := kcConfig["api"].IssuerUrl
-
-	c := &http.Client{Timeout: time.Duration(1) * time.Second}
-	kcClientAPI, err = NewKeycloakClient(fmt.Sprintf("%s/realms/%s", host, realmApi), clientIDApi, clientSecretApi, issuerUrl, c)
-	if err != nil {
-		panic(err)
-	}
-
-	/**
-	set up jwt token verifier
-	*/
-	clientIDApp := kcConfig["app"].ClientId
-	realmApp := kcConfig["app"].Realm
-	issuerUrl = kcConfig["app"].IssuerUrl
-
-	hostApp := strings.TrimRight(kcConfig["app"].Host, "/")
-
-	ctx := context.Background()
-	//if issuerUrl != "" {
-	//	ctx = oidc.InsecureIssuerURLContext(ctx, issuerUrl)
-	//}
-
-	if kcConfig["app"].Internal {
-		internalHost := kcConfig["app"].IssuerUrl // Custom transport that rewrites DNS lookups
-		if internalHost == "" {
-			panic("issuerUrl is required")
+func (ag AccessGroups) IsAdmin() bool {
+	for _, s := range ag {
+		if s == "/EEG_ADMIN" {
+			return true
 		}
-		// External issuer (MUST match the token's "iss")
-		u, err := url.Parse(hostApp)
-		if err != nil {
-			panic(err)
-		}
-		transport := &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				// addr looks like "auth.example.com:443"
-				if strings.HasPrefix(addr, u.Host) {
-					// Replace with internal Docker hostname
-					addr = internalHost
-				}
-				d := net.Dialer{Timeout: 5 * time.Second}
-				return d.DialContext(ctx, network, addr)
-			},
-		}
-
-		// Custom HTTP client using the resolver
-		httpClient := &http.Client{Transport: transport, Timeout: 10 * time.Second}
-
-		// Inject client into OIDC context
-		ctx = oidc.ClientContext(ctx, httpClient)
 	}
-	providerUriApp := fmt.Sprintf("%s/realms/%s", hostApp, realmApp)
-	provider, err := oidc.NewProvider(ctx, providerUriApp)
-	if err != nil {
-		logrus.Errorf("E: %v", err)
-		panic(err)
-	}
-	verifier = provider.Verifier(&oidc.Config{ClientID: clientIDApp, SkipClientIDCheck: true})
+	return false
 }
 
-func readKeycloakConfig() (map[string]*keycloakConfig, error) {
-	kcPath, ok := os.LookupEnv("KEYCLOAK_CONFIG")
-	if !ok {
-		kcPath = "./keycloak.json"
+func (ag AccessGroups) IsUser() bool {
+	for _, s := range ag {
+		if s == "/EEG_USER" {
+			return true
+		}
 	}
-	kcConfigFile, err := os.Open(kcPath)
+	return false
+}
+
+// verifyAndExtractClaims tries the test-hook VerifyTokenClaims (if present) and
+// falls back to the actual OIDC verifier otherwise. It always returns a populated
+// PlatformClaims or an error.
+func verifyAndExtractClaims(ctx context.Context, token string) (*PlatformClaims, error) {
+	// If a test hook / custom verifier is provided, use it.
+	if VerifyTokenClaims != nil {
+		return VerifyTokenClaims(ctx, token)
+	}
+
+	// Fallback to OIDC verifier
+	if verifier == nil {
+		return nil, fmt.Errorf("oidc verifier not initialized")
+	}
+	idToken, err := verifier.Verify(ctx, token)
 	if err != nil {
 		return nil, err
 	}
-	defer kcConfigFile.Close()
-
-	payload, err := io.ReadAll(kcConfigFile)
-	if err != nil {
+	claims := &PlatformClaims{}
+	if err := idToken.Claims(claims); err != nil {
 		return nil, err
 	}
-
-	kcConfig := map[string]*keycloakConfig{}
-	err = json.Unmarshal(payload, &kcConfig)
-	return kcConfig, err
+	return claims, nil
 }
-
-type keycloakConfig struct {
-	ClientId  string `json:"resource"`
-	Secret    string `json:"secret,omitempty"`
-	Realm     string `json:"realm"`
-	Host      string `json:"auth-server-url"`
-	Internal  bool   `json:"issuer-internal,omitempty"`
-	IssuerUrl string `json:"issuer-url,omitempty"`
-}
-
-//func InitKeycloak() {
-//	kcConfig, err := readKeycloakConfig()
-//	if err != nil {
-//		logrus.WithField("error", "Init Keycloak").Errorf("E: %v", err)
-//		panic(err)
-//	}
-//
-//	clientID := kcConfig.ClientId
-//	realm := kcConfig.Realm
-//	host := strings.TrimRight(kcConfig.Host, "/")
-//
-//	ctx := context.Background()
-//	provider, err := oidc.NewProvider(ctx, fmt.Sprintf("%s/realms/%s", host, realm))
-//	if err != nil {
-//		logrus.Errorf("E: %v", err)
-//		//panic(err)
-//	}
-//	verifier = provider.Verifier(&oidc.Config{ClientID: clientID, SkipClientIDCheck: true})
-//}
-
-//func readKeycloakConfig() (*keycloakConfig, error) {
-//	kcPath, ok := os.LookupEnv("KEYCLOAK_CONFIG")
-//	if !ok {
-//		kcPath = "./keycloak.json"
-//	}
-//	kcConfigFile, err := os.Open(kcPath)
-//	if err != nil {
-//		return nil, err
-//	}
-//	defer kcConfigFile.Close()
-//
-//	payload, err := io.ReadAll(kcConfigFile)
-//	if err != nil {
-//		return nil, err
-//	}
-//
-//	kcConfig := map[string]*keycloakConfig{}
-//	err = json.Unmarshal(payload, &kcConfig)
-//
-//	return kcConfig["app"], err
-//}
 
 func GQLProtect(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		jwtToken := r.Header.Get("Authorization")
-		if len(jwtToken) == 0 {
-			logrus.Printf("No Access_token in request!\n")
+		jwtToken, err := ParseBearerTokenFromHeader(r)
+		if err != nil {
+			logrus.Printf("No Access_token in request or invalid Authorization: %v\n", err)
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
 
-		if strings.HasPrefix(jwtToken, BEARER_SCHEMA) {
-			jwtToken = jwtToken[len(BEARER_SCHEMA):]
-		} else {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-
-		idToken, err := verifier.Verify(context.Background(), jwtToken)
+		claims, err := verifyAndExtractClaims(context.Background(), jwtToken)
 		if err != nil {
 			logrus.WithField("error", "JWT-Token").Errorf("%v", err)
-			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte(err.Error()))
-			return
-		}
-
-		claims := PlatformClaims{}
-		if err := idToken.Claims(&claims); err != nil {
-			logrus.WithField("error", "Claims").Errorf("%v", err)
 			w.WriteHeader(http.StatusUnauthorized)
 			w.Write([]byte(err.Error()))
 			return
@@ -232,52 +115,7 @@ func GQLProtect(next http.Handler) http.Handler {
 	})
 }
 
-func hasRole(roles []string, role string) bool {
-	return slices.Contains(roles, role)
-}
-
-//func Protect(handler JWTHandlerFunc) http.HandlerFunc {
-//	return func(w http.ResponseWriter, r *http.Request) {
-//		jwtToken := r.Header.Get("Authorization")
-//		if len(jwtToken) == 0 {
-//			logrus.WithField("error", "JWT-Token").Printf("No Access_token in request!\n")
-//			w.WriteHeader(http.StatusForbidden)
-//			return
-//		}
-//
-//		if strings.HasPrefix(jwtToken, BEARER_SCHEMA) {
-//			jwtToken = jwtToken[len(BEARER_SCHEMA):]
-//		} else {
-//			w.WriteHeader(http.StatusBadRequest)
-//			return
-//		}
-//
-//		idToken, err := verifier.Verify(context.Background(), jwtToken)
-//		if err != nil {
-//			logrus.WithField("error", "JWT-Token").Errorf("%v", err)
-//			w.WriteHeader(http.StatusForbidden)
-//			return
-//		}
-//
-//		claims := PlatformClaims{}
-//		if err := idToken.Claims(&claims); err != nil {
-//			logrus.WithField("error", "Claims").Errorf("%v", err)
-//			w.WriteHeader(http.StatusForbidden)
-//			return
-//		}
-//
-//		tenant := r.Header.Get("tenant")
-//		if contains(claims.Tenants, tenant) == false {
-//			logrus.WithField("tenant", tenant).Warnf("Unauthorized access with tenant %s", tenant)
-//			w.WriteHeader(http.StatusForbidden)
-//			return
-//		}
-//
-//		handler(w, r, &claims, strings.ToUpper(tenant))
-//	}
-//}
-
-// ConditionProtect Routes respectivly to AccessGroups. Distinguish between admin route and user Route. ToDo: check body for refactoring.
+// ConditionProtect Routes respectively to AccessGroups. Distinguish between admin route and user Route. ToDo: check body for refactoring.
 func ConditionProtect(admin JWTHandlerFunc, user JWTHandlerFunc) http.HandlerFunc {
 	toUpper := func(ss []string) []string {
 		rss := make([]string, len(ss))
@@ -288,30 +126,16 @@ func ConditionProtect(admin JWTHandlerFunc, user JWTHandlerFunc) http.HandlerFun
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		jwtToken := r.Header.Get("Authorization")
-		if len(jwtToken) == 0 {
-			logrus.WithField("error", "JWT-Token").Printf("No Access_token in request!\n")
+		jwtToken, err := ParseBearerTokenFromHeader(r)
+		if err != nil {
+			logrus.WithField("error", "JWT-Token").Printf("No Access_token in request or invalid Authorization: %v\n", err)
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
 
-		if strings.HasPrefix(jwtToken, BEARER_SCHEMA) {
-			jwtToken = jwtToken[len(BEARER_SCHEMA):]
-		} else {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-
-		idToken, err := verifier.Verify(context.Background(), jwtToken)
+		claims, err := verifyAndExtractClaims(context.Background(), jwtToken)
 		if err != nil {
 			logrus.WithField("error", "JWT-Token").Errorf("%v", err)
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-
-		claims := PlatformClaims{}
-		if err := idToken.Claims(&claims); err != nil {
-			logrus.WithField("error", "Claims").Errorf("%v", err)
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
@@ -331,9 +155,9 @@ func ConditionProtect(admin JWTHandlerFunc, user JWTHandlerFunc) http.HandlerFun
 
 		claims.Tenants = toUpper(claims.Tenants)
 		if claims.AccessGroups.IsAdmin() {
-			admin(w, r, &claims, strings.ToUpper(tenant))
+			admin(w, r, claims, strings.ToUpper(tenant))
 		} else if claims.AccessGroups.IsUser() {
-			user(w, r, &claims, strings.ToUpper(tenant))
+			user(w, r, claims, strings.ToUpper(tenant))
 		} else {
 			w.WriteHeader(http.StatusUnauthorized)
 		}
@@ -342,6 +166,45 @@ func ConditionProtect(admin JWTHandlerFunc, user JWTHandlerFunc) http.HandlerFun
 
 func Protect(handler JWTHandlerFunc) http.HandlerFunc {
 	return verifyRequest(handler)
+}
+
+func ProtectApi(handler JWTHandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		username, password, err := ParseBasicCredentialsFromHeader(r)
+		if err != nil {
+			logrus.WithField("error", err.Error()).Warn("invalid Authorization header (basic)")
+			// Distinguish between missing header and invalid schema/encoding if needed
+			if errors.Is(err, ErrNoAuthorization) {
+				w.WriteHeader(http.StatusForbidden)
+			} else {
+				w.WriteHeader(http.StatusBadRequest)
+			}
+			return
+		}
+
+		idToken, err := kcClientAPI.AuthenticateUserWithPassword(username, password)
+		if err != nil {
+			logrus.WithError(err).Error("authentication failed")
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+
+		var claims PlatformClaims
+		if err := idToken.Claims(&claims); err != nil {
+			logrus.WithError(err).Error("failed to parse claims")
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+
+		tenant := r.Header.Get("X-Tenant")
+		if !contains(claims.Tenants, tenant) {
+			logrus.WithField("tenant", tenant).Warn("unauthorized tenant")
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+
+		handler(w, r, &claims, strings.ToUpper(tenant))
+	}
 }
 
 func verifyRequest(handler JWTHandlerFunc) func(w http.ResponseWriter, r *http.Request) {
@@ -354,30 +217,16 @@ func verifyRequest(handler JWTHandlerFunc) func(w http.ResponseWriter, r *http.R
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		jwtToken := r.Header.Get("Authorization")
-		if len(jwtToken) == 0 {
-			logrus.WithField("error", "JWT-Token").Printf("No Access_token in request!\n")
+		jwtToken, err := ParseBearerTokenFromHeader(r)
+		if err != nil {
+			logrus.WithField("error", "JWT-Token").Printf("No Access_token in request or invalid Authorization: %v\n", err)
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
 
-		if strings.HasPrefix(jwtToken, BEARER_SCHEMA) {
-			jwtToken = jwtToken[len(BEARER_SCHEMA):]
-		} else {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-
-		idToken, err := verifier.Verify(context.Background(), jwtToken)
+		claims, err := verifyAndExtractClaims(context.Background(), jwtToken)
 		if err != nil {
 			logrus.WithField("error", "JWT-Token").Errorf("%v", err)
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-
-		claims := PlatformClaims{}
-		if err := idToken.Claims(&claims); err != nil {
-			logrus.WithField("error", "Claims").Errorf("%v", err)
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
@@ -397,7 +246,7 @@ func verifyRequest(handler JWTHandlerFunc) func(w http.ResponseWriter, r *http.R
 
 		if claims.AccessGroups.IsAdmin() {
 			claims.Tenants = toUpper(claims.Tenants)
-			handler(w, r, &claims, strings.ToUpper(tenant))
+			handler(w, r, claims, strings.ToUpper(tenant))
 		} else {
 			logrus.WithField("tenant", tenant).Warnf("Unauthorized access with tenant %s - Request has no role admin", tenant)
 			w.WriteHeader(http.StatusUnauthorized)
