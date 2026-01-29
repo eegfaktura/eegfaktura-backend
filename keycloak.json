@@ -1,13 +1,15 @@
 {
   "app" : {
     "realm": "EEGFaktura",
+    "auth-server-url-internal": true,
     "auth-server-url": "http://localhost:7080/",
     "ssl-required": "external",
     "resource": "at.ourproject.vfeeg.app",
     "public-client": true,
     "verify-token-audience": true,
     "use-resource-role-mappings": true,
-    "confidential-port": 0
+    "confidential-port": 0,
+    "issuer_url": "localhost:7080"
   },
   "api" : {
     "realm": "EEGFaktura",

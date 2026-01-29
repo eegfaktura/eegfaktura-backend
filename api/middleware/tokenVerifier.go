@@ -2,11 +2,14 @@ package middleware
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"slices"
 	"strings"
@@ -57,14 +60,44 @@ func InitKeycloak() {
 	hostApp := strings.TrimRight(kcConfig["app"].Host, "/")
 
 	ctx := context.Background()
-	if issuerUrl != "" {
-		ctx = oidc.InsecureIssuerURLContext(ctx, issuerUrl)
-	}
+	//if issuerUrl != "" {
+	//	ctx = oidc.InsecureIssuerURLContext(ctx, issuerUrl)
+	//}
 
+	if kcConfig["app"].Internal {
+		internalHost := kcConfig["app"].IssuerUrl // Custom transport that rewrites DNS lookups
+		if internalHost == "" {
+			panic("issuerUrl is required")
+		}
+		// External issuer (MUST match the token's "iss")
+		u, err := url.Parse(hostApp)
+		if err != nil {
+			panic(err)
+		}
+		transport := &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				// addr looks like "auth.example.com:443"
+				if strings.HasPrefix(addr, u.Host) {
+					// Replace with internal Docker hostname
+					addr = internalHost
+				}
+				d := net.Dialer{Timeout: 5 * time.Second}
+				return d.DialContext(ctx, network, addr)
+			},
+		}
+
+		// Custom HTTP client using the resolver
+		httpClient := &http.Client{Transport: transport, Timeout: 10 * time.Second}
+
+		// Inject client into OIDC context
+		ctx = oidc.ClientContext(ctx, httpClient)
+	}
 	providerUriApp := fmt.Sprintf("%s/realms/%s", hostApp, realmApp)
 	provider, err := oidc.NewProvider(ctx, providerUriApp)
 	if err != nil {
 		logrus.Errorf("E: %v", err)
+		panic(err)
 	}
 	verifier = provider.Verifier(&oidc.Config{ClientID: clientIDApp, SkipClientIDCheck: true})
 }
@@ -95,7 +128,8 @@ type keycloakConfig struct {
 	Secret    string `json:"secret,omitempty"`
 	Realm     string `json:"realm"`
 	Host      string `json:"auth-server-url"`
-	IssuerUrl string `json:"issuer_url,omitempty"`
+	Internal  bool   `json:"issuer-internal,omitempty"`
+	IssuerUrl string `json:"issuer-url,omitempty"`
 }
 
 //func InitKeycloak() {
@@ -160,6 +194,7 @@ func GQLProtect(next http.Handler) http.Handler {
 		if err != nil {
 			logrus.WithField("error", "JWT-Token").Errorf("%v", err)
 			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(err.Error()))
 			return
 		}
 
@@ -167,6 +202,7 @@ func GQLProtect(next http.Handler) http.Handler {
 		if err := idToken.Claims(&claims); err != nil {
 			logrus.WithField("error", "Claims").Errorf("%v", err)
 			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(err.Error()))
 			return
 		}
 
@@ -189,6 +225,7 @@ func GQLProtect(next http.Handler) http.Handler {
 			context.WithValue(r.Context(), tenantCtxKey, strings.ToUpper(tenant)),
 			superUserCtxKey, superuser)
 
+		logrus.Printf("Access granted for tenant %s (%s)", tenant, r.URL.Path)
 		// and call the next with our new context
 		r = r.WithContext(ctx)
 		next.ServeHTTP(w, r)
@@ -362,8 +399,8 @@ func verifyRequest(handler JWTHandlerFunc) func(w http.ResponseWriter, r *http.R
 			claims.Tenants = toUpper(claims.Tenants)
 			handler(w, r, &claims, strings.ToUpper(tenant))
 		} else {
+			logrus.WithField("tenant", tenant).Warnf("Unauthorized access with tenant %s - Request has no role admin", tenant)
 			w.WriteHeader(http.StatusUnauthorized)
 		}
-
 	}
 }
