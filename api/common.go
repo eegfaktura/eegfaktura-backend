@@ -1,10 +1,11 @@
 package api
 
 import (
-	"at.ourproject/vfeeg-backend/model"
 	"encoding/json"
-	log "github.com/sirupsen/logrus"
 	"net/http"
+
+	"at.ourproject/vfeeg-backend/model"
+	log "github.com/sirupsen/logrus"
 )
 
 type HttpError struct {
@@ -60,6 +61,14 @@ func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 
 func respondWithError(w http.ResponseWriter, httpCode int, message string) {
 	respondWithJSON(w, httpCode, map[string]string{"error": message})
+}
+
+func responseWithOk(w http.ResponseWriter, code int, payload interface{}, withCache bool) {
+	if withCache {
+		w.Header().Add("Cache-Control", "max-age=60")
+		w.Header().Add("Vary", "X-Tenant")
+	}
+	respondWithJSON(w, code, map[string]interface{}{"data": payload})
 }
 
 func respondWithStatus(w http.ResponseWriter, code int) {

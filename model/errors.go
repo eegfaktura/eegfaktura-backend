@@ -88,7 +88,7 @@ func NewLogMessageFromVfeegError(identifier string, err error) *LogMessage {
 		lm.MessageCode = fmt.Sprintf("E_DB_%d", e.Code)
 		lm.Message = e.Err.Error()
 	default:
-		lm.MessageCode = fmt.Sprintf("E_UNEFINED%d", e.Code)
+		lm.MessageCode = "E_UNDEFINED_0"
 		lm.Message = err.Error()
 	}
 	return lm

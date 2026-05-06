@@ -21,9 +21,9 @@ func InitEegRouter(r *mux.Router) *mux.Router {
 
 	s.HandleFunc("", middleware.ConditionProtect(getEEG(), getEEG())).Methods("GET")
 	s.HandleFunc("", middleware.Protect(updateEEG())).Methods("POST")
-	s.HandleFunc("/tariff", middleware.Protect(getTariff())).Methods("GET")
-	s.HandleFunc("/tariff", middleware.Protect(addTariff())).Methods("POST")
-	s.HandleFunc("/tariff/{id}", middleware.Protect(fetchTariffHistory())).Methods("GET")
+	s.HandleFunc("/tariff", middleware.UserMiddelware(getTariff())).Methods("GET")
+	s.HandleFunc("/tariff", middleware.UserMiddelware(addTariff())).Methods("POST")
+	s.HandleFunc("/tariff/{id}", middleware.UserMiddelware(fetchTariffHistory())).Methods("GET")
 	s.HandleFunc("/tariff/{id}", middleware.Protect(archiveTariff())).Methods("DELETE")
 	s.HandleFunc("/sync/participants/{oid}", middleware.Protect(syncParticipantsEda())).Methods("POST")
 	s.HandleFunc("/import/masterdata", middleware.Protect(uploadMasterData())).Methods("POST")
@@ -95,25 +95,26 @@ func updateEEG() middleware.JWTHandlerFunc {
 	}
 }
 
-func getTariff() middleware.JWTHandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
+func getTariff() middleware.TenantHandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request /*claims *middleware.PlatformClaims,*/, tenant string) {
 		db, err := database.GetDB(context.Background())
 		if err != nil {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
 			return
 		}
-
+		fmt.Printf("Get Tariff with TENANT: %s\n", tenant)
 		tariff, err := db.GetTariff(tenant)
+		fmt.Printf("Get Tariff with TENANT: %s -> %v\n", tenant, tariff)
 		if err != nil {
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
-		respondWithJSON(w, http.StatusOK, tariff)
+		responseWithOk(w, http.StatusOK, tariff, true)
 	}
 }
 
-func addTariff() middleware.JWTHandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
+func addTariff() middleware.TenantHandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request /*, claims *middleware.PlatformClaims*/, tenant string) {
 		// Try to decode the request body into the struct. If there is an error,
 		// respond to the client with the error message and a 400 status code.
 		var t model.Tariff
@@ -137,23 +138,23 @@ func addTariff() middleware.JWTHandlerFunc {
 	}
 }
 
-func fetchTariffHistory() middleware.JWTHandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
+func fetchTariffHistory() middleware.TenantHandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request /*, claims *middleware.PlatformClaims*/, claims *middleware.BackendClaims) {
 		vars := mux.Vars(r)
 		idStr := vars["id"]
 
 		db, err := database.GetDB(context.Background())
 		if err != nil {
-			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
+			respondWith(w, http.StatusBadRequest, claims.Tenant, model.ErrConnectDatabase(err))
 			return
 		}
 
 		var data []model.Tariff
-		if data, err = db.GetTariffHistory(tenant, idStr); err != nil {
+		if data, err = db.GetTariffHistory(claims.Tenant, idStr); err != nil {
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
-		respondWithJSON(w, http.StatusOK, data)
+		responseWithOk(w, http.StatusOK, data, true)
 	}
 }
 

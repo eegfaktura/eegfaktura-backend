@@ -1,6 +1,17 @@
 package main
 
 import (
+	"context"
+	"embed"
+	"errors"
+	"flag"
+	"fmt"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
 	"at.ourproject/vfeeg-backend/api"
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"at.ourproject/vfeeg-backend/config"
@@ -10,11 +21,6 @@ import (
 	"at.ourproject/vfeeg-backend/graph/generated"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
 	"at.ourproject/vfeeg-backend/services"
-	"context"
-	"embed"
-	"errors"
-	"flag"
-	"fmt"
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
@@ -25,11 +31,6 @@ import (
 	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
 )
 
 var (
@@ -105,9 +106,6 @@ func main() {
 	config.ReadConfig(*configPath)
 
 	log.SetReportCaller(true)
-
-	//cmd.Execute()
-	//fmt.Printf("Program end: %s\n", "now")
 
 	source.Register("embed", &driver{})
 

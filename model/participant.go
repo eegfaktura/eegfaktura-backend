@@ -102,6 +102,7 @@ const (
 	ARCHIVED ProcessStatusType = "ARCHIVED"
 	ABORTED  ProcessStatusType = "ABORTED"
 	RESTORE  ProcessStatusType = "RESTORE"
+	WARN     ProcessStatusType = "WARN"
 )
 
 type StatusType string

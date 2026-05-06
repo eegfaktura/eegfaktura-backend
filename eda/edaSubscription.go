@@ -1,20 +1,21 @@
 package eda
 
 import (
-	"at.ourproject/vfeeg-backend/database"
-	"at.ourproject/vfeeg-backend/model"
-	mqttclient "at.ourproject/vfeeg-backend/mqtt"
-	"at.ourproject/vfeeg-backend/parser"
-	"at.ourproject/vfeeg-backend/services"
 	"bytes"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/jjeffery/civil"
-	"github.com/sirupsen/logrus"
 	"strings"
 	"time"
+
+	"at.ourproject/vfeeg-backend/database"
+	"at.ourproject/vfeeg-backend/model"
+	mqttclient "at.ourproject/vfeeg-backend/mqtt"
+	"at.ourproject/vfeeg-backend/parser"
+	"at.ourproject/vfeeg-backend/services"
+	"github.com/jjeffery/civil"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -58,42 +59,43 @@ const (
 
 var (
 	ECON_RESPONSE_CODES = map[int16]string{
-		37:  "Stornierung nicht möglich",
-		55:  "Zählpunkt nicht dem Lieferanten zugeordnet",
-		56:  "Zählpunkt nicht gefunden",
-		57:  "Zählpunkt nicht versorgt",
-		70:  "Änderung/Anforderung akzeptiert",
-		76:  "Ungültige Anforderungsdaten",
-		82:  "Prozessdatum falsch",
-		86:  "konkurrierende Prozesse",
-		90:  "Kein Smart Meter",
-		94:  "Keine Daten im angeforderten Zeitraum vorhanden",
-		99:  "Meldung erhalten",
-		104: "Falsche Energierichtung",
-		156: "ZP bereits zugeordnet",
-		157: "ZP bereits einem Betreiber zugeordnet",
-		158: "ZP ist nicht teilnahmeberechtigt",
-		159: "Zu Prozessdatum ZP inaktiv bzw. noch kein Gerät eingebaut",
-		160: "Verteilmodell entspricht nicht der Vereinbarung",
-		172: "Kunde hat Datenfreigabe abgelehnt",
-		173: "Kunde hat auf Datenfreigabe nicht reagiert (Timeout)",
-		174: "Angefragte Daten nicht lieferbar",
-		175: "Zustimmung erteilt",
-		176: "Zustimmung erfolgreich entzogen",
-		177: "Keine Datenfreigabe vorhanden",
-		178: "Consent existiert bereits",
-		180: "ConsentID abgelaufen",
-		181: "Gemeinschafts-ID nicht vorhanden",
-		182: "Noch kein fernauslesbarer Zähler eingebaut",
-		183: "Summe der gemeldeten Aufteilungsschlüssel übersteigt 100%",
-		184: "Kunde hat optiert",
-		185: "Zählpunkt befindet sich nicht im Bereich der Energiegemeinschaft",
-		187: "ConsentID und Zählpunkt passen nicht zusammen",
-		188: "Teilnahmefaktor von 100 % würde überschritten werden",
-		189: "Zählpunkt ist der Gemeinschafts-ID nicht zugeordnet",
-		196: "Teilnahme-Limit wird überschritten",
-		203: "Zustimmung wurde entzogen",
-		204: "Für ZP ist derzeit keine ausreichend stabile Kommunikation möglich",
+		37:   "Stornierung nicht möglich",
+		55:   "Zählpunkt nicht dem Lieferanten zugeordnet",
+		56:   "Zählpunkt nicht gefunden",
+		57:   "Zählpunkt nicht versorgt",
+		70:   "Änderung/Anforderung akzeptiert",
+		76:   "Ungültige Anforderungsdaten",
+		82:   "Prozessdatum falsch",
+		86:   "konkurrierende Prozesse",
+		90:   "Kein Smart Meter",
+		94:   "Keine Daten im angeforderten Zeitraum vorhanden",
+		99:   "Meldung erhalten",
+		104:  "Falsche Energierichtung",
+		156:  "ZP bereits zugeordnet",
+		157:  "ZP bereits einem Betreiber zugeordnet",
+		158:  "ZP ist nicht teilnahmeberechtigt",
+		159:  "Zu Prozessdatum ZP inaktiv bzw. noch kein Gerät eingebaut",
+		160:  "Verteilmodell entspricht nicht der Vereinbarung",
+		172:  "Kunde hat Datenfreigabe abgelehnt",
+		173:  "Kunde hat auf Datenfreigabe nicht reagiert (Timeout)",
+		174:  "Angefragte Daten nicht lieferbar",
+		175:  "Zustimmung erteilt",
+		176:  "Zustimmung erfolgreich entzogen",
+		177:  "Keine Datenfreigabe vorhanden",
+		178:  "Consent existiert bereits",
+		180:  "ConsentID abgelaufen",
+		181:  "Gemeinschafts-ID nicht vorhanden",
+		182:  "Noch kein fernauslesbarer Zähler eingebaut",
+		183:  "Summe der gemeldeten Aufteilungsschlüssel übersteigt 100%",
+		184:  "Kunde hat optiert",
+		185:  "Zählpunkt befindet sich nicht im Bereich der Energiegemeinschaft",
+		187:  "ConsentID und Zählpunkt passen nicht zusammen",
+		188:  "Teilnahmefaktor von 100 % würde überschritten werden",
+		189:  "Zählpunkt ist der Gemeinschafts-ID nicht zugeordnet",
+		196:  "Teilnahme-Limit wird überschritten",
+		203:  "Zustimmung wurde entzogen",
+		204:  "Für ZP ist derzeit keine ausreichend stabile Kommunikation möglich",
+		1000: "Mail konnte nicht gesendet werden.",
 	}
 	REJECTED_INVALID_CODES = []int16{ZP_NOT_FOUND, ZP_NOT_SUPPLIED, INVALID_REQUEST_DATA, WRONG_ENERGY_DIRECTION,
 		ZP_ALREADY_ASSIGNED_TO_AN_OPERATOR, ZP_IS_NOT_ELIGIBLE, 159, 172, 173, 177, 181, 184, 185, 188, 196, NO_STABLE_COMMUNICATION_POSSIBLE}
@@ -386,7 +388,7 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 			logrus.WithField("tenant", eeg.Id).Errorf("can not revoke metering point %+v - %+v", meters, err)
 			return
 		}
-		
+
 	case model.EBMS_AUFHEBUNG_CCMC, model.EBMS_AUFHEBUNG_CCMI:
 
 		var tenant *string
@@ -587,6 +589,12 @@ func meteringPointPerformAnswerMsg(sendMail services.SendMailFunc, ecId string, 
 				if err = parser.SendActivationMailFromTemplate(sendMail,
 					eeg.Id, "Aktivierung im Serviceportal", eeg, participant); err != nil {
 					logrus.WithField("tenant", eeg.Id).WithError(err).Error("Error Sending Mail")
+					_ = db.SaveNotificationFromMap(database.CreateNotificationMessageFromLog(
+						&model.Log{Operation: "Mail", Messages: []*model.LogMessage{model.NewLogMessageFromVfeegError(
+							participant.MeteringPoint[0].MeteringPoint,
+							err,
+						)}}),
+						ecId, model.N_TYPE_ERROR, model.N_PROCESS_EDA_PROCESS, "ADMIN")
 				}
 			} else {
 				logrus.WithField("tenant", eeg.Id).Warn("No MeteringPoint for activation mail")

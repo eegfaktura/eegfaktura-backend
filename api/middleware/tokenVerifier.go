@@ -164,6 +164,28 @@ func ConditionProtect(admin JWTHandlerFunc, user JWTHandlerFunc) http.HandlerFun
 	}
 }
 
+func UserMiddelware(handler TenantHandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		for key, val := range r.Header {
+			// Logic using key
+			// And val if you need it
+			fmt.Printf("Header: %s:%s\n", key, val)
+		}
+
+		tenant := r.Header.Get("X-Tenant")
+		fmt.Printf("User Middelware for tenant %s-> %s\n", tenant, r.URL.Path)
+		if len(tenant) <= 0 {
+			logrus.WithField("tenant", tenant).Warn("unauthorized tenant")
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+
+		handler(w, r, strings.ToUpper(tenant))
+		fmt.Print("--------------------------------\n")
+	}
+}
+
 func Protect(handler JWTHandlerFunc) http.HandlerFunc {
 	return verifyRequest(handler)
 }

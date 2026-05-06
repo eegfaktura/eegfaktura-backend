@@ -1,9 +1,10 @@
 package model
 
 import (
+	"time"
+
 	"github.com/jjeffery/civil"
 	"gopkg.in/guregu/null.v4"
-	"time"
 )
 
 type MeteringPointDBModel struct {
