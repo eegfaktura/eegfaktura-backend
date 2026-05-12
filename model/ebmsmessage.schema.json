@@ -1,0 +1,256 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$ref": "#/$defs/EbmsMessage",
+  "$defs": {
+    "EbmsMessage": {
+      "type": "object",
+      "required": [
+        "conversationId",
+        "sender",
+        "receiver",
+        "messageCode",
+        "messageCodeVersion"
+      ],
+      "properties": {
+        "conversationId": {
+          "type": "string"
+        },
+        "messageId": {
+          "type": "string"
+        },
+        "sender": {
+          "type": "string"
+        },
+        "receiver": {
+          "type": "string"
+        },
+        "messageCode": {
+          "type": "string",
+          "enum": [
+            "DATEN_CRMSG",
+            "ANFORDERUNG_ECON",
+            "ANTWORT_ECON",
+            "ABLEHNUNG_ECON",
+            "ZUSTIMMUNG_ECON",
+            "ABSCHLUSS_ECON",
+            "ABBRUCH_ECON",
+            "ANFORDERUNG_ECP",
+            "SENDEN_ECP",
+            "ABLEHNUNG_ECP",
+            "ANFORDERUNG_PT",
+            "ANTWORT_PT",
+            "ABLEHNUNG_PT",
+            "AUFHEBUNG_CCMI",
+            "AUFHEBUNG_CCMS",
+            "AUFHEBUNG_CCMC",
+            "ABLEHNUNG_CCMS",
+            "ANTWORT_CCMS",
+            "ANFORDERUNG_CPF",
+            "ANTWORT_CPF",
+            "ABLEHNUNG_CPF",
+            "ANFORDERUNG_ECOF",
+            "ANTWORT_ECOF",
+            "ABLEHNUNG_ECOF",
+            "ZUSTIMMUNG_ECOF",
+            "ABSCHLUSS_ECOF",
+            "ABBRUCH_ECOF",
+            "ANFORDERUNG_GN",
+            "ERROR_MESSAGE",
+            "ERROR_PROCESS"
+          ]
+        },
+        "messageCodeVersion": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "meter": {
+          "$ref": "#/$defs/Meter"
+        },
+        "ecId": {
+          "type": "string"
+        },
+        "ecType": {
+          "type": "string"
+        },
+        "ecDisModel": {
+          "type": "string"
+        },
+        "responseData": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ResponseData"
+          }
+        },
+        "energy": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Energy"
+          }
+        },
+        "timeline": {
+          "$ref": "#/$defs/Timeline"
+        },
+        "meterList": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Meter"
+          }
+        },
+        "errorMessage": {
+          "type": "string"
+        },
+        "consentEnd": {
+          "type": "integer"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "Energy": {
+      "type": "object",
+      "required": [
+        "start",
+        "end",
+        "interval",
+        "NInterval",
+        "data"
+      ],
+      "properties": {
+        "start": {
+          "type": "integer"
+        },
+        "end": {
+          "type": "integer"
+        },
+        "interval": {
+          "type": "string"
+        },
+        "NInterval": {
+          "type": "integer"
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EnergyData"
+          }
+        }
+      }
+    },
+    "Meter": {
+      "type": "object",
+      "required": [
+        "meteringPoint"
+      ],
+      "properties": {
+        "meteringPoint": {
+          "type": "string"
+        },
+        "direction": {
+          "type": "string"
+        },
+        "activation": {
+          "type": "integer"
+        },
+        "partFact": {
+          "type": "integer"
+        },
+        "from": {
+          "type": "integer"
+        },
+        "to": {
+          "type": "integer"
+        },
+        "plantCategory": {
+          "type": "string"
+        },
+        "share": {
+          "type": "number"
+        },
+        "consentId": {
+          "type": "string"
+        }
+      }
+    },
+    "ResponseData": {
+      "type": "object",
+      "required": [
+        "meteringPoint",
+        "responseCode"
+      ],
+      "properties": {
+        "meteringPoint": {
+          "type": "string"
+        },
+        "responseCode": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "consentEnd": {
+          "type": "integer"
+        },
+        "consentId": {
+          "type": "string"
+        }
+      }
+    },
+    "Timeline": {
+      "type": "object",
+      "required": [
+        "from",
+        "to"
+      ],
+      "properties": {
+        "from": {
+          "type": "integer"
+        },
+        "to": {
+          "type": "integer"
+        }
+      }
+    },
+    "EnergyValue": {
+      "type": "object",
+      "required": [
+        "from",
+        "value"
+      ],
+      "properties": {
+        "from": {
+          "type": "integer"
+        },
+        "to": {
+          "type": "integer"
+        },
+        "method": {
+          "type": "string"
+        },
+        "value": {
+          "type": "number"
+        }
+      }
+    },
+    "EnergyData": {
+      "type": "object",
+      "required": [
+        "meterCode",
+        "value"
+      ],
+      "properties": {
+        "meterCode": {
+          "type": "string"
+        },
+        "value": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EnergyValue"
+          }
+        }
+      }
+    }
+  }
+}

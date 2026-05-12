@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$ref": "#/$defs/RegisterEegRequest",
+  "$defs": {
+    "RegisterEegRequest": {
+      "type": "object",
+      "required": [
+        "tenant",
+        "rcNumber",
+        "communityId",
+        "name",
+        "description",
+        "iban",
+        "owner",
+        "sepa",
+        "legal",
+        "settelmentInterval",
+        "gridId",
+        "gridName",
+        "area",
+        "allocation",
+        "eegOwner",
+        "street",
+        "streetNumber",
+        "city",
+        "zip",
+        "email",
+        "online"
+      ],
+      "properties": {
+        "tenant": { "type": "string" },
+        "rcNumber": { "type": "string" },
+        "communityId": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "iban": { "type": "string" },
+        "owner": { "type": "string" },
+        "sepa": { "type": "boolean" },
+
+        "legal": {
+          "type": "string",
+          "enum": ["verein", "genossenschaft", "gesellschaft"]
+        },
+
+        "settelmentInterval": {
+          "type": "string",
+          "enum": ["ANNUAL", "BIANNUAL", "QUARTER", "MONTHLY"]
+        },
+
+        "gridId": { "type": "string" },
+        "gridName": { "type": "string" },
+
+        "area": {
+          "type": "string",
+          "enum": ["REGIONAL", "LOCAL", "BEG", "GEA"]
+        },
+
+        "allocation": {
+          "type": "string",
+          "enum": ["DYNAMIC", "STATIC"]
+        },
+
+        "eegOwner": { "type": "string" },
+        "street": { "type": "string" },
+        "streetNumber": { "type": "string" },
+        "city": { "type": "string" },
+        "zip": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+
+        "web": { "type": "string" },
+        "phone": { "type": "string" },
+
+        "online": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

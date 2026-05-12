@@ -96,15 +96,6 @@ func (db *sqlDatabase) ImportMasterdataFromExcel(r io.Reader, filename, sheet, t
 }
 
 func CreateNotificationMessageFromLog(logMsg *model.Log) map[string]interface{} {
-	//messageMap := func() map[string]interface{} {
-	//	ms := map[string]interface{}{}
-	//	for _, m := range logMsg.Messages {
-	//		ms["code"] = m.MessageCode
-	//		ms["identifier"] = m.Identifier
-	//	}
-	//	return ms
-	//}
-
 	return map[string]interface{}{
 		"type":     logMsg.Operation,
 		"messages": logMsg.Messages,

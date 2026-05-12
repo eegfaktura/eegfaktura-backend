@@ -63,6 +63,14 @@ func respondWithError(w http.ResponseWriter, httpCode int, message string) {
 	respondWithJSON(w, httpCode, map[string]string{"error": message})
 }
 
+func responseWithOk(w http.ResponseWriter, code int, payload interface{}, withCache bool) {
+	if withCache {
+		w.Header().Add("Cache-Control", "max-age=60")
+		w.Header().Add("Vary", "X-Tenant")
+	}
+	respondWithJSON(w, code, map[string]interface{}{"data": payload})
+}
+
 func respondWithStatus(w http.ResponseWriter, code int) {
 	w.WriteHeader(code)
 }

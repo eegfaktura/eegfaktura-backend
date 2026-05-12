@@ -46,7 +46,7 @@ func ensureMailAddress(to string) error {
 
 func isValidEmail(email string) error {
 	// Regular expression for validating an Email
-	re := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+	re := regexp.MustCompile(`^(?i)([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})(;\s*([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}))*$`)
 	v := re.MatchString(email)
 	if !v {
 		return errors.New(fmt.Sprintf("invalid email (%s)", email))

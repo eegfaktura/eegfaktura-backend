@@ -654,18 +654,6 @@ func requestChangePartitionFactor() middleware.JWTHandlerFunc {
 		}
 
 		if eeg.Online {
-			//meterIds := []string{}
-			//for _, m := range request.MeteringPoints {
-			//	meterIds = append(meterIds, m.MeteringPoint)
-			//}
-			//
-			//meters, err := database.FindActiveMeteringByIds(db, tenant, meterIds)
-			//if err != nil {
-			//	log.WithField("tenant", tenant).WithError(err).Errorf("failed to request metering point PRTFACT. Err: %v", request)
-			//	respondWith(w, http.StatusInternalServerError, tenant, err)
-			//	return
-			//}
-
 			if err = mqttclient.ChangePartitionFactor(eeg, request.MeteringPoints); err != nil {
 				log.WithField("tenant", tenant).WithError(err).Errorf("failed to request metering point PRTFACT. Err: %v", request)
 				respondWith(w, http.StatusInternalServerError, tenant, err)

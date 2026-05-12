@@ -1,17 +1,18 @@
 package database
 
 import (
-	"at.ourproject/vfeeg-backend/model"
 	dbsql "database/sql"
 	"encoding/json"
+	"math"
+	"strings"
+	"time"
+
+	"at.ourproject/vfeeg-backend/model"
 	"github.com/doug-martin/goqu/v9"
 	"github.com/jjeffery/civil"
 	"github.com/jmoiron/sqlx"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/guregu/null.v4"
-	"math"
-	"strings"
-	"time"
 )
 
 type NotificationRepository interface {
@@ -61,7 +62,7 @@ func (db *sqlDatabase) SaveHistory(tenant string, code model.EbMsMessageType, co
 			Tenant:         tenant,
 			ConversationId: conversationId,
 			ProcessType:    code,
-			Date:           time.Time{},
+			Date:           civil.DateTime{},
 			Protocol:       null.StringFrom(string(protocol)),
 			Issuer:         role,
 			MessageByte:    msgBytes,
@@ -138,7 +139,7 @@ func fetchEdaHistory(db *sqlx.DB, tenant, protocol string, start, end int64, pag
 	next := NextType{}
 	if len(h) > int(pageSize) {
 		last := h[pageSize]
-		next.Start = last.Date.UnixMilli()
+		next.Start = last.Date.Unix() * 1000
 		next.End = end
 		next.Protocol = last.Protocol.String
 		next.PageSize = pageSize
