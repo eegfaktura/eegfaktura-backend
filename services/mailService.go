@@ -1,15 +1,20 @@
 package services
 
 import (
-	protobuf "at.ourproject/vfeeg-backend/proto"
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"net"
+	"regexp"
+	"strings"
+	"time"
+
+	protobuf "at.ourproject/vfeeg-backend/proto"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"time"
 )
 
 type SendMailFunc func(tenant, to, subject string, cc *string, body *bytes.Buffer, inlineContent []*Attachment, attachment *Attachment) error
@@ -24,7 +29,42 @@ type Attachment struct {
 
 func SendMail(tenant, to, subject string, cc *string, body *bytes.Buffer, inlineContent []*Attachment, attachment *Attachment) error {
 	log.WithField("tenant", tenant).Infof("Send Mail: from:%s to:%s sub: %s, cc: %+v, body: %s, att: %v", tenant, to, subject, cc, body, inlineContent)
+	if err := ensureMailAddress(to); err != nil {
+		return err
+	}
+	if cc != nil {
+		if err := ensureMailAddress(*cc); err != nil {
+			return err
+		}
+	}
 	return sendHtmlInlineAttachment(tenant, to, subject, cc, body, inlineContent, attachment)
+}
+
+func ensureMailAddress(to string) error {
+	return verifyEmail(to)
+}
+
+func isValidEmail(email string) error {
+	// Regular expression for validating an Email
+	re := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+	v := re.MatchString(email)
+	if !v {
+		return errors.New(fmt.Sprintf("invalid email (%s)", email))
+	}
+	return nil
+}
+
+func verifyDomain(email string) error {
+	domain := email[strings.Index(email, "@")+1:]
+	_, err := net.LookupMX(domain)
+	return err
+}
+
+func verifyEmail(email string) error {
+	if err := isValidEmail(email); err != nil {
+		return err
+	}
+	return nil //verifyDomain(email)
 }
 
 func sendHtmlInlineAttachment(sender, recipient, subject string, cc *string, htmlBody *bytes.Buffer, iContent []*Attachment, attachment *Attachment) error {

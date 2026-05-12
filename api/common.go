@@ -1,10 +1,11 @@
 package api
 
 import (
-	"at.ourproject/vfeeg-backend/model"
 	"encoding/json"
-	log "github.com/sirupsen/logrus"
 	"net/http"
+
+	"at.ourproject/vfeeg-backend/model"
+	log "github.com/sirupsen/logrus"
 )
 
 type HttpError struct {

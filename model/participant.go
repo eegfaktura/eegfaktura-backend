@@ -1,6 +1,8 @@
 package model
 
 import (
+	"time"
+
 	"github.com/jjeffery/civil"
 	"github.com/pborman/uuid"
 	"gopkg.in/guregu/null.v4"
@@ -29,10 +31,10 @@ type MeterState struct {
 }
 
 type EegParticipantBase struct {
-	Id                    uuid.UUID         `json:"id" goqu:"skipupdate"`
+	Id                    uuid.UUID         `json:"id,omitempty" goqu:"skipupdate"`
 	ParticipantNumber     null.String       `json:"participantNumber" db:"participantNumber" goqu:"omitempty"`
-	BusinessRole          string            `json:"businessRole" db:"businessRole" goqu:"omitempty"`
-	Role                  string            `json:"role" db:"role" goqu:"omitempty"`
+	BusinessRole          string            `json:"businessRole,omitempty" db:"businessRole" goqu:"omitempty"`
+	Role                  string            `json:"role,omitempty" db:"role" goqu:"omitempty"`
 	FirstName             string            `json:"firstname" goqu:"omitempty"`
 	LastName              string            `json:"lastname" goqu:"omitempty"`
 	TitleBefore           null.String       `json:"titleBefore" db:"titleBefore" goqu:"omitempty"`
@@ -43,9 +45,9 @@ type EegParticipantBase struct {
 	CompanyRegisterNumber null.String       `json:"companyRegisterNumber,omitempty" db:"companyRegisterNumber" goqu:"omitempty"`
 	MeteringPoint         []*MeteringPoint  `json:"meters" db:"-" goqu:"skipupdate,skipinsert"`
 	TariffId              null.String       `json:"tariffId,omitempty" db:"tariffId" goqu:"omitempty,skipinsert"`
-	Status                ProcessStatusType `json:"status" goqu:"omitempty,defaultifempty"`
-	Version               int               `json:"version" goqu:"omitempty,defaultifempty"`
-	CreatedBy             string            `json:"createdBy" db:"createdBy" goqu:"skipupdate"`
+	Status                ProcessStatusType `json:"status,omitempty" goqu:"omitempty,defaultifempty"`
+	Version               int               `json:"version,omitempty" goqu:"omitempty,defaultifempty"`
+	CreatedBy             string            `json:"createdBy,omitempty" db:"createdBy" goqu:"skipupdate"`
 }
 
 type EegParticipant struct {
@@ -100,6 +102,7 @@ const (
 	ARCHIVED ProcessStatusType = "ARCHIVED"
 	ABORTED  ProcessStatusType = "ABORTED"
 	RESTORE  ProcessStatusType = "RESTORE"
+	WARN     ProcessStatusType = "WARN"
 )
 
 type StatusType string
@@ -128,7 +131,7 @@ const (
 
 type MeteringPoint struct {
 	MeteringPoint    string            `json:"meteringPoint" db:"metering_point_id" goqu:"skipupdate"`
-	ParticipantId    string            `json:"participantId" db:"participant_id" goqu:"skipupdate,skipinsert"`
+	ParticipantId    string            `json:"participantId,omitempty" db:"participant_id" goqu:"skipupdate,skipinsert"`
 	ConsentId        null.String       `json:"consentId" db:"consent_id" goqu:"skipupdate,omitnil"`
 	Transformer      null.String       `json:"transformer,omitempty"`
 	Direction        DirectionType     `json:"direction,omitempty"`
@@ -143,11 +146,11 @@ type MeteringPoint struct {
 	City             null.String       `json:"city,omitempty"`
 	Zip              null.String       `json:"zip,omitempty"`
 	RegisteredSince  civil.Date        `json:"registeredSince" db:"registeredSince"`
-	ModifiedAt       civil.DateTime    `json:"modifiedAt" db:"modifiedAt"`
-	ModifiedBy       null.String       `json:"modifiedBy" db:"modifiedBy"`
+	ModifiedAt       civil.DateTime    `json:"modifiedAt,omitempty" db:"modifiedAt"`
+	ModifiedBy       null.String       `json:"modifiedBy,omitempty" db:"modifiedBy"`
 	GridOperatorId   null.String       `json:"gridOperatorId,omitempty" db:"grid_operator_id"`
 	GridOperatorName null.String       `json:"gridOperatorName,omitempty" db:"grid_operator_name"`
-	ProcessState     ProcessStatusType `json:"processState" db:"process_state"`
+	ProcessState     ProcessStatusType `json:"processState,omitempty" db:"process_state"`
 	State            *MeterState       `json:"participantState" goqu:"skipupdate"`
 	PartFact         int               `json:"partFact,omitempty" db:"partFact" goqu:"skipupdate,skipinsert"`
 	ActivationMode   RegistrationMode  `json:"activationMode,omitempty" goqu:"skipupdate,skipinsert" db:"-"`
@@ -168,4 +171,37 @@ type ChangePartitionFactorRequest struct {
 	GridOperatorId null.String   `json:"gridOperatorId,omitempty"`
 	Activation     civil.Date    `json:"activation"`
 	PartFact       int           `json:"partFact"`
+}
+
+type MasterDataParticipant struct {
+	ParticipantNumber string            `json:"participantNumber" db:"participantNumber" goqu:"omitempty"`
+	BusinessRole      string            `json:"businessRole,omitempty" db:"businessRole" goqu:"omitempty"`
+	Role              string            `json:"role,omitempty" db:"role" goqu:"omitempty"`
+	FirstName         string            `json:"firstname" goqu:"omitempty"`
+	LastName          string            `json:"lastname" goqu:"omitempty"`
+	TitleBefore       string            `json:"titleBefore" db:"titleBefore" goqu:"omitempty"`
+	TitleAfter        string            `json:"titleAfter" db:"titleAfter" goqu:"omitempty"`
+	ParticipantSince  time.Time         `json:"participantSince" db:"participantSince" goqu:"omitempty,defaultifempty"`
+	MeteringPoint     []MasterDataMeter `json:"meters" db:"-" goqu:"skipupdate,skipinsert"`
+	Status            ProcessStatusType `json:"status,omitempty" goqu:"omitempty,defaultifempty"`
+}
+
+type MasterDataMeter struct {
+	MeteringPoint    string            `json:"meteringPoint"`
+	ConsentId        string            `json:"consentId"`
+	Transformer      string            `json:"transformer"`
+	Direction        DirectionType     `json:"direction"`
+	Status           StatusType        `json:"status"`
+	EquipmentNumber  string            `json:"equipmentNumber"`
+	EquipmentName    string            `json:"equipmentName"`
+	InverterId       string            `json:"inverterid"`
+	RegisteredSince  string            `json:"registeredSince"`
+	GridOperatorId   string            `json:"gridOperatorId"`
+	GridOperatorName string            `json:"gridOperatorName"`
+	ProcessState     ProcessStatusType `json:"processState"`
+	PartFact         int               `json:"partFact"`
+	ActivationMode   RegistrationMode  `json:"activationMode"`
+	AllocationFactor float64           `json:"allocationFactor"`
+	ActiveSince      time.Time         `json:"activeSince"`
+	InactiveSince    time.Time         `json:"inactiveSince"`
 }

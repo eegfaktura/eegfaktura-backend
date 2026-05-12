@@ -1,23 +1,24 @@
 package api
 
 import (
-	"at.ourproject/vfeeg-backend/api/middleware"
-	"at.ourproject/vfeeg-backend/database"
-	"at.ourproject/vfeeg-backend/model"
-	mqttclient "at.ourproject/vfeeg-backend/mqtt"
+	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/gorilla/mux"
-	"github.com/jjeffery/civil"
-	"github.com/jmoiron/sqlx"
-	"github.com/spf13/viper"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"gopkg.in/guregu/null.v4"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"at.ourproject/vfeeg-backend/api/middleware"
+	"at.ourproject/vfeeg-backend/database"
+	"at.ourproject/vfeeg-backend/model"
+	mqttclient "at.ourproject/vfeeg-backend/mqtt"
+	"github.com/gorilla/mux"
+	"github.com/jjeffery/civil"
+	"github.com/spf13/viper"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gopkg.in/guregu/null.v4"
 )
 
 func init() {
@@ -139,9 +140,9 @@ func Test_confirmParticipantOnline(t *testing.T) {
 		return string(b)
 	}
 
-	database.ConnectToDatabase = func() (*sqlx.DB, error) {
-		return openTestDb()
-	}
+	//database.ConnectToDatabase = func() (*sqlx.DB, error) {
+	//	return openTestDb()
+	//}
 
 	claims := &middleware.PlatformClaims{Username: "test"}
 
@@ -209,11 +210,10 @@ func Test_confirmParticipantOnline(t *testing.T) {
 
 			confirmParticipant()(w, req, claims, tt.args.tenant)
 
-			db, err := openTestDb()
+			db, err := database.GetDB(context.Background())
 			require.NoError(t, err)
-			defer db.Close()
 
-			pUnderTest, err := database.QueryParticipant(db, "ea9942db-03da-11ee-b82b-5a985b4b033a")
+			pUnderTest, err := db.QueryParticipant("ea9942db-03da-11ee-b82b-5a985b4b033a")
 			require.NoError(t, err)
 			tt.check(t, w, pUnderTest)
 		})
