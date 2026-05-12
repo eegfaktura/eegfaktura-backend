@@ -18,19 +18,19 @@ func InitUserRouter(r *mux.Router) *mux.Router {
 	return r
 }
 
-func getUser() middleware.JWTHandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
+func getUser() middleware.TenantHandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request, claims *middleware.BackendClaims) {
 		//tenants := claims.Tenants
 		db, err := database.GetDB(context.Background())
 		if err != nil {
-			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
+			respondWith(w, http.StatusBadRequest, claims.Tenant, model.ErrConnectDatabase(err))
 			return
 		}
 
 		var tenants []string
 		su := middleware.IsSuperuser(claims.RealmAccess.Roles)
 		if !su {
-			tenants = claims.Tenants
+			tenants = claims.Tenant
 		}
 
 		tn, err := db.FetchTenantsName(tenants, su)
