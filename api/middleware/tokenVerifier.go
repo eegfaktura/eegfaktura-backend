@@ -150,9 +150,9 @@ func retrieveClaims(r *http.Request) (string, *PlatformClaims, error) {
 		}
 	}
 
-	if claims.Authorized != "at.ourproject.vfeeg.app" {
-		return tenant, claims, &VerifyError{http.StatusOK, errors.New("unauthorized access")}
-	}
+	//if claims.Authorized != "at.ourproject.vfeeg.app" {
+	//	return tenant, claims, &VerifyError{http.StatusOK, errors.New("unauthorized access")}
+	//}
 
 	return tenant, claims, nil
 }

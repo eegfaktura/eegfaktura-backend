@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"at.ourproject/vfeeg-backend/model"
 	"github.com/golang-migrate/migrate/v4"
@@ -55,9 +56,22 @@ func initDB(ctx context.Context) error {
 		return err
 	}
 
-	sqlDB.db.SetMaxOpenConns(viper.GetInt("database.maxOpenConns"))
-	sqlDB.db.SetMaxIdleConns(viper.GetInt("database.maxIdleConns"))
-	sqlDB.db.SetConnMaxLifetime(viper.GetDuration("database.connMaxLifetime"))
+	maxConnections := viper.GetInt("database.maxOpenConns")
+	if maxConnections == 0 {
+		maxConnections = 25
+	}
+	maxIdleConnections := viper.GetInt("database.maxIdleConns")
+	if maxIdleConnections == 0 {
+		maxIdleConnections = 25
+	}
+	maxLifetimeConnections := viper.GetDuration("database.connMaxLifetime")
+	if maxLifetimeConnections == 0 {
+		maxLifetimeConnections = 5 * time.Minute
+	}
+
+	sqlDB.db.SetMaxOpenConns(maxConnections)
+	sqlDB.db.SetMaxIdleConns(maxIdleConnections)
+	sqlDB.db.SetConnMaxLifetime(maxLifetimeConnections)
 
 	db.Database = &sqlDB
 
