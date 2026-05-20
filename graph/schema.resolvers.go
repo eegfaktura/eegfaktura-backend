@@ -24,7 +24,7 @@ func (r *mutationResolver) UpdateEegModel(ctx context.Context, tenant string, ee
 		return nil, err
 	}
 
-	eeg, err := db.GetEegById(tenant)
+	eeg, err := db.GetEegById(ctx, tenant)
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +46,7 @@ func (r *mutationResolver) MasterDataUpload(ctx context.Context, tenant string, 
 		return false, err
 	}
 
-	if err = db.ImportMasterdataFromExcel(file.File, file.Filename, sheet, tenant); err != nil {
+	if err = db.ImportMasterdataFromExcel(ctx, file.File, file.Filename, sheet, tenant); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -61,7 +61,7 @@ func (r *queryResolver) Eeg(ctx context.Context) (*model.Eeg, error) {
 		return nil, err
 	}
 
-	eeg, err := db.GetEegById(tenant)
+	eeg, err := db.GetEegById(ctx, tenant)
 	if err != nil {
 		return nil, err
 	}

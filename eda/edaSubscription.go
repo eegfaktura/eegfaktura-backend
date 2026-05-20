@@ -180,7 +180,7 @@ func protocolCrMsgHandler(ctx context.Context, msg model.SubscribeMessage) {
 		return
 	}
 
-	eeg, err := db.GetEegByEcId(msg.Payload.EcId)
+	eeg, err := db.GetEegByEcId(ctx, msg.Payload.EcId)
 	if err != nil {
 		logrus.WithField("tenant", msg.Tenant).WithError(err).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
 		return
@@ -215,7 +215,7 @@ func protocolCrReqPtHandler(ctx context.Context, msg model.SubscribeMessage) {
 		return
 	}
 
-	eeg, err := db.GetEegByEcId(msg.Payload.EcId)
+	eeg, err := db.GetEegByEcId(ctx, msg.Payload.EcId)
 	if err != nil {
 		logrus.WithField("error", err.Error()).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
 		return
@@ -271,7 +271,7 @@ func protocolEcReqOnlHandler(ctx context.Context, msg model.SubscribeMessage) {
 			activeSince = civil.NullDateFrom(&ax)
 			consentId = completeMeters[0].consentId
 			status = model.ACTIVE
-			if err := meteringPointPerformAnswerMsg(services.SendMail, msg.Payload.EcId, meters, "zp-complete-mail-template.toml"); err != nil {
+			if err := meteringPointPerformAnswerMsg(ctx, services.SendMail, msg.Payload.EcId, meters, "zp-complete-mail-template.toml"); err != nil {
 				logrus.WithField("tenant", msg.Tenant).Errorf("complete mail message for %+v return with error. %v", meters, err.Error())
 			}
 		} else {
@@ -315,7 +315,7 @@ func protocolEcReqOnlHandler(ctx context.Context, msg model.SubscribeMessage) {
 		for _, c := range codes {
 			if c == MESSAGE_RECEIVED {
 				status = model.PENDING
-				if err := meteringPointPerformAnswerMsg(services.SendMail, msg.Payload.EcId, meters, "activation-mail-template.toml"); err != nil {
+				if err := meteringPointPerformAnswerMsg(ctx, services.SendMail, msg.Payload.EcId, meters, "activation-mail-template.toml"); err != nil {
 					logrus.WithField("tenant", msg.Tenant).Errorf("Perform Answer Message %+v. %v", meters, err.Error())
 				}
 			} else if c == NO_REMOTELY_READABLE_METER_INSTALLED_YET || c == SUM_OF_REPORTED_ALLOCATION_KEYS_EXCEEDS_100 {
@@ -342,7 +342,7 @@ func protocolEcReqOnlHandler(ctx context.Context, msg model.SubscribeMessage) {
 		return
 	}
 
-	eeg, err := db.GetEegByEcId(msg.Payload.EcId)
+	eeg, err := db.GetEegByEcId(ctx, msg.Payload.EcId)
 	if err != nil {
 		logrus.WithError(err).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
 		return
@@ -351,12 +351,12 @@ func protocolEcReqOnlHandler(ctx context.Context, msg model.SubscribeMessage) {
 	if len(meters) > 0 && len(status) > 0 {
 		switch status {
 		case model.RESTORE:
-			if err = db.RestoreMeteringPointProcessState(eeg.Id, meters[0]); err != nil {
+			if err = db.RestoreMeteringPointProcessState(ctx, eeg.Id, meters[0]); err != nil {
 				logrus.WithError(err).Errorf("can not restore MeteringPointProcessState")
 			}
 			break
 		default:
-			if err = db.MeteringPointsSetStatus(eeg.Id, status, statusCode, meters, activeSince.Ptr(), getConsentId(consentId)); err != nil {
+			if err = db.MeteringPointsSetStatus(ctx, eeg.Id, status, statusCode, meters, activeSince.Ptr(), getConsentId(consentId)); err != nil {
 				logrus.WithError(err).Errorf("can not change metering point status of meters: %+v", meters)
 			}
 			if err = db.SaveNotification(eeg.Id, msg.MessageCode, meters, convertCodes2Strings(codes), msg.Protocol); err != nil {
@@ -382,13 +382,13 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 	var eeg *model.Eeg
 	switch msg.MessageCode {
 	case model.EBMS_AUFHEBUNG_CCMS, model.EBMS_ABLEHNUNG_CCMS:
-		eeg, err = db.GetEegByEcId(msg.Payload.EcId)
+		eeg, err = db.GetEegByEcId(ctx, msg.Payload.EcId)
 		if err != nil {
 			logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
 			return
 		}
 
-		if err := db.MeteringPointRevoke(eeg.Id, meters[0].meter, meters[0].consentEnd); err != nil {
+		if err := db.MeteringPointRevoke(ctx, eeg.Id, meters[0].meter, meters[0].consentEnd); err != nil {
 			logrus.WithField("tenant", eeg.Id).Errorf("can not revoke metering point %+v - %+v", meters, err)
 			return
 		}
@@ -396,12 +396,12 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 	case model.EBMS_AUFHEBUNG_CCMC, model.EBMS_AUFHEBUNG_CCMI:
 
 		var tenant *string
-		if tenant, err = db.MeteringPointRevokeByConsentId(meters[0].consentId, meters[0].meter, meters[0].consentEnd); err != nil {
+		if tenant, err = db.MeteringPointRevokeByConsentId(ctx, meters[0].consentId, meters[0].meter, meters[0].consentEnd); err != nil {
 			logrus.WithField("tenant", msg.Tenant).Errorf("can not revoke metering point %+v - %+v", meters, err)
 			return
 		}
 
-		eeg, err = db.GetEegById(*tenant)
+		eeg, err = db.GetEegById(ctx, *tenant)
 		if err != nil {
 			logrus.WithField("tenant", *tenant).Errorf("can not fetch eeg by tenant %s (REVOKE metering point)", *tenant)
 			return
@@ -411,13 +411,13 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 		if len(meters) > 0 {
 			if codesContains([]int16{176}, meters[0].codes) {
 				meters[0].consentEnd = civil.DateOf(time.UnixMilli(msg.Payload.ConsentEnd))
-				eeg, err = db.GetEegByEcId(msg.Payload.EcId)
+				eeg, err = db.GetEegByEcId(ctx, msg.Payload.EcId)
 				if err != nil {
 					logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
 					return
 				}
 
-				if err := db.MeteringPointRevoke(eeg.Id, meters[0].meter, meters[0].consentEnd); err != nil {
+				if err := db.MeteringPointRevoke(ctx, eeg.Id, meters[0].meter, meters[0].consentEnd); err != nil {
 					logrus.WithField("tenant", eeg.Id).Errorf("can not revoke metering point %+v - %+v", meters, err)
 					return
 				}
@@ -471,14 +471,14 @@ func protocolEcPrtChangeHandler(ctx context.Context, msg model.SubscribeMessage)
 		return
 	}
 
-	eeg, err := db.GetEegByEcId(msg.Payload.EcId)
+	eeg, err := db.GetEegByEcId(ctx, msg.Payload.EcId)
 	if err != nil {
 		logrus.Errorf("can not fetch eeg with message -> %+v", msg.Payload)
 		return
 	}
 
 	if len(meters) > 0 && errCode == 0 {
-		if err := db.MeteringPointChangePartFactor(eeg.Id, meters); err != nil {
+		if err := db.MeteringPointChangePartFactor(ctx, eeg.Id, meters); err != nil {
 			logrus.WithField("tenant", eeg.Id).Errorf("can not change partition factor. %v", err)
 			return
 		}
@@ -507,7 +507,7 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 			return
 		}
 
-		eeg, err := db.GetEegByEcId(msg.Payload.EcId)
+		eeg, err := db.GetEegByEcId(ctx, msg.Payload.EcId)
 		if err != nil {
 			logrus.Errorf("can not fetch eeg with message %+v", msg.Payload)
 			return
@@ -551,14 +551,14 @@ func getMeterIdSlice(meters []model.Meter) []string {
 	return ms
 }
 
-func meteringPointPerformAnswerMsg(sendMail services.SendMailFunc, ecId string, meterId []string, templateConfigName string) error {
+func meteringPointPerformAnswerMsg(ctx context.Context, sendMail services.SendMailFunc, ecId string, meterId []string, templateConfigName string) error {
 
 	db, err := database.GetDB(context.Background())
 	if err != nil {
 		return err
 	}
 
-	eeg, err := db.GetEegByEcId(ecId)
+	eeg, err := db.GetEegByEcId(ctx, ecId)
 	if err != nil {
 		return err
 	}
@@ -574,7 +574,7 @@ func meteringPointPerformAnswerMsg(sendMail services.SendMailFunc, ecId string, 
 	}
 
 	for _, mid := range meterId {
-		participant, err := db.FindParticipantByMeteringPoint(eeg.Id, mid)
+		participant, err := db.FindParticipantByMeteringPoint(ctx, eeg.Id, mid)
 		if err != nil {
 			if !errors.Is(err, sql.ErrNoRows) {
 				return err

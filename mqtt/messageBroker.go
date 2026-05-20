@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 
+	"time"
+
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/factory"
 	"at.ourproject/vfeeg-backend/model"
@@ -231,13 +233,16 @@ func (m *MessageBroker) command(cmd CommandMessage) {
 		online, ok := msg["online"]
 		if ok {
 			log.Infof("Update EEG Online State to %v", online)
-			db, err := database.GetDB(context.Background())
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+
+			db, err := database.GetDB(ctx)
 			if err != nil {
-				log.WithField("tenant", cmd.tenant).Error(err.Error())
+				log.Errorf("Database Error: %v", err)
 				return
 			}
 
-			if err := db.UpdateOnlineState(strings.ToUpper(cmd.tenant), online.(bool)); err != nil {
+			if err := db.UpdateEegOnlineState(ctx, strings.ToUpper(cmd.tenant), online.(bool)); err != nil {
 				log.Errorf("Error Command: %+v", err)
 			}
 		}
@@ -250,15 +255,18 @@ func (m *MessageBroker) command(cmd CommandMessage) {
 			return
 		}
 		eeg := factory.GetEegFromRegisterEeg(registerMsg)
-		ctx := context.Background()
 		log.Printf("Register EEG: %+v", eeg)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
 		db, err := database.GetDB(ctx)
 		if err != nil {
 			log.Errorf("Database Error: %v", err)
 			return
 		}
 
-		err = db.InsertEeg(eeg.RcNumber, &eeg)
+		err = db.RegisterEeg(ctx, &eeg)
 		if err != nil {
 			log.Errorf("Could not create an EEG! %v", err.Error())
 			return

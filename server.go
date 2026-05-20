@@ -71,18 +71,18 @@ func captureOsInterrupt() chan bool {
 	return quit
 }
 
-func InitRouters() *mux.Router {
+func InitRouters(db database.Database) *mux.Router {
 
 	//middleware.InitKeycloak()
 
 	//r := mux.NewRouter().PathPrefix("/api").Subrouter()
 	r := mux.NewRouter()
 	s := r.PathPrefix("/").Subrouter()
-	s = api.InitEegRouter(s)
-	s = api.InitParticipantRouter(s)
-	s = api.InitMeteringRouter(s)
-	s = api.InitProcessRouter(s)
-	s = api.InitApiRouter(s)
+	s = api.InitEegRouter(s, db)
+	s = api.InitParticipantRouter(s, db)
+	s = api.InitMeteringRouter(s, db)
+	s = api.InitProcessRouter(s, db)
+	s = api.InitApiRouter(s, db)
 
 	return s
 }
@@ -124,7 +124,7 @@ func main() {
 	//	os.Exit(1)
 	//}
 
-	StartServer()
+	StartServer(db)
 
 	err = db.CloseDB()
 	if err != nil {
@@ -157,7 +157,7 @@ func MigrateDatabase(db *sqlx.DB) error {
 	return nil
 }
 
-func StartServer() {
+func StartServer(db database.Database) {
 	log.Info("Start server ...")
 	middleware.InitKeycloak()
 	broker, err := mqttclient.Broker().Init(mqttclient.NewMqttClient)
@@ -171,7 +171,7 @@ func StartServer() {
 	mqttclient.InitErrorSubscriptions()
 
 	quit := captureOsInterrupt()
-	r := InitRouters()
+	r := InitRouters(db)
 
 	gqlSrv := handler.NewDefaultServer(generated.NewExecutableSchema(generated.Config{Resolvers: &graph.Resolver{}}))
 	r.Handle("/query", middleware.GQLProtect(gqlSrv))

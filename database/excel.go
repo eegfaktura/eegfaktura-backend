@@ -2,6 +2,7 @@ package database
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"regexp"
@@ -18,7 +19,7 @@ import (
 )
 
 type ExcelRepository interface {
-	ImportMasterdataFromExcel(r io.Reader, filename, sheet, tenant string) error
+	ImportMasterdataFromExcel(ctx context.Context, r io.Reader, filename, sheet, tenant string) error
 }
 
 var netOperatorMatch = regexp.MustCompile(`^[A-Z]{2}[0-9]*$`)
@@ -32,7 +33,7 @@ func openReader(r io.Reader, filename string, opt ...excelize.Options) (*exceliz
 	return f, nil
 }
 
-func (db *sqlDatabase) ImportMasterdataFromExcel(r io.Reader, filename, sheet, tenant string) error {
+func (db *sqlDatabase) ImportMasterdataFromExcel(ctx context.Context, r io.Reader, filename, sheet, tenant string) error {
 	var f *excelize.File
 	var err error
 
@@ -48,7 +49,7 @@ func (db *sqlDatabase) ImportMasterdataFromExcel(r io.Reader, filename, sheet, t
 	}
 	defer rows.Close()
 
-	gridOperators, err := db.GetGridOperators()
+	gridOperators, err := db.GetGridOperators(ctx)
 	if err != nil {
 		return err
 	}
@@ -61,7 +62,7 @@ func (db *sqlDatabase) ImportMasterdataFromExcel(r io.Reader, filename, sheet, t
 		return ""
 	}
 
-	eeg, err := db.GetEegById(tenant)
+	eeg, err := db.GetEegById(ctx, tenant)
 	if err != nil {
 		return err
 	}
@@ -72,7 +73,7 @@ func (db *sqlDatabase) ImportMasterdataFromExcel(r io.Reader, filename, sheet, t
 	log.Debugf("LEN _ Import participants: %v", len(participants))
 
 	for _, p := range participants {
-		err = db.ImportParticipant(strings.ToUpper(tenant), "excel", p)
+		err = db.ImportParticipant(ctx, strings.ToUpper(tenant), "excel", p)
 		if err != nil {
 			importLog.Messages = append(importLog.Messages, model.NewLogMessageFromVfeegError(
 				fmt.Sprintf("%s %s", p.FirstName, p.LastName),

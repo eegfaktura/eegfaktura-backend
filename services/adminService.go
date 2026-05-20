@@ -1,14 +1,15 @@
 package services
 
 import (
+	"context"
+	"strconv"
+	"time"
+
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
 	protobuf "at.ourproject/vfeeg-backend/proto"
-	"context"
 	"github.com/jjeffery/civil"
 	"github.com/sirupsen/logrus"
-	"strconv"
-	"time"
 )
 
 type AdminService struct {
@@ -54,6 +55,7 @@ func (r *AdminService) UpdateValue(ctx context.Context, request *protobuf.Update
 		}
 
 		if err := db.UpdateProcessStatus(
+			ctx,
 			request.Tenant,
 			[]string{*request.MeteringPoint},
 			model.ProcessStatusType(processState), nil,
@@ -66,6 +68,7 @@ func (r *AdminService) UpdateValue(ctx context.Context, request *protobuf.Update
 			return &protobuf.UpdateEegReply{Status: 501, Message: "Can not update ACTIVESINCE due to MeteringPoint Id or Participant Id is missing!"}, nil
 		}
 		if err := db.UpdateActiveSinceDate(
+			ctx,
 			request.Tenant,
 			*request.ParticipantId,
 			*request.MeteringPoint, "admin", activeSince.Ptr()); err != nil {
@@ -79,6 +82,7 @@ func (r *AdminService) UpdateValue(ctx context.Context, request *protobuf.Update
 		}
 
 		if err := db.UpdateInActiveSinceDate(
+			ctx,
 			request.Tenant,
 			*request.ParticipantId,
 			*request.MeteringPoint, "admin", inactiveSince.Ptr()); err != nil {
@@ -92,6 +96,7 @@ func (r *AdminService) UpdateValue(ctx context.Context, request *protobuf.Update
 		}
 
 		if err := db.UpdateParticipantValues(
+			ctx,
 			*request.ParticipantId,
 			request.Tenant,
 			request.Value); err != nil {
@@ -113,7 +118,7 @@ func (r *AdminService) UpdateValue(ctx context.Context, request *protobuf.Update
 			fields[k] = v
 		}
 
-		if err = db.UpdateEegPartial(request.Tenant, fields); err != nil {
+		if err = db.UpdateEegPartial(ctx, request.Tenant, fields); err != nil {
 			logrus.Error(err)
 			return &protobuf.UpdateEegReply{Status: 500, Message: "Can not update EEG due to a database issue!"}, err
 		}

@@ -1,10 +1,11 @@
 package services
 
 import (
+	"context"
+
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
 	protobuf "at.ourproject/vfeeg-backend/proto"
-	"context"
 )
 
 type ApiService struct {
@@ -19,9 +20,9 @@ func (api *ApiService) MasterData_MeteringPoint(ctx context.Context, meterReques
 
 	var meters []*model.MeteringPoint
 	if meterRequest.From == nil || meterRequest.To == nil {
-		meters, err = db.FindMeteringPointsForTenant(meterRequest.Tenant)
+		meters, err = db.FindMeteringPointsForTenant(ctx, meterRequest.Tenant)
 	} else {
-		meters, err = db.FindMeteringPointsActivePeriod(meterRequest.Tenant, int64(*meterRequest.From), int64(*meterRequest.To))
+		meters, err = db.FindMeteringPointsActivePeriod(ctx, meterRequest.Tenant, int64(*meterRequest.From), int64(*meterRequest.To))
 	}
 	if err != nil {
 		return nil, err

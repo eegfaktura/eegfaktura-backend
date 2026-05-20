@@ -1,25 +1,32 @@
 package api
 
 import (
-	"context"
 	"net/http"
 	"strconv"
 
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"at.ourproject/vfeeg-backend/database"
-	"at.ourproject/vfeeg-backend/model"
 	"github.com/gorilla/mux"
 )
 
-func InitProcessRouter(r *mux.Router) *mux.Router {
+func InitProcessRouter(r *mux.Router, db database.Database) *mux.Router {
+	h := NewProcessHandler(db)
 	s := r.PathPrefix("/process").Subrouter()
 
-	s.HandleFunc("/history", middleware.Protect(fetchProcessHistory())).Methods("GET")
+	s.HandleFunc("/history", middleware.Protect(h.fetchProcessHistory())).Methods("GET")
 
 	return r
 }
 
-func fetchProcessHistory() middleware.JWTHandlerFunc {
+type ProcessHandler struct {
+	db database.Database
+}
+
+func NewProcessHandler(db database.Database) *ProcessHandler {
+	return &ProcessHandler{db: db}
+}
+
+func (h *ProcessHandler) fetchProcessHistory() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
 
 		// parse parameters with separate checks
@@ -49,18 +56,8 @@ func fetchProcessHistory() middleware.JWTHandlerFunc {
 		}
 
 		protocol := r.URL.Query().Get("protocol")
-		if err != nil {
-			respondWithError(w, http.StatusBadRequest, err.Error())
-			return
-		}
 
-		db, err := database.GetDB(context.Background())
-		if err != nil {
-			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
-			return
-		}
-
-		history, err := db.FetchEdaHistory(tenant, protocol, start, end, uint(pageSize))
+		history, err := h.db.FetchEdaHistory(tenant, protocol, start, end, uint(pageSize))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

@@ -5,6 +5,9 @@ database:
   user: "postgresuser"
   password: "postgresPW"
   dbname: "postgresdb"
+  maxOpenConns: 25
+  maxIdleConns: 25
+  connMaxLifetime: "5m"
 
 mqtt:
   host: "tcp://localhost:1883"

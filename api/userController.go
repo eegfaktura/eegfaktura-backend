@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"net/http"
 
 	"at.ourproject/vfeeg-backend/api/middleware"
@@ -10,30 +9,32 @@ import (
 	"github.com/gorilla/mux"
 )
 
-func InitUserRouter(r *mux.Router) *mux.Router {
+func InitUserRouter(r *mux.Router, db database.Database) *mux.Router {
+	h := NewUserHandler(db)
 	s := r.PathPrefix("/user").Subrouter()
 
-	s.HandleFunc("/get-user", middleware.Protect(getUser())).Methods("GET")
+	s.HandleFunc("/get-user", middleware.Protect(h.getUser())).Methods("GET")
 
 	return r
 }
 
-func getUser() middleware.JWTHandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
-		//tenants := claims.Tenants
-		db, err := database.GetDB(context.Background())
-		if err != nil {
-			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
-			return
-		}
+type UserHandler struct {
+	db database.Database
+}
 
+func NewUserHandler(db database.Database) *UserHandler {
+	return &UserHandler{db: db}
+}
+
+func (h *UserHandler) getUser() middleware.JWTHandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
 		var tenants []string
 		su := middleware.IsSuperuser(claims.RealmAccess.Roles)
 		if !su {
 			tenants = claims.Tenants
 		}
 
-		tn, err := db.FetchTenantsName(tenants, su)
+		tn, err := h.db.FetchTenantsName(r.Context(), tenants, su)
 		if err != nil {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrGetUser(err))
 			return
