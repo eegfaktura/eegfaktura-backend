@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	"at.ourproject/vfeeg-backend/model"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/jmoiron/sqlx"
@@ -23,7 +24,7 @@ type sqlDatabase struct {
 }
 
 type Database interface {
-	Select(dest interface{}, query string, args ...interface{}) error
+	Select(ctx context.Context, dest interface{}, query string, args ...interface{}) error
 	CloseDB() error
 	MigrateDB() error
 	EegRepository
@@ -32,6 +33,12 @@ type Database interface {
 	NotificationRepository
 	ExcelRepository
 	TariffRepository
+	MqttRepository
+}
+
+type MqttRepository interface {
+	UpdateEegOnlineState(ctx context.Context, tenant string, online bool) error
+	RegisterEeg(ctx context.Context, eeg *model.Eeg) error
 }
 
 func initDB(ctx context.Context) error {
@@ -48,14 +55,9 @@ func initDB(ctx context.Context) error {
 		return err
 	}
 
-	//if viper.GetString("db.sql.datasourcename") != "" {
-	//	sqlDB.db, err = sqlx.ConnectContext(ctx, viper.GetString("db.drivername"), viper.GetString("db.sql.datasourcename"))
-	//	if err != nil {
-	//		return err
-	//	}
-	//} else {
-	//	return errors.New("no datasourcename set")
-	//}
+	sqlDB.db.SetMaxOpenConns(viper.GetInt("database.maxOpenConns"))
+	sqlDB.db.SetMaxIdleConns(viper.GetInt("database.maxIdleConns"))
+	sqlDB.db.SetConnMaxLifetime(viper.GetDuration("database.connMaxLifetime"))
 
 	db.Database = &sqlDB
 
@@ -86,8 +88,16 @@ func (db *sqlDatabase) CloseDB() error {
 	return errors.New("database was not initialized")
 }
 
-func (db *sqlDatabase) Select(dest interface{}, query string, args ...interface{}) error {
-	return db.db.Select(dest, query, args...)
+func (db *sqlDatabase) Select(ctx context.Context, dest interface{}, query string, args ...interface{}) error {
+	return db.db.SelectContext(ctx, dest, query, args...)
+}
+
+func (db *sqlDatabase) UpdateEegOnlineState(ctx context.Context, tenant string, online bool) error {
+	return db.UpdateOnlineState(ctx, tenant, online)
+}
+
+func (db *sqlDatabase) RegisterEeg(ctx context.Context, eeg *model.Eeg) error {
+	return db.InsertEeg(ctx, eeg.RcNumber, eeg)
 }
 
 func (db *sqlDatabase) MigrateDB() error {

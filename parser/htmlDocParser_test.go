@@ -1,18 +1,19 @@
 package parser
 
 import (
-	"at.ourproject/vfeeg-backend/model"
-	"at.ourproject/vfeeg-backend/services"
 	"bytes"
 	"fmt"
+	"reflect"
+	"strings"
+	"testing"
+
+	"at.ourproject/vfeeg-backend/model"
+	"at.ourproject/vfeeg-backend/services"
 	"github.com/jjeffery/civil"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/guregu/null.v4"
-	"reflect"
-	"strings"
-	"testing"
 )
 
 func init() {
@@ -396,7 +397,7 @@ func TestParseTemplate2(t *testing.T) {
 		return nil
 	}
 
-	err := SendActivationMailFromTemplate(sendMock, "sepp", "test", eeg, participant)
+	err := SendActivationMailFromTemplate(sendMock, "sepp", "test", eeg, participant, "activation-mail-template.toml")
 	assert.NoError(t, err)
 }
 
@@ -488,7 +489,7 @@ func TestManualSending(t *testing.T) {
 
 	var err error
 	if err = SendActivationMailFromTemplate(services.SendMail,
-		eeg.Id, "Aktivierung im Serviceportal", eeg, participant); err != nil {
+		eeg.Id, "Aktivierung im Serviceportal", eeg, participant, "activation-mail-template.toml"); err != nil {
 		logrus.WithField("tenant", eeg.Id).WithError(err).Error("Error Sending Mail")
 	}
 

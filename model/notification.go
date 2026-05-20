@@ -1,8 +1,9 @@
 package model
 
 import (
-	"github.com/jmoiron/sqlx/types"
 	"time"
+
+	"github.com/jmoiron/sqlx/types"
 )
 
 type NotificationType string

@@ -10,7 +10,7 @@ ORGANISATION=vfeeg-development
 GLOBAL_ORG=eegfaktura
 PLATFORM=ghcr.io
 
-VERSION=v0.3.04
+VERSION=v0.3.05
 
 GOPATH := ${PWD}/..:${GOPATH}
 export GOPATH

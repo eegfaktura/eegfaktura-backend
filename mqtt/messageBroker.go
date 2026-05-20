@@ -1,16 +1,20 @@
 package mqttclient
 
 import (
-	"at.ourproject/vfeeg-backend/database"
-	"at.ourproject/vfeeg-backend/model"
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"sync"
+
+	"time"
+
+	"at.ourproject/vfeeg-backend/database"
+	"at.ourproject/vfeeg-backend/factory"
+	"at.ourproject/vfeeg-backend/model"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-	"strings"
-	"sync"
 )
 
 var (
@@ -217,28 +221,57 @@ func (m *MessageBroker) received(inbound InboundMessage) {
 }
 
 func (m *MessageBroker) command(cmd CommandMessage) {
-	msg := map[string]interface{}{}
-	err := json.Unmarshal(cmd.msg, &msg)
-	if err != nil {
-		log.Errorf("Error from MQTT: (%s) cmd: %v - %v", cmd.tenant, cmd, err)
-		return
-	}
-
 	switch cmd.cmd {
 	case "pontononlinestate":
+		msg := map[string]interface{}{}
+		err := json.Unmarshal(cmd.msg, &msg)
+		if err != nil {
+			log.Errorf("Error from MQTT: (%s) cmd: %v - %v", cmd.tenant, cmd, err)
+			return
+		}
+
 		online, ok := msg["online"]
 		if ok {
 			log.Infof("Update EEG Online State to %v", online)
-			db, err := database.GetDB(context.Background())
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+
+			db, err := database.GetDB(ctx)
 			if err != nil {
-				log.WithField("tenant", cmd.tenant).Error(err.Error())
+				log.Errorf("Database Error: %v", err)
 				return
 			}
 
-			if err := db.UpdateOnlineState(strings.ToUpper(cmd.tenant), online.(bool)); err != nil {
+			if err := db.UpdateEegOnlineState(ctx, strings.ToUpper(cmd.tenant), online.(bool)); err != nil {
 				log.Errorf("Error Command: %+v", err)
 			}
 		}
+		break
+	case "register-eeg":
+		var registerMsg model.RegisterEegRequest
+		err := json.Unmarshal(cmd.msg, &registerMsg)
+		if err != nil {
+			log.Errorf("Error from MQTT: (%s) cmd: %v - %v", cmd.tenant, cmd, err)
+			return
+		}
+		eeg := factory.GetEegFromRegisterEeg(registerMsg)
+		log.Printf("Register EEG: %+v", eeg)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		db, err := database.GetDB(ctx)
+		if err != nil {
+			log.Errorf("Database Error: %v", err)
+			return
+		}
+
+		err = db.RegisterEeg(ctx, &eeg)
+		if err != nil {
+			log.Errorf("Could not create an EEG! %v", err.Error())
+			return
+		}
+		break
 	}
 }
 

@@ -1,18 +1,19 @@
 package parser
 
 import (
-	"at.ourproject/vfeeg-backend/config"
-	"at.ourproject/vfeeg-backend/model"
-	"at.ourproject/vfeeg-backend/services"
 	"bytes"
 	"embed"
 	"errors"
-	"github.com/gabriel-vasile/mimetype"
-	log "github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 	"html/template"
 	"os"
 	"path/filepath"
+
+	"at.ourproject/vfeeg-backend/config"
+	"at.ourproject/vfeeg-backend/model"
+	"at.ourproject/vfeeg-backend/services"
+	"github.com/gabriel-vasile/mimetype"
+	log "github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 )
 
 //go:embed templates
@@ -32,7 +33,7 @@ func ParseTemplate(templateFileName string, data interface{}) (*bytes.Buffer, er
 }
 
 func SendActivationMailFromTemplate(sendMail services.SendMailFunc,
-		tenant, subject string, eeg *model.Eeg, participant *model.EegParticipant) error {
+	tenant, subject string, eeg *model.Eeg, participant *model.EegParticipant, templateConfigName string) error {
 
 	templateConfigDir := filepath.Join(viper.GetString("file-content.templates"), tenant, "templates")
 	_, exists := os.Stat(templateConfigDir)
@@ -40,7 +41,8 @@ func SendActivationMailFromTemplate(sendMail services.SendMailFunc,
 		templateConfigDir = filepath.Join(viper.GetString("file-content.templates"), "templates")
 	}
 
-	templateConfig, err := config.ReadActivationMailTemplateConfig(filepath.Join(templateConfigDir, "activation-mail-template.toml"))
+	//templateConfig, err := config.ReadActivationMailTemplateConfig(filepath.Join(templateConfigDir, "activation-mail-template.toml"))
+	templateConfig, err := config.ReadActivationMailTemplateConfig(filepath.Join(templateConfigDir, templateConfigName))
 	if err != nil {
 		return err
 	}

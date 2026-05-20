@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,138 +17,140 @@ import (
 )
 
 type MeteringPointRepository interface {
-	RestoreMeteringPointProcessState(tenant, meterId string) error
-	MeteringPointsSetStatus(tenant string, processState model.ProcessStatusType, statusCode *int16, meterId []string, activeSince *civil.Date, consentId *string) error
-	FindActiveMeteringByIds(tenant string, meterIds []string) ([]*model.MeteringPoint, error)
-	FindMeteringPointsActivePeriod(tenant string, activeSince, inactiveSince int64) ([]*model.MeteringPoint, error)
-	FindMeteringByStatus(tenant, meterId string, status model.StatusType) (*model.MeteringPoint, error)
-	FindNewMeteringById(tenant string, meterId string) ([]*model.MeteringPoint, error)
-	FindInactiveMeteringById(tenant string, meterId string) ([]*model.MeteringPoint, error)
-	FindMeteringById(tenant string, meterId string) (*model.MeteringPoint, error)
-	FindAssignedMeteringById(tenant string, meterId string) (*model.MeteringPoint, error)
-	FindMeteringByIds(tenant string, meterIds []string) ([]*model.MeteringPoint, error)
-	FindMeteringPointsForTenant(tenant string) ([]*model.MeteringPoint, error)
-	FindAllMeteringByTenant(tenant, participantId string, meterIds []string) ([]*model.MeteringPoint, error)
-	RegisterMeteringPoint(tenant, username, participantId string, point *model.MeteringPoint) error
-	RemoveMeteringPoint(tenant, participantId, meterId string) error
-	MeteringPointRevoke(tenant, meterId string, consentEnd civil.Date) error
-	MeteringPointRevokeByConsentId(consentId *string, meterId string, consentEnd civil.Date) (*string, error)
-	ImportMeteringPoints(tenant, username, participantId string, point []*model.MeteringPoint) error
-	UpdateMeteringPoint(tenant, username, participantId, meterId string, meteringPoint *model.MeteringPoint) error
-	UpdateMeteringPointPartial(tenant, username, participantId, meterId string, values map[string]interface{}) error
-	UpdateActiveMeteringPoints(tenant string, ml []model.Meter) error
-	MeteringPointChangePartFactor(tenant string, meters []model.Meter) error
-	MoveMeteringPoint(tenant, username, sParticipantId, dParticipantId, meterId string) error
-	ArchiveMeteringPoint(tenant, participantId, meterId string) error
+	RestoreMeteringPointProcessState(ctx context.Context, tenant, meterId string) error
+	MeteringPointsSetStatus(ctx context.Context, tenant string, processState model.ProcessStatusType, statusCode *int16, meterId []string, activeSince *civil.Date, consentId *string) error
+	FindActiveMeteringByIds(ctx context.Context, tenant string, meterIds []string) ([]*model.MeteringPoint, error)
+	FindMeteringPointsActivePeriod(ctx context.Context, tenant string, activeSince, inactiveSince int64) ([]*model.MeteringPoint, error)
+	FindMeteringByStatus(ctx context.Context, tenant, meterId string, status model.StatusType) (*model.MeteringPoint, error)
+	FindNewMeteringById(ctx context.Context, tenant string, meterId string) ([]*model.MeteringPoint, error)
+	FindInactiveMeteringById(ctx context.Context, tenant string, meterId string) ([]*model.MeteringPoint, error)
+	FindMeteringById(ctx context.Context, tenant string, meterId string) (*model.MeteringPoint, error)
+	FindAssignedMeteringById(ctx context.Context, tenant string, meterId string) (*model.MeteringPoint, error)
+	FindMeteringByIds(ctx context.Context, tenant string, meterIds []string) ([]*model.MeteringPoint, error)
+	FindMeteringPointsForTenant(ctx context.Context, tenant string) ([]*model.MeteringPoint, error)
+	FindAllMeteringByTenant(ctx context.Context, tenant, participantId string, meterIds []string) ([]*model.MeteringPoint, error)
+	RegisterMeteringPoint(ctx context.Context, tenant, username, participantId string, point *model.MeteringPoint) error
+	RemoveMeteringPoint(ctx context.Context, tenant, participantId, meterId string) error
+	MeteringPointRevoke(ctx context.Context, tenant, meterId string, consentEnd civil.Date) error
+	MeteringPointRevokeByConsentId(ctx context.Context, consentId *string, meterId string, consentEnd civil.Date) (*string, error)
+	ImportMeteringPoints(ctx context.Context, tenant, username, participantId string, point []*model.MeteringPoint) error
+	UpdateMeteringPoint(ctx context.Context, tenant, username, participantId, meterId string, meteringPoint *model.MeteringPoint) error
+	UpdateMeteringPointPartial(ctx context.Context, tenant, username, participantId, meterId string, values map[string]interface{}) error
+	UpdateActiveMeteringPoints(ctx context.Context, tenant string, ml []model.Meter) error
+	MeteringPointChangePartFactor(ctx context.Context, tenant string, meters []model.Meter) error
+	MoveMeteringPoint(ctx context.Context, tenant, username, sParticipantId, dParticipantId, meterId string) error
+	ArchiveMeteringPoint(ctx context.Context, tenant, participantId, meterId string) error
 	UpdateProcessStatus(
+		ctx context.Context,
 		tenant string, meters []string,
 		processState model.ProcessStatusType, statusCode *int16, activeSince, inactiveSince *civil.Date, consentId *string) error
-	UpdateActiveSinceDate(tenant, participantId, meter, username string, activeSince *civil.Date) error
-	UpdateInActiveSinceDate(tenant, participantId, meter, username string, inactiveSince *civil.Date) error
+	UpdateActiveSinceDate(ctx context.Context, tenant, participantId, meter, username string, activeSince *civil.Date) error
+	UpdateInActiveSinceDate(ctx context.Context, tenant, participantId, meter, username string, inactiveSince *civil.Date) error
 }
 
-func (db *sqlDatabase) RestoreMeteringPointProcessState(tenant, meterId string) error {
-	return restoreMeteringPointProcessState(db.db, tenant, meterId)
+func (db *sqlDatabase) RestoreMeteringPointProcessState(ctx context.Context, tenant, meterId string) error {
+	return restoreMeteringPointProcessState(ctx, db.db, tenant, meterId)
 }
 
-func (db *sqlDatabase) MeteringPointsSetStatus(tenant string, processState model.ProcessStatusType, statusCode *int16, meterId []string, activeSince *civil.Date, consentId *string) error {
-	return meteringPointsSetStatus(db.db, tenant, processState, statusCode, meterId, activeSince, consentId)
+func (db *sqlDatabase) MeteringPointsSetStatus(ctx context.Context, tenant string, processState model.ProcessStatusType, statusCode *int16, meterId []string, activeSince *civil.Date, consentId *string) error {
+	return meteringPointsSetStatus(ctx, db.db, tenant, processState, statusCode, meterId, activeSince, consentId)
 }
 
-func (db *sqlDatabase) FindActiveMeteringByIds(tenant string, meterIds []string) ([]*model.MeteringPoint, error) {
-	return findActiveMeteringByIds(db.db, tenant, meterIds)
+func (db *sqlDatabase) FindActiveMeteringByIds(ctx context.Context, tenant string, meterIds []string) ([]*model.MeteringPoint, error) {
+	return findActiveMeteringByIds(ctx, db.db, tenant, meterIds)
 }
 
-func (db *sqlDatabase) FindMeteringPointsActivePeriod(tenant string, activeSince, inactiveSince int64) ([]*model.MeteringPoint, error) {
-	return findMeteringPointsActivePeriod(db.db, tenant, activeSince, inactiveSince)
+func (db *sqlDatabase) FindMeteringPointsActivePeriod(ctx context.Context, tenant string, activeSince, inactiveSince int64) ([]*model.MeteringPoint, error) {
+	return findMeteringPointsActivePeriod(ctx, db.db, tenant, activeSince, inactiveSince)
 }
 
-func (db *sqlDatabase) FindMeteringByStatus(tenant, meterId string, status model.StatusType) (*model.MeteringPoint, error) {
-	return findMeteringByStatus(db.db, tenant, meterId, status)
+func (db *sqlDatabase) FindMeteringByStatus(ctx context.Context, tenant, meterId string, status model.StatusType) (*model.MeteringPoint, error) {
+	return findMeteringByStatus(ctx, db.db, tenant, meterId, status)
 }
 
-func (db *sqlDatabase) FindNewMeteringById(tenant string, meterId string) ([]*model.MeteringPoint, error) {
-	return findNewMeteringById(db.db, tenant, meterId)
+func (db *sqlDatabase) FindNewMeteringById(ctx context.Context, tenant string, meterId string) ([]*model.MeteringPoint, error) {
+	return findNewMeteringById(ctx, db.db, tenant, meterId)
 }
 
-func (db *sqlDatabase) FindInactiveMeteringById(tenant string, meterId string) ([]*model.MeteringPoint, error) {
-	return findInactiveMeteringById(db.db, tenant, meterId)
+func (db *sqlDatabase) FindInactiveMeteringById(ctx context.Context, tenant string, meterId string) ([]*model.MeteringPoint, error) {
+	return findInactiveMeteringById(ctx, db.db, tenant, meterId)
 }
 
-func (db *sqlDatabase) FindMeteringById(tenant string, meterId string) (*model.MeteringPoint, error) {
-	return findMeteringById(db.db, tenant, meterId)
+func (db *sqlDatabase) FindMeteringById(ctx context.Context, tenant string, meterId string) (*model.MeteringPoint, error) {
+	return findMeteringById(ctx, db.db, tenant, meterId)
 }
 
-func (db *sqlDatabase) FindAssignedMeteringById(tenant string, meterId string) (*model.MeteringPoint, error) {
-	return findAssignedMetering(db.db, tenant, meterId)
+func (db *sqlDatabase) FindAssignedMeteringById(ctx context.Context, tenant string, meterId string) (*model.MeteringPoint, error) {
+	return findAssignedMetering(ctx, db.db, tenant, meterId)
 }
 
-func (db *sqlDatabase) FindMeteringByIds(tenant string, meterIds []string) ([]*model.MeteringPoint, error) {
-	return findMeteringByIds(db.db, tenant, meterIds)
+func (db *sqlDatabase) FindMeteringByIds(ctx context.Context, tenant string, meterIds []string) ([]*model.MeteringPoint, error) {
+	return findMeteringByIds(ctx, db.db, tenant, meterIds)
 }
 
-func (db *sqlDatabase) FindMeteringPointsForTenant(tenant string) ([]*model.MeteringPoint, error) {
-	return findMeteringPointsForTenant(db.db, tenant)
+func (db *sqlDatabase) FindMeteringPointsForTenant(ctx context.Context, tenant string) ([]*model.MeteringPoint, error) {
+	return findMeteringPointsForTenant(ctx, db.db, tenant)
 }
 
-func (db *sqlDatabase) FindAllMeteringByTenant(tenant, participantId string, meterIds []string) ([]*model.MeteringPoint, error) {
-	return findAllMeteringByTenant(db.db, tenant, participantId, meterIds)
+func (db *sqlDatabase) FindAllMeteringByTenant(ctx context.Context, tenant, participantId string, meterIds []string) ([]*model.MeteringPoint, error) {
+	return findAllMeteringByTenant(ctx, db.db, tenant, participantId, meterIds)
 }
 
-func (db *sqlDatabase) RegisterMeteringPoint(tenant, username, participantId string, point *model.MeteringPoint) error {
-	return registerMeteringPoint(db.db, tenant, username, participantId, point)
+func (db *sqlDatabase) RegisterMeteringPoint(ctx context.Context, tenant, username, participantId string, point *model.MeteringPoint) error {
+	return registerMeteringPoint(ctx, db.db, tenant, username, participantId, point)
 }
 
-func (db *sqlDatabase) RemoveMeteringPoint(tenant, participantId, meterId string) error {
-	return removeMeteringPoint(db.db, tenant, participantId, meterId)
+func (db *sqlDatabase) RemoveMeteringPoint(ctx context.Context, tenant, participantId, meterId string) error {
+	return removeMeteringPoint(ctx, db.db, tenant, participantId, meterId)
 }
 
-func (db *sqlDatabase) MeteringPointRevoke(tenant, meterId string, consentEnd civil.Date) error {
-	return meteringPointRevoke(db.db, tenant, meterId, consentEnd)
+func (db *sqlDatabase) MeteringPointRevoke(ctx context.Context, tenant, meterId string, consentEnd civil.Date) error {
+	return meteringPointRevoke(ctx, db.db, tenant, meterId, consentEnd)
 }
 
-func (db *sqlDatabase) MeteringPointRevokeByConsentId(consentId *string, meterId string, consentEnd civil.Date) (*string, error) {
-	return meteringPointRevokeByConsentId(db.db, consentId, meterId, consentEnd)
+func (db *sqlDatabase) MeteringPointRevokeByConsentId(ctx context.Context, consentId *string, meterId string, consentEnd civil.Date) (*string, error) {
+	return meteringPointRevokeByConsentId(ctx, db.db, consentId, meterId, consentEnd)
 }
 
-func (db *sqlDatabase) ImportMeteringPoints(tenant, username, participantId string, point []*model.MeteringPoint) error {
-	tx, err := db.db.Beginx()
+func (db *sqlDatabase) ImportMeteringPoints(ctx context.Context, tenant, username, participantId string, point []*model.MeteringPoint) error {
+	tx, err := db.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return err
 	}
 
-	err = ImportMeteringPoints(tx, tenant, username, participantId, point)
+	err = ImportMeteringPoints(ctx, tx, tenant, username, participantId, point)
 	if err != nil {
-		return errors.Join(tx.Rollback())
+		return errors.Join(err, tx.Rollback())
 	}
 	return tx.Commit()
 }
 
-func (db *sqlDatabase) UpdateMeteringPoint(tenant, username, participantId, meterId string, point *model.MeteringPoint) error {
-	return UpdateMeteringPoint(db.db, tenant, username, participantId, meterId, point)
+func (db *sqlDatabase) UpdateMeteringPoint(ctx context.Context, tenant, username, participantId, meterId string, point *model.MeteringPoint) error {
+	return UpdateMeteringPoint(ctx, db.db, tenant, username, participantId, meterId, point)
 }
 
-func (db *sqlDatabase) UpdateMeteringPointPartial(tenant, username, participantId, meterId string, values map[string]interface{}) error {
-	return UpdateMeteringPointPartial(db.db, tenant, username, participantId, meterId, values)
+func (db *sqlDatabase) UpdateMeteringPointPartial(ctx context.Context, tenant, username, participantId, meterId string, values map[string]interface{}) error {
+	return UpdateMeteringPointPartial(ctx, db.db, tenant, username, participantId, meterId, values)
 }
 
-func (db *sqlDatabase) UpdateActiveMeteringPoints(tenant string, ml []model.Meter) error {
-	return UpdateActiveMeteringPoints(db.db, tenant, ml)
+func (db *sqlDatabase) UpdateActiveMeteringPoints(ctx context.Context, tenant string, ml []model.Meter) error {
+	return UpdateActiveMeteringPoints(ctx, db.db, tenant, ml)
 }
 
-func (db *sqlDatabase) MeteringPointChangePartFactor(tenant string, meters []model.Meter) error {
-	return MeteringPointChangePartFactor(db.db, tenant, meters)
+func (db *sqlDatabase) MeteringPointChangePartFactor(ctx context.Context, tenant string, meters []model.Meter) error {
+	return MeteringPointChangePartFactor(ctx, db.db, tenant, meters)
 }
 
-func (db *sqlDatabase) MoveMeteringPoint(tenant, username, sParticipantId, dParticipantId, meterId string) error {
-	return moveMeteringPoint(db.db, tenant, username, sParticipantId, dParticipantId, meterId)
+func (db *sqlDatabase) MoveMeteringPoint(ctx context.Context, tenant, username, sParticipantId, dParticipantId, meterId string) error {
+	return moveMeteringPoint(ctx, db.db, tenant, username, sParticipantId, dParticipantId, meterId)
 }
 
-func (db *sqlDatabase) ArchiveMeteringPoint(tenant, participantId, meterId string) error {
-	return archiveMeteringPoint(db.db, tenant, participantId, meterId)
+func (db *sqlDatabase) ArchiveMeteringPoint(ctx context.Context, tenant, participantId, meterId string) error {
+	return archiveMeteringPoint(ctx, db.db, tenant, participantId, meterId)
 }
 
 func (db *sqlDatabase) UpdateProcessStatus(
+	ctx context.Context,
 	tenant string, meters []string,
 	processState model.ProcessStatusType, statusCode *int16, activeSince, inactiveSince *civil.Date, consentId *string) error {
 
@@ -159,29 +162,29 @@ func (db *sqlDatabase) UpdateProcessStatus(
 	case model.PENDING:
 		fallthrough
 	case model.INIT:
-		return db.MeteringPointsSetStatus(tenant, processState, &defaultStatusCode, meters, nil, nil)
+		return db.MeteringPointsSetStatus(ctx, tenant, processState, &defaultStatusCode, meters, nil, nil)
 	case model.APPROVED:
-		return db.MeteringPointsSetStatus(tenant, processState, &defaultStatusCode, meters, nil, consentId)
+		return db.MeteringPointsSetStatus(ctx, tenant, processState, &defaultStatusCode, meters, nil, consentId)
 	case model.ACTIVE:
-		return db.MeteringPointsSetStatus(tenant, processState, &defaultStatusCode, meters, activeSince, consentId)
+		return db.MeteringPointsSetStatus(ctx, tenant, processState, &defaultStatusCode, meters, activeSince, consentId)
 	case model.REVOKED:
-		return db.MeteringPointsSetStatus(tenant, processState, statusCode, meters, nil, nil)
+		return db.MeteringPointsSetStatus(ctx, tenant, processState, statusCode, meters, nil, nil)
 	case model.INACTIVE:
 		if inactiveSince == nil {
 			today := civil.Today()
 			inactiveSince = &today
 		}
-		return db.MeteringPointRevoke(tenant, meters[0], *inactiveSince)
+		return db.MeteringPointRevoke(ctx, tenant, meters[0], *inactiveSince)
 	}
 	return errors.New("invalid process state")
 }
 
-func (db *sqlDatabase) UpdateActiveSinceDate(tenant, participantId, meter, username string, activeSince *civil.Date) error {
-	return UpdateMeteringPointPartial(db.db, tenant, username, participantId, meter, map[string]interface{}{"activesince": activeSince})
+func (db *sqlDatabase) UpdateActiveSinceDate(ctx context.Context, tenant, participantId, meter, username string, activeSince *civil.Date) error {
+	return UpdateMeteringPointPartial(ctx, db.db, tenant, username, participantId, meter, map[string]interface{}{"activesince": activeSince})
 }
 
-func (db *sqlDatabase) UpdateInActiveSinceDate(tenant, participantId, meter, username string, inactiveSince *civil.Date) error {
-	return UpdateMeteringPointPartial(db.db, tenant, username, participantId, meter, map[string]interface{}{"inactivesince": inactiveSince})
+func (db *sqlDatabase) UpdateInActiveSinceDate(ctx context.Context, tenant, participantId, meter, username string, inactiveSince *civil.Date) error {
+	return UpdateMeteringPointPartial(ctx, db.db, tenant, username, participantId, meter, map[string]interface{}{"inactivesince": inactiveSince})
 }
 
 const TABLE_METERINGPOINT = "base.meteringpoint"
@@ -265,14 +268,14 @@ func createMeteringEntries(tenant, username, participantId string, points []*mod
 //	return saveMeteringPoint(tx, createMeteringEntries(tenant, participantId, point, &state))
 //}
 
-func ImportMeteringPoints(tx *sqlx.Tx, tenant, username, participantId string, point []*model.MeteringPoint) error {
+func ImportMeteringPoints(ctx context.Context, tx *sqlx.Tx, tenant, username, participantId string, point []*model.MeteringPoint) error {
 	meteringEntries, partFactEntries := createMeteringEntries(tenant, username, participantId, point, nil)
-	return saveMeteringPoint(tx, tenant, meteringEntries, partFactEntries)
+	return saveMeteringPoint(ctx, tx, tenant, meteringEntries, partFactEntries)
 }
 
 // saveMeteringPoint creates new metering point in the database.
 // Accourding to the status of new metering point (ACTIVE when excel import; NEW otherwise) the flag of the meterstate will be adapted
-func saveMeteringPoint(tx *sqlx.Tx, tenant string, meteringEntry []*meteringEntryType, partFactEntries []*partitionFactorRecord) error {
+func saveMeteringPoint(ctx context.Context, tx *sqlx.Tx, tenant string, meteringEntry []*meteringEntryType, partFactEntries []*partitionFactorRecord) error {
 	if len(meteringEntry) == 0 || len(partFactEntries) == 0 {
 		log.Warn("Save Meteringpoints with empty list of metering points or partFact entries")
 		return nil
@@ -372,7 +375,7 @@ func calcActivePtr(status *model.StatusType) *model.ProcessStatus {
 	return &state
 }
 
-func registerMeteringPoint(db *sqlx.DB, tenant, username, participantId string, point *model.MeteringPoint) error {
+func registerMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, participantId string, point *model.MeteringPoint) error {
 	tx, err := db.Beginx()
 	if err != nil {
 		log.WithError(err).Error("Not able to open a transaction.")
@@ -389,11 +392,11 @@ func registerMeteringPoint(db *sqlx.DB, tenant, username, participantId string, 
 	}()
 
 	meteringEntries, partFactEntries := createMeteringEntries(tenant, username, participantId, []*model.MeteringPoint{point}, &point.ProcessState)
-	err = saveMeteringPoint(tx, tenant, meteringEntries, partFactEntries)
+	err = saveMeteringPoint(ctx, tx, tenant, meteringEntries, partFactEntries)
 	return err
 }
 
-func moveMeteringPoint(db *sqlx.DB, tenant, username, sParticipantId, dParticipantId, meterId string) error {
+func moveMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, sParticipantId, dParticipantId, meterId string) error {
 	tx, err := db.Beginx()
 	if err != nil {
 		log.Errorf("Not able to open a transaction. %s", err.Error())
@@ -427,7 +430,7 @@ func moveMeteringPoint(db *sqlx.DB, tenant, username, sParticipantId, dParticipa
 	return nil
 }
 
-func UpdateMeteringPointPartial(db *sqlx.DB, tenant, username, participantId, meterId string, values map[string]interface{}) error {
+func UpdateMeteringPointPartial(ctx context.Context, db *sqlx.DB, tenant, username, participantId, meterId string, values map[string]interface{}) error {
 
 	values["modifiedBy"] = username
 	values["modifiedAt"] = civil.Now()
@@ -452,7 +455,7 @@ func UpdateMeteringPointPartial(db *sqlx.DB, tenant, username, participantId, me
 	return nil
 }
 
-func UpdateMeteringPoint(db *sqlx.DB, tenant, username, participantId, meterId string, meteringPoint *model.MeteringPoint) error {
+func UpdateMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, participantId, meterId string, meteringPoint *model.MeteringPoint) error {
 	updateObject := *meteringPoint
 	updateObject.State = nil
 	updateObject.ModifiedBy = null.StringFrom(username)
@@ -485,7 +488,7 @@ func UpdateMeteringPoint(db *sqlx.DB, tenant, username, participantId, meterId s
 // This indicates a metering point waiting for to be part of a community.
 // In case of the metering point is revoked by the net operator the status flag is switching to INACTIVE.
 // !!Never set the status to INIT once it has been activated!
-func removeMeteringPoint(db *sqlx.DB, tenant, participantId, meterId string) error {
+func removeMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, participantId, meterId string) error {
 	statement, _, err := goqu.Delete(TABLE_METERINGPOINT).
 		Where(goqu.Ex{
 			"tenant":            goqu.Op{"eq": tenant},
@@ -536,7 +539,7 @@ func calcState(processState model.ProcessStatusType) model.StatusType {
 	}
 }
 
-func archiveMeteringPoint(db *sqlx.DB, tenant, participantId, meterId string) error {
+func archiveMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, participantId, meterId string) error {
 	statement, _, err := goqu.Update(TABLE_METERINGPOINT).
 		Set(goqu.Record{"status": model.S_INACTIVE, "process_state": model.ARCHIVED, "flag": 2}).
 		Where(goqu.Ex{
@@ -559,7 +562,7 @@ func archiveMeteringPoint(db *sqlx.DB, tenant, participantId, meterId string) er
 	return nil
 }
 
-func restoreMeteringPointProcessState(db *sqlx.DB, tenant, meterId string) error {
+func restoreMeteringPointProcessState(ctx context.Context, db *sqlx.DB, tenant, meterId string) error {
 
 	sql, _, err := pgDialect.Update(TABLE_METERINGPOINT).
 		Set(goqu.Record{"process_state": goqu.COALESCE(goqu.C("last_process_state"), goqu.C("process_state"))}).
@@ -578,7 +581,7 @@ func restoreMeteringPointProcessState(db *sqlx.DB, tenant, meterId string) error
 
 // MeteringPointsSetStatus The MeteringPointSetStatus method handles only ECON or ECOF messages.
 // It requires that only one metering point of a community is assigned (flag == 1).
-func meteringPointsSetStatus(db *sqlx.DB, tenant string, processState model.ProcessStatusType, statusCode *int16, meterId []string, activeSince *civil.Date, consentId *string) error {
+func meteringPointsSetStatus(ctx context.Context, db *sqlx.DB, tenant string, processState model.ProcessStatusType, statusCode *int16, meterId []string, activeSince *civil.Date, consentId *string) error {
 
 	// setStatus In case of the ABSCHLUSS message is received before the APPROVED message the processtatus should remain in ACTIVE mode.
 	setStatus := func(status model.ProcessStatusType) goqu.Expression {
@@ -649,7 +652,7 @@ func meteringPointsSetStatus(db *sqlx.DB, tenant string, processState model.Proc
 	return nil
 }
 
-func meteringPointRevoke(db *sqlx.DB, tenant, meterId string, consentEnd civil.Date) error {
+func meteringPointRevoke(ctx context.Context, db *sqlx.DB, tenant, meterId string, consentEnd civil.Date) error {
 
 	log.Debugf("Revoke Meter: %s at %v\n", meterId, consentEnd)
 
@@ -706,7 +709,7 @@ func meteringPointRevoke(db *sqlx.DB, tenant, meterId string, consentEnd civil.D
 	return tx.Commit()
 }
 
-func meteringPointRevokeByConsentId(db *sqlx.DB, consentId *string, meterId string, consentEnd civil.Date) (*string, error) {
+func meteringPointRevokeByConsentId(ctx context.Context, db *sqlx.DB, consentId *string, meterId string, consentEnd civil.Date) (*string, error) {
 	execDB := goqu.New("postgres", db)
 
 	tx, err := execDB.Begin()
@@ -766,7 +769,7 @@ func meteringPointRevokeByConsentId(db *sqlx.DB, consentId *string, meterId stri
 	return &tenants[0], nil
 }
 
-func MeteringPointChangePartFactor(db *sqlx.DB, tenant string, meters []model.Meter) error {
+func MeteringPointChangePartFactor(ctx context.Context, db *sqlx.DB, tenant string, meters []model.Meter) error {
 
 	log.Debug("Change Partition Factor")
 
@@ -813,26 +816,26 @@ func MeteringPointChangePartFactor(db *sqlx.DB, tenant string, meters []model.Me
 	return tx.Commit()
 }
 
-func findInactiveMeteringById(db *sqlx.DB, tenant string, meterId string) ([]*model.MeteringPoint, error) {
+func findInactiveMeteringById(ctx context.Context, db *sqlx.DB, tenant string, meterId string) ([]*model.MeteringPoint, error) {
 	mode := model.S_INACTIVE
-	return findMeteringByIdAndState(db, tenant, []string{meterId}, &mode)
+	return findMeteringByIdAndState(ctx, db, tenant, []string{meterId}, &mode)
 }
 
-func findNewMeteringById(db *sqlx.DB, tenant string, meterId string) ([]*model.MeteringPoint, error) {
+func findNewMeteringById(ctx context.Context, db *sqlx.DB, tenant string, meterId string) ([]*model.MeteringPoint, error) {
 	mode := model.S_INIT
-	return findMeteringByIdAndState(db, tenant, []string{meterId}, &mode)
+	return findMeteringByIdAndState(ctx, db, tenant, []string{meterId}, &mode)
 }
 
-func findActiveMeteringByIds(db *sqlx.DB, tenant string, meterIds []string) ([]*model.MeteringPoint, error) {
+func findActiveMeteringByIds(ctx context.Context, db *sqlx.DB, tenant string, meterIds []string) ([]*model.MeteringPoint, error) {
 	mode := model.S_ACTIVE
-	return findMeteringByIdAndState(db, tenant, meterIds, &mode)
+	return findMeteringByIdAndState(ctx, db, tenant, meterIds, &mode)
 }
 
-func findMeteringByIds(db *sqlx.DB, tenant string, meterIds []string) ([]*model.MeteringPoint, error) {
-	return findMeteringByIdAndState(db, tenant, meterIds, nil)
+func findMeteringByIds(ctx context.Context, db *sqlx.DB, tenant string, meterIds []string) ([]*model.MeteringPoint, error) {
+	return findMeteringByIdAndState(ctx, db, tenant, meterIds, nil)
 }
 
-func findAllMeteringByTenant(tx *sqlx.DB, tenant, participantId string, meterIds []string) ([]*model.MeteringPoint, error) {
+func findAllMeteringByTenant(ctx context.Context, tx *sqlx.DB, tenant, participantId string, meterIds []string) ([]*model.MeteringPoint, error) {
 	var m []*model.MeteringPoint
 
 	stateStmt := pgDialect.From(TABLE_METERINGPOINT).
@@ -866,7 +869,7 @@ func findAllMeteringByTenant(tx *sqlx.DB, tenant, participantId string, meterIds
 		return nil, model.ErrFindMeter(err)
 	}
 	log.WithField("SQL", "SELECT").Infof("Stmt: %s", stmt)
-	err = tx.Select(&m, stmt)
+	err = tx.SelectContext(ctx, &m, stmt)
 	if err != nil {
 		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", stmt)
 		return nil, model.ErrFindMeter(err)
@@ -874,9 +877,9 @@ func findAllMeteringByTenant(tx *sqlx.DB, tenant, participantId string, meterIds
 	return m, nil
 }
 
-func findMeteringById(tx *sqlx.DB, tenant string, meterId string) (*model.MeteringPoint, error) {
+func findMeteringById(ctx context.Context, tx *sqlx.DB, tenant string, meterId string) (*model.MeteringPoint, error) {
 	mode := model.S_ACTIVE
-	m, err := findMeteringByIdAndState(tx, tenant, []string{meterId}, &mode)
+	m, err := findMeteringByIdAndState(ctx, tx, tenant, []string{meterId}, &mode)
 	if err != nil {
 		return nil, err
 	}
@@ -886,8 +889,8 @@ func findMeteringById(tx *sqlx.DB, tenant string, meterId string) (*model.Meteri
 	return nil, model.ErrFindMeter(errors.New("More as one active Meteringpoint was found"))
 }
 
-func findMeteringByStatus(tx *sqlx.DB, tenant, meterId string, status model.StatusType) (*model.MeteringPoint, error) {
-	m, err := findMeteringByIdAndState(tx, tenant, []string{meterId}, &status)
+func findMeteringByStatus(ctx context.Context, tx *sqlx.DB, tenant, meterId string, status model.StatusType) (*model.MeteringPoint, error) {
+	m, err := findMeteringByIdAndState(ctx, tx, tenant, []string{meterId}, &status)
 	if err != nil {
 		return nil, err
 	}
@@ -897,8 +900,8 @@ func findMeteringByStatus(tx *sqlx.DB, tenant, meterId string, status model.Stat
 	return nil, model.ErrFindMeter(errors.New("More as one or zero Meteringpoint are found!"))
 }
 
-func findAssignedMetering(db *sqlx.DB, tenant string, meterId string) (*model.MeteringPoint, error) {
-	m, err := findAssignedMeteringById(db, tenant, []string{meterId})
+func findAssignedMetering(ctx context.Context, db *sqlx.DB, tenant string, meterId string) (*model.MeteringPoint, error) {
+	m, err := findAssignedMeteringById(ctx, db, tenant, []string{meterId})
 	if err != nil {
 		return nil, err
 	}
@@ -908,7 +911,7 @@ func findAssignedMetering(db *sqlx.DB, tenant string, meterId string) (*model.Me
 	return nil, model.ErrFindMeter(errors.New("More as one or zero Meteringpoint are found!"))
 }
 
-func findMeteringByIdAndState(db *sqlx.DB, tenant string, meterIds []string, status *model.StatusType) ([]*model.MeteringPoint, error) {
+func findMeteringByIdAndState(ctx context.Context, db *sqlx.DB, tenant string, meterIds []string, status *model.StatusType) ([]*model.MeteringPoint, error) {
 	var m []*model.MeteringPoint
 
 	if len(meterIds) == 0 {
@@ -957,7 +960,7 @@ func findMeteringByIdAndState(db *sqlx.DB, tenant string, meterIds []string, sta
 		return nil, model.ErrFindMeter(err)
 	}
 
-	err = db.Select(&m, stmt)
+	err = db.SelectContext(ctx, &m, stmt)
 	if err != nil {
 		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", stmt)
 		return nil, model.ErrFindMeter(err)
@@ -965,7 +968,7 @@ func findMeteringByIdAndState(db *sqlx.DB, tenant string, meterIds []string, sta
 	return m, nil
 }
 
-func findAssignedMeteringById(db *sqlx.DB, tenant string, meterIds []string) ([]*model.MeteringPoint, error) {
+func findAssignedMeteringById(ctx context.Context, db *sqlx.DB, tenant string, meterIds []string) ([]*model.MeteringPoint, error) {
 	var m []*model.MeteringPoint
 
 	stateStmt := pgDialect.From(TABLE_METERINGPOINT).
@@ -1003,7 +1006,7 @@ func findAssignedMeteringById(db *sqlx.DB, tenant string, meterIds []string) ([]
 		return nil, model.ErrFindMeter(err)
 	}
 
-	err = db.Select(&m, stmt)
+	err = db.SelectContext(ctx, &m, stmt)
 	if err != nil {
 		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", stmt)
 		return nil, model.ErrFindMeter(err)
@@ -1011,7 +1014,7 @@ func findAssignedMeteringById(db *sqlx.DB, tenant string, meterIds []string) ([]
 	return m, nil
 }
 
-func UpdateActiveMeteringPoints(db *sqlx.DB, tenant string, ml []model.Meter) error {
+func UpdateActiveMeteringPoints(ctx context.Context, db *sqlx.DB, tenant string, ml []model.Meter) error {
 	tml := model.StandardizeMeteringPointList(ml)
 
 	status := model.S_ACTIVE
@@ -1123,21 +1126,21 @@ func UpdateActiveMeteringPoints(db *sqlx.DB, tenant string, ml []model.Meter) er
 	return nil
 }
 
-func findMeteringPointsForTenant(db *sqlx.DB, tenant string) ([]*model.MeteringPoint, error) {
+func findMeteringPointsForTenant(ctx context.Context, db *sqlx.DB, tenant string) ([]*model.MeteringPoint, error) {
 	stmt, _, _ := pgDialect.From(TABLE_METERINGPOINT).
 		Select("metering_point_id").
 		Where(goqu.C("tenant").Eq(tenant)).Order(goqu.I("direction").Asc()).ToSQL()
 
 	mIds := []string{}
-	err := db.Select(&mIds, stmt)
+	err := db.SelectContext(ctx, &mIds, stmt)
 	if err != nil {
 		log.WithField("tenant", tenant).WithError(err).Errorf("Stmt: %s", stmt)
 		return nil, err
 	}
-	return findMeteringByIdAndState(db, tenant, mIds, nil)
+	return findMeteringByIdAndState(ctx, db, tenant, mIds, nil)
 }
 
-func findMeteringPointsActivePeriod(db *sqlx.DB, tenant string, activeSince, inactiveSince int64) ([]*model.MeteringPoint, error) {
+func findMeteringPointsActivePeriod(ctx context.Context, db *sqlx.DB, tenant string, activeSince, inactiveSince int64) ([]*model.MeteringPoint, error) {
 	subStmt := pgDialect.From(TABLE_METERINGPOINT).Where(
 		goqu.C("activesince").Lte(civil.DateOf(time.UnixMilli(inactiveSince))),
 		goqu.C("tenant").Eq(tenant))
@@ -1153,5 +1156,5 @@ func findMeteringPointsActivePeriod(db *sqlx.DB, tenant string, activeSince, ina
 		log.WithField("tenant", tenant).WithError(err).Errorf("Stmt: %s", stmt)
 		return nil, err
 	}
-	return findMeteringByIdAndState(db, tenant, mIds, nil)
+	return findMeteringByIdAndState(ctx, db, tenant, mIds, nil)
 }

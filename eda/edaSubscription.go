@@ -1,20 +1,21 @@
 package eda
 
 import (
-	"at.ourproject/vfeeg-backend/database"
-	"at.ourproject/vfeeg-backend/model"
-	mqttclient "at.ourproject/vfeeg-backend/mqtt"
-	"at.ourproject/vfeeg-backend/parser"
-	"at.ourproject/vfeeg-backend/services"
 	"bytes"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/jjeffery/civil"
-	"github.com/sirupsen/logrus"
 	"strings"
 	"time"
+
+	"at.ourproject/vfeeg-backend/database"
+	"at.ourproject/vfeeg-backend/model"
+	mqttclient "at.ourproject/vfeeg-backend/mqtt"
+	"at.ourproject/vfeeg-backend/parser"
+	"at.ourproject/vfeeg-backend/services"
+	"github.com/jjeffery/civil"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -58,42 +59,43 @@ const (
 
 var (
 	ECON_RESPONSE_CODES = map[int16]string{
-		37:  "Stornierung nicht möglich",
-		55:  "Zählpunkt nicht dem Lieferanten zugeordnet",
-		56:  "Zählpunkt nicht gefunden",
-		57:  "Zählpunkt nicht versorgt",
-		70:  "Änderung/Anforderung akzeptiert",
-		76:  "Ungültige Anforderungsdaten",
-		82:  "Prozessdatum falsch",
-		86:  "konkurrierende Prozesse",
-		90:  "Kein Smart Meter",
-		94:  "Keine Daten im angeforderten Zeitraum vorhanden",
-		99:  "Meldung erhalten",
-		104: "Falsche Energierichtung",
-		156: "ZP bereits zugeordnet",
-		157: "ZP bereits einem Betreiber zugeordnet",
-		158: "ZP ist nicht teilnahmeberechtigt",
-		159: "Zu Prozessdatum ZP inaktiv bzw. noch kein Gerät eingebaut",
-		160: "Verteilmodell entspricht nicht der Vereinbarung",
-		172: "Kunde hat Datenfreigabe abgelehnt",
-		173: "Kunde hat auf Datenfreigabe nicht reagiert (Timeout)",
-		174: "Angefragte Daten nicht lieferbar",
-		175: "Zustimmung erteilt",
-		176: "Zustimmung erfolgreich entzogen",
-		177: "Keine Datenfreigabe vorhanden",
-		178: "Consent existiert bereits",
-		180: "ConsentID abgelaufen",
-		181: "Gemeinschafts-ID nicht vorhanden",
-		182: "Noch kein fernauslesbarer Zähler eingebaut",
-		183: "Summe der gemeldeten Aufteilungsschlüssel übersteigt 100%",
-		184: "Kunde hat optiert",
-		185: "Zählpunkt befindet sich nicht im Bereich der Energiegemeinschaft",
-		187: "ConsentID und Zählpunkt passen nicht zusammen",
-		188: "Teilnahmefaktor von 100 % würde überschritten werden",
-		189: "Zählpunkt ist der Gemeinschafts-ID nicht zugeordnet",
-		196: "Teilnahme-Limit wird überschritten",
-		203: "Zustimmung wurde entzogen",
-		204: "Für ZP ist derzeit keine ausreichend stabile Kommunikation möglich",
+		37:   "Stornierung nicht möglich",
+		55:   "Zählpunkt nicht dem Lieferanten zugeordnet",
+		56:   "Zählpunkt nicht gefunden",
+		57:   "Zählpunkt nicht versorgt",
+		70:   "Änderung/Anforderung akzeptiert",
+		76:   "Ungültige Anforderungsdaten",
+		82:   "Prozessdatum falsch",
+		86:   "konkurrierende Prozesse",
+		90:   "Kein Smart Meter",
+		94:   "Keine Daten im angeforderten Zeitraum vorhanden",
+		99:   "Meldung erhalten",
+		104:  "Falsche Energierichtung",
+		156:  "ZP bereits zugeordnet",
+		157:  "ZP bereits einem Betreiber zugeordnet",
+		158:  "ZP ist nicht teilnahmeberechtigt",
+		159:  "Zu Prozessdatum ZP inaktiv bzw. noch kein Gerät eingebaut",
+		160:  "Verteilmodell entspricht nicht der Vereinbarung",
+		172:  "Kunde hat Datenfreigabe abgelehnt",
+		173:  "Kunde hat auf Datenfreigabe nicht reagiert (Timeout)",
+		174:  "Angefragte Daten nicht lieferbar",
+		175:  "Zustimmung erteilt",
+		176:  "Zustimmung erfolgreich entzogen",
+		177:  "Keine Datenfreigabe vorhanden",
+		178:  "Consent existiert bereits",
+		180:  "ConsentID abgelaufen",
+		181:  "Gemeinschafts-ID nicht vorhanden",
+		182:  "Noch kein fernauslesbarer Zähler eingebaut",
+		183:  "Summe der gemeldeten Aufteilungsschlüssel übersteigt 100%",
+		184:  "Kunde hat optiert",
+		185:  "Zählpunkt befindet sich nicht im Bereich der Energiegemeinschaft",
+		187:  "ConsentID und Zählpunkt passen nicht zusammen",
+		188:  "Teilnahmefaktor von 100 % würde überschritten werden",
+		189:  "Zählpunkt ist der Gemeinschafts-ID nicht zugeordnet",
+		196:  "Teilnahme-Limit wird überschritten",
+		203:  "Zustimmung wurde entzogen",
+		204:  "Für ZP ist derzeit keine ausreichend stabile Kommunikation möglich",
+		1000: "Mail konnte nicht gesendet werden.",
 	}
 	REJECTED_INVALID_CODES = []int16{ZP_NOT_FOUND, ZP_NOT_SUPPLIED, INVALID_REQUEST_DATA, WRONG_ENERGY_DIRECTION,
 		ZP_ALREADY_ASSIGNED_TO_AN_OPERATOR, ZP_IS_NOT_ELIGIBLE, 159, 172, 173, 177, 181, 184, 185, 188, 196, NO_STABLE_COMMUNICATION_POSSIBLE}
@@ -178,7 +180,7 @@ func protocolCrMsgHandler(ctx context.Context, msg model.SubscribeMessage) {
 		return
 	}
 
-	eeg, err := db.GetEegByEcId(msg.Payload.EcId)
+	eeg, err := db.GetEegByEcId(ctx, msg.Payload.EcId)
 	if err != nil {
 		logrus.WithField("tenant", msg.Tenant).WithError(err).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
 		return
@@ -213,7 +215,7 @@ func protocolCrReqPtHandler(ctx context.Context, msg model.SubscribeMessage) {
 		return
 	}
 
-	eeg, err := db.GetEegByEcId(msg.Payload.EcId)
+	eeg, err := db.GetEegByEcId(ctx, msg.Payload.EcId)
 	if err != nil {
 		logrus.WithField("error", err.Error()).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
 		return
@@ -269,6 +271,9 @@ func protocolEcReqOnlHandler(ctx context.Context, msg model.SubscribeMessage) {
 			activeSince = civil.NullDateFrom(&ax)
 			consentId = completeMeters[0].consentId
 			status = model.ACTIVE
+			if err := meteringPointPerformAnswerMsg(ctx, services.SendMail, msg.Payload.EcId, meters, "zp-complete-mail-template.toml"); err != nil {
+				logrus.WithField("tenant", msg.Tenant).Errorf("complete mail message for %+v return with error. %v", meters, err.Error())
+			}
 		} else {
 			status = ""
 			meters = []string{}
@@ -310,8 +315,8 @@ func protocolEcReqOnlHandler(ctx context.Context, msg model.SubscribeMessage) {
 		for _, c := range codes {
 			if c == MESSAGE_RECEIVED {
 				status = model.PENDING
-				if err := meteringPointPerformAnswerMsg(services.SendMail, msg.Payload.EcId, meters); err != nil {
-					logrus.WithField("error", err.Error()).Errorf("Perform Answer Message %+v", meters)
+				if err := meteringPointPerformAnswerMsg(ctx, services.SendMail, msg.Payload.EcId, meters, "activation-mail-template.toml"); err != nil {
+					logrus.WithField("tenant", msg.Tenant).Errorf("Perform Answer Message %+v. %v", meters, err.Error())
 				}
 			} else if c == NO_REMOTELY_READABLE_METER_INSTALLED_YET || c == SUM_OF_REPORTED_ALLOCATION_KEYS_EXCEEDS_100 {
 				status = model.INVALID
@@ -325,7 +330,8 @@ func protocolEcReqOnlHandler(ctx context.Context, msg model.SubscribeMessage) {
 
 	case model.EBMS_ONLINE_REG_ABORT, model.EBMS_OFFLINE_REG_ABORT:
 		meters = msg.Payload.Meters()
-		status = model.ABORTED
+		//status = model.ABORTED
+		status = model.REJECTED
 	default:
 		return
 	}
@@ -336,7 +342,7 @@ func protocolEcReqOnlHandler(ctx context.Context, msg model.SubscribeMessage) {
 		return
 	}
 
-	eeg, err := db.GetEegByEcId(msg.Payload.EcId)
+	eeg, err := db.GetEegByEcId(ctx, msg.Payload.EcId)
 	if err != nil {
 		logrus.WithError(err).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
 		return
@@ -345,12 +351,12 @@ func protocolEcReqOnlHandler(ctx context.Context, msg model.SubscribeMessage) {
 	if len(meters) > 0 && len(status) > 0 {
 		switch status {
 		case model.RESTORE:
-			if err = db.RestoreMeteringPointProcessState(eeg.Id, meters[0]); err != nil {
+			if err = db.RestoreMeteringPointProcessState(ctx, eeg.Id, meters[0]); err != nil {
 				logrus.WithError(err).Errorf("can not restore MeteringPointProcessState")
 			}
 			break
 		default:
-			if err = db.MeteringPointsSetStatus(eeg.Id, status, statusCode, meters, activeSince.Ptr(), getConsentId(consentId)); err != nil {
+			if err = db.MeteringPointsSetStatus(ctx, eeg.Id, status, statusCode, meters, activeSince.Ptr(), getConsentId(consentId)); err != nil {
 				logrus.WithError(err).Errorf("can not change metering point status of meters: %+v", meters)
 			}
 			if err = db.SaveNotification(eeg.Id, msg.MessageCode, meters, convertCodes2Strings(codes), msg.Protocol); err != nil {
@@ -376,26 +382,26 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 	var eeg *model.Eeg
 	switch msg.MessageCode {
 	case model.EBMS_AUFHEBUNG_CCMS, model.EBMS_ABLEHNUNG_CCMS:
-		eeg, err = db.GetEegByEcId(msg.Payload.EcId)
+		eeg, err = db.GetEegByEcId(ctx, msg.Payload.EcId)
 		if err != nil {
 			logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
 			return
 		}
 
-		if err := db.MeteringPointRevoke(eeg.Id, meters[0].meter, meters[0].consentEnd); err != nil {
+		if err := db.MeteringPointRevoke(ctx, eeg.Id, meters[0].meter, meters[0].consentEnd); err != nil {
 			logrus.WithField("tenant", eeg.Id).Errorf("can not revoke metering point %+v - %+v", meters, err)
 			return
 		}
-		
+
 	case model.EBMS_AUFHEBUNG_CCMC, model.EBMS_AUFHEBUNG_CCMI:
 
 		var tenant *string
-		if tenant, err = db.MeteringPointRevokeByConsentId(meters[0].consentId, meters[0].meter, meters[0].consentEnd); err != nil {
+		if tenant, err = db.MeteringPointRevokeByConsentId(ctx, meters[0].consentId, meters[0].meter, meters[0].consentEnd); err != nil {
 			logrus.WithField("tenant", msg.Tenant).Errorf("can not revoke metering point %+v - %+v", meters, err)
 			return
 		}
 
-		eeg, err = db.GetEegById(*tenant)
+		eeg, err = db.GetEegById(ctx, *tenant)
 		if err != nil {
 			logrus.WithField("tenant", *tenant).Errorf("can not fetch eeg by tenant %s (REVOKE metering point)", *tenant)
 			return
@@ -405,13 +411,13 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 		if len(meters) > 0 {
 			if codesContains([]int16{176}, meters[0].codes) {
 				meters[0].consentEnd = civil.DateOf(time.UnixMilli(msg.Payload.ConsentEnd))
-				eeg, err = db.GetEegByEcId(msg.Payload.EcId)
+				eeg, err = db.GetEegByEcId(ctx, msg.Payload.EcId)
 				if err != nil {
 					logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
 					return
 				}
 
-				if err := db.MeteringPointRevoke(eeg.Id, meters[0].meter, meters[0].consentEnd); err != nil {
+				if err := db.MeteringPointRevoke(ctx, eeg.Id, meters[0].meter, meters[0].consentEnd); err != nil {
 					logrus.WithField("tenant", eeg.Id).Errorf("can not revoke metering point %+v - %+v", meters, err)
 					return
 				}
@@ -465,14 +471,14 @@ func protocolEcPrtChangeHandler(ctx context.Context, msg model.SubscribeMessage)
 		return
 	}
 
-	eeg, err := db.GetEegByEcId(msg.Payload.EcId)
+	eeg, err := db.GetEegByEcId(ctx, msg.Payload.EcId)
 	if err != nil {
 		logrus.Errorf("can not fetch eeg with message -> %+v", msg.Payload)
 		return
 	}
 
 	if len(meters) > 0 && errCode == 0 {
-		if err := db.MeteringPointChangePartFactor(eeg.Id, meters); err != nil {
+		if err := db.MeteringPointChangePartFactor(ctx, eeg.Id, meters); err != nil {
 			logrus.WithField("tenant", eeg.Id).Errorf("can not change partition factor. %v", err)
 			return
 		}
@@ -501,7 +507,7 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 			return
 		}
 
-		eeg, err := db.GetEegByEcId(msg.Payload.EcId)
+		eeg, err := db.GetEegByEcId(ctx, msg.Payload.EcId)
 		if err != nil {
 			logrus.Errorf("can not fetch eeg with message %+v", msg.Payload)
 			return
@@ -545,14 +551,14 @@ func getMeterIdSlice(meters []model.Meter) []string {
 	return ms
 }
 
-func meteringPointPerformAnswerMsg(sendMail services.SendMailFunc, ecId string, meterId []string) error {
+func meteringPointPerformAnswerMsg(ctx context.Context, sendMail services.SendMailFunc, ecId string, meterId []string, templateConfigName string) error {
 
 	db, err := database.GetDB(context.Background())
 	if err != nil {
 		return err
 	}
 
-	eeg, err := db.GetEegByEcId(ecId)
+	eeg, err := db.GetEegByEcId(ctx, ecId)
 	if err != nil {
 		return err
 	}
@@ -568,7 +574,7 @@ func meteringPointPerformAnswerMsg(sendMail services.SendMailFunc, ecId string, 
 	}
 
 	for _, mid := range meterId {
-		participant, err := db.FindParticipantByMeteringPoint(eeg.Id, mid)
+		participant, err := db.FindParticipantByMeteringPoint(ctx, eeg.Id, mid)
 		if err != nil {
 			if !errors.Is(err, sql.ErrNoRows) {
 				return err
@@ -585,8 +591,14 @@ func meteringPointPerformAnswerMsg(sendMail services.SendMailFunc, ecId string, 
 
 			if len(participant.MeteringPoint) > 0 {
 				if err = parser.SendActivationMailFromTemplate(sendMail,
-					eeg.Id, "Aktivierung im Serviceportal", eeg, participant); err != nil {
+					eeg.Id, "Aktivierung im Serviceportal", eeg, participant, templateConfigName); err != nil {
 					logrus.WithField("tenant", eeg.Id).WithError(err).Error("Error Sending Mail")
+					_ = db.SaveNotificationFromMap(database.CreateNotificationMessageFromLog(
+						&model.Log{Operation: "Mail", Messages: []*model.LogMessage{model.NewLogMessageFromVfeegError(
+							participant.MeteringPoint[0].MeteringPoint,
+							err,
+						)}}),
+						ecId, model.N_TYPE_ERROR, model.N_PROCESS_EDA_PROCESS, "ADMIN")
 				}
 			} else {
 				logrus.WithField("tenant", eeg.Id).Warn("No MeteringPoint for activation mail")

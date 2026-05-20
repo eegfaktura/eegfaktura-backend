@@ -5,6 +5,9 @@ database:
   user: "postgresuser"
   password: "postgresPW"
   dbname: "postgresdb"
+  maxOpenConns: 25
+  maxIdleConns: 25
+  connMaxLifetime: "5m"
 
 mqtt:
   host: "tcp://localhost:1883"
@@ -23,8 +26,8 @@ services:
 
 eda-process-versions:
   ANFORDERUNG_PT: "03.00"
-  ANFORDERUNG_ECON: "02.00"
-  ANFORDERUNG_ECOF: "02.00"
+  ANFORDERUNG_ECON: "02.30"
+  ANFORDERUNG_ECOF: "02.20"
   ANFORDERUNG_CPF: "01.00"
   ANFORDERUNG_ECP: "02.00"
   ANFORDERUNG_ECC: "01.20"

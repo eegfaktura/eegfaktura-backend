@@ -1,6 +1,17 @@
 package main
 
 import (
+	"context"
+	"embed"
+	"errors"
+	"flag"
+	"fmt"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
 	"at.ourproject/vfeeg-backend/api"
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"at.ourproject/vfeeg-backend/config"
@@ -10,11 +21,6 @@ import (
 	"at.ourproject/vfeeg-backend/graph/generated"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
 	"at.ourproject/vfeeg-backend/services"
-	"context"
-	"embed"
-	"errors"
-	"flag"
-	"fmt"
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
@@ -25,11 +31,6 @@ import (
 	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
 )
 
 var (
@@ -70,18 +71,18 @@ func captureOsInterrupt() chan bool {
 	return quit
 }
 
-func InitRouters() *mux.Router {
+func InitRouters(db database.Database) *mux.Router {
 
 	//middleware.InitKeycloak()
 
 	//r := mux.NewRouter().PathPrefix("/api").Subrouter()
 	r := mux.NewRouter()
 	s := r.PathPrefix("/").Subrouter()
-	s = api.InitEegRouter(s)
-	s = api.InitParticipantRouter(s)
-	s = api.InitMeteringRouter(s)
-	s = api.InitProcessRouter(s)
-	s = api.InitApiRouter(s)
+	s = api.InitEegRouter(s, db)
+	s = api.InitParticipantRouter(s, db)
+	s = api.InitMeteringRouter(s, db)
+	s = api.InitProcessRouter(s, db)
+	s = api.InitApiRouter(s, db)
 
 	return s
 }
@@ -106,9 +107,6 @@ func main() {
 
 	log.SetReportCaller(true)
 
-	//cmd.Execute()
-	//fmt.Printf("Program end: %s\n", "now")
-
 	source.Register("embed", &driver{})
 
 	db, err := database.GetDB(context.Background())
@@ -126,7 +124,7 @@ func main() {
 	//	os.Exit(1)
 	//}
 
-	StartServer()
+	StartServer(db)
 
 	err = db.CloseDB()
 	if err != nil {
@@ -159,7 +157,7 @@ func MigrateDatabase(db *sqlx.DB) error {
 	return nil
 }
 
-func StartServer() {
+func StartServer(db database.Database) {
 	log.Info("Start server ...")
 	middleware.InitKeycloak()
 	broker, err := mqttclient.Broker().Init(mqttclient.NewMqttClient)
@@ -173,7 +171,7 @@ func StartServer() {
 	mqttclient.InitErrorSubscriptions()
 
 	quit := captureOsInterrupt()
-	r := InitRouters()
+	r := InitRouters(db)
 
 	gqlSrv := handler.NewDefaultServer(generated.NewExecutableSchema(generated.Config{Resolvers: &graph.Resolver{}}))
 	r.Handle("/query", middleware.GQLProtect(gqlSrv))

@@ -23,12 +23,22 @@ type PlatformClaims struct {
 	Username     string       `json:"preferred_username"`
 	Email        string       `json:"email"`
 	AccessGroups AccessGroups `json:"access_groups"`
+	Authorized   string       `json:"azp"`
 	RealmAccess  struct {
 		Roles []string `json:"roles"`
 	} `json:"realm_access"`
 	jwt.StandardClaims
 }
 type AccessGroups []string
+
+type VerifyError struct {
+	StatusCode int
+	Err        error
+}
+
+func (eve *VerifyError) Error() string {
+	return fmt.Sprintf("status %d: err %v", eve.StatusCode, eve.Err)
+}
 
 func (ag AccessGroups) IsAdmin() bool {
 	for _, s := range ag {
@@ -115,6 +125,38 @@ func GQLProtect(next http.Handler) http.Handler {
 	})
 }
 
+func retrieveClaims(r *http.Request) (string, *PlatformClaims, error) {
+	jwtToken, err := ParseBearerTokenFromHeader(r)
+	if err != nil {
+		logrus.WithField("error", "JWT-Token").Printf("No Access_token in request or invalid Authorization: %v\n", err)
+		return "", nil, &VerifyError{http.StatusForbidden, errors.New("no access token available")}
+	}
+
+	claims, err := verifyAndExtractClaims(context.Background(), jwtToken)
+	if err != nil {
+		logrus.WithField("error", "JWT-Token").Errorf("%v", err)
+		return "", nil, &VerifyError{http.StatusUnauthorized, err}
+	}
+
+	tenant := r.Header.Get("tenant")
+	if len(tenant) == 0 {
+		tenant = r.Header.Get("X-Tenant")
+	}
+	superuser := hasRole(claims.RealmAccess.Roles, "superuser")
+	if !superuser {
+		if contains(claims.Tenants, tenant) == false {
+			logrus.WithField("tenant", tenant).Warnf("Unauthorized access with tenant %s", tenant)
+			return tenant, nil, &VerifyError{http.StatusForbidden, errors.New("unauthorized access")}
+		}
+	}
+
+	if claims.Authorized != "at.ourproject.vfeeg.app" {
+		return tenant, claims, &VerifyError{http.StatusOK, errors.New("unauthorized access")}
+	}
+
+	return tenant, claims, nil
+}
+
 // ConditionProtect Routes respectively to AccessGroups. Distinguish between admin route and user Route. ToDo: check body for refactoring.
 func ConditionProtect(admin JWTHandlerFunc, user JWTHandlerFunc) http.HandlerFunc {
 	toUpper := func(ss []string) []string {
@@ -126,31 +168,11 @@ func ConditionProtect(admin JWTHandlerFunc, user JWTHandlerFunc) http.HandlerFun
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		jwtToken, err := ParseBearerTokenFromHeader(r)
-		if err != nil {
-			logrus.WithField("error", "JWT-Token").Printf("No Access_token in request or invalid Authorization: %v\n", err)
-			w.WriteHeader(http.StatusForbidden)
-			return
-		}
 
-		claims, err := verifyAndExtractClaims(context.Background(), jwtToken)
+		tenant, claims, err := retrieveClaims(r)
 		if err != nil {
-			logrus.WithField("error", "JWT-Token").Errorf("%v", err)
-			w.WriteHeader(http.StatusUnauthorized)
+			w.WriteHeader(err.(*VerifyError).StatusCode)
 			return
-		}
-
-		tenant := r.Header.Get("tenant")
-		if len(tenant) == 0 {
-			tenant = r.Header.Get("X-Tenant")
-		}
-		superuser := hasRole(claims.RealmAccess.Roles, "superuser")
-		if !superuser {
-			if contains(claims.Tenants, tenant) == false {
-				logrus.WithField("tenant", tenant).Warnf("Unauthorized access with tenant %s", tenant)
-				w.WriteHeader(http.StatusUnauthorized)
-				return
-			}
 		}
 
 		claims.Tenants = toUpper(claims.Tenants)
@@ -163,6 +185,23 @@ func ConditionProtect(admin JWTHandlerFunc, user JWTHandlerFunc) http.HandlerFun
 		}
 	}
 }
+
+//func UserMiddelware(handler TenantHandlerFunc) http.HandlerFunc {
+//	return func(w http.ResponseWriter, r *http.Request) {
+//
+//		tenant := r.Header.Get("X-Tenant")
+//		userId := r.Header.Get("X-User-ID")
+//		mail := r.Header.Get("X-Mail")
+//
+//		if len(tenant) <= 0 {
+//			logrus.WithField("tenant", tenant).Warn("unauthorized tenant")
+//			http.Error(w, "forbidden", http.StatusForbidden)
+//			return
+//		}
+//
+//		handler(w, r, &BackendClaims{Tenant: strings.ToUpper(tenant), UserId: userId, Mail: mail})
+//	}
+//}
 
 func Protect(handler JWTHandlerFunc) http.HandlerFunc {
 	return verifyRequest(handler)
@@ -217,31 +256,10 @@ func verifyRequest(handler JWTHandlerFunc) func(w http.ResponseWriter, r *http.R
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		jwtToken, err := ParseBearerTokenFromHeader(r)
+		tenant, claims, err := retrieveClaims(r)
 		if err != nil {
-			logrus.WithField("error", "JWT-Token").Printf("No Access_token in request or invalid Authorization: %v\n", err)
-			w.WriteHeader(http.StatusForbidden)
+			w.WriteHeader(err.(*VerifyError).StatusCode)
 			return
-		}
-
-		claims, err := verifyAndExtractClaims(context.Background(), jwtToken)
-		if err != nil {
-			logrus.WithField("error", "JWT-Token").Errorf("%v", err)
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-
-		tenant := r.Header.Get("tenant")
-		if len(tenant) == 0 {
-			tenant = r.Header.Get("X-Tenant")
-		}
-		superuser := hasRole(claims.RealmAccess.Roles, "superuser")
-		if !superuser {
-			if contains(claims.Tenants, tenant) == false {
-				logrus.WithField("tenant", tenant).Warnf("Unauthorized access with tenant %s", tenant)
-				w.WriteHeader(http.StatusUnauthorized)
-				return
-			}
 		}
 
 		if claims.AccessGroups.IsAdmin() {

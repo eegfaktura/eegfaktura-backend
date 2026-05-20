@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 
@@ -14,31 +13,33 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func InitParticipantRouter(r *mux.Router) *mux.Router {
+func InitParticipantRouter(r *mux.Router, db database.Database) *mux.Router {
+	h := NewParticipantHandler(db)
 	s := r.PathPrefix("/participant").Subrouter()
 
-	s.HandleFunc("", middleware.ConditionProtect(fetchParticipantAll(), fetchParticipant())).Methods("GET")
-	s.HandleFunc("", middleware.Protect(registerParticipant())).Methods("POST")
-	s.HandleFunc("/{id}", middleware.Protect(updateParticipant())).Methods("PUT")
+	s.HandleFunc("", middleware.ConditionProtect(h.fetchParticipantAll(), h.fetchParticipant())).Methods("GET")
+	s.HandleFunc("", middleware.Protect(h.registerParticipant())).Methods("POST")
+	s.HandleFunc("/{id}", middleware.Protect(h.updateParticipant())).Methods("PUT")
 	// Commit a participant to be a member of a EEG
-	s.HandleFunc("/{id}/confirm", middleware.Protect(confirmParticipant())).Methods("POST")
-	s.HandleFunc("/v2/{id}", middleware.Protect(updateParticipantPartial())).Methods("PUT")
-	s.HandleFunc("/v2/{id}", middleware.Protect(deleteParticipant())).Methods("DELETE")
+	s.HandleFunc("/{id}/confirm", middleware.Protect(h.confirmParticipant())).Methods("POST")
+	s.HandleFunc("/v2/{id}", middleware.Protect(h.updateParticipantPartial())).Methods("PUT")
+	s.HandleFunc("/v2/{id}", middleware.Protect(h.deleteParticipant())).Methods("DELETE")
 
 	return r
 }
 
-func fetchParticipantAll() middleware.JWTHandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
-		db, err := database.GetDB(context.Background())
-		if err != nil {
-			log.WithField("tenant", tenant).WithError(err).Error("failed to fetch participant.")
-			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
-			return
-		}
+type ParticipantHandler struct {
+	db database.Database
+}
 
+func NewParticipantHandler(db database.Database) *ParticipantHandler {
+	return &ParticipantHandler{db: db}
+}
+
+func (h *ParticipantHandler) fetchParticipantAll() middleware.JWTHandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
 		if claims.AccessGroups.IsAdmin() {
-			participant, err := db.GetParticipants(tenant)
+			participant, err := h.db.GetParticipants(r.Context(), tenant)
 			if err != nil {
 				log.WithField("tenant", tenant).WithError(err).Error("failed to fetch participant.")
 				respondWith(w, http.StatusBadRequest, tenant, err)
@@ -49,16 +50,9 @@ func fetchParticipantAll() middleware.JWTHandlerFunc {
 	}
 }
 
-func fetchParticipant() middleware.JWTHandlerFunc {
+func (h *ParticipantHandler) fetchParticipant() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
-		db, err := database.GetDB(context.Background())
-		if err != nil {
-			log.WithField("tenant", tenant).WithError(err).Error("failed to fetch participant.")
-			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
-			return
-		}
-
-		participant, err := db.GetParticipantByName(tenant, claims.Email)
+		participant, err := h.db.GetParticipantByName(r.Context(), tenant, claims.Email)
 		if err != nil {
 			log.WithField("tenant", tenant).WithError(err).Error("failed to fetch participant.")
 			respondWith(w, http.StatusBadRequest, tenant, err)
@@ -68,7 +62,7 @@ func fetchParticipant() middleware.JWTHandlerFunc {
 	}
 }
 
-func updateParticipant() middleware.JWTHandlerFunc {
+func (h *ParticipantHandler) updateParticipant() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
 		//vars := mux.Vars(r)
 		//participantId := vars["id"]
@@ -81,14 +75,7 @@ func updateParticipant() middleware.JWTHandlerFunc {
 			return
 		}
 
-		db, err := database.GetDB(context.Background())
-		if err != nil {
-			log.WithField("tenant", tenant).WithError(err).Error("failed to update participant.")
-			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
-			return
-		}
-
-		err = db.UpdateParticipant(tenant, claims.Username, &t)
+		err = h.db.UpdateParticipant(r.Context(), tenant, claims.Username, &t)
 		if err != nil {
 			log.WithField("tenant", tenant).WithError(err).Error("failed to update participant.")
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -98,7 +85,7 @@ func updateParticipant() middleware.JWTHandlerFunc {
 	}
 }
 
-func updateParticipantPartial() middleware.JWTHandlerFunc {
+func (h *ParticipantHandler) updateParticipantPartial() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
 		vars := mux.Vars(r)
 		participantId := vars["id"]
@@ -110,24 +97,18 @@ func updateParticipantPartial() middleware.JWTHandlerFunc {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
-		db, err := database.GetDB(context.Background())
-		if err != nil {
-			log.WithField("tenant", tenant).WithError(err).Error("failed to update partial participant.")
-			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
-			return
-		}
 
 		name := p["path"].(string)
 		value := p["value"]
 
-		err = db.UpdateParticipantPartial(participantId, name, value)
+		err = h.db.UpdateParticipantPartial(r.Context(), participantId, name, value)
 		if err != nil {
 			log.WithField("tenant", tenant).WithError(err).Error("failed to update partial participant.")
 			respondWith(w, http.StatusInternalServerError, tenant, err)
 			return
 		}
 
-		participant, err := db.QueryParticipant(participantId)
+		participant, err := h.db.QueryParticipant(r.Context(), participantId)
 		if err != nil {
 			log.WithField("tenant", tenant).WithError(err).Error("failed to update partial participant.")
 			respondWith(w, http.StatusBadRequest, tenant, err)
@@ -137,7 +118,7 @@ func updateParticipantPartial() middleware.JWTHandlerFunc {
 	}
 }
 
-func registerParticipant() middleware.JWTHandlerFunc {
+func (h *ParticipantHandler) registerParticipant() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
 		var t model.EegParticipant
 		err := json.NewDecoder(r.Body).Decode(&t)
@@ -147,14 +128,7 @@ func registerParticipant() middleware.JWTHandlerFunc {
 			return
 		}
 
-		db, err := database.GetDB(context.Background())
-		if err != nil {
-			log.WithField("tenant", tenant).WithError(err).Error("failed to register participant.")
-			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
-			return
-		}
-
-		err = db.RegisterParticipant(tenant, claims.Username, &t)
+		err = h.db.RegisterParticipant(r.Context(), tenant, claims.Username, &t)
 		if err != nil {
 			log.WithField("tenant", tenant).WithError(err).Error("failed to register participant.")
 			respondWith(w, http.StatusBadRequest, tenant, err)
@@ -164,7 +138,7 @@ func registerParticipant() middleware.JWTHandlerFunc {
 	}
 }
 
-func confirmParticipant() middleware.JWTHandlerFunc {
+func (h *ParticipantHandler) confirmParticipant() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
 
 		vars := mux.Vars(r)
@@ -179,27 +153,20 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 			return
 		}
 
-		db, err := database.GetDB(context.Background())
-		if err != nil {
-			log.WithField("tenant", tenant).WithError(err).Error("failed to confirm participant.")
-			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
-			return
-		}
-
-		eeg, err := db.GetEegById(tenant)
+		eeg, err := h.db.GetEegById(r.Context(), tenant)
 		if err != nil {
 			log.WithField("tenant", tenant).WithError(err).Error("failed to confirm participant.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
 			return
 		}
-		participant, err := db.QueryParticipant(participantId)
+		participant, err := h.db.QueryParticipant(r.Context(), participantId)
 		if err != nil {
 			log.WithField("tenant", tenant).WithError(err).Error("failed to confirm participant.")
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
 
-		if err = db.ConfirmParticipant(claims.Username, participantId); err != nil {
+		if err = h.db.ConfirmParticipant(r.Context(), claims.Username, participantId); err != nil {
 			log.WithField("tenant", tenant).WithError(err).Error("failed to confirm participant.")
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
@@ -237,11 +204,6 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 							return
 						}
 					}
-					//err = database.MeteringPointsSetStatus(db, tenant, model.INIT, 0, []string{m.MeteringPoint}, nil, nil)
-					//if err != nil {
-					//	respondWith(w, http.StatusBadRequest, tenant, err)
-					//	return
-					//}
 				}
 			}
 		} else {
@@ -250,7 +212,7 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 				meterIds = append(meterIds, m.MeteringPoint)
 				m.Status = model.S_ACTIVE
 			}
-			err := db.MeteringPointsSetStatus(tenant, model.ACTIVE, nil, meterIds, nil, nil)
+			err := h.db.MeteringPointsSetStatus(r.Context(), tenant, model.ACTIVE, nil, meterIds, nil, nil)
 			if err != nil {
 				log.WithField("tenant", tenant).WithError(err).Error("failed to confirm participant.")
 				respondWith(w, http.StatusBadRequest, tenant, err)
@@ -261,19 +223,12 @@ func confirmParticipant() middleware.JWTHandlerFunc {
 	}
 }
 
-func deleteParticipant() middleware.JWTHandlerFunc {
+func (h *ParticipantHandler) deleteParticipant() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
 		vars := mux.Vars(r)
 		idStr := vars["id"]
 
-		db, err := database.GetDB(context.Background())
-		if err != nil {
-			log.WithField("tenant", tenant).WithError(err).Error("failed to register participant.")
-			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
-			return
-		}
-
-		if err := db.DeleteParticipant(idStr); err != nil {
+		if err := h.db.DeleteParticipant(r.Context(), idStr); err != nil {
 			log.WithField("tenant", tenant).WithError(err).Error("failed to delete participant.")
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return

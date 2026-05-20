@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	dbsql "database/sql"
 	"errors"
 	"fmt"
@@ -18,95 +19,95 @@ import (
 )
 
 type ParticipantRepository interface {
-	GetParticipants(tenant string) ([]*model.EegParticipant, error)
-	GetParticipant(participantId string) (*model.EegParticipant, error)
-	GetParticipantByName(tenant string, email string) ([]*model.EegParticipant, error)
-	ConfirmParticipant(username, participantId string) error
-	RegisterParticipant(tenant, username string, participant *model.EegParticipant) error
-	QueryParticipant(participantId string) (*model.EegParticipant, error)
-	ImportParticipant(tenant, username string, participant *model.EegParticipant) error
-	FindParticipantByMeteringPoint(tenant, meteringPoint string) (*model.EegParticipant, error)
-	UpdateParticipant(tenant, user string, participant *model.EegParticipant) error
-	UpdateParticipantPartial(participantId, name string, value interface{}) error
-	UpdateParticipantValues(participantId, tenant string, values map[string]string) error
-	DeleteParticipant(participantId string) error
+	GetParticipants(ctx context.Context, tenant string) ([]*model.EegParticipant, error)
+	GetParticipant(ctx context.Context, participantId string) (*model.EegParticipant, error)
+	GetParticipantByName(ctx context.Context, tenant string, email string) ([]*model.EegParticipant, error)
+	ConfirmParticipant(ctx context.Context, username, participantId string) error
+	RegisterParticipant(ctx context.Context, tenant, username string, participant *model.EegParticipant) error
+	QueryParticipant(ctx context.Context, participantId string) (*model.EegParticipant, error)
+	ImportParticipant(ctx context.Context, tenant, username string, participant *model.EegParticipant) error
+	FindParticipantByMeteringPoint(ctx context.Context, tenant, meteringPoint string) (*model.EegParticipant, error)
+	UpdateParticipant(ctx context.Context, tenant, user string, participant *model.EegParticipant) error
+	UpdateParticipantPartial(ctx context.Context, participantId, name string, value interface{}) error
+	UpdateParticipantValues(ctx context.Context, participantId, tenant string, values map[string]string) error
+	DeleteParticipant(ctx context.Context, participantId string) error
 }
 
-func (db *sqlDatabase) GetParticipants(tenant string) ([]*model.EegParticipant, error) {
-	return getParticipants(db.db, tenant)
+func (db *sqlDatabase) GetParticipants(ctx context.Context, tenant string) ([]*model.EegParticipant, error) {
+	return getParticipants(ctx, db.db, tenant)
 }
 
-func (db *sqlDatabase) GetParticipant(participantId string) (*model.EegParticipant, error) {
-	return getParticipant(db.db, participantId)
+func (db *sqlDatabase) GetParticipant(ctx context.Context, participantId string) (*model.EegParticipant, error) {
+	return getParticipant(ctx, db.db, participantId)
 }
 
-func (db *sqlDatabase) GetParticipantByName(tenant, email string) ([]*model.EegParticipant, error) {
-	return getParticipantByName(db.db, tenant, email)
+func (db *sqlDatabase) GetParticipantByName(ctx context.Context, tenant, email string) ([]*model.EegParticipant, error) {
+	return getParticipantByName(ctx, db.db, tenant, email)
 }
 
-func (db *sqlDatabase) RegisterParticipant(tenant, username string, participant *model.EegParticipant) error {
-	tx, err := db.db.Beginx()
+func (db *sqlDatabase) RegisterParticipant(ctx context.Context, tenant, username string, participant *model.EegParticipant) error {
+	tx, err := db.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return err
 	}
 
-	err = registerParticipant(tx, tenant, username, participant)
+	err = registerParticipant(ctx, tx, tenant, username, participant)
 	if err != nil {
 		return errors.Join(err, tx.Rollback())
 	}
 	return tx.Commit()
 }
 
-func (db *sqlDatabase) ConfirmParticipant(username, participantId string) error {
-	return confirmParticipant(db.db, username, participantId)
+func (db *sqlDatabase) ConfirmParticipant(ctx context.Context, username, participantId string) error {
+	return confirmParticipant(ctx, db.db, username, participantId)
 }
 
-func (db *sqlDatabase) QueryParticipant(participantId string) (*model.EegParticipant, error) {
-	return queryParticipant(db.db, participantId)
+func (db *sqlDatabase) QueryParticipant(ctx context.Context, participantId string) (*model.EegParticipant, error) {
+	return queryParticipant(ctx, db.db, participantId)
 }
 
-func (db *sqlDatabase) ImportParticipant(tenant, username string, participant *model.EegParticipant) error {
-	tx, err := db.db.Beginx()
+func (db *sqlDatabase) ImportParticipant(ctx context.Context, tenant, username string, participant *model.EegParticipant) error {
+	tx, err := db.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return err
 	}
 
-	err = importParticipant(tx, tenant, username, participant)
+	err = importParticipant(ctx, tx, tenant, username, participant)
 	if err != nil {
 		return errors.Join(err, tx.Rollback())
 	}
 	return tx.Commit()
 }
 
-func (db *sqlDatabase) FindParticipantByMeteringPoint(tenant, meteringPoint string) (*model.EegParticipant, error) {
-	return findParticipantByMeteringPoint(db.db, tenant, meteringPoint)
+func (db *sqlDatabase) FindParticipantByMeteringPoint(ctx context.Context, tenant, meteringPoint string) (*model.EegParticipant, error) {
+	return findParticipantByMeteringPoint(ctx, db.db, tenant, meteringPoint)
 }
 
-func (db *sqlDatabase) UpdateParticipant(tenant, user string, participant *model.EegParticipant) error {
-	return updateParticipant(db.db, tenant, user, participant)
+func (db *sqlDatabase) UpdateParticipant(ctx context.Context, tenant, user string, participant *model.EegParticipant) error {
+	return updateParticipant(ctx, db.db, tenant, user, participant)
 }
 
-func (db *sqlDatabase) UpdateParticipantPartial(participantId, name string, value interface{}) error {
-	return updateParticipantPartial(db.db, participantId, name, value)
+func (db *sqlDatabase) UpdateParticipantPartial(ctx context.Context, participantId, name string, value interface{}) error {
+	return updateParticipantPartial(ctx, db.db, participantId, name, value)
 }
 
-func (db *sqlDatabase) UpdateParticipantValues(participantId, tenant string, values map[string]string) error {
+func (db *sqlDatabase) UpdateParticipantValues(ctx context.Context, participantId, tenant string, values map[string]string) error {
 	var err error
 	for k, v := range values {
-		if err = updateParticipantPartial(db.db, participantId, k, v); err != nil {
+		if err = updateParticipantPartial(ctx, db.db, participantId, k, v); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (db *sqlDatabase) DeleteParticipant(participantId string) error {
-	return deleteParticipant(db.db, participantId)
+func (db *sqlDatabase) DeleteParticipant(ctx context.Context, participantId string) error {
+	return deleteParticipant(ctx, db.db, participantId)
 }
 
 const TABLE_PARTICIPANT = "base.participant"
 
-func getParticipants(db *sqlx.DB, tenant string) ([]*model.EegParticipant, error) {
+func getParticipants(ctx context.Context, db *sqlx.DB, tenant string) ([]*model.EegParticipant, error) {
 	var participants []*model.EegParticipant = []*model.EegParticipant{}
 
 	stmt, _, err := buildParticipantQueryStmt().
@@ -116,12 +117,12 @@ func getParticipants(db *sqlx.DB, tenant string) ([]*model.EegParticipant, error
 		return []*model.EegParticipant{}, model.ErrGetParticipant(err)
 	}
 
-	err = db.Select(&participants, stmt)
+	err = db.SelectContext(ctx, &participants, stmt)
 	if err != nil {
 		return []*model.EegParticipant{}, model.ErrGetParticipant(err)
 	}
 
-	err = completeParticipants(db, tenant, participants)
+	err = completeParticipants(ctx, db, tenant, participants)
 	if err != nil {
 		return []*model.EegParticipant{}, model.ErrGetParticipant(err)
 	}
@@ -139,7 +140,7 @@ func getParticipants(db *sqlx.DB, tenant string) ([]*model.EegParticipant, error
 	return participants, nil
 }
 
-func getParticipant(db *sqlx.DB, participantId string) (*model.EegParticipant, error) {
+func getParticipant(ctx context.Context, db *sqlx.DB, participantId string) (*model.EegParticipant, error) {
 	participant := &model.EegParticipant{}
 
 	stmt, _, err := buildParticipantQueryStmt().
@@ -149,13 +150,13 @@ func getParticipant(db *sqlx.DB, participantId string) (*model.EegParticipant, e
 		return participant, model.ErrGetParticipant(err)
 	}
 
-	err = db.Get(participant, stmt)
+	err = db.GetContext(ctx, participant, stmt)
 	if err != nil {
 		return participant, model.ErrGetParticipant(err)
 	}
 
 	if participant != nil {
-		err = completeParticipant(db, participant)
+		err = completeParticipant(ctx, db, participant)
 		if err != nil {
 			log.Errorf("Cannot fetch Participant correct: %s", err.Error())
 		}
@@ -167,7 +168,7 @@ func getParticipant(db *sqlx.DB, participantId string) (*model.EegParticipant, e
 	return participant, nil
 }
 
-func getParticipantByName(db *sqlx.DB, tenant, email string) ([]*model.EegParticipant, error) {
+func getParticipantByName(ctx context.Context, db *sqlx.DB, tenant, email string) ([]*model.EegParticipant, error) {
 	var participants []*model.EegParticipant
 
 	subquery := goqu.
@@ -184,12 +185,12 @@ func getParticipantByName(db *sqlx.DB, tenant, email string) ([]*model.EegPartic
 		return nil, model.ErrGetParticipant(err)
 	}
 
-	err = db.Select(&participants, stmt)
+	err = db.SelectContext(ctx, &participants, stmt)
 	if err != nil {
 		return nil, model.ErrGetParticipant(err)
 	}
 
-	err = completeParticipants(db, tenant, participants)
+	err = completeParticipants(ctx, db, tenant, participants)
 	if err != nil {
 		return nil, model.ErrGetParticipant(err)
 	}
@@ -207,7 +208,7 @@ func getParticipantByName(db *sqlx.DB, tenant, email string) ([]*model.EegPartic
 	return participants, nil
 }
 
-func queryParticipant(db *sqlx.DB, participantId string) (*model.EegParticipant, error) {
+func queryParticipant(ctx context.Context, db *sqlx.DB, participantId string) (*model.EegParticipant, error) {
 	var participant model.EegParticipant = model.EegParticipant{}
 
 	sql, _, err := buildParticipantQueryStmt().
@@ -217,12 +218,12 @@ func queryParticipant(db *sqlx.DB, participantId string) (*model.EegParticipant,
 	if err != nil {
 		return nil, model.ErrGetParticipant(err)
 	}
-	err = db.Get(&participant, sql)
+	err = db.GetContext(ctx, &participant, sql)
 	if err != nil {
 		return nil, model.ErrGetParticipant(err)
 	}
 
-	err = completeParticipant(db, &participant)
+	err = completeParticipant(ctx, db, &participant)
 	if err != nil {
 		return nil, err
 	}
@@ -246,7 +247,7 @@ func buildParticipantQueryStmt() *goqu.SelectDataset {
 		LeftJoin(contactInfoStmt.As("contact"), goqu.On(goqu.Ex{"participant.id": goqu.I("contact.participant_id")})).Select(&model.EegParticipant{})
 }
 
-func updateParticipant(db *sqlx.DB, tenant, user string, participant *model.EegParticipant) error {
+func updateParticipant(ctx context.Context, db *sqlx.DB, tenant, user string, participant *model.EegParticipant) error {
 
 	updateValues := struct {
 		model.EegParticipantBase
@@ -327,16 +328,16 @@ func updateParticipant(db *sqlx.DB, tenant, user string, participant *model.EegP
 //}
 
 // RegisterParticipant func RegisterParticipant(dbConn OpenDbXConnection, tenant, username string, participant *model.EegParticipant) error {
-func registerParticipant(tx *sqlx.Tx, tenant, username string, participant *model.EegParticipant) error {
+func registerParticipant(ctx context.Context, tx *sqlx.Tx, tenant, username string, participant *model.EegParticipant) error {
 	participant.Status = model.PENDING
 	participant.Id = uuid.NewUUID()
 	//participant.ParticipantSince = time.Now()
 	participant.CreatedBy = username
-	return saveParticipant(tx, tenant, username, participant, ImportMeteringPoints)
+	return saveParticipant(ctx, tx, tenant, username, participant, ImportMeteringPoints)
 }
 
 // ImportParticipant func ImportParticipant(dbConn OpenDbXConnection, tenant, username string, participant *model.EegParticipant) error {
-func importParticipant(tx *sqlx.Tx, tenant, username string, participant *model.EegParticipant) error {
+func importParticipant(ctx context.Context, tx *sqlx.Tx, tenant, username string, participant *model.EegParticipant) error {
 
 	// check if User already exists
 	stmt, _, err := pgDialect.From("base.participant").
@@ -349,16 +350,16 @@ func importParticipant(tx *sqlx.Tx, tenant, username string, participant *model.
 		return err
 	}
 	participantId := ""
-	err = tx.Get(&participantId, stmt)
+	err = tx.GetContext(ctx, &participantId, stmt)
 	if err == nil {
-		return ImportMeteringPoints(tx, tenant, username, participantId, participant.MeteringPoint)
+		return ImportMeteringPoints(ctx, tx, tenant, username, participantId, participant.MeteringPoint)
 	}
 
 	participant.Id = uuid.NewUUID()
-	return saveParticipant(tx, tenant, username, participant, ImportMeteringPoints)
+	return saveParticipant(ctx, tx, tenant, username, participant, ImportMeteringPoints)
 }
 
-func confirmParticipant(db *sqlx.DB, username, participantId string) error {
+func confirmParticipant(ctx context.Context, db *sqlx.DB, username, participantId string) error {
 
 	sql, _, err := pgDialect.Update(TABLE_PARTICIPANT).
 		Set(goqu.Ex{"status": model.ACTIVE, "lastModifiedDate": civil.Now(), "lastModifiedBy": username}).
@@ -369,8 +370,7 @@ func confirmParticipant(db *sqlx.DB, username, participantId string) error {
 		return model.ErrCompleteParticipant(err)
 	}
 
-	//_, err := db.Exec("UPDATE base.participant SET status = 'ACTIVE', \"lastModifiedDate\" = 'now()', \"lastModifiedBy\" = $1 WHERE id = $2", username, participantId)
-	_, err = db.Exec(sql)
+	_, err = db.ExecContext(ctx, sql)
 	if err != nil {
 		log.WithField("SQL", "UPDATE").WithError(err).Error(sql)
 		return model.ErrCompleteParticipant(err)
@@ -378,21 +378,21 @@ func confirmParticipant(db *sqlx.DB, username, participantId string) error {
 	return nil
 }
 
-func deleteParticipant(db *sqlx.DB, participantId string) error {
+func deleteParticipant(ctx context.Context, db *sqlx.DB, participantId string) error {
 	stmt, _, err := pgDialect.Delete(TABLE_PARTICIPANT).
 		Where(goqu.Ex{"id": participantId}).ToSQL()
 	if err != nil {
 		return model.ErrDeleteParticipant(err)
 	}
-	_, err = db.Exec(stmt)
+	_, err = db.ExecContext(ctx, stmt)
 	if err != nil {
 		return model.ErrDeleteParticipant(err)
 	}
 	return nil
 }
 
-func saveParticipant(tx *sqlx.Tx, tenant, username string, participant *model.EegParticipant,
-	registerMeteringPointsFunc func(*sqlx.Tx, string, string, string, []*model.MeteringPoint) error) error {
+func saveParticipant(ctx context.Context, tx *sqlx.Tx, tenant, username string, participant *model.EegParticipant,
+	registerMeteringPointsFunc func(context.Context, *sqlx.Tx, string, string, string, []*model.MeteringPoint) error) error {
 
 	participant.ParticipantSince = civil.NullDate{civil.Today(), true}
 	registeringParticipant := struct {
@@ -411,7 +411,7 @@ func saveParticipant(tx *sqlx.Tx, tenant, username string, participant *model.Ee
 
 	participantId := ""
 	sql, _, _ := pgDialect.Insert(TABLE_PARTICIPANT).Rows(registeringParticipant).Returning("id").ToSQL()
-	err := tx.QueryRow(sql).Scan(&participantId)
+	err := tx.QueryRowContext(ctx, sql).Scan(&participantId)
 	if err != nil {
 		return model.ErrRegisterParticipant(err)
 	}
@@ -444,7 +444,7 @@ func saveParticipant(tx *sqlx.Tx, tenant, username string, participant *model.Ee
 		return model.ErrRegisterParticipant(err)
 	}
 
-	err = registerMeteringPointsFunc(tx, tenant, username, participantId, participant.MeteringPoint)
+	err = registerMeteringPointsFunc(ctx, tx, tenant, username, participantId, participant.MeteringPoint)
 	if err != nil {
 		return model.ErrRegisterParticipant(err)
 	}
@@ -468,7 +468,7 @@ func saveParticipant(tx *sqlx.Tx, tenant, username string, participant *model.Ee
 //	return result, nil
 //}
 
-func updateParticipantPartial(db *sqlx.DB, participantId, name string, value interface{}) error {
+func updateParticipantPartial(ctx context.Context, db *sqlx.DB, participantId, name string, value interface{}) error {
 
 	var stmt *goqu.UpdateDataset
 	var sql string
@@ -540,10 +540,10 @@ func updateParticipantPartial(db *sqlx.DB, participantId, name string, value int
 		return model.ErrUpdateParticipant(errors.New(fmt.Sprintf("Can not update structure of %s", name)))
 	}
 
-	res, err := db.Exec(sql)
+	res, err := db.ExecContext(ctx, sql)
 	if err == nil {
 		if rows, err := res.RowsAffected(); rows == 0 || err != nil {
-			err = insertParticipantPartial(db, participantId, name, value)
+			err = insertParticipantPartial(ctx, db, participantId, name, value)
 			if err != nil {
 				return err
 			}
@@ -555,7 +555,7 @@ func updateParticipantPartial(db *sqlx.DB, participantId, name string, value int
 	}
 }
 
-func insertParticipantPartial(db *sqlx.DB, participantId, name string, value interface{}) error {
+func insertParticipantPartial(ctx context.Context, db *sqlx.DB, participantId, name string, value interface{}) error {
 
 	var stmt *goqu.InsertDataset
 	var sql string
@@ -643,7 +643,7 @@ func buildGetParticipantQuery() *goqu.SelectDataset {
 	return stmt
 }
 
-func completeParticipants(db *sqlx.DB, tenant string, participants []*model.EegParticipant) error {
+func completeParticipants(ctx context.Context, db *sqlx.DB, tenant string, participants []*model.EegParticipant) error {
 	//stateStmt := pgDialect.From("base.meteringpoint").
 	//	Select(
 	//		goqu.C("activesince"),
@@ -676,7 +676,7 @@ func completeParticipants(db *sqlx.DB, tenant string, participants []*model.EegP
 
 	meteringPoints := []model.MeteringPoint{}
 
-	err = db.Select(&meteringPoints, stmt)
+	err = db.SelectContext(ctx, &meteringPoints, stmt)
 	if err != nil && !errors.Is(err, dbsql.ErrNoRows) {
 		return model.ErrCompleteParticipant(err)
 	}
@@ -697,7 +697,7 @@ func completeParticipants(db *sqlx.DB, tenant string, participants []*model.EegP
 	return nil
 }
 
-func completeParticipant(db *sqlx.DB, participant *model.EegParticipant) error {
+func completeParticipant(ctx context.Context, db *sqlx.DB, participant *model.EegParticipant) error {
 	participantId := participant.Id.String()
 	//stateStmt := pgDialect.From("base.meteringpoint").
 	//	Select(
@@ -727,7 +727,7 @@ func completeParticipant(db *sqlx.DB, participant *model.EegParticipant) error {
 		return model.ErrCompleteParticipant(err)
 	}
 
-	err = db.Select(&participant.MeteringPoint, stmt)
+	err = db.SelectContext(ctx, &participant.MeteringPoint, stmt)
 	if err != nil && !errors.Is(err, dbsql.ErrNoRows) {
 		return model.ErrCompleteParticipant(err)
 	}
@@ -739,7 +739,7 @@ func completeParticipant(db *sqlx.DB, participant *model.EegParticipant) error {
 	return nil
 }
 
-func findParticipantByMeteringPoint(db *sqlx.DB, tenant, meteringPoint string) (*model.EegParticipant, error) {
+func findParticipantByMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, meteringPoint string) (*model.EegParticipant, error) {
 
 	participant := model.EegParticipant{}
 
@@ -756,13 +756,12 @@ func findParticipantByMeteringPoint(db *sqlx.DB, tenant, meteringPoint string) (
 		return nil, err
 	}
 
-	err = db.Get(&participant, stmt)
+	err = db.GetContext(ctx, &participant, stmt)
 	if err != nil {
 		log.WithField("SQL", "SELECT").Infof("Stmt: %s", stmt)
 		return nil, err
 	}
-
-	err = completeParticipant(db, &participant)
+	err = completeParticipant(ctx, db, &participant)
 	if err != nil {
 		return nil, err
 	}

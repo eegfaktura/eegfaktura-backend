@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -14,23 +13,30 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func InitApiRouter(r *mux.Router) *mux.Router {
+func InitApiRouter(r *mux.Router, db database.Database) *mux.Router {
+	h := NewApiHandler(db)
 	s := r.PathPrefix("/master").Subrouter()
 
-	s.HandleFunc("/updatepartfact", middleware.ProtectApi(updateParticipantFactorAPI())).Methods("POST")
-	s.HandleFunc("/masterdata", middleware.ProtectApi(fetchMasterDataAPI())).Methods("GET")
-	s.HandleFunc("/test", testApi).Methods("GET")
+	s.HandleFunc("/updatepartfact", middleware.ProtectApi(h.updateParticipantFactorAPI())).Methods("POST")
+	s.HandleFunc("/masterdata", middleware.ProtectApi(h.fetchMasterDataAPI())).Methods("GET")
+	s.HandleFunc("/test", h.testApi).Methods("GET")
 	return r
 }
 
-func testApi(w http.ResponseWriter, r *http.Request) {
+type ApiHandler struct {
+	db database.Database
+}
 
+func NewApiHandler(db database.Database) *ApiHandler {
+	return &ApiHandler{db: db}
+}
+
+func (h *ApiHandler) testApi(w http.ResponseWriter, r *http.Request) {
 	println("TestApi")
-
 	return
 }
 
-func updateParticipantFactorAPI() middleware.JWTHandlerFunc {
+func (h *ApiHandler) updateParticipantFactorAPI() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
 		var request struct {
 			MeteringPoints []*model.ChangePartitionFactorRequest `json:"meteringPoints"`
@@ -49,14 +55,7 @@ func updateParticipantFactorAPI() middleware.JWTHandlerFunc {
 			return
 		}
 
-		db, err := database.GetDB(context.Background())
-		if err != nil {
-			log.WithField("tenant", tenant).WithError(err).Error("failed to request metering point PRTFACT")
-			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
-			return
-		}
-
-		eeg, err := db.GetEegById(tenant)
+		eeg, err := h.db.GetEegById(r.Context(), tenant)
 		if err != nil {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
 			return
@@ -76,33 +75,14 @@ func updateParticipantFactorAPI() middleware.JWTHandlerFunc {
 	}
 }
 
-func fetchMasterDataAPI() middleware.JWTHandlerFunc {
+func (h *ApiHandler) fetchMasterDataAPI() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
 
-		db, err := database.GetDB(context.Background())
-		if err != nil {
-			log.WithField("tenant", tenant).WithError(err).Error("failed to request metering point PRTFACT")
-			respondWith(w, http.StatusBadRequest, tenant, model.ErrConnectDatabase(err))
-			return
-		}
-
-		//eeg, err := db.GetEegById(tenant)
-		//if err != nil {
-		//	respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
-		//	return
-		//}
-		//
-		participants, err := db.GetParticipants(tenant)
+		participants, err := h.db.GetParticipants(r.Context(), tenant)
 		if err != nil {
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
-
-		//tariffMap, err := db.GetTariffNameMap(tenant)
-		//if err != nil {
-		//	respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1059, err.Error()))
-		//	return
-		//}
 
 		masterdata := make([]model.MasterDataParticipant, len(participants))
 		for i := range participants {

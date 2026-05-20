@@ -1,10 +1,11 @@
 package services
 
 import (
+	"context"
+
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
 	protobuf "at.ourproject/vfeeg-backend/proto"
-	"context"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -68,7 +69,7 @@ func (r *RegisterService) Register(ctx context.Context, eeg *protobuf.RegisterEe
 		return &protobuf.RegisteredEegReply{Status: 500}, err
 	}
 
-	err = db.InsertEeg(eeg.RcNumber, &newEeg)
+	err = db.InsertEeg(ctx, eeg.RcNumber, &newEeg)
 	if err != nil {
 		log.Errorf("Could not create an EEG! %v", err.Error())
 		return &protobuf.RegisteredEegReply{Status: 500},
