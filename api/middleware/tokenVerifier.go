@@ -23,6 +23,7 @@ type PlatformClaims struct {
 	Username     string       `json:"preferred_username"`
 	Email        string       `json:"email"`
 	AccessGroups AccessGroups `json:"access_groups"`
+	Authorized   string       `json:"azp"`
 	RealmAccess  struct {
 		Roles []string `json:"roles"`
 	} `json:"realm_access"`
@@ -148,6 +149,11 @@ func retrieveClaims(r *http.Request) (string, *PlatformClaims, error) {
 			return tenant, nil, &VerifyError{http.StatusForbidden, errors.New("unauthorized access")}
 		}
 	}
+
+	if claims.Authorized != "at.ourproject.vfeeg.app" {
+		return tenant, claims, &VerifyError{http.StatusOK, errors.New("unauthorized access")}
+	}
+
 	return tenant, claims, nil
 }
 
