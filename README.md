@@ -1,6 +1,6 @@
 # VFEEG Backend
 
-The VFEEG (Virtual Flexible Energy Enterprise Gateway) Backend is a Go-based service designed for energy management, participant tracking, and metering point operations. It provides a robust API (GraphQL and REST) to interact with energy data, integrates with MQTT for real-time messaging, and uses PostgreSQL for data persistence.
+The VFEEG (Verein zur Förderung von erneuerbaren Energiegemeinschaften) Backend is a Go-based service designed for energy management, participant tracking, and metering point operations. It provides a robust API (GraphQL and REST) to interact with energy data, integrates with MQTT for real-time messaging, and uses PostgreSQL for data persistence.
 
 ## Features
 
