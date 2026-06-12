@@ -102,7 +102,7 @@ func (h *MeteringHandler) createMeteringPoint() middleware.JWTHandlerFunc {
 				}
 			}
 		}
-		respondWithJSON(w, http.StatusCreated, m)
+		respondWithData(w, http.StatusCreated, m)
 	}
 }
 
@@ -128,7 +128,7 @@ func (h *MeteringHandler) updateMeteringPoint() middleware.JWTHandlerFunc {
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
-		respondWithJSON(w, http.StatusAccepted, m)
+		respondWithData(w, http.StatusAccepted, m)
 	}
 }
 
@@ -161,7 +161,7 @@ func (h *MeteringHandler) updateMeteringPointPartial() middleware.JWTHandlerFunc
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrUpdateMeter(err))
 			return
 		}
-		respondWithJSON(w, http.StatusAccepted, updatedMeter)
+		respondWithData(w, http.StatusAccepted, updatedMeter)
 	}
 }
 
@@ -193,7 +193,7 @@ func (h *MeteringHandler) updateMeteringPointId() middleware.JWTHandlerFunc {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrUpdateMeter(err))
 			return
 		}
-		respondWithJSON(w, http.StatusAccepted, updatedMeter)
+		respondWithData(w, http.StatusAccepted, updatedMeter)
 	}
 }
 
@@ -237,7 +237,7 @@ func (h *MeteringHandler) updateMeteringPointPartFact() middleware.JWTHandlerFun
 				return
 			}
 			ms[0].PartFact = pf.PartFact
-			respondWithJSON(w, http.StatusAccepted, ms[0])
+			respondWithData(w, http.StatusAccepted, ms[0])
 		} else {
 			log.WithField("tenant", tenant).Errorf("failed to update metering point partition factor. Err: No PRTFACT specified %v", ms)
 			respondWith(w, http.StatusBadRequest, tenant, &model.VfeegError{999, errors.New(fmt.Sprintf("No metering factor found N:%d", len(meters)))})
@@ -268,7 +268,7 @@ func (h *MeteringHandler) moveMeteringPoint() middleware.JWTHandlerFunc {
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
-		respondWithJSON(w, http.StatusAccepted, m)
+		respondWithData(w, http.StatusAccepted, m)
 	}
 }
 
@@ -333,7 +333,7 @@ func (h *MeteringHandler) registerMeteringPoint() middleware.JWTHandlerFunc {
 		}
 
 		log.WithField("tenant", tenant).Infof("register metering point. PID: %s, request: %+v", participantId, request)
-		respondWithJSON(w, http.StatusCreated, participant)
+		respondWithData(w, http.StatusCreated, participant)
 	}
 }
 
@@ -494,7 +494,7 @@ func (h *MeteringHandler) requestRevokeMeteringPoint() middleware.JWTHandlerFunc
 				return
 			}
 		}
-		respondWithJSON(w, http.StatusCreated, participant)
+		respondWithData(w, http.StatusCreated, participant)
 	}
 }
 
@@ -510,7 +510,7 @@ func (h *MeteringHandler) removeMeteringPoint() middleware.JWTHandlerFunc {
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
-		respondWithJSON(w, http.StatusAccepted, map[string]interface{}{"meteringpoint": meterId})
+		respondWithData(w, http.StatusAccepted, map[string]interface{}{"meteringpoint": meterId})
 	}
 }
 
@@ -526,7 +526,7 @@ func (h *MeteringHandler) archiveMeteringPoint() middleware.JWTHandlerFunc {
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
-		respondWithJSON(w, http.StatusAccepted, map[string]interface{}{"meteringpoint": meterId})
+		respondWithData(w, http.StatusAccepted, map[string]interface{}{"meteringpoint": meterId})
 	}
 }
 

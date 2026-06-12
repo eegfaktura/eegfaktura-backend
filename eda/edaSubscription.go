@@ -190,7 +190,7 @@ func protocolCrMsgHandler(ctx context.Context, msg model.SubscribeMessage) {
 		for i := range msg.Payload.Energy {
 			energy := msg.Payload.Energy[i]
 			historyValue := map[string]interface{}{"meter": msg.Payload.Meter.MeteringPoint, "from": energy.Start, "to": energy.End}
-			_ = db.SaveHistory(eeg.Id, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, historyValue)
+			_ = db.SaveHistory(eeg.Id, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", "CR_MSG", historyValue)
 		}
 	}
 	return

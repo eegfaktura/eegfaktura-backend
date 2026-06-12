@@ -1,6 +1,9 @@
 package repository
 
 import (
+	"context"
+	"time"
+
 	"at.ourproject/vfeeg-backend/database"
 )
 
@@ -16,7 +19,10 @@ func (er *EegRepository) UpdatePartial(tenant string, values map[string]string) 
 		fields[k] = v
 	}
 
-	if err = er.db.UpdateEegPartial(tenant, fields); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err = er.db.UpdateEegPartial(ctx, tenant, fields); err != nil {
 		return err
 	}
 	return nil

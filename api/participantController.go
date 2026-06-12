@@ -38,14 +38,14 @@ func NewParticipantHandler(db database.Database) *ParticipantHandler {
 
 func (h *ParticipantHandler) fetchParticipantAll() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
-		if claims.AccessGroups.IsAdmin() {
+		if claims.RealmAccess.HasRole("admin") {
 			participant, err := h.db.GetParticipants(r.Context(), tenant)
 			if err != nil {
 				log.WithField("tenant", tenant).WithError(err).Error("failed to fetch participant.")
 				respondWith(w, http.StatusBadRequest, tenant, err)
 				return
 			}
-			respondWithJSON(w, 200, participant)
+			respondWithData(w, 200, participant)
 		}
 	}
 }
@@ -58,7 +58,7 @@ func (h *ParticipantHandler) fetchParticipant() middleware.JWTHandlerFunc {
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
-		respondWithJSON(w, 200, participant)
+		respondWithData(w, 200, participant)
 	}
 }
 
@@ -81,7 +81,7 @@ func (h *ParticipantHandler) updateParticipant() middleware.JWTHandlerFunc {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		respondWithJSON(w, http.StatusAccepted, t)
+		respondWithData(w, http.StatusAccepted, t)
 	}
 }
 
@@ -114,7 +114,7 @@ func (h *ParticipantHandler) updateParticipantPartial() middleware.JWTHandlerFun
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
-		respondWithJSON(w, http.StatusAccepted, participant)
+		respondWithData(w, http.StatusAccepted, participant)
 	}
 }
 
@@ -134,7 +134,7 @@ func (h *ParticipantHandler) registerParticipant() middleware.JWTHandlerFunc {
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
-		respondWithJSON(w, http.StatusCreated, t)
+		respondWithData(w, http.StatusCreated, t)
 	}
 }
 
@@ -219,7 +219,7 @@ func (h *ParticipantHandler) confirmParticipant() middleware.JWTHandlerFunc {
 				return
 			}
 		}
-		respondWithJSON(w, http.StatusCreated, participant)
+		respondWithData(w, http.StatusCreated, participant)
 	}
 }
 
@@ -233,6 +233,6 @@ func (h *ParticipantHandler) deleteParticipant() middleware.JWTHandlerFunc {
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
-		respondWithJSON(w, http.StatusAccepted, map[string]interface{}{"id": idStr})
+		respondWithData(w, http.StatusAccepted, map[string]interface{}{"id": idStr})
 	}
 }

@@ -5,7 +5,7 @@ database:
   user: "postgresuser"
   password: "postgresPW"
   dbname: "postgresdb"
-  maxOpenConns: 25
+  maxOpenConns: 20
   maxIdleConns: 25
   connMaxLifetime: "5m"
 

@@ -148,6 +148,10 @@ func (m *MessageBroker) ConfigRoutes(cl mqtt.Client) {
 
 	cl.AddRoute("eda/response/+/protocol/#", func(client mqtt.Client, msg mqtt.Message) {
 		tenant, protocol := TopicType(msg.Topic()).TypeInfo()
+		if strings.ToUpper(protocol) == "CR_MSG" {
+			return
+		}
+
 		log.WithField("tenant", tenant).Infof("Message from MQTT: Topic: %+v Protocol: %s QoS: %v", msg.Topic(), protocol, msg.Qos())
 		m.Inbound <- InboundMessage{
 			strings.ToUpper(tenant),
@@ -203,6 +207,11 @@ func (m *MessageBroker) Stop() {
 }
 
 func (m *MessageBroker) received(inbound InboundMessage) {
+
+	if inbound.protocol == model.CR_MSG_ORG {
+		return
+	}
+
 	msg := model.EbmsMessage{}
 	err := json.Unmarshal(inbound.msg, &msg)
 	if err != nil {
