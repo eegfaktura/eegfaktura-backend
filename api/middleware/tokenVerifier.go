@@ -24,11 +24,18 @@ type PlatformClaims struct {
 	Email        string       `json:"email"`
 	AccessGroups AccessGroups `json:"access_groups"`
 	Authorized   string       `json:"azp"`
-	RealmAccess  struct {
-		Roles []string `json:"roles"`
-	} `json:"realm_access"`
+	RealmAccess  RealmRoles   `json:"realm_access"`
 	jwt.StandardClaims
 }
+
+type RealmRoles struct {
+	Roles []string `json:"roles"`
+}
+
+func (rr RealmRoles) HasRole(role string) bool {
+	return hasRole(rr.Roles, role)
+}
+
 type AccessGroups []string
 
 type VerifyError struct {
@@ -40,23 +47,23 @@ func (eve *VerifyError) Error() string {
 	return fmt.Sprintf("status %d: err %v", eve.StatusCode, eve.Err)
 }
 
-func (ag AccessGroups) IsAdmin() bool {
-	for _, s := range ag {
-		if s == "/EEG_ADMIN" {
-			return true
-		}
-	}
-	return false
-}
-
-func (ag AccessGroups) IsUser() bool {
-	for _, s := range ag {
-		if s == "/EEG_USER" {
-			return true
-		}
-	}
-	return false
-}
+//func (ag AccessGroups) IsAdmin() bool {
+//	for _, s := range ag {
+//		if s == "/EEG_ADMIN" {
+//			return true
+//		}
+//	}
+//	return false
+//}
+//
+//func (ag AccessGroups) IsUser() bool {
+//	for _, s := range ag {
+//		if s == "/EEG_USER" {
+//			return true
+//		}
+//	}
+//	return false
+//}
 
 // verifyAndExtractClaims tries the test-hook VerifyTokenClaims (if present) and
 // falls back to the actual OIDC verifier otherwise. It always returns a populated
@@ -150,10 +157,6 @@ func retrieveClaims(r *http.Request) (string, *PlatformClaims, error) {
 		}
 	}
 
-	//if claims.Authorized != "at.ourproject.vfeeg.app" {
-	//	return tenant, claims, &VerifyError{http.StatusOK, errors.New("unauthorized access")}
-	//}
-
 	return tenant, claims, nil
 }
 
@@ -176,9 +179,9 @@ func ConditionProtect(admin JWTHandlerFunc, user JWTHandlerFunc) http.HandlerFun
 		}
 
 		claims.Tenants = toUpper(claims.Tenants)
-		if claims.AccessGroups.IsAdmin() {
+		if hasRole(claims.RealmAccess.Roles, "admin") {
 			admin(w, r, claims, strings.ToUpper(tenant))
-		} else if claims.AccessGroups.IsUser() {
+		} else if hasRole(claims.RealmAccess.Roles, "user") {
 			user(w, r, claims, strings.ToUpper(tenant))
 		} else {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -262,7 +265,7 @@ func verifyRequest(handler JWTHandlerFunc) func(w http.ResponseWriter, r *http.R
 			return
 		}
 
-		if claims.AccessGroups.IsAdmin() {
+		if hasRole(claims.RealmAccess.Roles, "admin") {
 			claims.Tenants = toUpper(claims.Tenants)
 			handler(w, r, claims, strings.ToUpper(tenant))
 		} else {

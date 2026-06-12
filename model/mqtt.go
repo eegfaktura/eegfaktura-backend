@@ -74,7 +74,8 @@ const (
 type EdaProtocol string
 
 const (
-	CR_MSG            EdaProtocol = "CR_MSG"
+	CR_MSG_ORG        EdaProtocol = "CR_MSG"
+	CR_MSG            EdaProtocol = "CR_MSG_HISTORY"
 	CR_REQ_PT         EdaProtocol = "CR_REQ_PT"
 	EC_PODLIST        EdaProtocol = "EC_PODLIST"
 	EC_REQ_ONL        EdaProtocol = "EC_REQ_ONL"

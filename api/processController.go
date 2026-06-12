@@ -62,6 +62,6 @@ func (h *ProcessHandler) fetchProcessHistory() middleware.JWTHandlerFunc {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		respondWithJSON(w, 200, history)
+		respondWithData(w, 200, history)
 	}
 }
