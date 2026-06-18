@@ -14,12 +14,15 @@ RUN go mod download && go mod verify
 COPY . .
 
 RUN go mod tidy
-RUN go install ./...
 
 ENV PATH="/go/bin:${PATH}"
 
+# Codegen muss VOR `go install ./...` / `go build` laufen: `make protoc`
+# erzeugt das protobuf-Package, `go generate` die gqlgen-/jsonschema-Sourcen.
+# Sonst scheitert der Compile an `undefined: protobuf.*`.
 RUN make protoc
 RUN go generate ./...
+RUN go install ./...
 RUN go build -o /usr/local/bin/vfeeg-backend -ldflags="-s -w" server.go
 
 FROM golang:1.25
