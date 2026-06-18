@@ -26,7 +26,10 @@ on:
 
 env:
   REGISTRY: "ghcr.io"
-  IMAGE_NAME: ${{ github.repository }}
+  # Development-Tier (ADR-0005): Push nach vfeeg-development. Image-Name
+  # `vfeeg-backend` = prod-/dev-Image-Name (das Binary heisst auch so),
+  # NICHT der Repo-Name eegfaktura-master.
+  IMAGE_NAME: vfeeg-development/vfeeg-backend
 
 jobs:
   build-and-push-image:
@@ -78,7 +81,8 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          # Cross-Org-Push nach vfeeg-development — GITHUB_TOKEN reicht nicht.
+          password: ${{ secrets.VFEEG_DEV_PUSH_PAT }}
 
       - name: Build (PR) / Build and push (push)
         id: push
@@ -97,3 +101,32 @@ jobs:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
+
+  # Triggert das Platform-Repo, damit es den Cluster aktualisiert (Stage 3).
+  # Laeuft nur bei push to default-branch (master/main), nicht bei PRs/Tags.
+  # Vorbedingung: PLATFORM_DEPLOY_PAT-Secret im Repo + Mapping `deploy-backend`
+  # in deploy-on-dispatch.yml + Manifest k8s/30-backend.yaml zeigt auf
+  # vfeeg-development/vfeeg-backend:latest.
+  dispatch-deploy:
+    needs: build-and-push-image
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger deploy in platform repo
+        env:
+          GH_TOKEN: ${{ secrets.PLATFORM_DEPLOY_PAT }}
+        run: |
+          PAYLOAD=$(cat <<EOF
+          {
+            "event_type": "deploy-backend",
+            "client_payload": {
+              "image_tag": "latest",
+              "source_sha": "${GITHUB_SHA}",
+              "source_repo": "${GITHUB_REPOSITORY}",
+              "source_ref": "${GITHUB_REF}"
+            }
+          }
+          EOF
+          )
+          echo "$PAYLOAD" | gh api repos/vfeeg-development/eegfaktura-platform/dispatches --input -
+          echo "Dispatched deploy-backend for sha=${GITHUB_SHA:0:8}"
