@@ -2,6 +2,16 @@
 
 The VFEEG (Verein zur Förderung von erneuerbaren Energiegemeinschaften) Backend is a Go-based service designed for energy management, participant tracking, and metering point operations. It provides a robust API (GraphQL and REST) to interact with energy data, integrates with MQTT for real-time messaging, and uses PostgreSQL for data persistence.
 
+Part of the **eegfaktura** suite — an open-source billing and management platform
+for Austrian renewable energy communities (*Erneuerbare-Energiegemeinschaften*, EEG).
+It is the core domain service: it owns EEG, participant and metering-point data, and
+consumes EDA market messages relayed from `eegfaktura-eda-xp` over MQTT.
+
+**Tech stack:** Go · Gorilla mux (REST) · gqlgen (GraphQL) · gRPC · goqu ·
+golang-migrate + Atlas · Eclipse Paho (MQTT) · Keycloak/OIDC (JWT) · Viper · logrus.
+**Exposed ports:** HTTP (default `9080`, `8080` in container) and gRPC (`9092`).
+**Talks to:** PostgreSQL, an MQTT broker (mosquitto), Keycloak, and `eegfaktura-eda-xp`.
+
 ## Features
 
 - **GraphQL API**: Flexible data querying and manipulation using `gqlgen`.
@@ -119,4 +129,6 @@ docker run -p 9080:8080 -v ./config.yaml:/etc/backend/config.yaml vfeeg-backend
 
 ## License
 
-(Include license information here if applicable)
+The eegfaktura application suite is open source under the GNU Affero General Public
+License v3.0 (AGPL-3.0). See the [eegfaktura organisation](https://github.com/eegfaktura)
+for the licensing applicable to this component.
