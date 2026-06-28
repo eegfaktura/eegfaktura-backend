@@ -38,7 +38,7 @@ func NewParticipantHandler(db database.Database) *ParticipantHandler {
 
 func (h *ParticipantHandler) fetchParticipantAll() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
-		if claims.RealmAccess.HasRole("admin") {
+		if claims.AccessGroups.IsAdmin() {
 			participant, err := h.db.GetParticipants(r.Context(), tenant)
 			if err != nil {
 				log.WithField("tenant", tenant).WithError(err).Error("failed to fetch participant.")

@@ -51,7 +51,7 @@ func (h *EegHandler) getEEG() middleware.JWTHandlerFunc {
 
 		var eeg *model.Eeg
 		var err error
-		if claims.RealmAccess.HasRole("admin") {
+		if claims.AccessGroups.IsAdmin() {
 			eeg, err = h.db.GetEegById(r.Context(), tenant)
 		} else {
 			eeg, err = h.db.GetEegByIdForUser(r.Context(), tenant)
