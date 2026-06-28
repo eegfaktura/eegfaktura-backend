@@ -47,23 +47,23 @@ func (eve *VerifyError) Error() string {
 	return fmt.Sprintf("status %d: err %v", eve.StatusCode, eve.Err)
 }
 
-//func (ag AccessGroups) IsAdmin() bool {
-//	for _, s := range ag {
-//		if s == "/EEG_ADMIN" {
-//			return true
-//		}
-//	}
-//	return false
-//}
-//
-//func (ag AccessGroups) IsUser() bool {
-//	for _, s := range ag {
-//		if s == "/EEG_USER" {
-//			return true
-//		}
-//	}
-//	return false
-//}
+func (ag AccessGroups) IsAdmin() bool {
+	for _, s := range ag {
+		if s == "/EEG_ADMIN" {
+			return true
+		}
+	}
+	return false
+}
+
+func (ag AccessGroups) IsUser() bool {
+	for _, s := range ag {
+		if s == "/EEG_USER" {
+			return true
+		}
+	}
+	return false
+}
 
 // verifyAndExtractClaims tries the test-hook VerifyTokenClaims (if present) and
 // falls back to the actual OIDC verifier otherwise. It always returns a populated
@@ -179,9 +179,9 @@ func ConditionProtect(admin JWTHandlerFunc, user JWTHandlerFunc) http.HandlerFun
 		}
 
 		claims.Tenants = toUpper(claims.Tenants)
-		if hasRole(claims.RealmAccess.Roles, "admin") {
+		if claims.AccessGroups.IsAdmin() {
 			admin(w, r, claims, strings.ToUpper(tenant))
-		} else if hasRole(claims.RealmAccess.Roles, "user") {
+		} else if claims.AccessGroups.IsUser() {
 			user(w, r, claims, strings.ToUpper(tenant))
 		} else {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -265,11 +265,11 @@ func verifyRequest(handler JWTHandlerFunc) func(w http.ResponseWriter, r *http.R
 			return
 		}
 
-		if hasRole(claims.RealmAccess.Roles, "admin") {
+		if claims.AccessGroups.IsAdmin() {
 			claims.Tenants = toUpper(claims.Tenants)
 			handler(w, r, claims, strings.ToUpper(tenant))
 		} else {
-			logrus.WithField("tenant", tenant).Warnf("Unauthorized access with tenant %s - Request has no role admin", tenant)
+			logrus.WithField("tenant", tenant).Warnf("Unauthorized access with tenant %s - Request has no admin access group", tenant)
 			w.WriteHeader(http.StatusUnauthorized)
 		}
 	}
