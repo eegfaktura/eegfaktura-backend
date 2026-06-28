@@ -166,7 +166,12 @@ func createNotification(db *sqlx.DB, tenant, notification string,
 	msgType model.NotificationType, process model.NotificationProcess, role string) error {
 	stmt, _, err := pgDialect.Insert("base.notification").
 		Rows(
-			goqu.Record{"tenant": tenant, "notification": notification, "type": msgType, "role": role, "process": process},
+			// date explizit als UTC setzen statt dem Spalten-Default `now()`: die Spalte ist
+			// `timestamp without time zone`; `now()` schreibt lokale Wanduhrzeit (CEST), die als
+			// `...Z` serialisiert wird → Frontend rechnet +Offset doppelt. `now() at time zone 'utc'`
+			// liefert die UTC-Wanduhrzeit → korrekter Instant.
+			goqu.Record{"tenant": tenant, "notification": notification, "type": msgType, "role": role, "process": process,
+				"date": goqu.L("(now() AT TIME ZONE 'utc')")},
 		).
 		ToSQL()
 	if err != nil {
