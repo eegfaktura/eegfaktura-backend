@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"runtime/debug"
 	"strings"
 	"sync"
 
@@ -207,6 +208,17 @@ func (m *MessageBroker) Stop() {
 }
 
 func (m *MessageBroker) received(inbound InboundMessage) {
+
+	// A panic inside a protocol handler must not kill the whole broker goroutine
+	// (and with it the process): one malformed/unexpected message would otherwise
+	// take down every tenant. Recover, log it, and drop just this message.
+	defer func() {
+		if r := recover(); r != nil {
+			log.WithField("tenant", inbound.tenant).
+				WithField("protocol", inbound.protocol).
+				Errorf("recovered from panic while handling MQTT message: %v\n%s", r, debug.Stack())
+		}
+	}()
 
 	if inbound.protocol == model.CR_MSG_ORG {
 		return
