@@ -60,13 +60,31 @@ func extractResponseCodeAndMeteringPointV2(ebmsMessage *model.EbmsMessage) ([]re
 
 	switch ebmsMessage.MessageCode {
 	case model.EBMS_AUFHEBUNG_CCMS, model.EBMS_ABLEHNUNG_CCMS:
-		codes = append(codes, 99)
-		response = []responseCodesPerMeter{{
-			meter:      ebmsMessage.Meter.MeteringPoint,
-			codes:      []int16{99},
-			consentEnd: civil.DateOf(time.UnixMilli(ebmsMessage.ConsentEnd)),
-			consentId:  consentId(ebmsMessage.Meter.ConsentID),
-		}}
+		if ebmsMessage.Meter != nil {
+			codes = append(codes, 99)
+			response = []responseCodesPerMeter{{
+				meter:      ebmsMessage.Meter.MeteringPoint,
+				codes:      []int16{99},
+				consentEnd: civil.DateOf(time.UnixMilli(ebmsMessage.ConsentEnd)),
+				consentId:  consentId(ebmsMessage.Meter.ConsentID),
+			}}
+		} else {
+			// A rejection (ABLEHNUNG_CCMS) carries no <meter> element; the metering
+			// point and reason codes arrive via ResponseData instead. Build from
+			// there so the rejection can still be recorded (and to avoid a
+			// nil-pointer dereference on ebmsMessage.Meter).
+			for _, rd := range ebmsMessage.ResponseData {
+				if len(rd.ResponseCode) > 0 {
+					codes = append(codes, rd.ResponseCode...)
+				}
+				response = append(response, responseCodesPerMeter{
+					meter:      rd.MeteringPoint,
+					codes:      rd.ResponseCode,
+					consentEnd: civil.DateOf(time.UnixMilli(rd.ConsentEnd)),
+					consentId:  consentId(rd.ConsentId),
+				})
+			}
+		}
 	default:
 		for _, rd := range ebmsMessage.ResponseData {
 			if len(rd.ResponseCode) > 0 {

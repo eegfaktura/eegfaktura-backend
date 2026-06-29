@@ -381,10 +381,15 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 
 	var eeg *model.Eeg
 	switch msg.MessageCode {
-	case model.EBMS_AUFHEBUNG_CCMS, model.EBMS_ABLEHNUNG_CCMS:
+	case model.EBMS_AUFHEBUNG_CCMS:
 		eeg, err = db.GetEegByEcId(ctx, msg.Payload.EcId)
 		if err != nil {
 			logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
+			return
+		}
+
+		if len(meters) == 0 {
+			logrus.WithField("tenant", msg.Tenant).Errorf("no metering point in %s message -> %+v", msg.MessageCode, msg.Payload)
 			return
 		}
 
@@ -393,7 +398,23 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 			return
 		}
 
+	case model.EBMS_ABLEHNUNG_CCMS:
+		// The grid operator rejected the termination of the data-release consent
+		// (Customer Consent Management), so the data release stays active and the
+		// metering point must NOT be revoked. Only fetch the EEG so the rejection
+		// is persisted as a notification (see below) and stays visible to the user.
+		eeg, err = db.GetEegByEcId(ctx, msg.Payload.EcId)
+		if err != nil {
+			logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
+			return
+		}
+
 	case model.EBMS_AUFHEBUNG_CCMC, model.EBMS_AUFHEBUNG_CCMI:
+
+		if len(meters) == 0 {
+			logrus.WithField("tenant", msg.Tenant).Errorf("no metering point in %s message -> %+v", msg.MessageCode, msg.Payload)
+			return
+		}
 
 		var tenant *string
 		if tenant, err = db.MeteringPointRevokeByConsentId(ctx, meters[0].consentId, meters[0].meter, meters[0].consentEnd); err != nil {
