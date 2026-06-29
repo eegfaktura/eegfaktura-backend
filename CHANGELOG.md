@@ -18,7 +18,7 @@ this changelog highlights the changes relevant for overview and operations.
   the rejection is recorded as a notification, and the data release is kept
   active (the metering point is no longer revoked on a rejection). Additionally,
   any panic inside an MQTT protocol handler is now recovered so a single message
-  can never take down the process. (#9)
+  can never take down the process. (#10)
 
 ## [1.0.1] – 2026-06-28
 
