@@ -6,6 +6,12 @@ import (
 	"strings"
 
 	"github.com/doug-martin/goqu/v9"
+	// Register goqu's postgres dialect so goqu.Dialect("postgres") / goqu.New("postgres", …)
+	// resolve to the real postgres dialect. Without this blank import goqu silently falls back
+	// to the default dialect, which emits "?" placeholders in Prepared mode — lib/pq then fails
+	// with `pq: syntax error at or near ")"` (broke getEegById/getEegByEcId after #13 added
+	// .Prepared(true)).
+	_ "github.com/doug-martin/goqu/v9/dialect/postgres"
 	"gopkg.in/guregu/null.v4"
 )
 
