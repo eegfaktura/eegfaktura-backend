@@ -83,12 +83,12 @@ func (db *sqlDatabase) UpdateOnlineState(ctx context.Context, tenant string, onl
 func getEegById(ctx context.Context, tx *sqlx.DB, tenant string) (*model.Eeg, error) {
 
 	var eeg model.Eeg
-	stmt, _, err := pgDialect.From(TABLE_EEG).Select(&eeg).Where(goqu.C("tenant").Eq(tenant)).ToSQL()
+	stmt, args, err := pgDialect.From(TABLE_EEG).Select(&eeg).Where(goqu.C("tenant").Eq(tenant)).Prepared(true).ToSQL()
 	if err != nil {
 		return nil, model.ErrGetEeg(err)
 	}
 
-	err = tx.GetContext(ctx, &eeg, stmt)
+	err = tx.GetContext(ctx, &eeg, stmt, args...)
 	if err != nil {
 		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", stmt)
 		return nil, model.ErrGetEeg(err)
@@ -99,12 +99,12 @@ func getEegById(ctx context.Context, tx *sqlx.DB, tenant string) (*model.Eeg, er
 func getEegByEcId(ctx context.Context, tx *sqlx.DB, edId string) (*model.Eeg, error) {
 
 	var eeg model.Eeg
-	stmt, _, err := pgDialect.From(TABLE_EEG).Select(&eeg).Where(goqu.C("communityId").Eq(edId)).ToSQL()
+	stmt, args, err := pgDialect.From(TABLE_EEG).Select(&eeg).Where(goqu.C("communityId").Eq(edId)).Prepared(true).ToSQL()
 	if err != nil {
 		return nil, model.ErrGetEeg(err)
 	}
 
-	err = tx.GetContext(ctx, &eeg, stmt)
+	err = tx.GetContext(ctx, &eeg, stmt, args...)
 	if err != nil {
 		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", stmt)
 		return nil, model.ErrGetEeg(err)

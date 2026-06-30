@@ -8,6 +8,11 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Fixed
+- Security: `getEegById`/`getEegByEcId` now build their queries with goqu
+  prepared statements (bind parameters) instead of interpolated SQL, removing
+  the Snyk Code SQL-injection findings on `database/eegDao.go`. (Snyk `go/Sqli`)
+
 ## [1.0.2] – 2026-06-29
 
 ### Fixed
