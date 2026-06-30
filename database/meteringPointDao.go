@@ -795,7 +795,7 @@ func MeteringPointChangePartFactor(ctx context.Context, db *sqlx.DB, tenant stri
 	}
 
 	withClause := goqu.L(
-		fmt.Sprintf(`(SELECT * FROM json_to_recordset('%s') AS cols("meteringPoint" TEXT, direction TEXT, activation BIGINT, "partFact" INT))`, metersJson))
+		`(SELECT * FROM json_to_recordset(?::json) AS cols("meteringPoint" TEXT, direction TEXT, activation BIGINT, "partFact" INT))`, string(metersJson))
 	insertQuery := goqu.From(TABLE_METERINGPOINT, withClause.As("ma")).
 		Select(
 			goqu.C("metering_point_id"),
