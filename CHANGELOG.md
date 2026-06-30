@@ -8,7 +8,11 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.0.3] – 2026-06-30
+
 ### Fixed
+- Register goqu's postgres dialect so prepared queries bind `$1` placeholders instead of `?` (fixes EEG loading failing with `pq: syntax error`). (#14)
+- SQL injection: bind the `json_to_recordset` input in `MeteringPointChangePartFactor` instead of string-interpolating it. (#15)
 - Security: `getEegById`/`getEegByEcId` now build their queries with goqu
   prepared statements (bind parameters) instead of interpolated SQL, removing
   the Snyk Code SQL-injection findings on `database/eegDao.go`. (Snyk `go/Sqli`)
