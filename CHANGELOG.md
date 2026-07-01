@@ -8,6 +8,12 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Fixed
+- Admin master update: the `INACTIVESINCE` update never took effect because the
+  parsed inactive-since timestamp was scanned into the `activeSince` variable, so
+  `inactiveSince` stayed invalid and the handler returned 501. Scan it into
+  `inactiveSince` (also fixes the process-state → INACTIVE path). (#17)
+
 ## [1.0.3] – 2026-06-30
 
 ### Fixed
