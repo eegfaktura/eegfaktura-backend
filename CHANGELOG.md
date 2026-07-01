@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.0.4] – 2026-07-01
+
 ### Fixed
 - Admin master update: the `INACTIVESINCE` update never took effect because the
   parsed inactive-since timestamp was scanned into the `activeSince` variable, so
