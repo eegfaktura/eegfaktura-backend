@@ -34,7 +34,7 @@ func (r *AdminService) UpdateValue(ctx context.Context, request *protobuf.Update
 	if inactiveSinceValue, exists = request.Value["inactiveSince"]; exists {
 		timestamp, err := strconv.ParseInt(inactiveSinceValue, 10, 64)
 		if err == nil {
-			_ = activeSince.Scan(time.UnixMilli(timestamp))
+			_ = inactiveSince.Scan(time.UnixMilli(timestamp))
 		}
 	}
 
