@@ -271,7 +271,7 @@ func protocolEcReqOnlHandler(ctx context.Context, msg model.SubscribeMessage) {
 			activeSince = civil.NullDateFrom(&ax)
 			consentId = completeMeters[0].consentId
 			status = model.ACTIVE
-			if err := meteringPointPerformAnswerMsg(ctx, services.SendMail, msg.Payload.EcId, meters, "zp-complete-mail-template.toml"); err != nil {
+			if err := meteringPointPerformAnswerMsg(ctx, services.SendMail, msg.Payload.EcId, meters, "Dein Zählpunkt ist aktiv", "zp-complete-mail-template.toml"); err != nil {
 				logrus.WithField("tenant", msg.Tenant).Errorf("complete mail message for %+v return with error. %v", meters, err.Error())
 			}
 		} else {
@@ -315,7 +315,7 @@ func protocolEcReqOnlHandler(ctx context.Context, msg model.SubscribeMessage) {
 		for _, c := range codes {
 			if c == MESSAGE_RECEIVED {
 				status = model.PENDING
-				if err := meteringPointPerformAnswerMsg(ctx, services.SendMail, msg.Payload.EcId, meters, "activation-mail-template.toml"); err != nil {
+				if err := meteringPointPerformAnswerMsg(ctx, services.SendMail, msg.Payload.EcId, meters, "Aktivierung im Serviceportal", "activation-mail-template.toml"); err != nil {
 					logrus.WithField("tenant", msg.Tenant).Errorf("Perform Answer Message %+v. %v", meters, err.Error())
 				}
 			} else if c == NO_REMOTELY_READABLE_METER_INSTALLED_YET || c == SUM_OF_REPORTED_ALLOCATION_KEYS_EXCEEDS_100 {
@@ -572,7 +572,7 @@ func getMeterIdSlice(meters []model.Meter) []string {
 	return ms
 }
 
-func meteringPointPerformAnswerMsg(ctx context.Context, sendMail services.SendMailFunc, ecId string, meterId []string, templateConfigName string) error {
+func meteringPointPerformAnswerMsg(ctx context.Context, sendMail services.SendMailFunc, ecId string, meterId []string, subject, templateConfigName string) error {
 
 	db, err := database.GetDB(context.Background())
 	if err != nil {
@@ -612,7 +612,7 @@ func meteringPointPerformAnswerMsg(ctx context.Context, sendMail services.SendMa
 
 			if len(participant.MeteringPoint) > 0 {
 				if err = parser.SendActivationMailFromTemplate(sendMail,
-					eeg.Id, "Aktivierung im Serviceportal", eeg, participant, templateConfigName); err != nil {
+					eeg.Id, subject, eeg, participant, templateConfigName); err != nil {
 					logrus.WithField("tenant", eeg.Id).WithError(err).Error("Error Sending Mail")
 					_ = db.SaveNotificationFromMap(database.CreateNotificationMessageFromLog(
 						&model.Log{Operation: "Mail", Messages: []*model.LogMessage{model.NewLogMessageFromVfeegError(
