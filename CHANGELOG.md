@@ -8,6 +8,21 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Fixed
+- ZP completion ("Zählpunkt aktiv") mail never rendered: the `zp-complete-mail-template`
+  references `{{.MeteringPoint}}`, but the template data only exposed `Meteringpoints []string`
+  → `can't evaluate field MeteringPoint` → "Error Sending Mail" on every completion. Add a
+  `MeteringPoint` field to the template data so the mail renders. (#19)
+- Mail template resolution now falls back to the global templates dir when a tenant is missing
+  the *specific* template file (previously only when the whole tenant template dir was missing),
+  fixing "Config file is missing" for the completion mail on tenants that only have the
+  activation template. (#19)
+
+### Changed
+- Tests: `trimString` now also strips `\r` so golden template comparisons are CRLF-insensitive;
+  `TestGetTemplateFor` builds its expected path with `filepath.Join` (OS-independent);
+  `TestManualSending` is skipped unless `RUN_MANUAL_MAIL_TESTS` is set (needs a live mail service). (#19)
+
 ## [1.0.4] – 2026-07-01
 
 ### Fixed
