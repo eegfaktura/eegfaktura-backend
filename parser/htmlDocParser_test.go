@@ -3,6 +3,8 @@ package parser
 import (
 	"bytes"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -25,6 +27,7 @@ func trimString(s string) string {
 	s = strings.Replace(s, " ", "", -1)
 	s = strings.Replace(s, "\t", "", -1)
 	s = strings.Replace(s, "\n", "", -1)
+	s = strings.Replace(s, "\r", "", -1)
 	return s
 }
 
@@ -41,7 +44,7 @@ func TestGetTemplateFor(t *testing.T) {
 	}{
 		{"Hugo",
 			args{"ACTIVATION", "RC100181"},
-			"../public/RC100181/templates/AktivierungsEmail-templates.html",
+			filepath.Join("../public", "RC100181", "templates", "AktivierungsEmail-templates.html"),
 			false,
 		},
 	}
@@ -402,6 +405,9 @@ func TestParseTemplate2(t *testing.T) {
 }
 
 func TestManualSending(t *testing.T) {
+	if os.Getenv("RUN_MANUAL_MAIL_TESTS") == "" {
+		t.Skip("manual test: requires a reachable mail service; set RUN_MANUAL_MAIL_TESTS=1 to run")
+	}
 	eeg := &model.Eeg{
 		Id:                 "TE100100",
 		Name:               "TE-EEG",

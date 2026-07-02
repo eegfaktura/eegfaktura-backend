@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"at.ourproject/vfeeg-backend/config"
 	"at.ourproject/vfeeg-backend/model"
@@ -36,8 +37,9 @@ func SendActivationMailFromTemplate(sendMail services.SendMailFunc,
 	tenant, subject string, eeg *model.Eeg, participant *model.EegParticipant, templateConfigName string) error {
 
 	templateConfigDir := filepath.Join(viper.GetString("file-content.templates"), tenant, "templates")
-	_, exists := os.Stat(templateConfigDir)
-	if errors.Is(exists, os.ErrNotExist) {
+	// Fall back to the global templates dir when the tenant has no template dir at all,
+	// or is missing this specific template file (e.g. no per-tenant zp-complete-mail-template).
+	if _, err := os.Stat(filepath.Join(templateConfigDir, templateConfigName)); errors.Is(err, os.ErrNotExist) {
 		templateConfigDir = filepath.Join(viper.GetString("file-content.templates"), "templates")
 	}
 
@@ -60,7 +62,8 @@ func sendMailFromTemplate(sendMail services.SendMailFunc, tenant, subject, templ
 		Eeg            *model.Eeg
 		Participant    *model.EegParticipant
 		Meteringpoints []string
-	}{eeg, participant, meterIds}
+		MeteringPoint  string
+	}{eeg, participant, meterIds, strings.Join(meterIds, ", ")}
 
 	if !participant.Contact.Email.Valid {
 		log.Warnf("Participant without email contact: %s (%s)", participant.LastName, participant.Id)

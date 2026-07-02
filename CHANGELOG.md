@@ -8,6 +8,29 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Fixed
+- ZP completion ("Zählpunkt aktiv") mail never rendered: the `zp-complete-mail-template`
+  references `{{.MeteringPoint}}`, but the template data only exposed `Meteringpoints []string`
+  → `can't evaluate field MeteringPoint` → "Error Sending Mail" on every completion. Add a
+  `MeteringPoint` field to the template data so the mail renders. (#19)
+- Mail template resolution now falls back to the global templates dir when a tenant is missing
+  the *specific* template file (previously only when the whole tenant template dir was missing),
+  fixing "Config file is missing" for the completion mail on tenants that only have the
+  activation template. (#19)
+- ZP completion mail: `{{.Eeg.ContactPerson}}` rendered the raw `null.String` struct
+  (`{{value true}}`); use `.String` with a `Valid` guard like the phone line. (#19)
+
+### Changed
+- ZP completion mail template now matches the activation mail: informal "du" wording,
+  identical signature/footer (description, address, phone/email/website, "versandt durch"),
+  and the logo capped at `max-height: 90px`. (#19)
+- ZP completion mail gets its own subject "Dein Zählpunkt ist aktiv" instead of reusing
+  "Aktivierung im Serviceportal"; `meteringPointPerformAnswerMsg` now takes the subject as a
+  parameter (activation mail keeps its subject). (#19)
+- Tests: `trimString` now also strips `\r` so golden template comparisons are CRLF-insensitive;
+  `TestGetTemplateFor` builds its expected path with `filepath.Join` (OS-independent);
+  `TestManualSending` is skipped unless `RUN_MANUAL_MAIL_TESTS` is set (needs a live mail service). (#19)
+
 ## [1.0.4] – 2026-07-01
 
 ### Fixed

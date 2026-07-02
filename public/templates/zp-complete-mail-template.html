@@ -6,18 +6,22 @@
 </head>
 <body>
 <p>Hallo {{.Participant.FirstName}},</p>
-<p>Ihr Zählpunkt <strong>{{.MeteringPoint}}</strong> wurde erfolgreich aktiviert. Energiedaten werden ab sofort erfasst.
+<p>dein Zählpunkt <strong>{{.MeteringPoint}}</strong> wurde erfolgreich aktiviert. Ab sofort werden deine Energiedaten erfasst.
 </p>
 <br>
 <p>Mit besten Grüßen</p>
-<p>Ihr {{.Eeg.Name}}-Team</p>
-<div>{{.Eeg.ContactPerson}}</div>
-{{if .Eeg.Contact.Phone.Valid}}
-<div>{{.Eeg.Contact.Phone.String}}</div>
-{{end}}
-<div>Erneuerbare Energie Gemeinschaft - {{.Eeg.Name}}</div>
 <div>{{.Eeg.Description}}</div>
-<p>Powered by eegFaktura.at</p>
-<img src="cid:eegfaktura-logo-1" alt="eegFaktura"/>
+<div>{{.Eeg.Zip}} {{.Eeg.City}}, {{.Eeg.Street}} {{.Eeg.StreetNumber}}</div>
+{{if .Eeg.Contact.Phone.Valid}}
+<div>T: {{.Eeg.Contact.Phone.String}}</div>
+{{end}}
+{{if .Eeg.Contact.Email.Valid}}
+<div>E: {{.Eeg.Contact.Email.String}}</div>
+{{end}}
+{{if .Eeg.Website.Valid}}
+<div>{{.Eeg.Website.String}}</div>
+{{end}}
+<p>versandt durch</p>
+<img src="cid:eegfaktura-logo-1" style="max-height: 90px"/>
 </body>
 </html>
