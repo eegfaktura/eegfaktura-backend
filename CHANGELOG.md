@@ -9,6 +9,9 @@ this changelog highlights the changes relevant for overview and operations.
 ## [Unreleased]
 
 ### Fixed
+- ZP completion ("Zählpunkt aktiv") mail: removed a redundant `<br>` before "Mit besten Grüßen".
+  Combined with the paragraph's own margin it produced two blank lines in a row; the normal
+  single paragraph gap remains.
 - ZP completion ("Zählpunkt aktiv") mail never rendered: the `zp-complete-mail-template`
   references `{{.MeteringPoint}}`, but the template data only exposed `Meteringpoints []string`
   → `can't evaluate field MeteringPoint` → "Error Sending Mail" on every completion. Add a
