@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.0.5] – 2026-07-04
+
 ### Fixed
 - ZP completion ("Zählpunkt aktiv") mail: removed a redundant `<br>` before "Mit besten Grüßen".
   Combined with the paragraph's own margin it produced two blank lines in a row; the normal
