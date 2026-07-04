@@ -2,27 +2,26 @@ package parser
 
 import (
 	"bytes"
-	"embed"
 	"errors"
 	"html/template"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"at.ourproject/vfeeg-backend/config"
 	"at.ourproject/vfeeg-backend/model"
+	"at.ourproject/vfeeg-backend/public"
 	"at.ourproject/vfeeg-backend/services"
 	"github.com/gabriel-vasile/mimetype"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
-//go:embed templates
-var templates embed.FS
+// ParseTemplate renders the HTML template named name from fsys with data.
+func ParseTemplate(fsys fs.FS, name string, data interface{}) (*bytes.Buffer, error) {
 
-func ParseTemplate(templateFileName string, data interface{}) (*bytes.Buffer, error) {
-
-	t, err := template.ParseFiles(templateFileName)
+	t, err := template.ParseFS(fsys, name)
 	if err != nil {
 		return nil, err
 	}
@@ -33,26 +32,45 @@ func ParseTemplate(templateFileName string, data interface{}) (*bytes.Buffer, er
 	return buf, nil
 }
 
+// resolveTemplateSource decides where a mail template and its inline assets are
+// read from. Operator overrides on the data volume win — a per-tenant templates
+// dir first, then the global templates dir — so a mail can still be customised
+// by dropping files on the PVC. When neither holds the requested config file,
+// the defaults embedded in the binary (public/templates) are used, so a fresh
+// deployment renders the mail without any template being seeded onto the volume.
+func resolveTemplateSource(tenant, templateConfigName string) (fs.FS, string) {
+	base := viper.GetString("file-content.templates")
+	for _, dir := range []string{
+		filepath.Join(base, tenant, "templates"),
+		filepath.Join(base, "templates"),
+	} {
+		if _, err := os.Stat(filepath.Join(dir, templateConfigName)); err == nil {
+			return os.DirFS(dir), dir
+		}
+	}
+	embedded, err := fs.Sub(public.Templates, "templates")
+	if err != nil {
+		// A fixed sub-path of an embed.FS never fails; fall back defensively.
+		return public.Templates, "embedded"
+	}
+	return embedded, "embedded"
+}
+
 func SendActivationMailFromTemplate(sendMail services.SendMailFunc,
 	tenant, subject string, eeg *model.Eeg, participant *model.EegParticipant, templateConfigName string) error {
 
-	templateConfigDir := filepath.Join(viper.GetString("file-content.templates"), tenant, "templates")
-	// Fall back to the global templates dir when the tenant has no template dir at all,
-	// or is missing this specific template file (e.g. no per-tenant zp-complete-mail-template).
-	if _, err := os.Stat(filepath.Join(templateConfigDir, templateConfigName)); errors.Is(err, os.ErrNotExist) {
-		templateConfigDir = filepath.Join(viper.GetString("file-content.templates"), "templates")
-	}
+	tmplFS, source := resolveTemplateSource(tenant, templateConfigName)
 
-	//templateConfig, err := config.ReadActivationMailTemplateConfig(filepath.Join(templateConfigDir, "activation-mail-template.toml"))
-	templateConfig, err := config.ReadActivationMailTemplateConfig(filepath.Join(templateConfigDir, templateConfigName))
+	templateConfig, err := config.ReadActivationMailTemplateConfig(tmplFS, templateConfigName)
 	if err != nil {
 		return err
 	}
+	log.Infof("Mail template %q for tenant %q resolved from %s", templateConfigName, tenant, source)
 
-	return sendMailFromTemplate(sendMail, tenant, subject, templateConfigDir, templateConfig, eeg, participant)
+	return sendMailFromTemplate(sendMail, tenant, subject, tmplFS, templateConfig, eeg, participant)
 }
 
-func sendMailFromTemplate(sendMail services.SendMailFunc, tenant, subject, templatePath string, templateConfig *model.ActivationMailTemplate, eeg *model.Eeg, participant *model.EegParticipant) error {
+func sendMailFromTemplate(sendMail services.SendMailFunc, tenant, subject string, tmplFS fs.FS, templateConfig *model.ActivationMailTemplate, eeg *model.Eeg, participant *model.EegParticipant) error {
 	meterIds := []string{}
 	for i := range participant.MeteringPoint {
 		meterIds = append(meterIds, participant.MeteringPoint[i].MeteringPoint)
@@ -70,16 +88,15 @@ func sendMailFromTemplate(sendMail services.SendMailFunc, tenant, subject, templ
 		return nil
 	}
 
-	tmpPath := filepath.Join(templatePath, templateConfig.TemplateFile)
-	buf, err := ParseTemplate(tmpPath, templateData)
+	buf, err := ParseTemplate(tmplFS, templateConfig.TemplateFile, templateData)
 	if err != nil {
 		return err
 	}
 
 	return sendMail(tenant, participant.Contact.Email.String,
 		subject, eeg.Email.Ptr(), buf,
-		buildInlineContent(templatePath, templateConfig.InlinePictures),
-		buildAttachment(templatePath, templateConfig.Attachment.Name, templateConfig.Attachment.Mime),
+		buildInlineContent(tmplFS, templateConfig.InlinePictures),
+		buildAttachment(tmplFS, templateConfig.Attachment.Name, templateConfig.Attachment.Mime),
 	)
 }
 
@@ -97,11 +114,11 @@ func GetTemplateFor(templateType, tenant string) (string, error) {
 	return "", errors.New("Template not found")
 }
 
-func buildInlineContent(templatePath string, a []model.InlinePicture) []*services.Attachment {
+func buildInlineContent(tmplFS fs.FS, a []model.InlinePicture) []*services.Attachment {
 	attachments := []*services.Attachment{}
 	for i := range a {
 		att := a[i]
-		data, err := os.ReadFile(filepath.Join(templatePath, att.Filepath))
+		data, err := fs.ReadFile(tmplFS, att.Filepath)
 		if err != nil {
 			log.Errorf("Read Attachment. Reason: %+v", err)
 			continue
@@ -118,14 +135,12 @@ func buildInlineContent(templatePath string, a []model.InlinePicture) []*service
 	return attachments
 }
 
-func buildAttachment(templatePath string, fileName string, mime string) *services.Attachment {
-	var err error
-	var buff []byte
+func buildAttachment(tmplFS fs.FS, fileName string, mime string) *services.Attachment {
 	if len(fileName) == 0 {
 		return nil
 	}
 
-	buff, err = os.ReadFile(filepath.Join(templatePath, fileName)) // read the content of file
+	buff, err := fs.ReadFile(tmplFS, fileName) // read the content of file
 	if err != nil {
 		log.Error(err)
 		return nil

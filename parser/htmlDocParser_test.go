@@ -329,7 +329,7 @@ func TestParseTemplate(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ParseTemplate(tt.args.templateFileName, tt.args.data)
+			got, err := ParseTemplate(os.DirFS(filepath.Dir(tt.args.templateFileName)), filepath.Base(tt.args.templateFileName), tt.args.data)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ParseTemplate() error = %v, wantErr %v", err, tt.wantErr)
 				return

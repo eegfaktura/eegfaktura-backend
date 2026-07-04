@@ -10,6 +10,18 @@ this changelog highlights the changes relevant for overview and operations.
 
 ### Changed
 - CI: Preview-Deployments (ADR-0007) — Push auf `preview/**` baut+deployt on-demand in die Dev-Zone (sha-pinned, kein `:latest`), Auto-Reset bei Branch-Delete.
+- Mail templates are now embedded in the binary (`public/templates`) as defaults and resolved
+  through an `fs.FS`: at runtime a per-tenant templates dir on the data volume still overrides
+  them first, then the global dir; only when neither holds the requested file are the embedded
+  defaults used. A fresh deployment therefore renders the activation and ZP-completion mails
+  (template, config and inline logo) without any template being hand-seeded onto the PVC, while
+  operators keep full per-tenant/global override control on the volume. `ParseTemplate` and
+  `ReadActivationMailTemplateConfig` now take an `fs.FS`; the stale unused `parser/templates`
+  embed (old logo) was dropped in favour of the single `public/templates` source.
+
+### Fixed
+- `TestReadActivationMailTemplateConfig` asserted the wrong inline picture name (`Logo_Faktura.png`);
+  the global activation template references `eegfaktura-logo.png`.
 
 ## [1.0.5] – 2026-07-04
 
