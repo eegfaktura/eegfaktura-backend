@@ -1,25 +1,25 @@
 package config
 
 import (
-	"at.ourproject/vfeeg-backend/model"
-	"errors"
 	"fmt"
+	"io/fs"
+
+	"at.ourproject/vfeeg-backend/model"
 	"github.com/BurntSushi/toml"
-	"os"
 )
 
-// Reads info from config file
-func ReadActivationMailTemplateConfig(configFile string) (*model.ActivationMailTemplate, error) {
-	_, err := os.Stat(configFile)
+// ReadActivationMailTemplateConfig reads the mail template descriptor named
+// name from fsys — a per-tenant or global templates dir on the data volume, or
+// the templates embedded in the binary.
+func ReadActivationMailTemplateConfig(fsys fs.FS, name string) (*model.ActivationMailTemplate, error) {
+	data, err := fs.ReadFile(fsys, name)
 	if err != nil {
-		fmt.Printf("Error: %+v\n", err)
-		return nil, errors.New(fmt.Sprintf("Config file is missing: %s", configFile))
+		return nil, fmt.Errorf("Config file is missing: %s", name)
 	}
 
 	var config model.ActivationMailTemplate
-	if _, err := toml.DecodeFile(configFile, &config); err != nil {
-		fmt.Printf("Error: %+v\n", err)
-		return nil, errors.New(fmt.Sprintf("Config file is not able to parse: %s", configFile))
+	if _, err := toml.Decode(string(data), &config); err != nil {
+		return nil, fmt.Errorf("Config file is not able to parse: %s", name)
 	}
 	return &config, nil
 }
