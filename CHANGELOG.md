@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.0.6] – 2026-07-05
+
 ### Fixed
 - Mail delivery no longer fails on recipient addresses with leading/trailing whitespace
   (a prod log review found 73 failed sends across 11 tenants in one week, most of them
@@ -44,6 +46,7 @@ this changelog highlights the changes relevant for overview and operations.
 ### Fixed
 - `TestReadActivationMailTemplateConfig` asserted the wrong inline picture name (`Logo_Faktura.png`);
   the global activation template references `eegfaktura-logo.png`.
+
 
 ## [1.0.5] – 2026-07-04
 
