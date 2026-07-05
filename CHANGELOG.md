@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.0.7] – 2026-07-05
+
 ### Added
 - The EEG entity now exposes its creation date (`base.eeg.createdat`) via the API as
   `createdAt` (ISO `YYYY-MM-DD`). The column already existed; it is now mapped read-only
