@@ -8,6 +8,14 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Added
+- The EEG entity now exposes its creation date (`base.eeg.createdat`) via the API as
+  `createdAt` (ISO `YYYY-MM-DD`). The column already existed; it is now mapped read-only
+  (`skipinsert`/`skipupdate`, DB default `now()` stays authoritative). The web billing
+  period selector uses it as the lower bound for EEGs without energy data, so quarterly
+  billing runs (e.g. the platform-fee EEG `RC000000`) stay selectable after the quarter
+  they belong to has passed.
+
 ## [1.0.6] – 2026-07-05
 
 ### Fixed
