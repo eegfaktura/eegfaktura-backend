@@ -10,7 +10,10 @@ import (
 // suite (backend, eda-xp, billing, web): after trimming, exactly one
 // address per part with an ASCII local part and a TLD of at least two
 // letters — no TLD allowlist. Applied per ';'-separated part.
-var emailPartRe = regexp.MustCompile(`^(?i)[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$`)
+// Explicit a-zA-Z instead of (?i): RE2's case folding would also match
+// non-ASCII case pairs like ſ (U+017F) or the Kelvin sign, which the
+// JS/Java/Scala implementations of the same rule reject.
+var emailPartRe = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
 
 // NormalizeEmailList trims outer unicode whitespace (incl. NBSP) around
 // each ';'-separated part, drops empty parts and re-joins with ';'

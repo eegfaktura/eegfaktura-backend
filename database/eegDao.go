@@ -114,6 +114,20 @@ func getEegByEcId(ctx context.Context, tx *sqlx.DB, edId string) (*model.Eeg, er
 
 func insertEeg(ctx context.Context, db *sqlx.DB, tenant string, eeg *model.Eeg) error {
 
+	// Same shared address rule as updateEegPartial — the create path
+	// must not be the one write that skips enforcement.
+	if eeg.Contact.Email.Valid {
+		normalized, err := model.ValidateEmailList(eeg.Contact.Email.String)
+		if err != nil {
+			return err
+		}
+		if normalized == "" {
+			eeg.Contact.Email = null.String{}
+		} else {
+			eeg.Contact.Email = null.StringFrom(normalized)
+		}
+	}
+
 	sql, _, err := pgDialect.Insert(TABLE_EEG).Rows(eeg).OnConflict(goqu.DoNothing()).ToSQL()
 	_, err = db.ExecContext(ctx, sql)
 	if err != nil {

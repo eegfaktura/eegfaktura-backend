@@ -66,10 +66,12 @@ func normalizedRecipients(to string, cc *string) (string, *string, error) {
 // checkRejectedRecipients surfaces recipients the mail server refused
 // (reported via the additive SendMailReply.rejectedRecipients field) so
 // callers can raise an admin notification instead of losing them
-// silently. Delivery to the remaining recipients has already happened.
+// silently. IMPORTANT: delivery to the remaining recipients has already
+// happened — the message must read as a partial delivery, not as a
+// failed send, or admins will re-send and produce duplicates.
 func checkRejectedRecipients(rejected []string) error {
 	if len(rejected) > 0 {
-		return fmt.Errorf("mail not delivered to rejected recipients: %s", strings.Join(rejected, ";"))
+		return fmt.Errorf("Mail an gültige Empfänger zugestellt, aber NICHT an (Adresse ungültig): %s — Adresse korrigieren, kein erneuter Versand an die übrigen Empfänger nötig", strings.Join(rejected, ";"))
 	}
 	return nil
 }
