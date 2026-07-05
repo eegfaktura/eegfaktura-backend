@@ -1,6 +1,7 @@
 package model
 
 import (
+	"github.com/jjeffery/civil"
 	"gopkg.in/guregu/null.v4"
 )
 
@@ -22,6 +23,7 @@ type Eeg struct {
 	VatNumber          null.String        `json:"vatNumber" db:"vatNumber" goqu:"omitempty"`
 	ContactPerson      null.String        `json:"contactPerson" db:"contactPerson" goqu:"omitempty"`
 	Online             bool               `json:"online" goqu:"skipupdate"`
+	CreatedAt          civil.NullDate     `json:"createdAt,omitempty" db:"createdat" goqu:"skipinsert,skipupdate"`
 	EegAddress         `json:"address,omitempty" mapstructure:",squash" goqu:"omitempty"`
 	AccountInfo        `json:"accountInfo,omitempty" mapstructure:",squash" goqu:"omitempty"`
 	Contact            `json:"contact,omitempty" mapstructure:",squash" goqu:"omitempty"`
