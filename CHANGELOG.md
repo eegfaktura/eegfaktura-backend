@@ -8,6 +8,28 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Fixed
+- Mail delivery no longer fails on recipient addresses with leading/trailing whitespace
+  (a prod log review found 73 failed sends across 11 tenants in one week, most of them
+  addresses like `' mail@x.at'`): both send paths (`SendMail` and — previously completely
+  unvalidated — `SendMailWithAttachment`, the ZP list mail) now normalize to/cc per
+  `;`-separated part (unicode trim incl. NBSP) and send the **normalized** value, validated
+  against a shared address rule (`model.ValidateEmailList`: ASCII local part, TLD ≥ 2 letters,
+  no TLD allowlist). A failed ZP list mail now raises an `N_TYPE_ERROR` admin notification
+  instead of being log-only.
+
+### Added
+- Server-side e-mail enforcement on every write path (the web form alone was the only guard):
+  participant create/update/partial-update (`contact.email`), the EEG master data e-mail
+  (recipient of the ZP list mail) and the Excel master-data import all normalize and validate
+  the address before persisting. Invalid addresses are rejected (API) or imported without
+  e-mail plus a visible import-log entry (Excel); an address that is empty after trimming is
+  stored as NULL so the send-path guard (`Contact.Email.Valid`) stays meaningful.
+- `mail.proto`: additive `SendMailReply.rejectedRecipients` field — the mail server (eda-xp)
+  can report recipients it refused; both senders surface them as an error so callers raise the
+  existing admin notification instead of losing recipients silently. Backward compatible (old
+  eda-xp simply never sets the field); Go stubs regenerated.
+
 ### Changed
 - CI: Preview-Deployments (ADR-0007) — Push auf `preview/**` baut+deployt on-demand in die Dev-Zone (sha-pinned, kein `:latest`), Auto-Reset bei Branch-Delete.
 - Mail templates are now embedded in the binary (`public/templates`) as defaults and resolved

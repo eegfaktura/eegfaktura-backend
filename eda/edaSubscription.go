@@ -550,6 +550,14 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 				fmt.Sprintf("%s Zählpunktliste %.4d%.2d%.2d-%.2d%.2d", eeg.RcNumber, now.Year(), int(now.Month()), now.Day(), now.Hour(), now.Minute()), nil, &b, attm)
 			if err != nil {
 				logrus.WithField("tenant", msg.Tenant).Error(err)
+				// Surface the failed ZP list mail to the tenant admins via
+				// the existing notification system instead of log-only.
+				_ = db.SaveNotificationFromMap(database.CreateNotificationMessageFromLog(
+					&model.Log{Operation: "Mail", Messages: []*model.LogMessage{model.NewLogMessageFromVfeegError(
+						"Zählpunktliste",
+						err,
+					)}}),
+					msg.Payload.EcId, model.N_TYPE_ERROR, model.N_PROCESS_EDA_PROCESS, "ADMIN")
 			}
 		}
 		if err = services.SyncMeteringPoints(msg.Tenant, &msg.Payload); err != nil {

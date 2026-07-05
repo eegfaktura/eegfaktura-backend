@@ -16,6 +16,7 @@ import (
 	//"github.com/mitchellh/mapstructure"
 	"github.com/pborman/uuid"
 	log "github.com/sirupsen/logrus"
+	"gopkg.in/guregu/null.v4"
 )
 
 type ParticipantRepository interface {
@@ -247,7 +248,33 @@ func buildParticipantQueryStmt() *goqu.SelectDataset {
 		LeftJoin(contactInfoStmt.As("contact"), goqu.On(goqu.Ex{"participant.id": goqu.I("contact.participant_id")})).Select(&model.EegParticipant{})
 }
 
+// enforceContactEmail normalizes (trim per ';'-part) and validates the
+// participant's e-mail against the shared address rule before any
+// persist. Server-side enforcement — the web forms validate too, but
+// the API must not rely on the frontend alone. An address that is
+// empty after trimming is stored as NULL so the send-path guard
+// (Contact.Email.Valid) keeps working.
+func enforceContactEmail(participant *model.EegParticipant) error {
+	if !participant.Contact.Email.Valid {
+		return nil
+	}
+	normalized, err := model.ValidateEmailList(participant.Contact.Email.String)
+	if err != nil {
+		return err
+	}
+	if normalized == "" {
+		participant.Contact.Email = null.String{}
+	} else {
+		participant.Contact.Email = null.StringFrom(normalized)
+	}
+	return nil
+}
+
 func updateParticipant(ctx context.Context, db *sqlx.DB, tenant, user string, participant *model.EegParticipant) error {
+
+	if err := enforceContactEmail(participant); err != nil {
+		return err
+	}
 
 	updateValues := struct {
 		model.EegParticipantBase
@@ -394,6 +421,10 @@ func deleteParticipant(ctx context.Context, db *sqlx.DB, participantId string) e
 func saveParticipant(ctx context.Context, tx *sqlx.Tx, tenant, username string, participant *model.EegParticipant,
 	registerMeteringPointsFunc func(context.Context, *sqlx.Tx, string, string, string, []*model.MeteringPoint) error) error {
 
+	if err := enforceContactEmail(participant); err != nil {
+		return err
+	}
+
 	participant.ParticipantSince = civil.NullDate{civil.Today(), true}
 	registeringParticipant := struct {
 		model.EegParticipantBase
@@ -474,6 +505,23 @@ func updateParticipantPartial(ctx context.Context, db *sqlx.DB, participantId, n
 	var sql string
 	var updateValues interface{}
 	var err error
+
+	// The generic path/value mechanism also carries the e-mail — enforce
+	// the shared address rule here as well (normalize, reject invalid,
+	// store NULL when empty after trimming).
+	if name == "contact.email" {
+		if s, ok := value.(string); ok {
+			normalized, err := model.ValidateEmailList(s)
+			if err != nil {
+				return err
+			}
+			if normalized == "" {
+				value = nil
+			} else {
+				value = normalized
+			}
+		}
+	}
 
 	fields := map[string]interface{}{}
 

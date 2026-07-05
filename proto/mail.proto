@@ -36,6 +36,10 @@ message SendMailRequest {
 message SendMailReply {
   int32 status = 1;
   optional string message = 2;
+  // Recipients the mail server refused (invalid address) and did not
+  // deliver to. Empty on full delivery. Additive field — old clients
+  // and servers simply ignore it.
+  repeated string rejectedRecipients = 3;
 }
 
 message Attachment {

@@ -5,11 +5,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
-	"regexp"
 	"strings"
 	"time"
 
+	"at.ourproject/vfeeg-backend/model"
 	protobuf "at.ourproject/vfeeg-backend/proto"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -28,43 +27,53 @@ type Attachment struct {
 }
 
 func SendMail(tenant, to, subject string, cc *string, body *bytes.Buffer, inlineContent []*Attachment, attachment *Attachment) error {
-	log.WithField("tenant", tenant).Infof("Send Mail: from:%s to:%s sub: %s, cc: %+v, body: %s, att: %v", tenant, to, subject, cc, body, inlineContent)
-	if err := ensureMailAddress(to); err != nil {
+	log.WithField("tenant", tenant).Infof("Send Mail: from:%s sub: %s, att: %v", tenant, subject, inlineContent != nil)
+	to, cc, err := normalizedRecipients(to, cc)
+	if err != nil {
 		return err
-	}
-	if cc != nil {
-		if err := ensureMailAddress(*cc); err != nil {
-			return err
-		}
 	}
 	return sendHtmlInlineAttachment(tenant, to, subject, cc, body, inlineContent, attachment)
 }
 
-func ensureMailAddress(to string) error {
-	return verifyEmail(to)
+// normalizedRecipients trims each ';'-separated part of to/cc
+// (model.NormalizeEmailList) and validates against the shared address
+// rule. The normalized values are what actually gets sent — validating
+// alone would let a green check pass while the raw string still fails
+// downstream. An empty to after normalization is an error (a mail
+// needs a recipient); an empty cc becomes nil.
+func normalizedRecipients(to string, cc *string) (string, *string, error) {
+	to, err := model.ValidateEmailList(to)
+	if err != nil {
+		return "", nil, err
+	}
+	if to == "" {
+		return "", nil, errors.New("no valid recipient address")
+	}
+	if cc != nil {
+		normalizedCc, err := model.ValidateEmailList(*cc)
+		if err != nil {
+			return "", nil, err
+		}
+		if normalizedCc == "" {
+			cc = nil
+		} else {
+			cc = &normalizedCc
+		}
+	}
+	return to, cc, nil
 }
 
-func isValidEmail(email string) error {
-	// Regular expression for validating an Email
-	re := regexp.MustCompile(`^(?i)([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})(;\s*([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}))*$`)
-	v := re.MatchString(email)
-	if !v {
-		return errors.New(fmt.Sprintf("invalid email (%s)", email))
+// checkRejectedRecipients surfaces recipients the mail server refused
+// (reported via the additive SendMailReply.rejectedRecipients field) so
+// callers can raise an admin notification instead of losing them
+// silently. IMPORTANT: delivery to the remaining recipients has already
+// happened — the message must read as a partial delivery, not as a
+// failed send, or admins will re-send and produce duplicates.
+func checkRejectedRecipients(rejected []string) error {
+	if len(rejected) > 0 {
+		return fmt.Errorf("Mail an gültige Empfänger zugestellt, aber NICHT an (Adresse ungültig): %s — Adresse korrigieren, kein erneuter Versand an die übrigen Empfänger nötig", strings.Join(rejected, ";"))
 	}
 	return nil
-}
-
-func verifyDomain(email string) error {
-	domain := email[strings.Index(email, "@")+1:]
-	_, err := net.LookupMX(domain)
-	return err
-}
-
-func verifyEmail(email string) error {
-	if err := isValidEmail(email); err != nil {
-		return err
-	}
-	return nil //verifyDomain(email)
 }
 
 func sendHtmlInlineAttachment(sender, recipient, subject string, cc *string, htmlBody *bytes.Buffer, iContent []*Attachment, attachment *Attachment) error {
@@ -119,10 +128,14 @@ func sendHtmlInlineAttachment(sender, recipient, subject string, cc *string, htm
 	if r.Status != 200 {
 		return errors.New(*r.Message)
 	}
-	return err
+	return checkRejectedRecipients(r.GetRejectedRecipients())
 }
 
 func SendMailWithAttachment(sender, recipient, subject string, cc *string, htmlBody *bytes.Buffer, attachment *Attachment) error {
+	recipient, cc, err := normalizedRecipients(recipient, cc)
+	if err != nil {
+		return err
+	}
 	conn, err := grpc.Dial(viper.GetString("services.mail-server"), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return err
@@ -162,5 +175,5 @@ func SendMailWithAttachment(sender, recipient, subject string, cc *string, htmlB
 	if r.Status != 200 {
 		return errors.New(*r.Message)
 	}
-	return err
+	return checkRejectedRecipients(r.GetRejectedRecipients())
 }
