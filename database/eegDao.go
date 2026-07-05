@@ -125,6 +125,21 @@ func insertEeg(ctx context.Context, db *sqlx.DB, tenant string, eeg *model.Eeg) 
 }
 
 func updateEegPartial(ctx context.Context, db *sqlx.DB, tenant string, fields map[string]interface{}) error {
+	// eeg.Email is the recipient of the ZP list mail and the billing CC —
+	// enforce the shared address rule before persisting (normalize,
+	// reject invalid).
+	if raw, ok := fields["email"].(string); ok {
+		normalized, err := model.ValidateEmailList(raw)
+		if err != nil {
+			return err
+		}
+		if normalized == "" {
+			fields["email"] = nil
+		} else {
+			fields["email"] = normalized
+		}
+	}
+
 	var eeg model.Eeg
 	updateRecord, err := buildRecordMap(&eeg, fields)
 	if err != nil {

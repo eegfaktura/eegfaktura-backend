@@ -474,6 +474,24 @@ func parseExcelDate(cell string) time.Time {
 	return time.Now()
 }
 
+// importEmail normalizes an imported e-mail (trim per ';'-part) and
+// validates it against the shared address rule. Invalid addresses are
+// not taken over silently: the member is imported without e-mail and
+// the row is reported in the import log (admin notification), so the
+// tenant admin can correct it.
+func importEmail(raw, firstname, lastname string, importLog *model.Log) null.String {
+	normalized, err := model.ValidateEmailList(raw)
+	if err != nil {
+		importLog.Messages = append(importLog.Messages, model.NewLogMessageFromVfeegError(
+			fmt.Sprintf("%s %s", firstname, lastname), err))
+		return null.String{}
+	}
+	if normalized == "" {
+		return null.String{}
+	}
+	return null.StringFrom(normalized)
+}
+
 func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) string, online bool, importLog *model.Log) []*model.EegParticipant {
 	colMap := map[string]int{}
 	participants := []*model.EegParticipant{}
@@ -661,7 +679,7 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 									MandateDate:      getColumDate(cols, colMap, "MandatDat", "MandateDat", nil),
 								},
 								Contact: model.ContactInfo{
-									Email: null.StringFrom(getColumValue(cols, colMap, "email", "email", nil)),
+									Email: importEmail(getColumValue(cols, colMap, "email", "email", nil), firstname, lastname, importLog),
 									Phone: null.StringFrom(getColumValue(cols, colMap, "TelefonNr", "phonenr", nil)),
 								},
 							}
