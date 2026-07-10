@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -25,7 +26,42 @@ type PlatformClaims struct {
 	AccessGroups AccessGroups `json:"access_groups"`
 	Authorized   string       `json:"azp"`
 	RealmAccess  RealmRoles   `json:"realm_access"`
+	// Aud shadows StandardClaims.Audience (json:"aud"). golang-jwt v3 models
+	// `aud` as a plain string and fails to unmarshal a JSON array, but RFC 7519
+	// allows `aud` to be a string or an array (Keycloak emits an array for
+	// multi-audience tokens). This flexible field captures `aud` at the outer
+	// level so the embedded string field is never assigned; exp is still
+	// validated via StandardClaims.
+	Aud ClaimStrings `json:"aud"`
 	jwt.StandardClaims
+}
+
+// ClaimStrings accepts a JWT claim that may be either a single string or an
+// array of strings, per RFC 7519 (e.g. `aud`).
+type ClaimStrings []string
+
+func (c *ClaimStrings) UnmarshalJSON(data []byte) error {
+	var v interface{}
+	if err := json.Unmarshal(data, &v); err != nil {
+		return err
+	}
+	switch val := v.(type) {
+	case string:
+		*c = ClaimStrings{val}
+	case []interface{}:
+		out := make(ClaimStrings, 0, len(val))
+		for _, e := range val {
+			if s, ok := e.(string); ok {
+				out = append(out, s)
+			}
+		}
+		*c = out
+	case nil:
+		*c = nil
+	default:
+		return fmt.Errorf("aud: unexpected type %T", v)
+	}
+	return nil
 }
 
 type RealmRoles struct {

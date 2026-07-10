@@ -8,6 +8,13 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Fixed
+- Auth: JWT `aud` is now parsed as either a string or an array (RFC 7519 allows both;
+  Keycloak emits an array for multi-audience tokens). `PlatformClaims` embedded golang-jwt v3
+  `StandardClaims`, which models `aud` as a plain string and 401s on an array — a latent issue
+  (today's callers send single-audience `app`-client tokens). A flexible `aud` field now shadows
+  the embedded string one; `exp` validation is unchanged. (Aligns with the same fix in energystore.)
+
 ## [1.0.7] – 2026-07-05
 
 ### Added
