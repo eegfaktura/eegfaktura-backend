@@ -8,6 +8,21 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Added
+- **Time-of-use tariffs (ZVT)**: `base.tariff` gains `useTimeTariff` plus two
+  optional named time windows (`timeTariff{1,2}Active/Name/From/To/CentPerKWh`;
+  `time` columns, 15-min raster, `From > To` crosses midnight). `centPerKWh`
+  stays the base price; existing tariffs are unchanged (`useTimeTariff=false`).
+  Both views are extended: `base.activeTariff` passes the new fields through
+  (From/To as `HH:MM` text) and `base.billing_masterdata` exposes them as
+  `tariff_use_time_tariff` / `tariff_time{1,2}_*` for the billing service.
+  Saving a tariff validates the windows server-side: only consumer/producer
+  tariffs, active windows need from/to/price on the 15-min raster,
+  `Von ≠ Bis`, the two windows must not overlap (cyclic check, midnight
+  crossing allowed) and free kWh are rejected in time-based mode.
+  Migration `20260711120000_zvt_time_tariff` (up/down; `schema.sql`,
+  `schema.hcl` and `atlas.sum` updated in sync).
+
 ### Security
 - `google.golang.org/grpc` 1.81.0 -> 1.83.1, closing CVE-2026-84304 (HIGH): heap memory
   exhaustion through HTTP/2 DATA frame fragmentation. 1.82.1 — the version Dependabot

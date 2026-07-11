@@ -753,6 +753,53 @@ table "tariff" {
     type    = boolean
     default = false
   }
+  column "useTimeTariff" {
+    null    = false
+    type    = boolean
+    default = false
+  }
+  column "timeTariff1Active" {
+    null    = false
+    type    = boolean
+    default = false
+  }
+  column "timeTariff1Name" {
+    null = true
+    type = character_varying
+  }
+  column "timeTariff1From" {
+    null = true
+    type = time
+  }
+  column "timeTariff1To" {
+    null = true
+    type = time
+  }
+  column "timeTariff1CentPerKWh" {
+    null = true
+    type = double_precision
+  }
+  column "timeTariff2Active" {
+    null    = false
+    type    = boolean
+    default = false
+  }
+  column "timeTariff2Name" {
+    null = true
+    type = character_varying
+  }
+  column "timeTariff2From" {
+    null = true
+    type = time
+  }
+  column "timeTariff2To" {
+    null = true
+    type = time
+  }
+  column "timeTariff2CentPerKWh" {
+    null = true
+    type = double_precision
+  }
   primary_key "tariffpk" {
     columns = [column.id, column.version]
   }
