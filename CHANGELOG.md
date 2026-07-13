@@ -23,6 +23,11 @@ this changelog highlights the changes relevant for overview and operations.
   Migration `20260711120000_zvt_time_tariff` (up/down; `schema.sql`,
   `schema.hcl` and `atlas.sum` updated in sync).
 
+### Changed
+- Mail deliverability: the global default activation mail template declares `lang="de"`
+  (was `en`) so clients don't mis-detect the language (minor spam-score signal). Per-tenant
+  templates on the data volume are unaffected (operator cleanup).
+
 ## [1.0.7] – 2026-07-05
 
 ### Added
