@@ -8,6 +8,15 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Fixed
+- EDA: `eda-process-versions.AUFHEBUNG_CCMS` bumped `01.10` → `01.30` in the committed
+  (local-dev) `config.yaml`. This string is stamped onto the outbound `MessageCodeVersion`
+  (`mqtt/messageBroker.go`) and eda-xp uses it to pick the CMRevoke XSD + `schemaLocation`
+  (`CMRevokeRequest.getVersion`): `01.10` builds the superseded `cmrevoke/01p00` schema,
+  `01.30` the current `cmrevoke/01p10` (`CM_REV_SP/01.30`). Prod already ran `01.30`; the
+  repo default and dev overlays had drifted behind — aligned so new environments don't
+  emit revocations under an outdated EDA process version.
+
 ## [1.0.7] – 2026-07-05
 
 ### Added
