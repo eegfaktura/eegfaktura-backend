@@ -71,7 +71,7 @@ func TestRegisterParticipant(t *testing.T) {
 	db, err := GetDB(context.Background())
 	require.NoError(t, err)
 
-	err = db.RegisterParticipant("RC200200", "petero", &p)
+	err = db.RegisterParticipant(context.Background(), "RC200200", "petero", &p)
 	assert.NoError(t, err)
 }
 
@@ -113,7 +113,7 @@ func TestGetParticipant(t *testing.T) {
 
 	mockDb.Mock.ExpectQuery("SELECT (.+) FROM \"base\".\"meteringpoint\", (.+)").WillReturnRows(meterRows)
 
-	participants, err := db.GetParticipants("RC100298")
+	participants, err := db.GetParticipants(context.Background(), "RC100298")
 	assert.NoError(t, err)
 
 	assert.NotEmpty(t, participants)
@@ -127,7 +127,7 @@ func Test_GetParticipants(t *testing.T) {
 	db, err := GetTestDB(context.Background(), testDB)
 	require.NoError(t, err)
 
-	participants, err := db.GetParticipants("TE000002")
+	participants, err := db.GetParticipants(context.Background(), "TE000002")
 	require.NoError(t, err)
 
 	require.Equal(t, 1, len(participants))
@@ -189,7 +189,7 @@ func Test_saveParticipant(t *testing.T) {
 		tenant                     string
 		username                   string
 		participant                *model.EegParticipant
-		registerMeteringPointsFunc func(*sqlx.Tx, string, string, string, []*model.MeteringPoint) error
+		registerMeteringPointsFunc func(context.Context, *sqlx.Tx, string, string, string, []*model.MeteringPoint) error
 	}
 
 	mDB, mock, err := sqlmock.New()
@@ -225,7 +225,7 @@ func Test_saveParticipant(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tx, err := tt.args.db.Beginx()
 			assert.NoError(t, err)
-			err = saveParticipant(tx, tt.args.tenant, tt.args.username, tt.args.participant, tt.args.registerMeteringPointsFunc)
+			err = saveParticipant(context.Background(), tx, tt.args.tenant, tt.args.username, tt.args.participant, tt.args.registerMeteringPointsFunc)
 			assert.NoError(t, tx.Commit())
 			assert.NoError(t, mock.ExpectationsWereMet())
 			require.NoError(t, err)
@@ -469,10 +469,10 @@ func TestImportParticipant(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 
-			err = db.ImportParticipant("TE000001", "test", tt.params)
+			err = db.ImportParticipant(context.Background(), "TE000001", "test", tt.params)
 			assert.NoError(t, err)
 
-			p, err := db.FindParticipantByMeteringPoint("TE000001", tt.mp)
+			p, err := db.FindParticipantByMeteringPoint(context.Background(), "TE000001", tt.mp)
 			assert.NoError(t, err)
 
 			tt.test(t, p)
@@ -533,10 +533,10 @@ func TestUpdateParticipant1(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := db.UpdateParticipant(tt.args.tenant, tt.args.user, tt.args.participant)
+			err := db.UpdateParticipant(context.Background(), tt.args.tenant, tt.args.user, tt.args.participant)
 			assert.NoError(t, err)
 
-			pUnderTest, err := db.QueryParticipant(tt.args.participant.Id.String())
+			pUnderTest, err := db.QueryParticipant(context.Background(), tt.args.participant.Id.String())
 			assert.NoError(t, err)
 
 			tt.wantErr(t, pUnderTest, tt.args.participant)
@@ -616,10 +616,10 @@ func TestUpdateParticipantPartial(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 
-			err = db.UpdateParticipantPartial(tt.participantId, tt.param, tt.value)
+			err = db.UpdateParticipantPartial(context.Background(), tt.participantId, tt.param, tt.value)
 			assert.NoError(t, err)
 
-			p, err := db.GetParticipant(tt.participantId)
+			p, err := db.GetParticipant(context.Background(), tt.participantId)
 			assert.NoError(t, err)
 
 			tt.test(t, p)
