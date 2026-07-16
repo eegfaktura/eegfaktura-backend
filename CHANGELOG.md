@@ -9,6 +9,37 @@ this changelog highlights the changes relevant for overview and operations.
 ## [Unreleased]
 
 ### Fixed
+- Excel master-data import: three fields from the current import template
+  ("250310-vorlage-import-stammdaten") were imported wrongly or not at all:
+  - **"Mitglied seit"** is now stored as the member's `participantSince`. Previously the
+    importer read a "Dokument unterschrieben" column that does not exist in the template,
+    and `saveParticipant` unconditionally overwrote the value with the import date — every
+    imported member appeared to have joined "today". The overwrite now only applies as a
+    default when no date is provided (also honors a caller-supplied date on registration).
+  - **"registriert seit"** (metering point registered-since) now accepts real Excel date
+    cells. Rows are read in raw mode, so date-formatted cells arrive as Excel serial
+    numbers (e.g. `45292`), which the previous `d.m.yyyy`-only parser rejected — the value
+    silently fell back to Jan 1 of the current year. Serial and text dates are now both
+    parsed (same for the mandate date). The metering point's `registeredSince` also comes
+    from this column now instead of "Mitglied seit" (crossed wiring with the fix above).
+  - **"Zugeteilte Menge in Prozent"** now feeds the participation factor (`partFact`).
+    The importer only knew the legacy "Teilnehmerfaktor"/"PartFact" headers, so the
+    template column never matched and every metering point got 100 %. Plain numbers,
+    `%`-suffixed values, decimal commas and percent-formatted cells (raw fraction, e.g.
+    `0.5` = 50 %) are handled; the legacy headers still work as fallback.
+- Excel master-data import robustness:
+  - A failing member no longer aborts the whole import. Each member runs in its own
+    transaction; errors are collected and reported in the import notification while the
+    remaining rows are still imported (previously everything after the first failure —
+    e.g. a duplicate active metering point — was silently dropped).
+  - Silently skipped rows now surface in the import notification: rows that look like
+    data but have a missing/invalid "Netzbetreiber" (column A), and rows whose name
+    cannot be derived ("Name 1" empty and "Name 2" not splittable). A trailing space in
+    the "Netzbetreiber" value no longer discards the row (value is trimmed).
+- Test suite: the `database` package tests had drifted uncompilable (missing
+  `context.Context` arguments after the DAO signature change, stale `createdAt`
+  expectation) and are fixed to compile and pass again; new regression tests cover the
+  import fixes (incl. an end-to-end continue-on-error/re-import test on its own tenant).
 - EDA: `eda-process-versions.AUFHEBUNG_CCMS` bumped `01.10` → `01.30` in the committed
   (local-dev) `config.yaml`. This string is stamped onto the outbound `MessageCodeVersion`
   (`mqtt/messageBroker.go`) and eda-xp uses it to pick the CMRevoke XSD + `schemaLocation`
