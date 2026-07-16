@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -125,4 +126,118 @@ func Test_transformExcelData_partFact(t *testing.T) {
 	assert.Equal(t, 50, participants[2].MeteringPoint[0].PartFact)
 	assert.Equal(t, 100, participants[3].MeteringPoint[0].PartFact)
 	assert.Equal(t, 51, participants[4].MeteringPoint[0].PartFact)
+}
+
+// Silently skipped rows must surface in the import log: data-looking rows with
+// an invalid grid operator and rows whose name cannot be extracted. A trailing
+// space in the operator column must no longer discard the row.
+func Test_transformExcelData_skipReporting(t *testing.T) {
+	f := buildImportSheet(t, [][]interface{}{
+		{"at009999", "", "4020", "Linz", "Weg", "1",
+			"AT0099990000000000000000000000701", "CONSUMPTION", "Lower", "Case", "privat",
+			"", "", "010", "ACTIVE", "", ""},
+		{"", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""},
+		{"AT009999 ", "", "4020", "Linz", "Weg", "1",
+			"AT0099990000000000000000000000702", "CONSUMPTION", "Trail", "Space", "privat",
+			"", "", "011", "ACTIVE", "", ""},
+		{"AT009999", "", "4020", "Linz", "Weg", "1",
+			"AT0099990000000000000000000000703", "CONSUMPTION", "", "Einwortname", "privat",
+			"", "", "012", "ACTIVE", "", ""},
+	})
+
+	participants, importLog := transformSheet(t, f, false)
+
+	// nur die Zeile mit nachgestelltem Leerzeichen wird (jetzt) importiert
+	require.Len(t, participants, 1)
+	assert.Equal(t, "Trail", participants[0].FirstName)
+	assert.Equal(t, "AT009999", participants[0].MeteringPoint[0].GridOperatorId.String)
+
+	// ungültiger Netzbetreiber + Name-Split-Fehler werden gemeldet, die leere Zeile nicht
+	require.Len(t, importLog.Messages, 2)
+	assert.Equal(t, "E_PARTICIPANT_1002", importLog.Messages[0].MessageCode)
+	assert.Equal(t, "E_PARTICIPANT_1001", importLog.Messages[1].MessageCode)
+}
+
+// Rows of one member (one row per metering point) merge by first+last name —
+// even when the file numbers MitgliedsNr per ROW, as legacy files do (see the
+// TE100200 fixture: Finnegan carries 003 and 004). The number must therefore
+// not split members; known limitation: real namesakes merge as well.
+func Test_transformExcelData_multiRowMemberMerge(t *testing.T) {
+	doe := func(nr, zp string) []interface{} {
+		return []interface{}{"AT009999", "", "4020", "Linz", "Weg", "1",
+			zp, "CONSUMPTION", "John", "Doe", "privat", "", "", nr, "ACTIVE", "", ""}
+	}
+	f := buildImportSheet(t, [][]interface{}{
+		doe("100", "AT0099990000000000000000000000711"),
+		doe("101", "AT0099990000000000000000000000712"),
+		doe("", "AT0099990000000000000000000000713"),
+	})
+
+	participants, _ := transformSheet(t, f, false)
+	require.Len(t, participants, 1)
+	assert.Equal(t, "100", participants[0].ParticipantNumber.String)
+	assert.Len(t, participants[0].MeteringPoint, 3)
+}
+
+// End-to-end against the test database: one failing participant (duplicate
+// active metering point) must not abort the rest of the import; a re-import
+// attaches new metering points to the existing member (matched by name).
+func TestImportMasterdataFromExcel_continueOnError(t *testing.T) {
+	db, err := GetDB(context.Background())
+	require.NoError(t, err)
+
+	// eigener Tenant, damit andere Tests (Zähl-Assertions auf TE000001/TE000002)
+	// nicht durch die hier importierten Mitglieder beeinflusst werden
+	tenant := "TE000009"
+	_, err = testDB.DbInstance.Exec(`INSERT INTO base.eeg
+		(tenant, name, description, "rcNumber", area, gridoperator_code, gridoperator_name, "communityId",
+		 street, "streetNumber", city, zip, email)
+		VALUES ('TE000009','IMPORT-TEST','Import-Testgemeinschaft','TE000009','LOCAL','AT009999','Test Operator',
+		 'AT00999900000TC000009000000000001','Solarweg','1','Linz','4020','import-test@example.org')
+		ON CONFLICT (tenant) DO NOTHING`)
+	require.NoError(t, err)
+
+	importFile := func(t *testing.T, rows [][]interface{}) {
+		f := buildImportSheet(t, rows)
+		buf, err := f.WriteToBuffer()
+		require.NoError(t, err)
+		require.NoError(t, db.ImportMasterdataFromExcel(context.Background(), buf, "test.xlsx", "EEG Stammdaten", tenant))
+	}
+	dataRow := func(name1, name2, nr, zp string) []interface{} {
+		return []interface{}{"AT009999", "", "4020", "Linz", "Weg", "1",
+			zp, "CONSUMPTION", name1, name2, "privat", "", "", nr, "ACTIVE", "", ""}
+	}
+	byName := func(ps []*model.EegParticipant, lastname string) []*model.EegParticipant {
+		var out []*model.EegParticipant
+		for _, p := range ps {
+			if p.LastName == lastname {
+				out = append(out, p)
+			}
+		}
+		return out
+	}
+
+	// P2 verwendet denselben (aktiven) Zählpunkt wie P1 -> idx_unique_meteringpoint_active
+	// schlägt fehl; P1 und P3 müssen trotzdem importiert werden.
+	importFile(t, [][]interface{}{
+		dataRow("Astrid", "Alba", "801", "AT0099990000000000000000000000801"),
+		dataRow("Bernd", "Brix", "802", "AT0099990000000000000000000000801"),
+		dataRow("Clara", "Cox", "803", "AT0099990000000000000000000000802"),
+	})
+	ps, err := db.GetParticipants(context.Background(), tenant)
+	require.NoError(t, err)
+	assert.Len(t, byName(ps, "Alba"), 1)
+	assert.Len(t, byName(ps, "Cox"), 1)
+	assert.Empty(t, byName(ps, "Brix"))
+
+	// Re-Import: neue ZP-Zeile eines bestehenden Mitglieds (Name-Match) wird
+	// angehängt, es entsteht kein Duplikat.
+	importFile(t, [][]interface{}{
+		dataRow("Clara", "Cox", "803", "AT0099990000000000000000000000803"),
+	})
+	ps, err = db.GetParticipants(context.Background(), tenant)
+	require.NoError(t, err)
+	cox := byName(ps, "Cox")
+	require.Len(t, cox, 1)
+	assert.Len(t, cox[0].MeteringPoint, 2)
 }

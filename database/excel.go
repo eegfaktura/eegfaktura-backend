@@ -73,15 +73,14 @@ func (db *sqlDatabase) ImportMasterdataFromExcel(ctx context.Context, r io.Reade
 	log.Debugf("LEN _ Import participants: %v", len(participants))
 
 	for _, p := range participants {
-		err = db.ImportParticipant(ctx, strings.ToUpper(tenant), "excel", p)
-		if err != nil {
+		// Jeder Teilnehmer läuft in seiner eigenen Transaktion — ein Fehler wird
+		// protokolliert, die restlichen Zeilen werden trotzdem importiert.
+		if err := db.ImportParticipant(ctx, strings.ToUpper(tenant), "excel", p); err != nil {
 			importLog.Messages = append(importLog.Messages, model.NewLogMessageFromVfeegError(
 				fmt.Sprintf("%s %s", p.FirstName, p.LastName),
 				err,
 			))
 			log.Errorf("Error Import Participant from Excel: %s", err.Error())
-			return db.SaveNotificationFromMap(CreateNotificationMessageFromLog(importLog), tenant,
-				model.N_TYPE_NOTIFICATION, model.N_PROCESS_IMPORT_EXCEL, "ADMIN")
 		}
 	}
 
@@ -410,6 +409,10 @@ func generateParticipantMastersheet(f *excelize.File, participants []*model.EegP
 	return err
 }
 
+// findParticipant sammelt die Zeilen eines Mitglieds ein (eine Zeile je Zählpunkt).
+// Der Abgleich läuft bewusst NUR über Vor-+Nachname: Bestandsdateien vergeben die
+// MitgliedsNr teils fortlaufend pro Zeile (nicht pro Mitglied), sie taugt daher
+// nicht als Schlüssel. Bekannte Limitation: namensgleiche Personen verschmelzen.
 func findParticipant(participants []*model.EegParticipant, firstname, lastname string) (*model.EegParticipant, bool) {
 	for _, p := range participants {
 		if p.FirstName == firstname && p.LastName == lastname {
@@ -596,8 +599,8 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 				continue
 			default:
 				switch {
-				case netOperatorMatch.MatchString(cols[0]):
-					netOperatorId := cols[0]
+				case netOperatorMatch.MatchString(strings.TrimSpace(cols[0])):
+					netOperatorId := strings.TrimSpace(cols[0])
 					var firstname string
 					var lastname string
 
@@ -606,7 +609,13 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 
 					if len(excelName2) == 0 || len(excelName2) < 2 {
 						if _, err := fmt.Sscanf(getColumValue(cols, colMap, "Name 2", "Name2", nil), "%s %s", &lastname, &firstname); err != nil {
-							fmt.Printf("Error Name extracting: %s (%s)\n", err, getColumValue(cols, colMap, "Name 1", "Name1", nil))
+							importLog.Messages = append(importLog.Messages, model.NewLogMessage(
+								"ERROR",
+								strings.Trim(getColumValue(cols, colMap, "Zählpunkt", "MeteringPoint Id", nil), " "),
+								"E_PARTICIPANT_1001",
+								fmt.Sprintf("Row skipped: 'Name 1' is missing and 'Name 2' (%s) cannot be split into last and first name", excelName1),
+							))
+							log.Warnf("Import row skipped: cannot extract name from %q", excelName1)
 							continue
 						}
 					} else {
@@ -655,13 +664,14 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 
 					cpStatus := getColumValue(cols, colMap, "Zählpunktstatus", "Metering Point State", nil)
 					if cpStatus == "ACTIVE" || cpStatus == "ACTIVATED" || cpStatus == "REGISTERED" || cpStatus == "NEW" {
+						participantNumber := getColumValue(cols, colMap, "MitgliedsNr", "ParticipantNr", nil)
 						var participant *model.EegParticipant
 						if p, ok := findParticipant(participants, firstname, lastname); ok {
 							participant = p
 						} else {
 							participant = &model.EegParticipant{
 								EegParticipantBase: model.EegParticipantBase{
-									ParticipantNumber: null.StringFrom(getColumValue(cols, colMap, "MitgliedsNr", "ParticipantNr", nil)),
+									ParticipantNumber: null.StringFrom(participantNumber),
 									FirstName:         firstname,
 									LastName:          lastname,
 									TitleBefore:       null.StringFrom(getColumValue(cols, colMap, "TitelVor", "TitleBefor", nil)),
@@ -746,6 +756,19 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 								"E_PARTICIPANT_1000",
 								fmt.Sprintf("Does not fulfill requirements! Participant has wrong status: %s", cpStatus)))
 						log.Warnf("Participant -%s %s- does not fulfill requirements! Participant has wrong status: %s", firstname, lastname, cpStatus)
+					}
+				default:
+					// Zeile sieht wie eine Datenzeile aus (Zählpunkt oder Name vorhanden),
+					// hat aber keinen gültigen Netzbetreiber -> melden statt still verwerfen.
+					if len(getColumValue(cols, colMap, "Zählpunkt", "MeteringPoint Id", nil)) > 0 ||
+						len(getColumValue(cols, colMap, "Name 1", "Name1", nil)) > 0 {
+						importLog.Messages = append(importLog.Messages, model.NewLogMessage(
+							"ERROR",
+							cols[0],
+							"E_PARTICIPANT_1002",
+							"Row skipped: 'Netzbetreiber' (column A) is missing or invalid (expected e.g. AT003000)",
+						))
+						log.Warnf("Import row skipped: invalid grid operator %q", cols[0])
 					}
 				}
 			}
