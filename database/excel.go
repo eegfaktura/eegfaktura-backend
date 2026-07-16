@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"at.ourproject/vfeeg-backend/model"
+	"github.com/doug-martin/goqu/v9"
 	"github.com/jjeffery/civil"
 	log "github.com/sirupsen/logrus"
 	"github.com/xuri/excelize/v2"
@@ -72,6 +73,8 @@ func (db *sqlDatabase) ImportMasterdataFromExcel(ctx context.Context, r io.Reade
 	log.Debugf("Rows: %+v", rows)
 	log.Debugf("LEN _ Import participants: %v", len(participants))
 
+	db.reportDuplicateParticipantNumbers(ctx, strings.ToUpper(tenant), participants, importLog)
+
 	for _, p := range participants {
 		// Jeder Teilnehmer läuft in seiner eigenen Transaktion — ein Fehler wird
 		// protokolliert, die restlichen Zeilen werden trotzdem importiert.
@@ -93,6 +96,70 @@ func (db *sqlDatabase) ImportMasterdataFromExcel(ctx context.Context, r io.Reade
 	}
 
 	return err
+}
+
+// reportDuplicateParticipantNumbers warnt (ohne die Zeilen abzulehnen), wenn eine
+// MitgliedsNr in der Datei mehrfach vorkommt oder im Bestand bereits an ein ANDERES
+// Mitglied vergeben ist. Re-Import-Zeilen eines bestehenden Mitglieds (gleicher
+// Name) lösen keine Warnung aus.
+func (db *sqlDatabase) reportDuplicateParticipantNumbers(ctx context.Context, tenant string, participants []*model.EegParticipant, importLog *model.Log) {
+	byNumber := map[string][]*model.EegParticipant{}
+	for _, p := range participants {
+		if nr := p.ParticipantNumber.String; nr != "" {
+			byNumber[nr] = append(byNumber[nr], p)
+		}
+	}
+	if len(byNumber) == 0 {
+		return
+	}
+
+	for nr, ps := range byNumber {
+		if len(ps) > 1 {
+			names := make([]string, len(ps))
+			for i, p := range ps {
+				names[i] = fmt.Sprintf("%s %s", p.FirstName, p.LastName)
+			}
+			importLog.Messages = append(importLog.Messages, model.NewLogMessage(
+				"WARNING",
+				nr,
+				"W_PARTICIPANT_NR_DUP",
+				fmt.Sprintf("MitgliedsNr %s is used by several members in the file: %s", nr, strings.Join(names, ", ")),
+			))
+		}
+	}
+
+	type existingParticipant struct {
+		Number    string `db:"participantNumber"`
+		FirstName string `db:"firstname"`
+		LastName  string `db:"lastname"`
+	}
+	stmt, _, err := pgDialect.From("base.participant").
+		Select("participantNumber", "firstname", "lastname").
+		Where(
+			goqu.C("tenant").Eq(tenant),
+			goqu.C("participantNumber").IsNotNull(),
+			goqu.C("participantNumber").Neq("")).ToSQL()
+	if err != nil {
+		log.WithError(err).Warn("duplicate participant number check skipped")
+		return
+	}
+	var existing []existingParticipant
+	if err := db.db.SelectContext(ctx, &existing, stmt); err != nil {
+		log.WithError(err).Warn("duplicate participant number check skipped")
+		return
+	}
+	for _, e := range existing {
+		for _, p := range byNumber[e.Number] {
+			if p.FirstName != e.FirstName || p.LastName != e.LastName {
+				importLog.Messages = append(importLog.Messages, model.NewLogMessage(
+					"WARNING",
+					e.Number,
+					"W_PARTICIPANT_NR_DUP",
+					fmt.Sprintf("MitgliedsNr %s is already assigned to existing member %s %s", e.Number, e.FirstName, e.LastName),
+				))
+			}
+		}
+	}
 }
 
 func CreateNotificationMessageFromLog(logMsg *model.Log) map[string]interface{} {
@@ -623,14 +690,25 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 						lastname = excelName1
 					}
 
-					role := model.UNKNOWN
-					switch strings.ToUpper(strings.Trim(getColumValue(cols, colMap, "Energierichtung", "Energy Direction", nil), " ")) {
+					directionVal := strings.ToUpper(strings.TrimSpace(getColumValue(cols, colMap, "Energierichtung", "Energy Direction", nil)))
+					role := model.CONSUMPTION
+					switch directionVal {
 					case "GENERATION":
 						role = model.GENERATOR
-					case "CONSUMPTION":
+					case "CONSUMPTION", "":
+						// leer = dokumentierter Default (Verbraucher)
 						role = model.CONSUMPTION
 					default:
-						role = model.CONSUMPTION
+						// Tippfehler würde einen Erzeuger-ZP still als Verbraucher importieren
+						// -> Zeile ablehnen und melden statt raten.
+						importLog.Messages = append(importLog.Messages, model.NewLogMessage(
+							"ERROR",
+							strings.Trim(getColumValue(cols, colMap, "Zählpunkt", "MeteringPoint Id", nil), " "),
+							"E_COUNTERPOINT_1001",
+							fmt.Sprintf("Row skipped: unknown 'Energierichtung' %q (expected CONSUMPTION or GENERATION)", directionVal),
+						))
+						log.Warnf("Import row skipped: unknown energy direction %q", directionVal)
+						continue
 					}
 
 					streetNumber := getColumValue(cols, colMap, "Hausnummer", "Street Number", nil)
@@ -662,7 +740,8 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 						}
 					}
 
-					cpStatus := getColumValue(cols, colMap, "Zählpunktstatus", "Metering Point State", nil)
+					// tolerant gegenüber Gross-/Kleinschreibung und umgebenden Leerzeichen
+					cpStatus := strings.ToUpper(strings.TrimSpace(getColumValue(cols, colMap, "Zählpunktstatus", "Metering Point State", nil)))
 					if cpStatus == "ACTIVE" || cpStatus == "ACTIVATED" || cpStatus == "REGISTERED" || cpStatus == "NEW" {
 						participantNumber := getColumValue(cols, colMap, "MitgliedsNr", "ParticipantNr", nil)
 						var participant *model.EegParticipant

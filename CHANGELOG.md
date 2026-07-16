@@ -8,6 +8,25 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Changed
+- Excel master-data import hardening (follow-up to the field fixes):
+  - "Zählpunktstatus" now tolerates case and surrounding spaces (` active ` no longer
+    rejects the row).
+  - An unknown "Energierichtung" value (e.g. a typo like `GENERATON`) now rejects the
+    row with an import notification instead of silently importing the metering point as
+    CONSUMPTION — a producer imported as consumer corrupts billing. An empty value keeps
+    the documented CONSUMPTION default.
+  - Duplicate "MitgliedsNr" values are reported as warnings in the import notification:
+    numbers used by several members within the file, and numbers already assigned to a
+    *different* existing member (re-import rows carrying the member's own number stay
+    silent). Rows are still imported — the warning is informational.
+- New cleaned import template `tests/260716-vorlage-import-stammdaten.xlsx`: the nine
+  columns the importer never reads (Ortsgebiet, Stiege/Stock/Tür/Adresszusatz,
+  Überschusseinspeisung, Energiequelle, Verteilungsmodell, Meter Codes) are removed so
+  admins no longer fill fields that silently go nowhere. Import stays header-driven, so
+  older templates keep working; a regression test pins the shipped template to the
+  importer.
+
 ### Fixed
 - Excel master-data import: three fields from the current import template
   ("250310-vorlage-import-stammdaten") were imported wrongly or not at all:

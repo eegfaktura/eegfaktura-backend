@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/xuri/excelize/v2"
+	"gopkg.in/guregu/null.v4"
 )
 
 // builds an in-memory workbook that mirrors the current import template
@@ -240,4 +242,92 @@ func TestImportMasterdataFromExcel_continueOnError(t *testing.T) {
 	cox := byName(ps, "Cox")
 	require.Len(t, cox, 1)
 	assert.Len(t, cox[0].MeteringPoint, 2)
+
+	// MitgliedsNr-Warnungen: im Bestand an ein ANDERES Mitglied vergeben bzw.
+	// doppelt in der Datei; die eigene Nummer (Re-Import-Fall) warnt nicht.
+	sdb, ok := db.(*sqlDatabase)
+	require.True(t, ok)
+	mk := func(first, last, nr string) *model.EegParticipant {
+		return &model.EegParticipant{EegParticipantBase: model.EegParticipantBase{
+			FirstName: first, LastName: last, ParticipantNumber: null.StringFrom(nr)}}
+	}
+	check := func(ps []*model.EegParticipant) []*model.LogMessage {
+		l := &model.Log{Messages: []*model.LogMessage{}}
+		sdb.reportDuplicateParticipantNumbers(context.Background(), tenant, ps, l)
+		return l.Messages
+	}
+
+	// 801 gehört Astrid Alba -> Warnung für Berta Neu
+	msgs := check([]*model.EegParticipant{mk("Berta", "Neu", "801")})
+	require.Len(t, msgs, 1)
+	assert.Equal(t, "W_PARTICIPANT_NR_DUP", msgs[0].MessageCode)
+	assert.Equal(t, "801", msgs[0].Identifier)
+
+	// eigene Nummer beim Re-Import -> keine Warnung
+	assert.Empty(t, check([]*model.EegParticipant{mk("Astrid", "Alba", "801")}))
+
+	// doppelt in der Datei -> eine Warnung
+	msgs = check([]*model.EegParticipant{mk("Xaver", "Xander", "900"), mk("Yvonne", "Ypsilon", "900")})
+	require.Len(t, msgs, 1)
+	assert.Equal(t, "900", msgs[0].Identifier)
+}
+
+// Zählpunktstatus tolerates case and surrounding spaces; an unknown
+// Energierichtung rejects the row (reported) instead of silently importing a
+// producer as consumer; an empty direction keeps the CONSUMPTION default.
+func Test_transformExcelData_statusAndDirection(t *testing.T) {
+	rowWith := func(name, direction, status, zp string) []interface{} {
+		return []interface{}{"AT009999", "", "4020", "Linz", "Weg", "1",
+			zp, direction, name, "Tester", "privat", "", "", "", status, "", ""}
+	}
+	f := buildImportSheet(t, [][]interface{}{
+		rowWith("Tolerant", "CONSUMPTION", " active ", "AT0099990000000000000000000000721"),
+		rowWith("Erzeuger", "generation", "NEW", "AT0099990000000000000000000000722"),
+		rowWith("Vertippt", "GENERATON", "ACTIVE", "AT0099990000000000000000000000723"),
+		rowWith("Leer", "", "ACTIVE", "AT0099990000000000000000000000724"),
+	})
+
+	participants, importLog := transformSheet(t, f, false)
+	require.Len(t, participants, 3)
+
+	assert.Equal(t, model.ACTIVE, participants[0].Status)
+	assert.Equal(t, model.S_ACTIVE, participants[0].MeteringPoint[0].Status)
+	assert.Equal(t, model.GENERATOR, participants[1].MeteringPoint[0].Direction)
+	assert.Equal(t, model.CONSUMPTION, participants[2].MeteringPoint[0].Direction) // "Leer"
+
+	require.Len(t, importLog.Messages, 1)
+	assert.Equal(t, "E_COUNTERPOINT_1001", importLog.Messages[0].MessageCode)
+	assert.Equal(t, "AT0099990000000000000000000000723", importLog.Messages[0].Identifier)
+}
+
+// The shipped import template (tests/260716-vorlage-import-stammdaten.xlsx,
+// the cleaned successor of "250310" — decorative columns removed; also offered
+// as download in the docs) must stay compatible with the importer: its sample
+// row imports with all mapped fields.
+func Test_transformExcelData_shippedTemplate(t *testing.T) {
+	reader, err := os.Open("../tests/260716-vorlage-import-stammdaten.xlsx")
+	require.NoError(t, err)
+	defer reader.Close()
+
+	f, err := openReader(reader, "260716-vorlage-import-stammdaten.xlsx")
+	require.NoError(t, err)
+	defer f.Close()
+
+	rows, err := f.Rows("EEG Stammdaten")
+	require.NoError(t, err)
+	importLog := &model.Log{Operation: "Excel Master Data Import", Messages: []*model.LogMessage{}}
+	participants := transformExcelData(rows, func(id string) string { return id }, false, importLog)
+
+	assert.Empty(t, importLog.Messages)
+	require.Len(t, participants, 1)
+	p := participants[0]
+	assert.Equal(t, "Mayer", p.FirstName)
+	assert.Equal(t, "Hubert", p.LastName)
+	assert.Equal(t, civil.DateFor(2024, time.January, 1), p.ParticipantSince.Date)
+	require.Len(t, p.MeteringPoint, 1)
+	m := p.MeteringPoint[0]
+	assert.Equal(t, model.CONSUMPTION, m.Direction)
+	assert.Equal(t, civil.DateFor(2024, time.January, 1), m.RegisteredSince)
+	assert.Equal(t, 100, m.PartFact)
+	assert.Equal(t, model.ACTIVE, m.ProcessState) // Beispielzeile: ACTIVATED
 }
