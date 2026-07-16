@@ -425,7 +425,10 @@ func saveParticipant(ctx context.Context, tx *sqlx.Tx, tenant, username string, 
 		return err
 	}
 
-	participant.ParticipantSince = civil.NullDate{civil.Today(), true}
+	// "Mitglied seit" aus Import/Registrierung übernehmen; nur ohne Wert auf heute setzen.
+	if !participant.ParticipantSince.Valid {
+		participant.ParticipantSince = civil.NullDate{Date: civil.Today(), Valid: true}
+	}
 	registeringParticipant := struct {
 		model.EegParticipantBase
 		Tenant           string         `db:"tenant"`

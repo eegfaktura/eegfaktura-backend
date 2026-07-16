@@ -5,13 +5,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"at.ourproject/vfeeg-backend/model"
-	"at.ourproject/vfeeg-backend/util"
 	"github.com/jjeffery/civil"
 	log "github.com/sirupsen/logrus"
 	"github.com/xuri/excelize/v2"
@@ -522,12 +522,22 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 	}
 
 	partFact := func(cols []string, values map[string]int) int {
-		val := getColumValue(cols, colMap, "Teilnehmerfaktor", "PartFact", &defaultPartFact)
-		s, err := strconv.Atoi(val)
-		if err != nil {
+		// Vorlagen-Spalte heißt "Zugeteilte Menge in Prozent"; ältere Dateien
+		// verwenden "Teilnehmerfaktor"/"PartFact".
+		val := getColumValue(cols, colMap, "Zugeteilte Menge in Prozent", "Allocated Quantity in Percent", nil)
+		if len(val) == 0 {
+			val = getColumValue(cols, colMap, "Teilnehmerfaktor", "PartFact", &defaultPartFact)
+		}
+		val = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(val), "%"))
+		f, err := strconv.ParseFloat(strings.ReplaceAll(val, ",", "."), 64)
+		if err != nil || f <= 0 {
 			return 100
 		}
-		return s
+		// Prozent-formatierte Zellen liefern im Raw-Modus den Bruchwert (50 % -> "0.5").
+		if f < 1 {
+			f = f * 100
+		}
+		return int(math.Round(f))
 	}
 
 	getCivilDatePtr := func(date civil.Date) *civil.Date {
@@ -535,21 +545,22 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 	}
 
 	getColumDate := func(cols []string, values map[string]int, deName, enName string, defaultValue *civil.Date) civil.NullDate {
+		// Zellen werden mit RawCellValue gelesen: eine als Datum formatierte Zelle
+		// liefert die Excel-Serialzahl, nicht "t.m.jjjj" — parseExcelDate kann beides.
 		v := getColumValue(cols, colMap, deName, enName, nil)
-		d, err := util.ParseTimeString(v)
-		if err != nil {
-			if defaultValue != nil {
-				return civil.NullDate{
-					Date:  *defaultValue,
-					Valid: true,
-				}
+		if isDateString(v) || isDate(v) {
+			return civil.NullDate{
+				Date:  civil.DateOf(parseExcelDate(v)),
+				Valid: true,
 			}
-			return civil.NullDate{}
 		}
-		return civil.NullDate{
-			Date:  d,
-			Valid: true,
+		if defaultValue != nil {
+			return civil.NullDate{
+				Date:  *defaultValue,
+				Valid: true,
+			}
 		}
+		return civil.NullDate{}
 	}
 
 	getParticipantStatus := func(state string) model.ProcessStatusType {
@@ -615,9 +626,13 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 
 					streetNumber := getColumValue(cols, colMap, "Hausnummer", "Street Number", nil)
 					var participantSince civil.NullDate
-					docSignedAt := getColumValue(cols, colMap, "Dokument unterschrieben", "Document Signature Date", nil)
-					if len(docSignedAt) > 0 {
-						excelDate := civil.DateOf(parseExcelDate(docSignedAt))
+					memberSince := getColumValue(cols, colMap, "Mitglied seit", "member since", nil)
+					if len(memberSince) == 0 {
+						// ältere Vorlagen-Varianten
+						memberSince = getColumValue(cols, colMap, "Dokument unterschrieben", "Document Signature Date", nil)
+					}
+					if isDateString(memberSince) || isDate(memberSince) {
+						excelDate := civil.DateOf(parseExcelDate(memberSince))
 						participantSince = civil.NullDateFrom(&excelDate)
 					} else {
 						today := civil.Today()
@@ -628,8 +643,10 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 					if online {
 						registeredSince = civil.Today()
 					} else {
-						regDateAt := getColumValue(cols, colMap, "Mitglied seit", "member since", nil)
-						if len(regDateAt) > 0 {
+						// Vorlagen-Spalte "registriert seit" = Zählpunkt registriert seit
+						// ("Mitglied seit" gehört zum Mitglied, s. participantSince oben).
+						regDateAt := getColumValue(cols, colMap, "registriert seit", "registriert since", nil)
+						if isDateString(regDateAt) || isDate(regDateAt) {
 							registeredSince = civil.DateOf(parseExcelDate(regDateAt))
 						} else {
 							registeredSince = civil.DateFor(time.Now().Year(), 1, 1)
