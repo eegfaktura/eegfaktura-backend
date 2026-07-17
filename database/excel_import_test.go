@@ -18,6 +18,8 @@ import (
 // ("250310-vorlage-import-stammdaten"): marker rows, a header row starting
 // with "Netzbetreiber" and data rows. Date cells are written both as
 // d.m.yyyy text and as real Excel date serials (RawCellValue mode).
+const testCommunityId = "AT00999900000TC000009000000000001"
+
 func buildImportSheet(t *testing.T, rows [][]interface{}) *excelize.File {
 	t.Helper()
 	f := excelize.NewFile()
@@ -47,7 +49,7 @@ func transformSheet(t *testing.T, f *excelize.File, online bool) ([]*model.EegPa
 	require.NoError(t, err)
 	defer rows.Close()
 	importLog := &model.Log{Operation: "Excel Master Data Import", Messages: []*model.LogMessage{}}
-	return transformExcelData(rows, func(id string) string { return id }, online, importLog), importLog
+	return transformExcelData(rows, func(id string) string { return id }, online, testCommunityId, importLog), importLog
 }
 
 // Template column "Mitglied seit" must become the participant's
@@ -57,15 +59,15 @@ func Test_transformExcelData_memberAndRegisteredSince(t *testing.T) {
 	const serial20240101 = 45292 // Excel serial for 2024-01-01
 
 	f := buildImportSheet(t, [][]interface{}{
-		{"AT009999", "", "4020", "Linz", "Weg", "1",
+		{"AT009999", testCommunityId, "4020", "Linz", "Weg", "1",
 			"AT0099990000000000000000000000001", "CONSUMPTION", "Alice", "Alpha", "privat",
 			"15.6.2023", "alice@example.org", "001", "ACTIVE",
 			serial20240101, "50"},
-		{"AT009999", "", "4020", "Linz", "Weg", "2",
+		{"AT009999", testCommunityId, "4020", "Linz", "Weg", "2",
 			"AT0099990000000000000000000000002", "CONSUMPTION", "Bob", "Beta", "privat",
 			serial20240101, "bob@example.org", "002", "ACTIVE",
 			"1.6.2022", ""},
-		{"AT009999", "", "4020", "Linz", "Weg", "3",
+		{"AT009999", testCommunityId, "4020", "Linz", "Weg", "3",
 			"AT0099990000000000000000000000003", "CONSUMPTION", "Carl", "Gamma", "privat",
 			"", "carl@example.org", "003", "ACTIVE",
 			"", ""},
@@ -107,7 +109,7 @@ func Test_transformExcelData_memberAndRegisteredSince(t *testing.T) {
 // numbers, "%"-suffixed text and percent-formatted cells (raw fraction).
 func Test_transformExcelData_partFact(t *testing.T) {
 	row := func(nr int, name string, partFact interface{}) []interface{} {
-		return []interface{}{"AT009999", "", "4020", "Linz", "Weg", "1",
+		return []interface{}{"AT009999", testCommunityId, "4020", "Linz", "Weg", "1",
 			"AT009999000000000000000000000000" + string(rune('0'+nr)), "CONSUMPTION", name, "Tester", "privat",
 			"", name + "@example.org", "00" + string(rune('0'+nr)), "ACTIVE",
 			"", partFact}
@@ -135,14 +137,14 @@ func Test_transformExcelData_partFact(t *testing.T) {
 // space in the operator column must no longer discard the row.
 func Test_transformExcelData_skipReporting(t *testing.T) {
 	f := buildImportSheet(t, [][]interface{}{
-		{"at009999", "", "4020", "Linz", "Weg", "1",
+		{"at009999", testCommunityId, "4020", "Linz", "Weg", "1",
 			"AT0099990000000000000000000000701", "CONSUMPTION", "Lower", "Case", "privat",
 			"", "", "010", "ACTIVE", "", ""},
 		{"", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""},
-		{"AT009999 ", "", "4020", "Linz", "Weg", "1",
+		{"AT009999 ", testCommunityId, "4020", "Linz", "Weg", "1",
 			"AT0099990000000000000000000000702", "CONSUMPTION", "Trail", "Space", "privat",
 			"", "", "011", "ACTIVE", "", ""},
-		{"AT009999", "", "4020", "Linz", "Weg", "1",
+		{"AT009999", testCommunityId, "4020", "Linz", "Weg", "1",
 			"AT0099990000000000000000000000703", "CONSUMPTION", "", "Einwortname", "privat",
 			"", "", "012", "ACTIVE", "", ""},
 	})
@@ -166,7 +168,7 @@ func Test_transformExcelData_skipReporting(t *testing.T) {
 // not split members; known limitation: real namesakes merge as well.
 func Test_transformExcelData_multiRowMemberMerge(t *testing.T) {
 	doe := func(nr, zp string) []interface{} {
-		return []interface{}{"AT009999", "", "4020", "Linz", "Weg", "1",
+		return []interface{}{"AT009999", testCommunityId, "4020", "Linz", "Weg", "1",
 			zp, "CONSUMPTION", "John", "Doe", "privat", "", "", nr, "ACTIVE", "", ""}
 	}
 	f := buildImportSheet(t, [][]interface{}{
@@ -206,7 +208,7 @@ func TestImportMasterdataFromExcel_continueOnError(t *testing.T) {
 		require.NoError(t, db.ImportMasterdataFromExcel(context.Background(), buf, "test.xlsx", "EEG Stammdaten", tenant))
 	}
 	dataRow := func(name1, name2, nr, zp string) []interface{} {
-		return []interface{}{"AT009999", "", "4020", "Linz", "Weg", "1",
+		return []interface{}{"AT009999", testCommunityId, "4020", "Linz", "Weg", "1",
 			zp, "CONSUMPTION", name1, name2, "privat", "", "", nr, "ACTIVE", "", ""}
 	}
 	byName := func(ps []*model.EegParticipant, lastname string) []*model.EegParticipant {
@@ -277,7 +279,7 @@ func TestImportMasterdataFromExcel_continueOnError(t *testing.T) {
 // producer as consumer; an empty direction keeps the CONSUMPTION default.
 func Test_transformExcelData_statusAndDirection(t *testing.T) {
 	rowWith := func(name, direction, status, zp string) []interface{} {
-		return []interface{}{"AT009999", "", "4020", "Linz", "Weg", "1",
+		return []interface{}{"AT009999", testCommunityId, "4020", "Linz", "Weg", "1",
 			zp, direction, name, "Tester", "privat", "", "", "", status, "", ""}
 	}
 	f := buildImportSheet(t, [][]interface{}{
@@ -316,7 +318,7 @@ func Test_transformExcelData_shippedTemplate(t *testing.T) {
 	rows, err := f.Rows("EEG Stammdaten")
 	require.NoError(t, err)
 	importLog := &model.Log{Operation: "Excel Master Data Import", Messages: []*model.LogMessage{}}
-	participants := transformExcelData(rows, func(id string) string { return id }, false, importLog)
+	participants := transformExcelData(rows, func(id string) string { return id }, false, "AT00300000000RC101519000000912345", importLog)
 
 	assert.Empty(t, importLog.Messages)
 	require.Len(t, participants, 1)
@@ -330,4 +332,35 @@ func Test_transformExcelData_shippedTemplate(t *testing.T) {
 	assert.Equal(t, civil.DateFor(2024, time.January, 1), m.RegisteredSince)
 	assert.Equal(t, 100, m.PartFact)
 	assert.Equal(t, model.ACTIVE, m.ProcessState) // Beispielzeile: ACTIVATED
+}
+
+// "Gemeinschafts-ID" is required and validated against the target community:
+// mismatching rows are rejected (one message per distinct wrong id), empty
+// cells are rejected too, comparison is case-insensitive.
+func Test_transformExcelData_communityId(t *testing.T) {
+	rowWith := func(communityId, name, zp string) []interface{} {
+		return []interface{}{"AT009999", communityId, "4020", "Linz", "Weg", "1",
+			zp, "CONSUMPTION", name, "Tester", "privat", "", "", "", "ACTIVE", "", ""}
+	}
+	f := buildImportSheet(t, [][]interface{}{
+		rowWith(testCommunityId, "Richtig", "AT0099990000000000000000000000731"),
+		rowWith("at00999900000tc000009000000000001", "Klein", "AT0099990000000000000000000000732"),
+		rowWith("AT00000000000TC999999000000000009", "Falsch", "AT0099990000000000000000000000733"),
+		rowWith("AT00000000000TC999999000000000009", "AuchFalsch", "AT0099990000000000000000000000734"),
+		rowWith("", "Leer", "AT0099990000000000000000000000735"),
+	})
+
+	participants, importLog := transformSheet(t, f, false)
+
+	// korrekt + case-insensitiv werden importiert; falsch/leer nicht
+	require.Len(t, participants, 2)
+	assert.Equal(t, "Richtig", participants[0].FirstName)
+	assert.Equal(t, "Klein", participants[1].FirstName)
+
+	// eine Meldung je falscher ID (dedupliziert) + eine für die leere Zelle
+	require.Len(t, importLog.Messages, 2)
+	assert.Equal(t, "E_COMMUNITY_1000", importLog.Messages[0].MessageCode)
+	assert.Equal(t, "AT00000000000TC999999000000000009", importLog.Messages[0].Identifier)
+	assert.Equal(t, "E_COMMUNITY_1000", importLog.Messages[1].MessageCode)
+	assert.Equal(t, "", importLog.Messages[1].Identifier)
 }
