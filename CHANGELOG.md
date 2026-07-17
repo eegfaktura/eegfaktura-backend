@@ -9,6 +9,18 @@ this changelog highlights the changes relevant for overview and operations.
 ## [Unreleased]
 
 ### Changed
+- Excel master-data import: the "Gemeinschafts-ID" column (marked required in the template)
+  is now actually enforced. Every data row must carry the community id of the EEG the file
+  is uploaded into (case-insensitive); rows with a different id — the classic "wrong file /
+  wrong community selected" mistake — and rows with an **empty** cell are rejected and
+  reported in the import notification (one message per distinct wrong id). Previously the
+  column was ignored entirely, so a file for another community imported without any warning.
+  **Note for existing files:** templates that left the column empty must fill it in once.
+  Test fixture alignment: the test-DB EEG `TE100200` now carries the same community id as
+  the fixture workbook and the env-billing seed (`AT00999900000TC100200000000000002` —
+  the SQL fixture was the lone outlier).
+
+### Changed
 - Excel master-data import hardening (follow-up to the field fixes):
   - "Zählpunktstatus" now tolerates case and surrounding spaces (` active ` no longer
     rejects the row).

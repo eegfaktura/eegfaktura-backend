@@ -33,7 +33,7 @@ func Test_transformExcelData(t *testing.T) {
 	require.NoError(t, err)
 
 	importLog := &model.Log{Operation: "Excel Master Data Import", Messages: []*model.LogMessage{}}
-	participants := transformExcelData(rows, func(id string) string { return id }, false, importLog)
+	participants := transformExcelData(rows, func(id string) string { return id }, false, "AT00999900000TC100200000000000002", importLog)
 
 	findParticipant := func(n string, p []*model.EegParticipant) *model.EegParticipant {
 		for i := range p {

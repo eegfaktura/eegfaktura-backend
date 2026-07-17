@@ -69,7 +69,7 @@ func (db *sqlDatabase) ImportMasterdataFromExcel(ctx context.Context, r io.Reade
 	}
 
 	importLog := &model.Log{Operation: "Excel Master Data Import", Messages: []*model.LogMessage{}}
-	participants := transformExcelData(rows, gridOperatorName, eeg.Online, importLog)
+	participants := transformExcelData(rows, gridOperatorName, eeg.Online, eeg.CommunityId, importLog)
 	log.Debugf("Rows: %+v", rows)
 	log.Debugf("LEN _ Import participants: %v", len(participants))
 
@@ -562,10 +562,13 @@ func importEmail(raw, firstname, lastname string, importLog *model.Log) null.Str
 	return null.StringFrom(normalized)
 }
 
-func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) string, online bool, importLog *model.Log) []*model.EegParticipant {
+func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) string, online bool, communityId string, importLog *model.Log) []*model.EegParticipant {
 	colMap := map[string]int{}
 	participants := []*model.EegParticipant{}
 	defaultPartFact := "100"
+	// je falscher (bzw. fehlender) Gemeinschafts-ID nur EINE Meldung —
+	// sonst N Meldungen bei komplett falscher Datei
+	rejectedCommunityIds := map[string]bool{}
 
 	businessRole := func(cols []string, values map[string]int) string {
 		val := getColumValue(cols, colMap, "BusinessRole", "BusinessRole", nil)
@@ -668,6 +671,29 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 				switch {
 				case netOperatorMatch.MatchString(strings.TrimSpace(cols[0])):
 					netOperatorId := strings.TrimSpace(cols[0])
+
+					// "Gemeinschafts-ID" ist Pflicht und muss zur Ziel-EEG passen — schützt
+					// davor, die Datei einer anderen EEG (oder im falschen Tenant
+					// eingeloggt) kommentarlos zu importieren.
+					rowCommunityId := strings.TrimSpace(getColumValue(cols, colMap, "Gemeinschafts-ID", "Community Id", nil))
+					if communityId != "" && !strings.EqualFold(rowCommunityId, communityId) {
+						if !rejectedCommunityIds[rowCommunityId] {
+							rejectedCommunityIds[rowCommunityId] = true
+							msg := fmt.Sprintf("Rows skipped: 'Gemeinschafts-ID' %s does not match this community (%s) — wrong file or wrong community selected?", rowCommunityId, communityId)
+							if rowCommunityId == "" {
+								msg = fmt.Sprintf("Rows skipped: 'Gemeinschafts-ID' is empty — the column is required and must match this community (%s)", communityId)
+							}
+							importLog.Messages = append(importLog.Messages, model.NewLogMessage(
+								"ERROR",
+								rowCommunityId,
+								"E_COMMUNITY_1000",
+								msg,
+							))
+							log.Warnf("Import rows skipped: community id %q does not match target %q", rowCommunityId, communityId)
+						}
+						continue
+					}
+
 					var firstname string
 					var lastname string
 
