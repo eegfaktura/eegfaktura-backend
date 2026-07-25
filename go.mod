@@ -26,7 +26,7 @@ require (
 	github.com/testcontainers/testcontainers-go v0.42.0
 	github.com/vektah/gqlparser/v2 v2.5.33
 	github.com/xuri/excelize/v2 v2.10.1
-	google.golang.org/grpc v1.81.0
+	google.golang.org/grpc v1.82.1
 	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.6.2
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/guregu/null.v4 v4.0.0
