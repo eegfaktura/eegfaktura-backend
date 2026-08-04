@@ -319,6 +319,38 @@ func (m *MessageBroker) sendMessage(msg model.EbmsMessage) {
 	token.Wait()
 }
 
+// PublishRaw veroeffentlicht ein vorbereitetes Payload-Byte-Slice auf einem
+// beliebigen Topic. Wird genutzt um CR_MSG-Energy-Inhalte vom Backend an
+// das energystore-v2-Subscription-Topic (`eda/response/energy/<tenant>`)
+// weiterzureichen, sodass die ConsumptionRecord-Werte tatsaechlich in der
+// DB landen — der dedizierte EBMS-Path hat dafuer kein eigenes Hook.
+func (m *MessageBroker) PublishRaw(topic string, payload []byte) {
+	if m.cl == nil {
+		log.Warn("Broker not connected!")
+		return
+	}
+	token := m.cl.Publish(topic, 1, false, payload)
+	go func() {
+		<-token.Done()
+		if token.Error() != nil {
+			log.WithField("topic", topic).Errorf("MQTT ERROR PUBLISHING: %s", token.Error())
+		}
+	}()
+	token.Wait()
+}
+
+// PublishRaw is the package-level entry point that delegates to the
+// singleton broker. Returns silently if the broker has not been
+// initialised (test/unit paths).
+func PublishRaw(topic string, payload []byte) {
+	if instance == nil {
+		return
+	}
+	if mb, ok := instance.(*MessageBroker); ok {
+		mb.PublishRaw(topic, payload)
+	}
+}
+
 func (m *MessageBroker) SendMessage(msg model.EbmsMessage) {
 
 	version := viper.GetString(fmt.Sprintf("eda-process-versions.%s", msg.MessageCode))
