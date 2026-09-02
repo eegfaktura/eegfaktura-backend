@@ -8,6 +8,13 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Security
+- `github.com/xuri/excelize/v2` 2.10.1 -> 2.11.0, closing CVE-2026-54063 (CVSS 7.5). The
+  library parses the master-data spreadsheets users upload, so the vulnerable code is on a
+  path reachable with attacker-supplied input — unlike the x/crypto advisories, this one is
+  worth taking seriously. Resolution also moved `x/crypto` 0.52.0 -> 0.53.0 and `x/net`
+  0.54.0 -> 0.56.0 plus the usual indirects.
+
 ### Changed
 - Excel master-data import: the "Gemeinschafts-ID" column (marked required in the template)
   is now actually enforced. Every data row must carry the community id of the EEG the file
