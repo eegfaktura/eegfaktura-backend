@@ -8,6 +8,21 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Fixed
+- Two database connections were leaked on every `archiveTariff` call: both lookup queries
+  discarded their `*sql.Rows` without closing them, and Go sets no finalizer on `Rows`, so
+  those connections never returned to the pool. `getGridOperators` leaked the same way on its
+  scan-error path and ignored `rows.Err()`. Both are admin-triggered and rare, so they do not
+  by themselves explain the production pool exhaustions of 2026-07-19 and 2026-08-11 — see #45.
+
+### Added
+- The connection pool counters (`open`, `inUse`, `idle`, `maxOpen`, `waitCount`,
+  `waitDuration`) are now logged once a minute, and at `WARN` once `inUse` reaches 80% of
+  `maxOpen`. This is diagnostic groundwork for #45: it distinguishes a leaking pool
+  (`inUse` climbing monotonically and never falling back) from a merely saturated one
+  (`waitCount` growing while `inUse` fluctuates) — a question two production incidents left
+  open. Interval configurable via `database.statsLogInterval`; a negative value disables it.
+
 ## [1.1.0] – 2026-09-07
 
 ### Security
