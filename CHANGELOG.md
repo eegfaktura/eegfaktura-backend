@@ -8,6 +8,13 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Security
+- `google.golang.org/grpc` 1.81.0 -> 1.83.1, closing CVE-2026-84304 (HIGH): heap memory
+  exhaustion through HTTP/2 DATA frame fragmentation. 1.82.1 — the version Dependabot
+  originally proposed — only closes the earlier GHSA-hrxh-6v49-42gf, which is why the bump
+  went straight to 1.83.1. The gRPC server is cluster-internal rather than exposed at the
+  ingress, which limits who can reach it, but does not remove the exposure. (#41)
+
 ### Fixed
 - Two database connections were leaked on every `archiveTariff` call: both lookup queries
   discarded their `*sql.Rows` without closing them, and Go sets no finalizer on `Rows`, so
