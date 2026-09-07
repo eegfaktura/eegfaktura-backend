@@ -8,6 +8,7 @@ database:
   maxOpenConns: 20
   maxIdleConns: 25
   connMaxLifetime: "5m"
+  statsLogInterval: "1m"
 
 mqtt:
   host: "tcp://localhost:1883"
