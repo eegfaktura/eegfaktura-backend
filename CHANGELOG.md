@@ -21,6 +21,17 @@ this changelog highlights the changes relevant for overview and operations.
   those connections never returned to the pool. `getGridOperators` leaked the same way on its
   scan-error path and ignored `rows.Err()`. Both are admin-triggered and rare, so they do not
   by themselves explain the production pool exhaustions of 2026-07-19 and 2026-08-11 — see #45.
+- A participant created through the API without a `residentAddress` block no longer produces an
+  address row with an empty `type`. `base.address` keeps both addresses of a member in one table
+  and tells them apart by that column, so a row with an empty type is invisible to every read
+  path: the member list of the *whole tenant* then fails with `converting NULL to string is
+  unsupported` on `residentAddress.type`, and the address can neither be displayed nor repaired
+  through the UI — the update path matches on `type = 'RESIDENCE'` and silently affects no rows.
+  The column defaults to `'RESIDENCE'`, but the default never applied because the insert always
+  writes the field. The server now stamps the discriminator itself instead of trusting the
+  caller; it is not user data. Observed in production on 2026-09-08 and 2026-09-11 in two
+  tenants. Address rows already broken need a separate data repair — this change only stops new
+  ones from being created.
 
 ### Added
 - The connection pool counters (`open`, `inUse`, `idle`, `maxOpen`, `waitCount`,
