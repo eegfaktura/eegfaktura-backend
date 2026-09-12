@@ -92,7 +92,7 @@ func TestEnforceAddressTypes(t *testing.T) {
 			billingBefore: model.BILLING,
 		},
 		{
-			name: "beide Bloecke ohne type",
+			name: "beide Blöcke ohne type",
 			json: `{"firstname":"Anna","lastname":"Berger","billingAddress":{"street":"Hauptstrasse"},"residentAddress":{"street":"Hauptstrasse"}}`,
 		},
 		{
@@ -143,8 +143,8 @@ func TestRegisterParticipantStampsResidenceType(t *testing.T) {
 	mockDb.Mock.ExpectQuery("INSERT (.+)").WillReturnRows(sqlmock.NewRows([]string{"id"}).FromCSVString("1"))
 	mockDb.Mock.ExpectExec(`INSERT INTO "base"\."contactdetail"`).WillReturnResult(sqlmock.NewResult(1, 1))
 	mockDb.Mock.ExpectExec(`INSERT INTO "base"\."bankaccount"`).WillReturnResult(sqlmock.NewResult(1, 1))
-	// without the fix the second tuple carries an empty type and this fails
-	mockDb.Mock.ExpectExec(`INSERT INTO "base"\."address" .*'RESIDENCE'`).WillReturnResult(sqlmock.NewResult(1, 1))
+	// both tuples in order: without the fix the second one carries an empty type
+	mockDb.Mock.ExpectExec(`INSERT INTO "base"\."address" .*'BILLING'.*'RESIDENCE'`).WillReturnResult(sqlmock.NewResult(1, 1))
 	mockDb.Mock.ExpectCommit()
 
 	db, err := GetDB(context.Background())

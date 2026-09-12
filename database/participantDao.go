@@ -271,13 +271,11 @@ func enforceContactEmail(participant *model.EegParticipant) error {
 }
 
 // enforceAddressTypes stamps the row discriminator server-side. base.address
-// keeps both addresses of a member in one table and tells them apart only by
-// `type`; every read path joins on type = 'RESIDENCE' / 'BILLING'. The column
-// defaults to 'RESIDENCE', but the default never applies because toRecord
-// always writes the field — a request without a residentAddress block therefore
-// inserted a row with an empty type, which no join finds and no update repairs.
-// The discriminator is not user data, so the server sets it instead of
-// trusting the caller.
+// keeps both addresses of a member in one table and every read path joins on
+// type = 'RESIDENCE' / 'BILLING'. The column default never applies because
+// toRecord always writes the field, so a request without a residentAddress
+// block inserted a row with an empty type: invisible to every join, and the
+// update path matched nothing either. The discriminator is not user data.
 func enforceAddressTypes(participant *model.EegParticipant) {
 	participant.BillingAddress.Type = model.BILLING
 	participant.ResidentAddress.Type = model.RESIDENCE
