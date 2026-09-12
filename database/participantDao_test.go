@@ -75,6 +75,85 @@ func TestRegisterParticipant(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// A caller that omits or mislabels an address block must not be able to create
+// an address row the read paths cannot find: they join on type = 'RESIDENCE' /
+// 'BILLING', so a row with an empty type is invisible and unrepairable.
+func TestEnforceAddressTypes(t *testing.T) {
+	var tests = []struct {
+		name string
+		json string
+		// what the caller supplied — against main these values reach the INSERT
+		residentBefore model.AddressType
+		billingBefore  model.AddressType
+	}{
+		{
+			name:          "residentAddress fehlt komplett",
+			json:          `{"firstname":"Anna","lastname":"Berger","billingAddress":{"street":"Hauptstrasse","streetNumber":"1","zip":"1010","city":"Wien","type":"BILLING"}}`,
+			billingBefore: model.BILLING,
+		},
+		{
+			name: "beide Blöcke ohne type",
+			json: `{"firstname":"Anna","lastname":"Berger","billingAddress":{"street":"Hauptstrasse"},"residentAddress":{"street":"Hauptstrasse"}}`,
+		},
+		{
+			name:           "Client vertauscht die Typen",
+			json:           `{"firstname":"Anna","lastname":"Berger","billingAddress":{"type":"RESIDENCE"},"residentAddress":{"type":"BILLING"}}`,
+			residentBefore: model.BILLING,
+			billingBefore:  model.RESIDENCE,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var p model.EegParticipant
+			require.NoError(t, json.NewDecoder(strings.NewReader(tt.json)).Decode(&p))
+
+			require.Equal(t, tt.residentBefore, p.ResidentAddress.Type)
+			require.Equal(t, tt.billingBefore, p.BillingAddress.Type)
+
+			enforceAddressTypes(&p)
+
+			assert.Equal(t, model.RESIDENCE, p.ResidentAddress.Type)
+			assert.Equal(t, model.BILLING, p.BillingAddress.Type)
+
+			// the row that actually reaches base.address must carry the type
+			extra := map[string]interface{}{"participant_id": "p1"}
+			assert.Equal(t, model.RESIDENCE, toRecord(p.ResidentAddress, extra)["type"])
+			assert.Equal(t, model.BILLING, toRecord(p.BillingAddress, extra)["type"])
+		})
+	}
+}
+
+// The stamping has to be wired into the register path, not just available as a
+// helper: this is the payload shape that produced the untyped rows in
+// production — a member created through the API with no residentAddress block.
+// With an empty meter list saveMeteringPoint returns before issuing SQL, so the
+// statement order is exactly participant, contactdetail, bankaccount, address.
+func TestRegisterParticipantStampsResidenceType(t *testing.T) {
+	mockDb, err := GetMockDb()
+	require.NoError(t, err)
+
+	participantJson := `{"businessRole":"EEG_PRIVATE","firstname":"Anna","lastname":"Berger","contact":{"email":"anna.berger@example.at"},"accountInfo":{},"optionals":{},"status":"NEW","role":"EEG_USER","billingAddress":{"street":"Hauptstrasse","streetNumber":"1","zip":"1010","city":"Wien","type":"BILLING"},"meters":[]}`
+
+	var p model.EegParticipant
+	require.NoError(t, json.NewDecoder(strings.NewReader(participantJson)).Decode(&p))
+	require.Empty(t, p.ResidentAddress.Type, "fixture must not carry a resident type")
+
+	mockDb.Mock.ExpectBegin()
+	mockDb.Mock.ExpectQuery("INSERT (.+)").WillReturnRows(sqlmock.NewRows([]string{"id"}).FromCSVString("1"))
+	mockDb.Mock.ExpectExec(`INSERT INTO "base"\."contactdetail"`).WillReturnResult(sqlmock.NewResult(1, 1))
+	mockDb.Mock.ExpectExec(`INSERT INTO "base"\."bankaccount"`).WillReturnResult(sqlmock.NewResult(1, 1))
+	// both tuples in order: without the fix the second one carries an empty type
+	mockDb.Mock.ExpectExec(`INSERT INTO "base"\."address" .*'BILLING'.*'RESIDENCE'`).WillReturnResult(sqlmock.NewResult(1, 1))
+	mockDb.Mock.ExpectCommit()
+
+	db, err := GetDB(context.Background())
+	require.NoError(t, err)
+
+	require.NoError(t, db.RegisterParticipant(context.Background(), "RC200200", "annab", &p))
+	assert.NoError(t, mockDb.Mock.ExpectationsWereMet())
+}
+
 func TestGetParticipant(t *testing.T) {
 	mockDb, err := GetMockDb()
 	require.NoError(t, err)

@@ -270,6 +270,17 @@ func enforceContactEmail(participant *model.EegParticipant) error {
 	return nil
 }
 
+// enforceAddressTypes stamps the row discriminator server-side. base.address
+// keeps both addresses of a member in one table and every read path joins on
+// type = 'RESIDENCE' / 'BILLING'. The column default never applies because
+// toRecord always writes the field, so a request without a residentAddress
+// block inserted a row with an empty type: invisible to every join, and the
+// update path matched nothing either. The discriminator is not user data.
+func enforceAddressTypes(participant *model.EegParticipant) {
+	participant.BillingAddress.Type = model.BILLING
+	participant.ResidentAddress.Type = model.RESIDENCE
+}
+
 func updateParticipant(ctx context.Context, db *sqlx.DB, tenant, user string, participant *model.EegParticipant) error {
 
 	if err := enforceContactEmail(participant); err != nil {
@@ -424,6 +435,7 @@ func saveParticipant(ctx context.Context, tx *sqlx.Tx, tenant, username string, 
 	if err := enforceContactEmail(participant); err != nil {
 		return err
 	}
+	enforceAddressTypes(participant)
 
 	// "Mitglied seit" aus Import/Registrierung übernehmen; nur ohne Wert auf heute setzen.
 	if !participant.ParticipantSince.Valid {
