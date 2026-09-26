@@ -23,6 +23,10 @@ this changelog highlights the changes relevant for overview and operations.
   by themselves explain the production pool exhaustions of 2026-07-19 and 2026-08-11 — see #45.
 
 ### Added
+- CI builds `env/**` branches and deploys the resulting image into the matching feature
+  environment (ADR-0008): a push to `env/<name>` pins this service in namespace `env-<name>`
+  to that branch's `sha-…` image. Previously only the default branch, tags and `preview/**`
+  produced an image at all. The environment itself is still provisioned manually.
 - The connection pool counters (`open`, `inUse`, `idle`, `maxOpen`, `waitCount`,
   `waitDuration`) are now logged once a minute, and at `WARN` once `inUse` reaches 80% of
   `maxOpen`. This is diagnostic groundwork for #45: it distinguishes a leaking pool
