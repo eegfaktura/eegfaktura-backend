@@ -196,6 +196,7 @@ func StartServer(db database.Database) {
 			"Sec-Fetch-Site",
 			"Cache-Control",
 			"tenant",
+			"X-Client",
 			"X-tenant"})
 	//allowedHeaders := handlers.AllowedHeaders(
 	//	[]string{"authorization", "content-type"})
