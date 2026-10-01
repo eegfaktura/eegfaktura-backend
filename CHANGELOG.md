@@ -9,6 +9,19 @@ this changelog highlights the changes relevant for overview and operations.
 ## [Unreleased]
 
 ### Security
+- **Five single-participant operations ignored the tenant.** `GET`/`PUT`/`DELETE` on a
+  participant, the partial update and the confirm step all resolved the row by `id` alone, so
+  an authenticated user who knew a participant ID of a *different* community could read,
+  change or delete that record — including bank details, contact data and addresses. The
+  middleware did validate the `tenant` header against the token, but the verified value was
+  only ever written to the log, never applied to the query. IDs offer no protection either:
+  they come from `uuid.NewUUID()`, which is time-based rather than random.
+  All five now go through `assertParticipantTenant` first. Reported by an external
+  contributor who reviewed the code and reported privately rather than opening an issue.
+  A staged rollout is possible: `PARTICIPANT_TENANT_ENFORCE=false` logs cross-tenant access
+  without rejecting it, so an environment can be observed before the check is switched on.
+  The full `PUT /participant/{id}` and the metering-point updates were already scoped
+  correctly and served as the template.
 - `google.golang.org/grpc` 1.81.0 -> 1.83.1, closing CVE-2026-84304 (HIGH): heap memory
   exhaustion through HTTP/2 DATA frame fragmentation. 1.82.1 — the version Dependabot
   originally proposed — only closes the earlier GHSA-hrxh-6v49-42gf, which is why the bump

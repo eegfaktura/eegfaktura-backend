@@ -274,7 +274,7 @@ func Test_ImportMeteringPoints(t *testing.T) {
 			err = db.ImportMeteringPoints(context.Background(), tt.args.tenant, "test", tt.args.participantId, tt.args.points)
 			require.NoError(t, err)
 
-			pUnderTest, err := db.QueryParticipant(context.Background(), tt.args.participantId)
+			pUnderTest, err := db.QueryParticipant(context.Background(), tt.args.tenant, tt.args.participantId)
 			require.NoError(t, err)
 
 			tt.validate(t, pUnderTest)
@@ -607,7 +607,7 @@ func Test_MeteringPointIntegration(t *testing.T) {
 				pUnderTest := findParticipantUnderTest(p, "TestUser1")
 				require.NotNil(t, pUnderTest)
 
-				return db.ConfirmParticipant(context.Background(), "test", pUnderTest.Id.String())
+				return db.ConfirmParticipant(context.Background(), "TE000004", "test", pUnderTest.Id.String())
 			},
 			valid: func(t *testing.T) {
 				pUnderTest := getParticipantUnderTest(t, "TestUser1")
@@ -938,7 +938,7 @@ func Test_RegistrationProcess(t *testing.T) {
 	pUnderTest := findParticipantUnderTest(pp)
 	require.NotNil(t, pUnderTest)
 
-	err = db.ConfirmParticipant(context.Background(), "test", pUnderTest.Id.String())
+	err = db.ConfirmParticipant(context.Background(), "TE000004", "test", pUnderTest.Id.String())
 	require.NoError(t, err)
 
 	pp, err = db.GetParticipants(context.Background(), "TE000004")

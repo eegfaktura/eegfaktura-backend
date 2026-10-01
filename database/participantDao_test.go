@@ -536,12 +536,54 @@ func TestUpdateParticipant1(t *testing.T) {
 			err := db.UpdateParticipant(context.Background(), tt.args.tenant, tt.args.user, tt.args.participant)
 			assert.NoError(t, err)
 
-			pUnderTest, err := db.QueryParticipant(context.Background(), tt.args.participant.Id.String())
+			pUnderTest, err := db.QueryParticipant(context.Background(), tt.args.tenant, tt.args.participant.Id.String())
 			assert.NoError(t, err)
 
 			tt.wantErr(t, pUnderTest, tt.args.participant)
 		})
 	}
+}
+
+// Der Fixture-Teilnehmer ea9942da-... gehoert zu TE000001. Ein Zugriff aus einer
+// anderen Gemeinschaft muss abgewiesen werden - frueher lief er durch, weil die
+// Abfragen nur nach der ID gefiltert haben.
+func TestParticipantTenantScope(t *testing.T) {
+	const (
+		ownTenant     = "TE000001"
+		foreignTenant = "TE000004"
+		participantId = "ea9942da-03da-11ee-b82b-5a985b4b033a"
+	)
+
+	db, err := GetDB(context.Background())
+	assert.NoError(t, err)
+
+	t.Run("eigener Mandant liest", func(t *testing.T) {
+		p, err := db.GetParticipant(context.Background(), ownTenant, participantId)
+		assert.NoError(t, err)
+		assert.NotNil(t, p)
+	})
+
+	t.Run("fremder Mandant wird abgewiesen", func(t *testing.T) {
+		_, err := db.GetParticipant(context.Background(), foreignTenant, participantId)
+		assert.Error(t, err)
+
+		_, err = db.QueryParticipant(context.Background(), foreignTenant, participantId)
+		assert.Error(t, err)
+
+		err = db.UpdateParticipantPartial(context.Background(), foreignTenant, participantId, "contact.phone", "0000")
+		assert.Error(t, err)
+
+		err = db.ConfirmParticipant(context.Background(), foreignTenant, "test", participantId)
+		assert.Error(t, err)
+
+		err = db.DeleteParticipant(context.Background(), foreignTenant, participantId)
+		assert.Error(t, err)
+	})
+
+	t.Run("leerer Mandant wird abgewiesen", func(t *testing.T) {
+		_, err := db.GetParticipant(context.Background(), "", participantId)
+		assert.Error(t, err)
+	})
 }
 
 func TestUpdateParticipantPartial(t *testing.T) {
@@ -616,10 +658,10 @@ func TestUpdateParticipantPartial(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 
-			err = db.UpdateParticipantPartial(context.Background(), tt.participantId, tt.param, tt.value)
+			err = db.UpdateParticipantPartial(context.Background(), "TE000001", tt.participantId, tt.param, tt.value)
 			assert.NoError(t, err)
 
-			p, err := db.GetParticipant(context.Background(), tt.participantId)
+			p, err := db.GetParticipant(context.Background(), "TE000001", tt.participantId)
 			assert.NoError(t, err)
 
 			tt.test(t, p)
