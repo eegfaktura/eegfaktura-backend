@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -17,6 +18,10 @@ import (
 	"github.com/jjeffery/civil"
 	"github.com/sirupsen/logrus"
 )
+
+// publishEnergyForEnergystore ist als Variable definiert, damit Tests die
+// MQTT-Bruecke ohne laufenden Broker beobachten koennen.
+var publishEnergyForEnergystore = mqttclient.PublishRaw
 
 const (
 	Stornierung_nicht_moeglich                                        = 37
@@ -192,8 +197,74 @@ func protocolCrMsgHandler(ctx context.Context, msg model.SubscribeMessage) {
 			historyValue := map[string]interface{}{"meter": msg.Payload.Meter.MeteringPoint, "from": energy.Start, "to": energy.End}
 			_ = db.SaveHistory(eeg.Id, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", "CR_MSG", historyValue)
 		}
+
+		// Bridge: AT003100 (und vermutlich andere Netzbetreiber) liefert die
+		// ConsumptionRecord-Quartiers-Werte direkt im CR_MSG-Payload statt
+		// als separate Mail auf dem Energy-Topic. Ohne diese Weiterleitung
+		// landen die Werte nur als from/to-Range im processhistory und
+		// gehen fuer die Auswertung verloren. Wir transformieren auf die
+		// v1/MqttEnergyResponse-Wire-Shape die eegfaktura-energystore-v2
+		// ohnehin schon konsumiert und veroeffentlichen einen Datensatz
+		// pro Energy-Eintrag auf `eda/response/energy/<tenant-lowercase>`.
+		forwardEnergyToEnergystore(msg)
 	}
 	return
+}
+
+// forwardEnergyToEnergystore wandelt jeden Eintrag in msg.Payload.Energy
+// in das von energystore-v2 erwartete Format (MqttEnergyResponse) um und
+// publisht das jeweils auf `eda/response/energy/<tenant-lowercase>`. Bei
+// Marshal-/Publish-Fehlern wird geloggt und fortgefahren — der DLQ-Pfad
+// in energystore-v2 (mqtt_dlq) faengt schlechte Payloads ab und der
+// History-Eintrag in base.processhistory bleibt unangetastet.
+func forwardEnergyToEnergystore(msg model.SubscribeMessage) {
+	if msg.Payload.Meter == nil {
+		return
+	}
+	topic := fmt.Sprintf("eda/response/energy/%s", strings.ToLower(msg.Tenant))
+	meterId := msg.Payload.Meter.MeteringPoint
+	direction := string(msg.Payload.Meter.Direction)
+
+	for _, e := range msg.Payload.Energy {
+		wire := energyWire{}
+		wire.Message.Meter.MeteringPoint = meterId
+		wire.Message.Meter.Direction = direction
+		wire.Message.Energy.Start = e.Start
+		wire.Message.Energy.End = e.End
+		wire.Message.Energy.Data = e.Data
+		wire.Message.EcID = msg.Payload.EcId
+
+		payload, err := json.Marshal(wire)
+		if err != nil {
+			logrus.WithField("tenant", msg.Tenant).WithField("meter", meterId).
+				WithError(err).Error("CR_MSG -> energy bridge: marshal failed")
+			continue
+		}
+		publishEnergyForEnergystore(topic, payload)
+		logrus.WithField("tenant", msg.Tenant).WithField("meter", meterId).
+			WithField("start", e.Start).WithField("end", e.End).
+			WithField("series", len(e.Data)).
+			Info("CR_MSG -> energy bridge: published to energystore-v2 topic")
+	}
+}
+
+// energyWire matched eegfaktura-energystore-v2's MqttEnergyResponse /
+// MqttEnergyMessage struct. Wir halten die Definition lokal, damit dieses
+// Modul keine cross-repo Go-Dependency braucht — Wire-Shape ist seit v1
+// (BadgerDB) stabil.
+type energyWire struct {
+	Message struct {
+		Meter struct {
+			MeteringPoint string `json:"meteringPoint"`
+			Direction     string `json:"direction,omitempty"`
+		} `json:"meter"`
+		Energy struct {
+			Start int64              `json:"start"`
+			End   int64              `json:"end"`
+			Data  []model.EnergyData `json:"data"`
+		} `json:"energy"`
+		EcID string `json:"ecId"`
+	} `json:"message"`
 }
 
 func protocolCrReqPtHandler(ctx context.Context, msg model.SubscribeMessage) {
