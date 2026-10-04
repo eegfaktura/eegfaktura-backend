@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.1.1] – 2026-10-04
+
 ### Security
 - **Five single-participant operations ignored the tenant.** `GET`/`PUT`/`DELETE` on a
   participant, the partial update and the confirm step all resolved the row by `id` alone, so
@@ -27,6 +29,8 @@ this changelog highlights the changes relevant for overview and operations.
   originally proposed — only closes the earlier GHSA-hrxh-6v49-42gf, which is why the bump
   went straight to 1.83.1. The gRPC server is cluster-internal rather than exposed at the
   ingress, which limits who can reach it, but does not remove the exposure. (#41)
+- `google.golang.org/grpc` 1.83.1 -> 1.83.2 (Dependabot #50), patch release on top of the
+  CVE-2026-84304 fix above.
 
 ### Fixed
 - Two database connections were leaked on every `archiveTariff` call: both lookup queries
