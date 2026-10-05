@@ -75,3 +75,22 @@ func TestIsAllowedParticipantUpdatePath(t *testing.T) {
 		}
 	}
 }
+
+func TestSkipUpdateJSONKeys_Eeg(t *testing.T) {
+	keys := SkipUpdateJSONKeys(Eeg{})
+	set := map[string]bool{}
+	for _, k := range keys {
+		set[k] = true
+	}
+	for _, want := range []string{"id", "rcNumber", "online", "createdAt"} {
+		if !set[want] {
+			t.Errorf("skipupdate key %q missing from %v", want, keys)
+		}
+	}
+	// updatable fields must NOT appear
+	for _, no := range []string{"name", "description", "settlementInterval"} {
+		if set[no] {
+			t.Errorf("field %q must not be in skipupdate set", no)
+		}
+	}
+}

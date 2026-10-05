@@ -138,7 +138,26 @@ func insertEeg(ctx context.Context, db *sqlx.DB, tenant string, eeg *model.Eeg) 
 	return err
 }
 
+// eegProtectedUpdateFields must never be set through the generic EEG update:
+// the identity/tenant key and rcNumber/online/createdAt (model: skipupdate),
+// plus communityId and tenant, which route incoming EDA messages and identify
+// the community. The web round-trips the whole EEG object on save, so these are
+// dropped silently rather than rejected.
+var eegProtectedUpdateFields = func() map[string]struct{} {
+	m := map[string]struct{}{"tenant": {}, "communityId": {}}
+	for _, k := range model.SkipUpdateJSONKeys(model.Eeg{}) {
+		m[k] = struct{}{}
+	}
+	return m
+}()
+
 func updateEegPartial(ctx context.Context, db *sqlx.DB, tenant string, fields map[string]interface{}) error {
+	// Drop write-protected fields so a client cannot set tenant, rcNumber,
+	// communityId etc. through this generic update (mass assignment).
+	for k := range eegProtectedUpdateFields {
+		delete(fields, k)
+	}
+
 	// eeg.Email is the recipient of the ZP list mail and the billing CC —
 	// enforce the shared address rule before persisting (normalize,
 	// reject invalid).

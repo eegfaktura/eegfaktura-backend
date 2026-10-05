@@ -299,3 +299,30 @@ func TestUpdateEegPartial1(t *testing.T) {
 		})
 	}
 }
+
+// TestUpdateEegPartialDropsProtectedFields deckt F6 ab: der generische EEG-Update
+// darf geschuetzte Felder (tenant, rcNumber, online, communityId) nicht setzen,
+// auch wenn der Client sie mitschickt (die Web schickt das ganze Objekt zurueck).
+func TestUpdateEegPartialDropsProtectedFields(t *testing.T) {
+	db, err := GetDB(context.Background())
+	require.NoError(t, err)
+
+	before, err := db.GetEegById(context.Background(), "TE000001")
+	require.NoError(t, err)
+
+	err = db.UpdateEegPartial(context.Background(), "TE000001", map[string]interface{}{
+		"description": "F6-probe",
+		"rcNumber":    "HIJACK",
+		"online":      true,
+		"communityId": "AT00000000000000000000000000HIJACK",
+	})
+	require.NoError(t, err)
+
+	after, err := db.GetEegById(context.Background(), "TE000001")
+	require.NoError(t, err)
+
+	assert.Equal(t, "F6-probe", after.Description, "normales Feld muss geaendert sein")
+	assert.Equal(t, before.RcNumber, after.RcNumber, "rcNumber darf nicht geaendert sein")
+	assert.Equal(t, before.CommunityId, after.CommunityId, "communityId darf nicht geaendert sein")
+	assert.Equal(t, before.Online, after.Online, "online darf nicht geaendert sein")
+}
