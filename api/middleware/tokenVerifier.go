@@ -245,6 +245,15 @@ func ProtectApi(handler JWTHandlerFunc) http.HandlerFunc {
 			return
 		}
 
+		// Same admin-group requirement as the JWT path (verifyRequest): these
+		// endpoints expose member data and trigger EDA messages, so a plain
+		// EEG_USER must not reach them.
+		if !claims.AccessGroups.IsAdmin() {
+			logrus.WithField("tenant", tenant).Warn("unauthorized access - request has no admin access group")
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+
 		handler(w, r, &claims, strings.ToUpper(tenant))
 	}
 }

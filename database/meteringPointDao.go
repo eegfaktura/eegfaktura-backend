@@ -376,6 +376,14 @@ func calcActivePtr(status *model.StatusType) *model.ProcessStatus {
 }
 
 func registerMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, participantId string, point *model.MeteringPoint) error {
+	// Assert the participant belongs to the caller's tenant before inserting the
+	// metering point — the row was previously written before the participant was
+	// ever checked, so a foreign participant id would attach the meter (and its
+	// billing) to another tenant's member.
+	if err := assertParticipantTenant(ctx, db, tenant, participantId); err != nil {
+		return err
+	}
+
 	tx, err := db.Beginx()
 	if err != nil {
 		log.WithError(err).Error("Not able to open a transaction.")
@@ -397,6 +405,14 @@ func registerMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, p
 }
 
 func moveMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, sParticipantId, dParticipantId, meterId string) error {
+	// The UPDATE below scopes the source by tenant, but the target participant
+	// comes from the path unchecked — assert it belongs to the caller's tenant,
+	// otherwise a metering point could be moved onto a foreign participant (and
+	// into that tenant's billing).
+	if err := assertParticipantTenant(ctx, db, tenant, dParticipantId); err != nil {
+		return err
+	}
+
 	tx, err := db.Beginx()
 	if err != nil {
 		log.Errorf("Not able to open a transaction. %s", err.Error())
