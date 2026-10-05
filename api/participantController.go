@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"at.ourproject/vfeeg-backend/api/middleware"
@@ -98,7 +99,17 @@ func (h *ParticipantHandler) updateParticipantPartial() middleware.JWTHandlerFun
 			return
 		}
 
-		name := p["path"].(string)
+		name, ok := p["path"].(string)
+		if !ok {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(errors.New("missing path")))
+			return
+		}
+		// Reject unknown or write-protected paths so a caller-controlled field
+		// name never reaches the SQL builder verbatim.
+		if !model.IsAllowedParticipantUpdatePath(name) {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrUpdateParticipant(errors.New("field not updatable")))
+			return
+		}
 		value := p["value"]
 
 		err = h.db.UpdateParticipantPartial(r.Context(), tenant, participantId, name, value)
