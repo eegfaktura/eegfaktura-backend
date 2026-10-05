@@ -324,6 +324,9 @@ func Test_RegisterMeteringPoint(t *testing.T) {
 				t.Fatalf("An error occurred while creating mock: %s", err)
 			}
 
+			// registerMeteringPoint checks the participant's tenant first (#59).
+			mock.ExpectQuery(`SELECT "tenant" FROM "base"."participant"`).
+				WillReturnRows(sqlmock.NewRows([]string{"tenant"}).AddRow(tt.args.tenant))
 			mock.ExpectBegin()
 			mock.ExpectExec("INSERT (.+) \"base\".\"meteringpoint\"").WillReturnResult(sqlmock.NewResult(1, 1))
 			//mock.Mock.ExpectExec("INSERT INTO \"base\".\"participant_meter_state\" (.+)").WillReturnResult(sqlmock.NewResult(1, 1))

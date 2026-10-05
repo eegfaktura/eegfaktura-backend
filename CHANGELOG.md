@@ -11,6 +11,21 @@ this changelog highlights the changes relevant for overview and operations.
 ## [1.1.2] – 2026-10-05
 
 ### Security
+- The admin gRPC participant update (`UpdateParticipantValues`) applies the same
+  rules as the REST partial update: the participant must belong to the given
+  tenant, and every key must name an updatable field; all keys are checked
+  before the first write.
+- Adding a new version of a tariff (`POST /eeg/tariff` with an existing `id`)
+  is only possible for a tariff of the caller's own tenant, and deactivating
+  the previous version is scoped to the tenant as well.
+
+### Fixed
+- `Test_RegisterMeteringPoint` expects the participant tenant query added in
+  #59.
+
+## [1.1.2] – 2026-10-05
+
+### Security
 - Partial-update endpoints (metering point, participant) now resolve the
   client-supplied field name against the target model and reject names that are
   unknown or not updatable, instead of passing them to the SQL builder verbatim.

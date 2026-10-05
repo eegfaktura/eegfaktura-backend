@@ -12,6 +12,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/guregu/null.v4"
 	"reflect"
+	"strings"
 	"time"
 )
 
@@ -177,7 +178,8 @@ func archiveTariff(db *sqlx.DB, tenant string, id string) error {
 
 func AddTariff(db *sqlx.DB, tenant, user string, tariff *model.Tariff) error {
 
-	if len(tariff.Id.String()) == 0 {
+	isNew := len(tariff.Id.String()) == 0
+	if isNew {
 		tariff.Id = uuid.NewUUID()
 	} else {
 		tariff.Version = tariff.Version + 1
@@ -206,6 +208,25 @@ func AddTariff(db *sqlx.DB, tenant, user string, tariff *model.Tariff) error {
 		}
 	}()
 	var stmt string
+
+	// A new version may only be added to a tariff of the caller's own tenant.
+	// The id comes from the client; without this check a known id of another
+	// community would add a row under that id and deactivate its tariff.
+	if !isNew {
+		var args []interface{}
+		stmt, args, err = pgDialect.From("base.tariff").Select("tenant").
+			Where(goqu.Ex{"id": tariff.Id.String()}).Limit(1).Prepared(true).ToSQL()
+		if err != nil {
+			return model.ErrUpdateTariff(err)
+		}
+		var owner string
+		if err = tx.Get(&owner, stmt, args...); err != nil || !strings.EqualFold(owner, tenant) {
+			log.WithField("tenant", tenant).Warnf("AddTariff: tariff %s does not belong to the tenant", tariff.Id.String())
+			err = errors.New("unknown tariff")
+			return model.ErrUpdateTariff(err)
+		}
+	}
+
 	stmt, _, err = goqu.Insert("base.tariff").Rows(update).ToSQL()
 	if err != nil {
 		return model.ErrUpdateTariff(err)
@@ -221,6 +242,7 @@ func AddTariff(db *sqlx.DB, tenant, user string, tariff *model.Tariff) error {
 			map[string]interface{}{"status": "INACTIVE", "inactiveSince": civil.Today(), "lastModifiedDate": civil.Today()}).Where(goqu.Ex{
 			"version": tariff.Version - 1,
 			"id":      tariff.Id.String(),
+			"tenant":  tenant,
 		}).ToSQL()
 		if err != nil {
 			log.WithField("tenant", tenant).Errorf("Update previous entry: %v", err)
