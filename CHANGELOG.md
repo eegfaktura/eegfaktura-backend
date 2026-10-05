@@ -8,7 +8,7 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
-## [1.1.2] – 2026-10-05
+## [1.1.3] – 2026-10-05
 
 ### Security
 - The admin gRPC participant update (`UpdateParticipantValues`) applies the same
