@@ -8,6 +8,13 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Security
+- The `PARTICIPANT_TENANT_ENFORCE` switch is gone: access to a participant of another
+  community is now always refused. The switch (introduced in 1.1.1 for a log-only rollout
+  phase) could turn the tenant check into logging only; every environment runs with the check
+  on. An environment that still sets `PARTICIPANT_TENANT_ENFORCE=false` is no longer affected
+  by it.
+
 ## [1.1.3] – 2026-10-05
 
 ### Security
