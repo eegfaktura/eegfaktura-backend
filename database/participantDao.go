@@ -356,6 +356,15 @@ func enforceAddressTypes(participant *model.EegParticipant) {
 
 func updateParticipant(ctx context.Context, db *sqlx.DB, tenant, user string, participant *model.EegParticipant) error {
 
+	// The child-table updates below (contactdetail, address, bankaccount) are
+	// scoped by participant_id only. Assert first that the participant belongs to
+	// the caller's tenant — otherwise a foreign id in the body would overwrite
+	// another tenant's contact, addresses and bank account. Mirrors
+	// UpdateParticipantPartial / DeleteParticipant.
+	if err := assertParticipantTenant(ctx, db, tenant, participant.Id.String()); err != nil {
+		return err
+	}
+
 	if err := enforceContactEmail(participant); err != nil {
 		return err
 	}
