@@ -106,6 +106,17 @@ func (db *sqlDatabase) UpdateParticipantPartial(ctx context.Context, tenant, par
 }
 
 func (db *sqlDatabase) UpdateParticipantValues(ctx context.Context, participantId, tenant string, values map[string]string) error {
+	// Same rules as the REST partial update: the participant must belong to the
+	// tenant, and every key must name an updatable field — it ends up as an SQL
+	// identifier. All keys are checked before the first write.
+	if err := assertParticipantTenant(ctx, db.db, tenant, participantId); err != nil {
+		return err
+	}
+	for k := range values {
+		if !model.IsAllowedParticipantUpdatePath(k) {
+			return model.ErrUpdateParticipant(fmt.Errorf("field %q cannot be updated", k))
+		}
+	}
 	var err error
 	for k, v := range values {
 		if err = updateParticipantPartial(ctx, db.db, participantId, k, v); err != nil {
