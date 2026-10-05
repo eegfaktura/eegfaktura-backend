@@ -8,6 +8,13 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Changed
+- Default `eda-process-versions`: `ANFORDERUNG_ECON` 02.30 → 02.40 and `ANFORDERUNG_ECOF`
+  02.20 → 02.30, the schema sets of EC_REQ_ONL 03.00 / EC_REQ_OFF 03.00 (EDA change of
+  2026-10-05). The XML stays `cmrequest 01p30`; only the version label changes. Requires
+  eegfaktura-eda-xp with eda-xp #27 — older eda-xp versions fall back to an outdated schema for
+  these values.
+
 ## [1.1.4] – 2026-10-05
 
 ### Security
