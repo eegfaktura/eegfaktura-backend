@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.1.4] – 2026-10-05
+
 ### Security
 - The `PARTICIPANT_TENANT_ENFORCE` switch is gone: access to a participant of another
   community is now always refused. The switch (introduced in 1.1.1 for a log-only rollout
