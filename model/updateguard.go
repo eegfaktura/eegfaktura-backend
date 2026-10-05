@@ -45,6 +45,51 @@ func AllowedUpdateColumn(model interface{}, jsonField string) (string, bool) {
 	return "", false
 }
 
+// ResolveFlatUpdateColumn resolves a client-supplied key of a flat partial
+// update to the database column of the matching struct field. Unlike
+// AllowedUpdateColumn it also descends into embedded (anonymous) structs, whose
+// fields are stored as columns of the same table, and it accepts the column
+// name as well as the JSON name — clients send both (e.g. "creditor_id").
+// Fields marked "skipupdate" or db:"-" and unknown keys yield ok=false.
+func ResolveFlatUpdateColumn(model interface{}, key string) (string, bool) {
+	t := reflect.TypeOf(model)
+	for t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct {
+		return "", false
+	}
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if f.Anonymous && f.Type.Kind() == reflect.Struct {
+			if hasTagOption(f.Tag.Get("goqu"), "skipupdate") {
+				continue
+			}
+			if col, ok := ResolveFlatUpdateColumn(reflect.New(f.Type).Elem().Interface(), key); ok {
+				return col, true
+			}
+			continue
+		}
+		jsonTag := strings.TrimSpace(strings.Split(f.Tag.Get("json"), ",")[0])
+		dbTag := strings.TrimSpace(strings.Split(f.Tag.Get("db"), ",")[0])
+		if jsonTag == "-" || dbTag == "-" {
+			continue
+		}
+		col := dbTag
+		if col == "" {
+			col = jsonTag
+		}
+		if col == "" || (key != jsonTag && key != col) {
+			continue
+		}
+		if hasTagOption(f.Tag.Get("goqu"), "skipupdate") {
+			return "", false
+		}
+		return col, true
+	}
+	return "", false
+}
+
 // participantPartialSubModels maps the first segment of a dotted participant
 // partial-update path to the struct that owns the second segment. The segments
 // mirror updateParticipantPartial in the DAO.
