@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.1.2] – 2026-10-05
+
 ### Security
 - Partial-update endpoints (metering point, participant) now resolve the
   client-supplied field name against the target model and reject names that are
@@ -23,6 +25,15 @@ this changelog highlights the changes relevant for overview and operations.
   helper `model.ResolveFlatUpdateColumn`, which also covers the embedded address,
   account, contact and website fields and accepts column names such as
   `creditor_id` that the web sends.
+- The generic EEG update drops write-protected fields (`tenant`, `rcNumber`,
+  `communityId`, `online`, `createdAt`) instead of writing them; the web sends
+  single fields, other callers may round-trip the whole object. (#58)
+- The full participant update (`PUT /participant/{id}`) checks the tenant before
+  any write, including the child tables (addresses, contact, bank data). (#57)
+- Moving a metering point and registering one on a participant check the tenant
+  of the target participant as well. (#59)
+- The `/master` API (basic auth) requires the `EEG_ADMIN` group, like the
+  token-based endpoints. (#59)
 
 ### Fixed
 - After the Ponton registration admin-backend could no longer switch a community
