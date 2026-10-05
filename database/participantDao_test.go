@@ -747,3 +747,41 @@ func TestUpdateParticipantPartial(t *testing.T) {
 		})
 	}
 }
+
+// TestUpdateParticipantRejectsForeignTenant deckt F4 ab: der volle Update-Pfad
+// darf die Kindtabellen (Kontakt, Adressen, Bankkonto) eines fremden Teilnehmers
+// nicht ueberschreiben. Frueher trug nur das Haupt-UPDATE den tenant im WHERE,
+// die Kindtabellen liefen allein ueber participant_id.
+func TestUpdateParticipantRejectsForeignTenant(t *testing.T) {
+	const (
+		ownTenant     = "TE000001"
+		foreignTenant = "TE000004"
+		participantId = "ea9942da-03da-11ee-b82b-5a985b4b033a"
+	)
+	db, err := GetDB(context.Background())
+	require.NoError(t, err)
+
+	before, err := db.GetParticipant(context.Background(), ownTenant, participantId)
+	require.NoError(t, err)
+
+	foreign := &model.EegParticipant{
+		EegParticipantBase: model.EegParticipantBase{
+			Id:        uuid.Parse(participantId),
+			FirstName: "HIJACKED",
+		},
+		Contact:         model.ContactInfo{Phone: null.StringFrom("6666"), Email: null.StringFrom("attacker@example.org")},
+		BillingAddress:  model.Address{Type: "BILLING", City: null.StringFrom("HIJACKED")},
+		ResidentAddress: model.Address{Type: "RESIDENCE"},
+		BankAccount:     model.BankInfo{Iban: null.StringFrom("AT000000000000000000"), Owner: null.StringFrom("HIJACKED")},
+	}
+
+	err = db.UpdateParticipant(context.Background(), foreignTenant, "attacker", foreign)
+	assert.Error(t, err, "update aus fremdem Mandanten muss abgewiesen werden")
+
+	after, err := db.GetParticipant(context.Background(), ownTenant, participantId)
+	require.NoError(t, err)
+	assert.Equal(t, before.Contact.Phone, after.Contact.Phone, "Kontakt-Telefon darf nicht veraendert sein")
+	assert.Equal(t, before.Contact.Email, after.Contact.Email, "Kontakt-E-Mail darf nicht veraendert sein")
+	assert.Equal(t, before.BankAccount.Iban, after.BankAccount.Iban, "IBAN darf nicht veraendert sein")
+	assert.Equal(t, before.BillingAddress.City, after.BillingAddress.City, "Rechnungsadresse darf nicht veraendert sein")
+}
