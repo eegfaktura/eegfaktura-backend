@@ -146,10 +146,21 @@ func (h *MeteringHandler) updateMeteringPointPartial() middleware.JWTHandlerFunc
 			return
 		}
 
-		name := v["path"].(string)
+		name, ok := v["path"].(string)
+		if !ok {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrUpdateMeter(errors.New("missing path")))
+			return
+		}
+		// Resolve the client-supplied field name to a real, updatable column;
+		// reject anything unknown so it can never reach the SQL builder verbatim.
+		column, ok := model.AllowedUpdateColumn(model.MeteringPoint{}, name)
+		if !ok {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrUpdateMeter(errors.New("field not updatable")))
+			return
+		}
 		value := v["value"]
 
-		if err := h.db.UpdateMeteringPointPartial(r.Context(), tenant, claims.Username, pId, mId, map[string]interface{}{name: value}); err != nil {
+		if err := h.db.UpdateMeteringPointPartial(r.Context(), tenant, claims.Username, pId, mId, map[string]interface{}{column: value}); err != nil {
 			log.WithField("tenant", tenant).WithError(err).Error("failed to update metering point.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrUpdateMeter(err))
 			return

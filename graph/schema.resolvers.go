@@ -7,6 +7,7 @@ package graph
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"at.ourproject/vfeeg-backend/api/middleware"
@@ -22,6 +23,13 @@ func (r *mutationResolver) UpdateEegModel(ctx context.Context, tenant string, ee
 	db, err := database.GetDB(context.Background())
 	if err != nil {
 		return nil, err
+	}
+
+	// The tenant must come from the verified request context (GQLProtect checked
+	// the header against the token), never from the caller-supplied argument.
+	tenant = middleware.ForContextTenant(ctx)
+	if tenant == "" {
+		return nil, errors.New("no tenant in context")
 	}
 
 	eeg, err := db.GetEegById(ctx, tenant)
@@ -44,6 +52,13 @@ func (r *mutationResolver) MasterDataUpload(ctx context.Context, tenant string, 
 	db, err := database.GetDB(ctx)
 	if err != nil {
 		return false, err
+	}
+
+	// The tenant must come from the verified request context (GQLProtect checked
+	// the header against the token), never from the caller-supplied argument.
+	tenant = middleware.ForContextTenant(ctx)
+	if tenant == "" {
+		return false, errors.New("no tenant in context")
 	}
 
 	if err = db.ImportMasterdataFromExcel(ctx, file.File, file.Filename, sheet, tenant); err != nil {

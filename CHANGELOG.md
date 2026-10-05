@@ -8,6 +8,16 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Security
+- Partial-update endpoints (metering point, participant) now resolve the
+  client-supplied field name against the target model and reject names that are
+  unknown or not updatable, instead of passing them to the SQL builder verbatim.
+  New helper `model.AllowedUpdateColumn` / `model.IsAllowedParticipantUpdatePath`
+  with unit tests.
+- GraphQL `updateEegModel` and `masterDataUpload` now take the tenant from the
+  verified request context (as the `eeg` query already does) and ignore the
+  tenant passed as an argument.
+
 ## [1.1.1] – 2026-10-04
 
 ### Security
