@@ -5,7 +5,6 @@ import (
 	dbsql "database/sql"
 	"errors"
 	"fmt"
-	"os"
 
 	"strings"
 
@@ -135,20 +134,14 @@ func (db *sqlDatabase) DeleteParticipant(ctx context.Context, tenant, participan
 
 const TABLE_PARTICIPANT = "base.participant"
 
-// enforceParticipantTenant steuert, ob ein Zugriff auf einen fremden Teilnehmer
-// abgewiesen (true, Standard) oder nur protokolliert wird (false).
-//
 // Die Abfragen auf einen einzelnen Teilnehmer liefen frueher ausschliesslich ueber
 // die ID, ohne den aus dem Token geprueften Mandanten. Wer eine fremde ID kannte,
 // konnte den Datensatz lesen, aendern oder loeschen — samt Bankverbindung und
 // Adressen. Die IDs sind zudem zeitbasiert (uuid.NewUUID), auf ihre Unkenntnis ist
-// also kein Verlass.
+// also kein Verlass. Der Fremdzugriff wird immer abgewiesen; der fruehere Schalter
+// PARTICIPANT_TENANT_ENFORCE (nur protokollieren) ist entfernt, seit alle Umgebungen
+// mit aktiver Pruefung laufen.
 //
-// Fuer eine schrittweise Einfuehrung laesst sich die Abweisung mit
-// PARTICIPANT_TENANT_ENFORCE=false voruebergehend abschalten; dann wird der
-// Fremdzugriff nur geloggt und man sieht vor dem Scharfschalten, wen es traefe.
-var enforceParticipantTenant = os.Getenv("PARTICIPANT_TENANT_ENFORCE") != "false"
-
 // assertParticipantTenant stellt sicher, dass der Teilnehmer zur Gemeinschaft des
 // Aufrufers gehoert. Bewusst als Vorabpruefung statt als zusaetzliche WHERE-Bedingung:
 // updateParticipantPartial schreibt auch in Kindtabellen (Adressen, Kontakt), dort
@@ -182,14 +175,10 @@ func assertParticipantTenant(ctx context.Context, db *sqlx.DB, tenant, participa
 	log.WithFields(log.Fields{
 		"tenant":        tenant,
 		"participantId": participantId,
-		"enforced":      enforceParticipantTenant,
-	}).Warn("cross-tenant participant access")
+	}).Warn("cross-tenant participant access refused")
 
-	if enforceParticipantTenant {
-		return model.ErrForeignTenantParticipant(
-			fmt.Errorf("participant %s does not belong to tenant %s", participantId, tenant))
-	}
-	return nil
+	return model.ErrForeignTenantParticipant(
+		fmt.Errorf("participant %s does not belong to tenant %s", participantId, tenant))
 }
 
 func getParticipants(ctx context.Context, db *sqlx.DB, tenant string) ([]*model.EegParticipant, error) {
