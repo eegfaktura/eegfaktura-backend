@@ -83,6 +83,31 @@ func IsAllowedParticipantUpdatePath(path string) bool {
 	}
 }
 
+// SkipUpdateJSONKeys returns the JSON field names of the struct whose goqu tag
+// marks them as not updatable ("skipupdate"). Used to strip write-protected
+// fields from a client-supplied update map before it reaches the SQL builder.
+func SkipUpdateJSONKeys(model interface{}) []string {
+	t := reflect.TypeOf(model)
+	for t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct {
+		return nil
+	}
+	var keys []string
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		jsonTag := strings.TrimSpace(strings.Split(f.Tag.Get("json"), ",")[0])
+		if jsonTag == "" || jsonTag == "-" {
+			continue
+		}
+		if hasTagOption(f.Tag.Get("goqu"), "skipupdate") {
+			keys = append(keys, jsonTag)
+		}
+	}
+	return keys
+}
+
 func hasTagOption(tag, opt string) bool {
 	for _, p := range strings.Split(tag, ",") {
 		if strings.TrimSpace(p) == opt {
