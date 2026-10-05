@@ -94,3 +94,55 @@ func TestSkipUpdateJSONKeys_Eeg(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveFlatUpdateColumn_Eeg(t *testing.T) {
+	cases := []struct {
+		key    string
+		wantOK bool
+		wantDB string
+	}{
+		// keys the web sends on the EEG page, incl. embedded structs
+		{"description", true, "description"},
+		{"businessNr", true, "businessNr"},
+		{"gridOperator", true, "gridoperator_code"},
+		{"operatorName", true, "gridoperator_name"},
+		{"settlementInterval", true, "settlementInterval"},
+		{"taxNumber", true, "taxNumber"},
+		{"vatNumber", true, "vatNumber"},
+		{"contactPerson", true, "contactPerson"},
+		{"street", true, "street"},
+		{"streetNumber", true, "streetNumber"},
+		{"zip", true, "zip"},
+		{"city", true, "city"},
+		{"iban", true, "iban"},
+		{"owner", true, "owner"},
+		{"bankName", true, "bankName"},
+		{"bic", true, "bic"},
+		{"sepa", true, "sepa"},
+		{"phone", true, "phone"},
+		{"email", true, "email"},
+		{"website", true, "website"},
+		// column name and JSON name both resolve to the column
+		{"creditor_id", true, "creditor_id"},
+		{"creditorId", true, "creditor_id"},
+		// skipupdate
+		{"id", false, ""},
+		{"tenant", false, ""},
+		{"rcNumber", false, ""},
+		{"online", false, ""},
+		{"createdAt", false, ""},
+		// embedded struct's own tag is not a column
+		{"address", false, ""},
+		{"accountInfo", false, ""},
+		// injected / unknown
+		{`description"=(SELECT 1`, false, ""},
+		{"evil", false, ""},
+		{"", false, ""},
+	}
+	for _, c := range cases {
+		gotDB, gotOK := ResolveFlatUpdateColumn(Eeg{}, c.key)
+		if gotOK != c.wantOK || gotDB != c.wantDB {
+			t.Errorf("ResolveFlatUpdateColumn(%q) = (%q, %v), want (%q, %v)", c.key, gotDB, gotOK, c.wantDB, c.wantOK)
+		}
+	}
+}

@@ -17,6 +17,17 @@ this changelog highlights the changes relevant for overview and operations.
 - GraphQL `updateEegModel` and `masterDataUpload` now take the tenant from the
   verified request context (as the `eeg` query already does) and ignore the
   tenant passed as an argument.
+- The EEG update (`POST /eeg`, GraphQL and the admin gRPC call) now maps every
+  field to a known, updatable column of the EEG and rejects anything else; until
+  now an unknown key was passed to the SQL builder as a column name verbatim. New
+  helper `model.ResolveFlatUpdateColumn`, which also covers the embedded address,
+  account, contact and website fields and accepts column names such as
+  `creditor_id` that the web sends.
+
+### Fixed
+- After the Ponton registration admin-backend could no longer switch a community
+  online: the generic EEG update drops `online` since the write-protection change,
+  so the admin gRPC call now sets it through the dedicated online-state update.
 
 ## [1.1.1] – 2026-10-04
 

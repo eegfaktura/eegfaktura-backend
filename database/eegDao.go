@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"fmt"
 
 	"at.ourproject/vfeeg-backend/model"
 	"github.com/doug-martin/goqu/v9"
@@ -173,11 +174,21 @@ func updateEegPartial(ctx context.Context, db *sqlx.DB, tenant string, fields ma
 		}
 	}
 
-	var eeg model.Eeg
-	updateRecord, err := buildRecordMap(&eeg, fields)
-	if err != nil {
-		return err
+	// Map every key to a known, updatable column. The key ends up as an SQL
+	// identifier, which goqu quotes but does not escape, so an unknown key is
+	// rejected instead of being passed through verbatim.
+	updateRecord := goqu.Record{}
+	for k, v := range fields {
+		col, ok := model.ResolveFlatUpdateColumn(model.Eeg{}, k)
+		if !ok {
+			return fmt.Errorf("field %q cannot be updated", k)
+		}
+		updateRecord[col] = v
 	}
+	if len(updateRecord) == 0 {
+		return nil
+	}
+
 	statement, _, err := pgDialect.Update(TABLE_EEG).Set(updateRecord).Where(goqu.Ex{"tenant": goqu.V(tenant)}).ToSQL()
 	if err != nil {
 		log.WithError(err).Errorf("Update EEG VALUES: %s", statement)
