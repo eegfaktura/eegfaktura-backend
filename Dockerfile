@@ -1,4 +1,4 @@
-FROM golang:1.25 AS builder
+FROM golang:1.27 AS builder
 
 RUN apt update && apt install -y protobuf-compiler
 WORKDIR /usr/src/app
@@ -25,7 +25,7 @@ RUN go generate ./...
 RUN go install ./...
 RUN go build -o /usr/local/bin/vfeeg-backend -ldflags="-s -w" server.go
 
-FROM golang:1.25
+FROM golang:1.27
 
 ENV TZ="Europe/Berlin"
 
