@@ -8,6 +8,11 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Changed
+- `config.yaml`: default `eda-process-versions` raised to the schema sets valid since 2026-10-05
+  (ANFORDERUNG_ECON 02.40, ECOF 02.30, ECP 02.10, CPF 01.10). The grid operators deactivated the
+  old sets, so the old defaults were rejected by the Ponton messenger. Needs eda-xp >= 1.0.7.
+
 ## [1.1.4] – 2026-10-05
 
 ### Security
