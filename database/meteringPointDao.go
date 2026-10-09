@@ -273,6 +273,9 @@ func createMeteringEntries(tenant, username, participantId string, points []*mod
 //}
 
 func ImportMeteringPoints(ctx context.Context, tx *sqlx.Tx, tenant, username, participantId string, point []*model.MeteringPoint) error {
+	if err := applyGridOperator(ctx, tx, tenant, point); err != nil {
+		return err
+	}
 	meteringEntries, partFactEntries := createMeteringEntries(tenant, username, participantId, point, nil)
 	return saveMeteringPoint(ctx, tx, tenant, meteringEntries, partFactEntries)
 }
@@ -403,6 +406,9 @@ func registerMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, p
 		}
 	}()
 
+	if err = applyGridOperator(ctx, tx, tenant, []*model.MeteringPoint{point}); err != nil {
+		return err
+	}
 	meteringEntries, partFactEntries := createMeteringEntries(tenant, username, participantId, []*model.MeteringPoint{point}, &point.ProcessState)
 	err = saveMeteringPoint(ctx, tx, tenant, meteringEntries, partFactEntries)
 	return err
@@ -455,6 +461,36 @@ func UpdateMeteringPointPartial(ctx context.Context, db *sqlx.DB, tenant, userna
 	values["modifiedBy"] = username
 	values["modifiedAt"] = civil.Now()
 
+	// The grid operator follows the metering point number (platform#107): a new number sets it,
+	// otherwise it is only filled in when nothing is stored yet (rows from before #107).
+	newId, idChanged := values["metering_point_id"].(string)
+	if !idChanged {
+		newId = meterId
+	}
+	point := &model.MeteringPoint{MeteringPoint: newId}
+	if err := applyGridOperator(ctx, db, tenant, []*model.MeteringPoint{point}); err != nil {
+		if idChanged {
+			return model.ErrUpdateMeter(err)
+		}
+		// Only the fill-in of an empty value is lost; the update itself (e.g. activesince from an
+		// EDA answer) must still go through.
+		log.WithField("tenant", tenant).Warnf("Grid operator of %s not filled in: %v", meterId, err)
+	}
+	if point.GridOperatorId.Valid {
+		var name interface{}
+		if point.GridOperatorName.Valid {
+			name = point.GridOperatorName.String
+		}
+		if idChanged {
+			values["grid_operator_id"] = point.GridOperatorId.String
+			values["grid_operator_name"] = name
+		} else {
+			empty := goqu.L(`COALESCE("grid_operator_id", '') = ''`)
+			values["grid_operator_id"] = goqu.Case().When(empty, point.GridOperatorId.String).Else(goqu.C("grid_operator_id"))
+			values["grid_operator_name"] = goqu.Case().When(empty, name).Else(goqu.C("grid_operator_name"))
+		}
+	}
+
 	statement, _, err := pgDialect.Update(TABLE_METERINGPOINT).Set(values).
 		Where(goqu.Ex{
 			"tenant":            goqu.Op{"eq": tenant},
@@ -476,6 +512,12 @@ func UpdateMeteringPointPartial(ctx context.Context, db *sqlx.DB, tenant, userna
 }
 
 func UpdateMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, participantId, meterId string, meteringPoint *model.MeteringPoint) error {
+	// The number in the path is the row that is updated (metering_point_id is skipupdate); derive
+	// the grid operator from it, not from the body (platform#107).
+	meteringPoint.MeteringPoint = meterId
+	if err := applyGridOperator(ctx, db, tenant, []*model.MeteringPoint{meteringPoint}); err != nil {
+		return model.ErrUpdateMeter(err)
+	}
 	updateObject := *meteringPoint
 	updateObject.State = nil
 	updateObject.ModifiedBy = null.StringFrom(username)

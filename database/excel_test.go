@@ -51,8 +51,10 @@ func Test_transformExcelData(t *testing.T) {
 	assert.Equal(t, null.StringFrom("003"), findParticipant("Finnegan", participants).ParticipantNumber)
 	assert.Equal(t, null.StringFrom("005"), findParticipant("Beckett", participants).ParticipantNumber)
 	assert.Equal(t, null.StringFrom("Silvia.Beckett@eegfaktura.at"), findParticipant("Beckett", participants).Contact.Email)
-	assert.Equal(t, null.StringFrom("AT009999"), findParticipant("Beckett", participants).MeteringPoint[0].GridOperatorId)
-	assert.Equal(t, null.StringFrom("AT009999"), findParticipant("Beckett", participants).MeteringPoint[0].GridOperatorName)
+	// platform#107: the grid operator comes from the metering point number, not from column A
+	beckettMeter := findParticipant("Beckett", participants).MeteringPoint[0]
+	assert.Equal(t, null.StringFrom(beckettMeter.MeteringPoint[:8]), beckettMeter.GridOperatorId)
+	assert.Equal(t, null.StringFrom(beckettMeter.MeteringPoint[:8]), beckettMeter.GridOperatorName)
 
 }
 

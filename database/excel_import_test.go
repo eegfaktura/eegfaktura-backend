@@ -133,8 +133,8 @@ func Test_transformExcelData_partFact(t *testing.T) {
 }
 
 // Silently skipped rows must surface in the import log: data-looking rows with
-// an invalid grid operator and rows whose name cannot be extracted. A trailing
-// space in the operator column must no longer discard the row.
+// rows whose name cannot be extracted. Column A ("Netzbetreiber") is optional
+// since platform#107: its value no longer decides whether a row is imported.
 func Test_transformExcelData_skipReporting(t *testing.T) {
 	f := buildImportSheet(t, [][]interface{}{
 		{"at009999", testCommunityId, "4020", "Linz", "Weg", "1",
@@ -151,15 +151,67 @@ func Test_transformExcelData_skipReporting(t *testing.T) {
 
 	participants, importLog := transformSheet(t, f, false)
 
-	// nur die Zeile mit nachgestelltem Leerzeichen wird (jetzt) importiert
-	require.Len(t, participants, 1)
-	assert.Equal(t, "Trail", participants[0].FirstName)
-	assert.Equal(t, "AT009999", participants[0].MeteringPoint[0].GridOperatorId.String)
+	// Kleinschreibung und Leerzeichen in Spalte A sind egal, der Netzbetreiber kommt
+	// aus der Zählpunktnummer
+	require.Len(t, participants, 2)
+	assert.Equal(t, "Lower", participants[0].FirstName)
+	assert.Equal(t, "Trail", participants[1].FirstName)
+	for _, p := range participants {
+		assert.Equal(t, "AT009999", p.MeteringPoint[0].GridOperatorId.String)
+	}
 
-	// ungültiger Netzbetreiber + Name-Split-Fehler werden gemeldet, die leere Zeile nicht
+	// nur der Name-Split-Fehler wird gemeldet, die leere Zeile nicht
+	require.Len(t, importLog.Messages, 1)
+	assert.Equal(t, "E_PARTICIPANT_1001", importLog.Messages[0].MessageCode)
+}
+
+// platform#107: the grid operator comes from the metering point number (plus
+// alias list), column A is optional and only compared.
+func Test_transformExcelData_gridOperatorFromMeteringPoint(t *testing.T) {
+	defer func(orig func() map[string]string) { gridOperatorAlias = orig }(gridOperatorAlias)
+	gridOperatorAlias = func() map[string]string { return map[string]string{"AT008200": "AT008000"} }
+
+	row := func(colA, zp, name string) []interface{} {
+		return []interface{}{colA, testCommunityId, "8160", "Weiz", "Weg", "1",
+			zp, "CONSUMPTION", name, "Muster", "privat", "", "", "", "ACTIVE", "", ""}
+	}
+	f := buildImportSheet(t, [][]interface{}{
+		row("", "AT0030000000000000000000000000001", "Leer"),          // column A empty
+		row("AT003000", "AT0030000000000000000000000000002", "Gleich"), // same as derived
+		row("AT003100", "AT0030000000000000000000000000003", "Anders"), // differs -> hint
+		row("", "AT0082000816000000000000004269401", "Alias"),          // alias -> hint
+		row("AT008000", "AT0082000816000000000000004269402", "AliasA"), // alias, A = target
+	})
+
+	participants, importLog := transformSheet(t, f, false)
+	require.Len(t, participants, 5)
+	want := []string{"AT003000", "AT003000", "AT003000", "AT008000", "AT008000"}
+	for i, p := range participants {
+		assert.Equal(t, want[i], p.MeteringPoint[0].GridOperatorId.String, p.FirstName)
+	}
+
 	require.Len(t, importLog.Messages, 2)
-	assert.Equal(t, "E_PARTICIPANT_1002", importLog.Messages[0].MessageCode)
-	assert.Equal(t, "E_PARTICIPANT_1001", importLog.Messages[1].MessageCode)
+	for _, m := range importLog.Messages {
+		assert.Equal(t, "W_GRID_OPERATOR_IGNORED", m.MessageCode)
+	}
+	assert.Equal(t, "AT0030000000000000000000000000003", importLog.Messages[0].Identifier)
+	assert.Equal(t, "AT0082000816000000000000004269401", importLog.Messages[1].Identifier)
+}
+
+// Without the "Netzbetreiber" column the header is found via "Zählpunkt".
+func Test_transformExcelData_withoutGridOperatorColumn(t *testing.T) {
+	f := excelize.NewFile()
+	const sheet = "EEG Stammdaten"
+	_, err := f.NewSheet(sheet)
+	require.NoError(t, err)
+	header := []interface{}{"Gemeinschafts-ID", "Zählpunkt", "Energierichtung", "Name 1", "Name 2", "Zählpunktstatus"}
+	require.NoError(t, f.SetSheetRow(sheet, "A1", &header))
+	require.NoError(t, f.SetSheetRow(sheet, "A2", &[]interface{}{testCommunityId, "AT0030000000000000000000000000009", "CONSUMPTION", "Ohne", "Spalte", "ACTIVE"}))
+
+	participants, importLog := transformSheet(t, f, false)
+	require.Len(t, participants, 1)
+	assert.Equal(t, "AT003000", participants[0].MeteringPoint[0].GridOperatorId.String)
+	assert.Empty(t, importLog.Messages)
 }
 
 // Rows of one member (one row per metering point) merge by first+last name —

@@ -154,6 +154,10 @@ func (h *MeteringHandler) updateMeteringPointPartial() middleware.JWTHandlerFunc
 		// Resolve the client-supplied field name to a real, updatable column;
 		// reject anything unknown so it can never reach the SQL builder verbatim.
 		column, ok := model.AllowedUpdateColumn(model.MeteringPoint{}, name)
+		// The grid operator is derived from the metering point number (platform#107).
+		if column == "grid_operator_id" || column == "grid_operator_name" {
+			ok = false
+		}
 		if !ok {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrUpdateMeter(errors.New("field not updatable")))
 			return
