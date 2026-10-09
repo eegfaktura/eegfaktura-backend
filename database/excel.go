@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"at.ourproject/vfeeg-backend/gridoperator"
 	"at.ourproject/vfeeg-backend/model"
 	"github.com/doug-martin/goqu/v9"
 	"github.com/jjeffery/civil"
@@ -22,8 +23,6 @@ import (
 type ExcelRepository interface {
 	ImportMasterdataFromExcel(ctx context.Context, r io.Reader, filename, sheet, tenant string) error
 }
-
-var netOperatorMatch = regexp.MustCompile(`^[A-Z]{2}[0-9]*$`)
 
 func openReader(r io.Reader, filename string, opt ...excelize.Options) (*excelize.File, error) {
 	f, err := excelize.OpenReader(r, opt...)
@@ -659,18 +658,20 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 
 	for rows.Next() {
 		if cols, err := rows.Columns(excelize.Options{RawCellValue: true}); err == nil && len(cols) > 0 {
-			switch cols[0] {
-			case "[### Leerzeile für Importer ###]":
+			switch {
+			case cols[0] == "[### Leerzeile für Importer ###]":
 				continue
-			case "Netzbetreiber", "Grid Operator":
+			case isImportHeaderRow(cols):
 				for i, c := range cols {
 					colMap[strings.ToLower(c)] = i
 				}
 				continue
 			default:
 				switch {
-				case netOperatorMatch.MatchString(strings.TrimSpace(cols[0])):
-					netOperatorId := strings.TrimSpace(cols[0])
+				// Datenzeile = Zählpunkt oder Name vorhanden. Die Spalte "Netzbetreiber" (A) ist
+				// optional und wird nur noch verglichen (platform#107).
+				case isImportDataRow(cols, colMap):
+					givenGridOperator := strings.ToUpper(strings.TrimSpace(getColumValue(cols, colMap, "Netzbetreiber", "Grid Operator", nil)))
 
 					// "Gemeinschafts-ID" ist Pflicht und muss zur Ziel-EEG passen — schützt
 					// davor, die Datei einer anderen EEG (oder im falschen Tenant
@@ -819,9 +820,10 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 						}
 						meteringPointId := strings.Trim(getColumValue(cols, colMap, "Zählpunkt", "MeteringPoint Id", nil), " ")
 						if len(meteringPointId) == 33 {
+							gridOperatorId, gridOperatorNameValue := importGridOperator(meteringPointId, givenGridOperator, gridOperatorName, importLog)
 							participant.MeteringPoint = append(participant.MeteringPoint, &model.MeteringPoint{
-								GridOperatorId:   null.StringFrom(netOperatorId),
-								GridOperatorName: null.StringFrom(gridOperatorName(netOperatorId)),
+								GridOperatorId:   gridOperatorId,
+								GridOperatorName: gridOperatorNameValue,
 								MeteringPoint:    meteringPointId,
 								Transformer:      null.String{},
 								Direction:        role,
@@ -862,24 +864,63 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 								fmt.Sprintf("Does not fulfill requirements! Participant has wrong status: %s", cpStatus)))
 						log.Warnf("Participant -%s %s- does not fulfill requirements! Participant has wrong status: %s", firstname, lastname, cpStatus)
 					}
-				default:
-					// Zeile sieht wie eine Datenzeile aus (Zählpunkt oder Name vorhanden),
-					// hat aber keinen gültigen Netzbetreiber -> melden statt still verwerfen.
-					if len(getColumValue(cols, colMap, "Zählpunkt", "MeteringPoint Id", nil)) > 0 ||
-						len(getColumValue(cols, colMap, "Name 1", "Name1", nil)) > 0 {
-						importLog.Messages = append(importLog.Messages, model.NewLogMessage(
-							"ERROR",
-							cols[0],
-							"E_PARTICIPANT_1002",
-							"Row skipped: 'Netzbetreiber' (column A) is missing or invalid (expected e.g. AT003000)",
-						))
-						log.Warnf("Import row skipped: invalid grid operator %q", cols[0])
-					}
 				}
 			}
 		}
 	}
 	return participants
+}
+
+// isImportHeaderRow erkennt die Kopfzeile: früher an "Netzbetreiber" in Spalte A, jetzt (Spalte A
+// ist optional) auch an der Überschrift der Zählpunkt-Spalte.
+func isImportHeaderRow(cols []string) bool {
+	if first := strings.TrimSpace(cols[0]); first == "Netzbetreiber" || first == "Grid Operator" {
+		return true
+	}
+	for _, c := range cols {
+		if c = strings.TrimSpace(c); strings.EqualFold(c, "Zählpunkt") || strings.EqualFold(c, "MeteringPoint Id") {
+			return true
+		}
+	}
+	return false
+}
+
+// isImportDataRow: nach der Kopfzeile ist jede Zeile mit Zählpunkt oder Name eine Datenzeile.
+func isImportDataRow(cols []string, colMap map[string]int) bool {
+	if len(colMap) == 0 {
+		return false
+	}
+	return len(strings.TrimSpace(getColumValue(cols, colMap, "Zählpunkt", "MeteringPoint Id", nil))) > 0 ||
+		len(strings.TrimSpace(getColumValue(cols, colMap, "Name 1", "Name1", nil))) > 0 ||
+		len(strings.TrimSpace(getColumValue(cols, colMap, "Name 2", "Name2", nil))) > 0
+}
+
+// importGridOperator leitet den Netzbetreiber aus der Zählpunktnummer ab (platform#107). Der Wert
+// aus Spalte A wird nur verglichen; eine Abweichung oder Alias-Übersetzung landet als Hinweis im
+// Import-Protokoll. Verbindlich setzt ihn die Datenbankschicht (applyGridOperator).
+func importGridOperator(meteringPointId, given string, gridOperatorName func(id string) string, importLog *model.Log) (null.String, null.String) {
+	r, ok := gridoperator.FromMeteringPoint(meteringPointId, gridOperatorAlias())
+	if !ok {
+		return null.String{}, null.String{}
+	}
+	switch {
+	case given != "" && given != r.Id:
+		importLog.Messages = append(importLog.Messages, model.NewLogMessage(
+			"WARNING",
+			meteringPointId,
+			"W_GRID_OPERATOR_IGNORED",
+			fmt.Sprintf("'Netzbetreiber' %s in column A ignored, %s is used (derived from the metering point number)", given, r.Id),
+		))
+	case r.Aliased && given != r.Id:
+		importLog.Messages = append(importLog.Messages, model.NewLogMessage(
+			"WARNING",
+			meteringPointId,
+			"W_GRID_OPERATOR_IGNORED",
+			fmt.Sprintf("Grid operator %s of the metering point number is replaced by %s", r.Prefix, r.Id),
+		))
+	}
+	name := gridOperatorName(r.Id)
+	return null.StringFrom(r.Id), null.NewString(name, name != "")
 }
 
 func ExportZPListToExcel(ebmsMsg *model.EbmsMessage) (*bytes.Buffer, error) {

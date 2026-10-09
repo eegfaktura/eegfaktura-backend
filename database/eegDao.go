@@ -200,30 +200,7 @@ func updateEegPartial(ctx context.Context, db *sqlx.DB, tenant string, fields ma
 }
 
 func getGridOperators(ctx context.Context, db *sqlx.DB) (map[string]string, error) {
-
-	sql, _, err := pgDialect.From("base.gridoperators").ToSQL()
-
-	rows, err := db.QueryContext(ctx, sql)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var id string
-	var name string
-	result := map[string]string{}
-	for rows.Next() {
-		err = rows.Scan(&id, &name)
-		if err != nil {
-			return nil, err
-		}
-		result[id] = name
-	}
-	if err = rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return result, nil
+	return queryGridOperatorNames(ctx, db)
 }
 
 type tenantsNameStruct struct {

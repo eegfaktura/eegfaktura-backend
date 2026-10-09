@@ -269,6 +269,9 @@ func createMeteringEntries(tenant, username, participantId string, points []*mod
 //}
 
 func ImportMeteringPoints(ctx context.Context, tx *sqlx.Tx, tenant, username, participantId string, point []*model.MeteringPoint) error {
+	if err := applyGridOperator(ctx, tx, tenant, point); err != nil {
+		return err
+	}
 	meteringEntries, partFactEntries := createMeteringEntries(tenant, username, participantId, point, nil)
 	return saveMeteringPoint(ctx, tx, tenant, meteringEntries, partFactEntries)
 }
@@ -399,6 +402,9 @@ func registerMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, p
 		}
 	}()
 
+	if err = applyGridOperator(ctx, tx, tenant, []*model.MeteringPoint{point}); err != nil {
+		return err
+	}
 	meteringEntries, partFactEntries := createMeteringEntries(tenant, username, participantId, []*model.MeteringPoint{point}, &point.ProcessState)
 	err = saveMeteringPoint(ctx, tx, tenant, meteringEntries, partFactEntries)
 	return err
@@ -451,6 +457,21 @@ func UpdateMeteringPointPartial(ctx context.Context, db *sqlx.DB, tenant, userna
 	values["modifiedBy"] = username
 	values["modifiedAt"] = civil.Now()
 
+	// A new metering point number means a new grid operator (platform#107).
+	if newId, ok := values["metering_point_id"].(string); ok {
+		point := &model.MeteringPoint{MeteringPoint: newId}
+		if err := applyGridOperator(ctx, db, tenant, []*model.MeteringPoint{point}); err != nil {
+			return model.ErrUpdateMeter(err)
+		}
+		if point.GridOperatorId.Valid {
+			values["grid_operator_id"] = point.GridOperatorId.String
+			values["grid_operator_name"] = nil
+			if point.GridOperatorName.Valid {
+				values["grid_operator_name"] = point.GridOperatorName.String
+			}
+		}
+	}
+
 	statement, _, err := pgDialect.Update(TABLE_METERINGPOINT).Set(values).
 		Where(goqu.Ex{
 			"tenant":            goqu.Op{"eq": tenant},
@@ -472,6 +493,9 @@ func UpdateMeteringPointPartial(ctx context.Context, db *sqlx.DB, tenant, userna
 }
 
 func UpdateMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, participantId, meterId string, meteringPoint *model.MeteringPoint) error {
+	if err := applyGridOperator(ctx, db, tenant, []*model.MeteringPoint{meteringPoint}); err != nil {
+		return model.ErrUpdateMeter(err)
+	}
 	updateObject := *meteringPoint
 	updateObject.State = nil
 	updateObject.ModifiedBy = null.StringFrom(username)

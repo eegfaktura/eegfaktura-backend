@@ -328,6 +328,7 @@ func Test_RegisterMeteringPoint(t *testing.T) {
 			mock.ExpectQuery(`SELECT "tenant" FROM "base"."participant"`).
 				WillReturnRows(sqlmock.NewRows([]string{"tenant"}).AddRow(tt.args.tenant))
 			mock.ExpectBegin()
+			expectGridOperatorLookup(mock)
 			mock.ExpectExec("INSERT (.+) \"base\".\"meteringpoint\"").WillReturnResult(sqlmock.NewResult(1, 1))
 			//mock.Mock.ExpectExec("INSERT INTO \"base\".\"participant_meter_state\" (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
 			mock.ExpectExec("INSERT INTO \"base\".\"metering_partition_factor\" (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
