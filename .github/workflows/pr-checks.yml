@@ -27,6 +27,9 @@ env:
   GO_VERSION: '1.25.14'
   PROTOC_VERSION: '29.3'
   PROTOC_SHA256: '3e866620c5be27664f3d2fa2d656b5f3e09b5152b42f1bedbf427b333e90021a'
+  # The time zone of the service (Dockerfile: ENV TZ): dates are built in time.Local, and the
+  # database tests expect local midnight of that zone. GitHub's runners run in UTC.
+  TZ: 'Europe/Berlin'
   # Packages whose tests need a service: PostgreSQL via Testcontainers (api, database, eda) or a
   # running Keycloak (api/middleware). They run in the full suite only.
   INTEGRATION_PACKAGES: 'api api/middleware database eda'

@@ -11,6 +11,7 @@ this changelog highlights the changes relevant for overview and operations.
 ### CI
 - `pr-checks.yml`: unit tests and the full test suite on every pull request (unit = every package without a service (codegen first: protoc, go-jsonschema); full = `go test -race ./...` incl. the Testcontainers DAO tests).
 - `security-scan.yml`: leaked secrets in the new commits (Gitleaks, Trivy), vulnerable dependencies (Trivy, OSV-Scanner) and misconfigurations (Trivy). A pull request fails on what it adds; pushes to the default branch and a weekly run fail on every CRITICAL finding (HIGH is reported; `SCAN_FAIL_ON`). Scanners are fixed versions checked by SHA-256, each release at least 7 days old; actions pinned by commit SHA.
+- `pr-checks.yml` runs with `TZ=Europe/Berlin`, the time zone of the image (`Dockerfile`): the database tests expect local midnight of that zone and failed on GitHub's UTC runners.
 
 ## [1.1.4] – 2026-10-05
 
