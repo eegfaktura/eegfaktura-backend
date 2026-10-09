@@ -19,6 +19,7 @@ func TestMeteringPointRevokeByConsentId_sameMeterInTwoTenants(t *testing.T) {
 
 	const meterA = "AT0030000000000000000000000111001"
 	const meterB = "AT0030000000000000000000000111002"
+	const meterC = "AT0030000000000000000000000111003"
 	setup := func(tenant, communityId string, meters ...string) {
 		_, err := testDB.DbInstance.Exec(`INSERT INTO base.eeg
 			(tenant, name, description, "rcNumber", area, gridoperator_code, gridoperator_name, "communityId",
@@ -38,7 +39,7 @@ func TestMeteringPointRevokeByConsentId_sameMeterInTwoTenants(t *testing.T) {
 		require.NoError(t, db.ImportMasterdataFromExcel(ctx, buf, "test.xlsx", "EEG Stammdaten", tenant))
 	}
 	// old community without consent id, new community with consent id
-	setup("TE000011", "AT00300000000TC000011000000000001", meterA, meterB)
+	setup("TE000011", "AT00300000000TC000011000000000001", meterA, meterB, meterC)
 	setup("TE000012", "AT00300000000TC000012000000000001", meterA, meterB)
 	_, err = testDB.DbInstance.Exec(`UPDATE base.meteringpoint SET consent_id = 'CONSENT-A' WHERE tenant = 'TE000012' AND metering_point_id = $1`, meterA)
 	require.NoError(t, err)
@@ -61,11 +62,24 @@ func TestMeteringPointRevokeByConsentId_sameMeterInTwoTenants(t *testing.T) {
 
 	t.Run("receiving tenant decides when no consent id is stored", func(t *testing.T) {
 		consent := "CONSENT-UNKNOWN"
-		tenant, err := db.MeteringPointRevokeByConsentId(ctx, "te000011", &consent, meterB, end)
+		tenant, err := db.MeteringPointRevokeByConsentId(ctx, "TE000011", &consent, meterB, end)
 		require.NoError(t, err)
 		assert.Equal(t, "TE000011", *tenant)
 		assert.Equal(t, "INACTIVE", state("TE000011", meterB))
 		assert.Equal(t, "ACTIVE", state("TE000012", meterB))
+	})
+
+	t.Run("receiving tenant without row: another community is not revoked", func(t *testing.T) {
+		consent := "CONSENT-UNKNOWN"
+		_, err := db.MeteringPointRevokeByConsentId(ctx, "TE000012", &consent, meterC, end)
+		assert.ErrorContains(t, err, "not found")
+		assert.Equal(t, "ACTIVE", state("TE000011", meterC))
+
+		// without a receiving tenant the only assigned row is still found
+		tenant, err := db.MeteringPointRevokeByConsentId(ctx, "", &consent, meterC, end)
+		require.NoError(t, err)
+		assert.Equal(t, "TE000011", *tenant)
+		assert.Equal(t, "INACTIVE", state("TE000011", meterC))
 	})
 
 	t.Run("still ambiguous without tenant and consent match: nothing changes", func(t *testing.T) {

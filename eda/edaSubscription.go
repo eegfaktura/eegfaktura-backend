@@ -420,11 +420,12 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 
 		// msg.Tenant is the receiving community (MQTT topic); it decides when the metering point
 		// is assigned in several communities.
+		receiver := strings.ToUpper(msg.Tenant)
 		var tenant *string
-		if tenant, err = db.MeteringPointRevokeByConsentId(ctx, msg.Tenant, meters[0].consentId, meters[0].meter, meters[0].consentEnd); err != nil {
+		if tenant, err = db.MeteringPointRevokeByConsentId(ctx, receiver, meters[0].consentId, meters[0].meter, meters[0].consentEnd); err != nil {
 			logrus.WithField("tenant", msg.Tenant).Errorf("can not revoke metering point %+v - %+v", meters, err)
 			// keep the message visible in the history of the receiving community
-			if eeg, err = db.GetEegById(ctx, strings.ToUpper(msg.Tenant)); err != nil {
+			if eeg, err = db.GetEegById(ctx, receiver); err != nil {
 				logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg by tenant %s (REVOKE metering point)", msg.Tenant)
 				return
 			}
@@ -445,7 +446,9 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 			logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
 			return
 		}
-		if len(meters) > 0 && codesContains([]int16{176}, meters[0].codes) {
+		// only code 176 (consent ended) revokes and notifies; other answers go to the history only
+		notify = len(meters) > 0 && codesContains([]int16{176}, meters[0].codes)
+		if notify {
 			meters[0].consentEnd = civil.DateOf(time.UnixMilli(msg.Payload.ConsentEnd))
 			if err := db.MeteringPointRevoke(ctx, eeg.Id, meters[0].meter, meters[0].consentEnd); err != nil {
 				logrus.WithField("tenant", eeg.Id).Errorf("can not revoke metering point %+v - %+v", meters, err)

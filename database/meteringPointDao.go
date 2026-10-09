@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"at.ourproject/vfeeg-backend/model"
@@ -732,10 +731,11 @@ func meteringPointRevoke(ctx context.Context, db *sqlx.DB, tenant, meterId strin
 //  1. receiving tenant + exact consent id
 //  2. receiving tenant + no consent id, assigned
 //  3. any tenant + exact consent id
-//  4. any tenant + no consent id, assigned
+//  4. any tenant + no consent id, assigned — only without a receiving tenant, otherwise it could
+//     revoke another community's participation of the same metering point
 //
 // Without a consent id only the "assigned" steps run (any consent). The step must hit exactly one
-// tenant, otherwise nothing is changed and an error is returned.
+// tenant, otherwise nothing is changed and an error is returned. tenant must be upper case.
 func meteringPointRevokeByConsentId(ctx context.Context, db *sqlx.DB, tenant string, consentId *string, meterId string, consentEnd civil.Date) (*string, error) {
 	execDB := goqu.New("postgres", db)
 
@@ -760,7 +760,7 @@ func meteringPointRevokeByConsentId(ctx context.Context, db *sqlx.DB, tenant str
 
 	var steps []exp.Expression
 	if tenant != "" {
-		inTenant := goqu.C("tenant").Eq(strings.ToUpper(tenant))
+		inTenant := goqu.C("tenant").Eq(tenant)
 		if consentId != nil {
 			steps = append(steps, goqu.And(meter, inTenant, goqu.C("consent_id").Eq(*consentId)))
 		}
@@ -769,7 +769,9 @@ func meteringPointRevokeByConsentId(ctx context.Context, db *sqlx.DB, tenant str
 	if consentId != nil {
 		steps = append(steps, goqu.And(meter, goqu.C("consent_id").Eq(*consentId)))
 	}
-	steps = append(steps, goqu.And(meter, assignedWithoutConsent))
+	if tenant == "" {
+		steps = append(steps, goqu.And(meter, assignedWithoutConsent))
+	}
 
 	for _, where := range steps {
 		update := tx.Update(TABLE_METERINGPOINT).
