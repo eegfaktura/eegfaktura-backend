@@ -1,0 +1,111 @@
+# Tests on every pull request: the unit tests (no Docker, no Keycloak) and the full suite (all
+# packages with the race detector; the DAO tests start PostgreSQL through Testcontainers, which
+# needs the Docker of the GitHub-hosted runner).
+#
+# A fresh checkout does not compile without codegen (known-errors #6): protoc for proto/*.proto
+# (the tracked *.pb.go are stale), then go-jsonschema for model/registration_model.go.
+# Versions fixed, each release older than 7 days (checked 2026-10-09): Go 1.25.14 (2026-08-19),
+# protoc 29.3 (2025-01-08); protoc-gen-go, protoc-gen-go-grpc and go-jsonschema at the versions in
+# go.mod. Actions pinned by commit SHA.
+
+name: PR Checks
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: '1.25.14'
+  PROTOC_VERSION: '29.3'
+  PROTOC_SHA256: '3e866620c5be27664f3d2fa2d656b5f3e09b5152b42f1bedbf427b333e90021a'
+  # Packages whose tests need a service: PostgreSQL via Testcontainers (api, database, eda) or a
+  # running Keycloak (api/middleware). They run in the full suite only.
+  INTEGRATION_PACKAGES: 'api api/middleware database eda'
+
+jobs:
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Generate code
+        run: |
+          set -euo pipefail
+          curl -fsSLo "$RUNNER_TEMP/protoc.zip" \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip"
+          echo "${PROTOC_SHA256}  $RUNNER_TEMP/protoc.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/protoc.zip" -d "$RUNNER_TEMP/protoc"
+          gopath="$(go env GOPATH)"
+          export PATH="$RUNNER_TEMP/protoc/bin:$gopath/bin:$PATH"
+          # inside the module: the versions come from go.mod
+          go install google.golang.org/protobuf/cmd/protoc-gen-go \
+            google.golang.org/grpc/cmd/protoc-gen-go-grpc github.com/atombender/go-jsonschema
+          protoc --experimental_allow_proto3_optional=true --proto_path=. \
+            --go_out=. --go_opt=paths=source_relative \
+            --go-grpc_out=. --go-grpc_opt=paths=source_relative ./proto/*.proto
+          (cd model && go generate ./...)
+
+      - name: Unit tests
+        run: |
+          set -euo pipefail
+          module="$(go list -m)"
+          read -ra integration <<< "$INTEGRATION_PACKAGES"
+          exclude="$(printf "^${module}/%s\$\n" "${integration[@]}" | paste -sd'|')"
+          mapfile -t pkgs < <(go list ./... | grep -vE "$exclude")
+          printf 'Package: %s\n' "${pkgs[@]}"
+          go test -count=1 "${pkgs[@]}"
+
+  full:
+    name: Full test suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Generate code
+        run: |
+          set -euo pipefail
+          curl -fsSLo "$RUNNER_TEMP/protoc.zip" \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip"
+          echo "${PROTOC_SHA256}  $RUNNER_TEMP/protoc.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/protoc.zip" -d "$RUNNER_TEMP/protoc"
+          gopath="$(go env GOPATH)"
+          export PATH="$RUNNER_TEMP/protoc/bin:$gopath/bin:$PATH"
+          # inside the module: the versions come from go.mod
+          go install google.golang.org/protobuf/cmd/protoc-gen-go \
+            google.golang.org/grpc/cmd/protoc-gen-go-grpc github.com/atombender/go-jsonschema
+          protoc --experimental_allow_proto3_optional=true --proto_path=. \
+            --go_out=. --go_opt=paths=source_relative \
+            --go-grpc_out=. --go-grpc_opt=paths=source_relative ./proto/*.proto
+          (cd model && go generate ./...)
+
+      - name: Check Docker (Testcontainers)
+        run: docker version --format 'Docker {{.Server.Version}}'
+
+      - name: Full test suite
+        run: go test -race -count=1 ./...
