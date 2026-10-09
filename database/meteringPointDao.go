@@ -469,7 +469,12 @@ func UpdateMeteringPointPartial(ctx context.Context, db *sqlx.DB, tenant, userna
 	}
 	point := &model.MeteringPoint{MeteringPoint: newId}
 	if err := applyGridOperator(ctx, db, tenant, []*model.MeteringPoint{point}); err != nil {
-		return model.ErrUpdateMeter(err)
+		if idChanged {
+			return model.ErrUpdateMeter(err)
+		}
+		// Only the fill-in of an empty value is lost; the update itself (e.g. activesince from an
+		// EDA answer) must still go through.
+		log.WithField("tenant", tenant).Warnf("Grid operator of %s not filled in: %v", meterId, err)
 	}
 	if point.GridOperatorId.Valid {
 		var name interface{}
@@ -507,6 +512,9 @@ func UpdateMeteringPointPartial(ctx context.Context, db *sqlx.DB, tenant, userna
 }
 
 func UpdateMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, participantId, meterId string, meteringPoint *model.MeteringPoint) error {
+	// The number in the path is the row that is updated (metering_point_id is skipupdate); derive
+	// the grid operator from it, not from the body (platform#107).
+	meteringPoint.MeteringPoint = meterId
 	if err := applyGridOperator(ctx, db, tenant, []*model.MeteringPoint{meteringPoint}); err != nil {
 		return model.ErrUpdateMeter(err)
 	}

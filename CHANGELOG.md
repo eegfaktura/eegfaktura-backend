@@ -28,17 +28,24 @@ this changelog highlights the changes relevant for overview and operations.
 - **Grid operator of a metering point is derived from its number** (platform#107). On create,
   participant registration, Excel import, update and when the metering point number changes, the
   backend sets `grid_operator_id` to the first 8 characters of the metering point number, for EEG
-  and BEG alike. Values sent by the client are ignored; a partial update of
-  `gridOperatorId`/`gridOperatorName` is refused (400); any other partial update fills in the grid
-  operator when none is stored yet. A metering point number whose first 8 characters are not
-  `AT` + 6 digits keeps its value. The name comes from `base.gridoperators` (fallback: the EEG's
-  own grid operator name).
-  **This already changes the receiver of EDA messages:** `getReceiverFrom` and the metering point
-  list prefer the stored `grid_operator_id` over the EEG's, so every metering point written after
-  the release is sent to the derived operator.
+  and BEG alike. Values sent by the client are never taken over: a full update derives from the
+  number in the path, and a partial update of `gridOperatorId`/`gridOperatorName` is refused (400).
+  Any other partial update fills in the grid operator when none is stored yet; this includes
+  system updates such as `activesince`/`inactivesince` from EDA answers, and a failing lookup there
+  does not stop the update. A metering point number whose first 8 characters are not `AT` + 6
+  digits is not derived: an existing value is kept, a new metering point gets none (the web
+  dialog no longer accepts such numbers). The name comes from `base.gridoperators` (lowest name
+  per id; fallback: the EEG's own grid operator name).
+  **Effect on the EDA receiver:** for **BEG**, `getReceiverFrom` takes the metering point's stored
+  value, so every BEG metering point written after the release is sent to the derived operator.
+  For **EEG** the receiver stays the EEG's grid operator, except for the participation factor
+  change (CPF), where the web sends the stored metering point value.
+  **Deploy order:** this backend before eegfaktura-web with platform#107 (the web no longer
+  prefills the grid operator; with an old backend a new BEG metering point would get none).
 - New config `grid-operator-alias` translates grid operator numbers that are only reachable under
-  another number (Energienetze Steiermark `AT008200` … → `AT008000`). Read once at start; invalid
-  or chained entries are logged as ERROR and ignored.
+  another number (Energienetze Steiermark `AT008200` … → `AT008000`). Read once at start; invalid,
+  chained or circular entries are logged as ERROR and ignored, an empty list as WARN. Sub-operators
+  that are reachable themselves (e.g. Netz OÖ `AT003470`) are not on the list.
 - Excel import: the column "Netzbetreiber" is optional and only compared. A different value or an
   alias translation is reported as `W_GRID_OPERATOR_IGNORED` in the import log; rows are no longer
   skipped because column A is empty (`E_PARTICIPANT_1002` is gone). The header row is also found

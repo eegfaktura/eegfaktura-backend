@@ -40,8 +40,8 @@ func Test_applyGridOperator(t *testing.T) {
 		{MeteringPoint: "AT0030000000000000000000000123456"},
 		// unknown in base.gridoperators: name stays empty
 		{MeteringPoint: "AT0082100000000000000000000000001"},
-		// too short: left untouched
-		{MeteringPoint: "AT00", GridOperatorId: null.StringFrom("AT009999")},
+		// not derivable: the client value is dropped (stays empty on insert, omitted on update)
+		{MeteringPoint: "AT00", GridOperatorId: null.StringFrom("AT009999"), GridOperatorName: null.StringFrom("manuell")},
 	}
 	require.NoError(t, applyGridOperator(context.Background(), db, "TE000009", points))
 
@@ -51,7 +51,8 @@ func Test_applyGridOperator(t *testing.T) {
 	assert.Equal(t, "Netz Oberösterreich GmbH", points[1].GridOperatorName.String)
 	assert.Equal(t, "AT008210", points[2].GridOperatorId.String)
 	assert.False(t, points[2].GridOperatorName.Valid)
-	assert.Equal(t, "AT009999", points[3].GridOperatorId.String)
+	assert.False(t, points[3].GridOperatorId.Valid)
+	assert.False(t, points[3].GridOperatorName.Valid)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -60,4 +61,6 @@ func Test_gridOperatorName(t *testing.T) {
 	assert.Equal(t, "Netz OÖ", gridOperatorName("AT003000", names, "AT008000", "Steiermark"))
 	assert.Equal(t, "Steiermark", gridOperatorName("AT008000", names, "AT008000", "Steiermark"))
 	assert.Equal(t, "", gridOperatorName("AT004000", names, "AT008000", "Steiermark"))
+	// the EEG's code may be stored in lower case
+	assert.Equal(t, "Steiermark", gridOperatorName("AT008000", names, "at008000", "Steiermark"))
 }

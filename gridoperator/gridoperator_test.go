@@ -15,9 +15,11 @@ func TestParseAlias(t *testing.T) {
 		"AT008320": "8000",     // invalid target
 		"AT008380": "AT008380", // self
 		"AT003470": "AT008200", // chained: target is an alias itself
+		"AT001111": "AT002222", // cycle: both entries are dropped
+		"AT002222": "AT001111",
 	})
 	assert.Equal(t, map[string]string{"AT008200": "AT008000", "AT008230": "AT008000"}, alias)
-	assert.Len(t, errs, 4)
+	assert.Len(t, errs, 6)
 }
 
 func TestFromMeteringPoint(t *testing.T) {

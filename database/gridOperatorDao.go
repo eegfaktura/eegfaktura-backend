@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 
 	"at.ourproject/vfeeg-backend/gridoperator"
 	"at.ourproject/vfeeg-backend/model"
@@ -36,6 +37,10 @@ func applyGridOperator(ctx context.Context, q sqlx.QueryerContext, tenant string
 	for _, p := range points {
 		r, ok := gridoperator.FromMeteringPoint(p.MeteringPoint, alias)
 		if !ok {
+			// Not derivable (no AT + 6 digits): never take the client's value. On insert the field
+			// stays empty, on update it is omitted, so the stored value is kept.
+			p.GridOperatorId = null.String{}
+			p.GridOperatorName = null.String{}
 			continue
 		}
 		if r.Aliased {
@@ -54,14 +59,16 @@ func gridOperatorName(id string, names map[string]string, eegCode, eegName strin
 	if name, ok := names[id]; ok {
 		return name
 	}
-	if id == eegCode {
+	if strings.EqualFold(id, eegCode) {
 		return eegName
 	}
 	return ""
 }
 
 func queryGridOperatorNames(ctx context.Context, q sqlx.QueryerContext) (map[string]string, error) {
-	stmt, _, err := pgDialect.From("base.gridoperators").Select("id", "name").ToSQL()
+	// An id can have several names (PK id+name): take the lowest, like fix.sql (min(name)).
+	stmt, _, err := pgDialect.From("base.gridoperators").Select("id", "name").
+		Order(goqu.C("id").Asc(), goqu.C("name").Desc()).ToSQL()
 	if err != nil {
 		return nil, err
 	}

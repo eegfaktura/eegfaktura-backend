@@ -2,6 +2,9 @@ package database
 
 import (
 	"context"
+
+	"at.ourproject/vfeeg-backend/model"
+	"gopkg.in/guregu/null.v4"
 	"os"
 	"strings"
 	"testing"
@@ -125,13 +128,13 @@ func TestUpdateMeteringPointPartial_gridOperator(t *testing.T) {
 	defer func(orig func() map[string]string) { gridOperatorAlias = orig }(gridOperatorAlias)
 	gridOperatorAlias = func() map[string]string { return map[string]string{"AT008200": "AT008000"} }
 
-	const tenant = "TE000013"
-	const communityId = "AT00800000000TC000013000000000001"
+	const tenant = "TE000014"
+	const communityId = "AT00800000000TC000014000000000001"
 	t.Cleanup(func() { removeTestTenant(t, tenant) })
 	_, err = testDB.DbInstance.Exec(`INSERT INTO base.eeg
 		(tenant, name, description, "rcNumber", area, gridoperator_code, gridoperator_name, "communityId",
 		 street, "streetNumber", city, zip, email)
-		VALUES ('TE000013','NB-PARTIAL-TEST','Testgemeinschaft #107','TE000013','LOCAL','AT008000','Energienetze Steiermark',
+		VALUES ('TE000014','NB-PARTIAL-TEST','Testgemeinschaft #107','TE000014','LOCAL','AT008000','Energienetze Steiermark',
 		 '` + communityId + `','Weg','1','Weiz','8160','nb-partial-test@example.org')
 		ON CONFLICT (tenant) DO NOTHING`)
 	require.NoError(t, err)
@@ -147,15 +150,15 @@ func TestUpdateMeteringPointPartial_gridOperator(t *testing.T) {
 	require.NoError(t, db.ImportMasterdataFromExcel(ctx, buf, "test.xlsx", "EEG Stammdaten", tenant))
 
 	_, err = testDB.DbInstance.Exec(`UPDATE base.meteringpoint SET grid_operator_id = NULL, grid_operator_name = NULL
-		WHERE tenant = 'TE000013' AND metering_point_id = $1`, empty)
+		WHERE tenant = 'TE000014' AND metering_point_id = $1`, empty)
 	require.NoError(t, err)
 	_, err = testDB.DbInstance.Exec(`UPDATE base.meteringpoint SET grid_operator_id = 'AT009999', grid_operator_name = 'manuell'
-		WHERE tenant = 'TE000013' AND metering_point_id = $1`, stored)
+		WHERE tenant = 'TE000014' AND metering_point_id = $1`, stored)
 	require.NoError(t, err)
 
 	gridOperator := func(zp string) (id, participantId string, name *string) {
 		require.NoError(t, testDB.DbInstance.QueryRowx(`SELECT COALESCE(grid_operator_id, ''), grid_operator_name, participant_id
-			FROM base.meteringpoint WHERE tenant = 'TE000013' AND metering_point_id = $1`, zp).Scan(&id, &name, &participantId))
+			FROM base.meteringpoint WHERE tenant = 'TE000014' AND metering_point_id = $1`, zp).Scan(&id, &name, &participantId))
 		return
 	}
 	update := func(zp string, values map[string]interface{}) {
@@ -176,4 +179,14 @@ func TestUpdateMeteringPointPartial_gridOperator(t *testing.T) {
 	update(stored, map[string]interface{}{"metering_point_id": renamed})
 	id, _, _ = gridOperator(renamed)
 	assert.Equal(t, "AT008000", id, "new metering point number derives again")
+
+	// full update: derived from the number in the path, the client's value is ignored even with
+	// an empty or different number in the body
+	_, participantId, _ := gridOperator(renamed)
+	require.NoError(t, db.UpdateMeteringPoint(ctx, tenant, "test", participantId, renamed, &model.MeteringPoint{
+		MeteringPoint: "", GridOperatorId: null.StringFrom("AT009999"), GridOperatorName: null.StringFrom("manuell"),
+		Status: model.S_ACTIVE, State: &model.MeterState{},
+	}))
+	id, _, _ = gridOperator(renamed)
+	assert.Equal(t, "AT008000", id, "full update derives from the path number")
 }

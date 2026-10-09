@@ -40,11 +40,16 @@ func ParseAlias(raw map[string]string) (map[string]string, []error) {
 		}
 		alias[from] = to
 	}
+	// decide on the complete list first, so a cycle (A -> B, B -> A) drops both entries
+	chained := []string{}
 	for _, from := range sortedKeys(alias) {
 		if to := alias[from]; alias[to] != "" {
 			errs = append(errs, fmt.Errorf("grid operator alias %s -> %s is chained (%s is an alias itself)", from, to, to))
-			delete(alias, from)
+			chained = append(chained, from)
 		}
+	}
+	for _, from := range chained {
+		delete(alias, from)
 	}
 	return alias, errs
 }
@@ -62,7 +67,11 @@ func Alias() map[string]string {
 		for _, err := range errs {
 			log.Error(err)
 		}
-		log.Infof("Grid operator alias list: %d entries", len(aliasMap))
+		if len(aliasMap) == 0 {
+			log.Warnf("Grid operator alias list %q is empty: retired grid operator numbers are not translated", ConfigKey)
+		} else {
+			log.Infof("Grid operator alias list: %d entries", len(aliasMap))
+		}
 	})
 	return aliasMap
 }

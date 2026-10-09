@@ -15,12 +15,13 @@ names AS (
   SELECT id, min(name) AS name FROM base.gridoperators GROUP BY id),
 soll AS (
   SELECT m.tenant, m.metering_point_id,
-         coalesce(a.new_code, upper(substr(m.metering_point_id, 1, 8))) AS soll,
+         coalesce(a.new_code, upper(substr(trim(m.metering_point_id), 1, 8))) AS soll,
          upper(e.gridoperator_code) AS eeg_nb, e.gridoperator_name AS eeg_name
   FROM base.meteringpoint m
   JOIN base.eeg e ON e.tenant = m.tenant
-  LEFT JOIN alias a ON a.old_code = upper(substr(m.metering_point_id, 1, 8))
-  WHERE length(m.metering_point_id) >= 8
+  LEFT JOIN alias a ON a.old_code = upper(substr(trim(m.metering_point_id), 1, 8))
+  -- like the backend: only numbers that start with AT + 6 digits are derived
+  WHERE upper(trim(m.metering_point_id)) ~ '^AT[0-9]{6}'
     AND m.metering_point_id NOT IN (SELECT x.metering_point_id FROM excluded x WHERE x.metering_point_id IS NOT NULL))
 UPDATE base.meteringpoint m
 SET grid_operator_id   = s.soll,
