@@ -9,6 +9,21 @@ this changelog highlights the changes relevant for overview and operations.
 ## [Unreleased]
 
 ### Changed
+- **Grid operator of a metering point is derived from its number** (platform#107). On create,
+  participant registration, Excel import, update and when the metering point number changes, the
+  backend sets `grid_operator_id` to the first 8 characters of the metering point number, for EEG
+  and BEG alike. Values sent by the client are ignored; a partial update of
+  `gridOperatorId`/`gridOperatorName` is refused (400). The name comes from `base.gridoperators`
+  (fallback: the EEG's own grid operator name).
+- New config `grid-operator-alias` translates grid operator numbers that are only reachable under
+  another number (Energienetze Steiermark `AT008200` … → `AT008000`). Read once at start; invalid
+  or chained entries are logged as ERROR and ignored.
+- Excel import: the column "Netzbetreiber" is optional and only compared. A different value or an
+  alias translation is reported as `W_GRID_OPERATOR_IGNORED` in the import log; rows are no longer
+  skipped because column A is empty (`E_PARTICIPANT_1002` is gone). The header row is also found
+  via the "Zählpunkt" column.
+- `scripts/nb-alias-107/`: check and correction scripts for existing metering points (run by the
+  operator).
 - `config.yaml`: default `eda-process-versions` raised to the schema sets valid since 2026-10-05
   (ANFORDERUNG_ECON 02.40, ECOF 02.30, ECP 02.10, CPF 01.10). The grid operators deactivated the
   old sets, so the old defaults were rejected by the Ponton messenger. Needs eda-xp >= 1.0.7.
