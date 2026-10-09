@@ -8,6 +8,16 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Fixed
+- **Revocations of the data release were dropped when a metering point exists in several
+  communities.** `AUFHEBUNG_CCMI`/`AUFHEBUNG_CCMC` carry no community id; the lookup also matched
+  rows without consent id in other communities and gave up with "Meteringpoint … is not unique"
+  (13× in Prod within 30 days). The metering point stayed active, and neither history nor
+  notification was written. The lookup now tries the receiving community (MQTT topic) and the exact
+  consent id first. If it still fails, the message is kept in the history of the receiving
+  community (without notification) instead of being lost.
+- `ANTWORT_CCMS` without code 176 is now written to the history as well.
+
 ### Changed
 - `config.yaml`: default `eda-process-versions` raised to the schema sets valid since 2026-10-05
   (ANFORDERUNG_ECON 02.40, ECOF 02.30, ECP 02.10, CPF 01.10). The grid operators deactivated the

@@ -380,6 +380,8 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 	}
 
 	var eeg *model.Eeg
+	// notify is false when the message is only recorded in the history (revocation not applied)
+	notify := true
 	switch msg.MessageCode {
 	case model.EBMS_AUFHEBUNG_CCMS:
 		eeg, err = db.GetEegByEcId(ctx, msg.Payload.EcId)
@@ -416,10 +418,18 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 			return
 		}
 
+		// msg.Tenant is the receiving community (MQTT topic); it decides when the metering point
+		// is assigned in several communities.
 		var tenant *string
-		if tenant, err = db.MeteringPointRevokeByConsentId(ctx, meters[0].consentId, meters[0].meter, meters[0].consentEnd); err != nil {
+		if tenant, err = db.MeteringPointRevokeByConsentId(ctx, msg.Tenant, meters[0].consentId, meters[0].meter, meters[0].consentEnd); err != nil {
 			logrus.WithField("tenant", msg.Tenant).Errorf("can not revoke metering point %+v - %+v", meters, err)
-			return
+			// keep the message visible in the history of the receiving community
+			if eeg, err = db.GetEegById(ctx, strings.ToUpper(msg.Tenant)); err != nil {
+				logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg by tenant %s (REVOKE metering point)", msg.Tenant)
+				return
+			}
+			notify = false
+			break
 		}
 
 		eeg, err = db.GetEegById(ctx, *tenant)
@@ -429,19 +439,17 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 		}
 
 	case model.EBMS_ANTWORT_CCMS:
-		if len(meters) > 0 {
-			if codesContains([]int16{176}, meters[0].codes) {
-				meters[0].consentEnd = civil.DateOf(time.UnixMilli(msg.Payload.ConsentEnd))
-				eeg, err = db.GetEegByEcId(ctx, msg.Payload.EcId)
-				if err != nil {
-					logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
-					return
-				}
-
-				if err := db.MeteringPointRevoke(ctx, eeg.Id, meters[0].meter, meters[0].consentEnd); err != nil {
-					logrus.WithField("tenant", eeg.Id).Errorf("can not revoke metering point %+v - %+v", meters, err)
-					return
-				}
+		// fetch the EEG for every answer, so answers without code 176 reach the history as well
+		eeg, err = db.GetEegByEcId(ctx, msg.Payload.EcId)
+		if err != nil {
+			logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
+			return
+		}
+		if len(meters) > 0 && codesContains([]int16{176}, meters[0].codes) {
+			meters[0].consentEnd = civil.DateOf(time.UnixMilli(msg.Payload.ConsentEnd))
+			if err := db.MeteringPointRevoke(ctx, eeg.Id, meters[0].meter, meters[0].consentEnd); err != nil {
+				logrus.WithField("tenant", eeg.Id).Errorf("can not revoke metering point %+v - %+v", meters, err)
+				return
 			}
 		}
 	default:
@@ -449,7 +457,7 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 	}
 
 	if eeg != nil {
-		if len(meters) > 0 {
+		if notify && len(meters) > 0 {
 			err = db.SaveNotification(eeg.Id, msg.MessageCode, []string{meters[0].meter}, convertCodes2Strings(meters[0].codes), msg.Protocol)
 			if err != nil {
 				logrus.WithError(err).Error("can not save notification")

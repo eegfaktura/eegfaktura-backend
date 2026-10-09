@@ -1221,7 +1221,7 @@ func TestMeteringPointRevokeByConsentId_INIT(t *testing.T) {
 	consentEnd := civil.DateOf(time.UnixMilli(m.ConsentEnd))
 	fmt.Printf("Consent-End: %+s\n", consentEnd)
 
-	tenant, err := db.MeteringPointRevokeByConsentId(context.Background(), &consentId, meterId, consentEnd)
+	tenant, err := db.MeteringPointRevokeByConsentId(context.Background(), "", &consentId, meterId, consentEnd)
 	require.NoError(t, err)
 	require.NotNil(t, tenant)
 	require.Equal(t, "TE100201", *tenant)
@@ -1259,7 +1259,7 @@ func TestMeteringPointRevokeByConsentId_ACTIVE(t *testing.T) {
 	consentEnd := civil.DateOf(time.UnixMilli(m.ConsentEnd))
 	fmt.Printf("Consent-End: %+s\n", consentEnd)
 
-	tenant, err := db.MeteringPointRevokeByConsentId(context.Background(), &consentId, meterId, consentEnd)
+	tenant, err := db.MeteringPointRevokeByConsentId(context.Background(), "", &consentId, meterId, consentEnd)
 	require.NoError(t, err)
 	require.NotNil(t, tenant)
 	require.Equal(t, "TE100201", *tenant)
