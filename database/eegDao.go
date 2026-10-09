@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"at.ourproject/vfeeg-backend/model"
 	"github.com/doug-martin/goqu/v9"
@@ -18,6 +19,7 @@ type EegRepository interface {
 	GetEegById(ctx context.Context, tenant string) (*model.Eeg, error)
 	GetEegByIdForUser(ctx context.Context, tenant string) (*model.Eeg, error)
 	GetEegByEcId(ctx context.Context, edId string) (*model.Eeg, error)
+	GetTenantsByRcNumber(ctx context.Context, rcNumber string) ([]string, error)
 	UpdateEegPartial(ctx context.Context, tenant string, fields map[string]interface{}) error
 	GetGridOperators(ctx context.Context) (map[string]string, error)
 	FetchTenantsName(ctx context.Context, tenants []string, isSuperUser bool) ([]tenantsNameStruct, error)
@@ -45,6 +47,23 @@ func (db *sqlDatabase) GetEegByIdForUser(ctx context.Context, tenant string) (*m
 
 func (db *sqlDatabase) GetEegByEcId(ctx context.Context, edId string) (*model.Eeg, error) {
 	return getEegByEcId(ctx, db.db, edId)
+}
+
+// GetTenantsByRcNumber returns the tenants of an RC number (MQTT topic of incoming EDA messages).
+// A GEA owns several tenants per RC number (GC100019-001, GC100019-002, …).
+func (db *sqlDatabase) GetTenantsByRcNumber(ctx context.Context, rcNumber string) ([]string, error) {
+	stmt, args, err := pgDialect.From(TABLE_EEG).Select("tenant").Where(goqu.Or(
+		goqu.Func("upper", goqu.I("rcNumber")).Eq(strings.ToUpper(rcNumber)),
+		goqu.Func("upper", goqu.C("tenant")).Eq(strings.ToUpper(rcNumber)),
+	)).Order(goqu.C("tenant").Asc()).Prepared(true).ToSQL()
+	if err != nil {
+		return nil, model.ErrGetEeg(err)
+	}
+	var tenants []string
+	if err = db.db.SelectContext(ctx, &tenants, stmt, args...); err != nil {
+		return nil, model.ErrGetEeg(err)
+	}
+	return tenants, nil
 }
 
 func (db *sqlDatabase) UpdateEegPartial(ctx context.Context, tenant string, fields map[string]interface{}) error {
