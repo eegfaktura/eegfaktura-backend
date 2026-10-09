@@ -380,6 +380,8 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 	}
 
 	var eeg *model.Eeg
+	// tenants receive notification and history; one RC number can own several tenants (GEA)
+	var tenants []string
 	// notify is false when the message is only recorded in the history (revocation not applied)
 	notify := true
 	switch msg.MessageCode {
@@ -418,25 +420,17 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 			return
 		}
 
-		// msg.Tenant is the receiving community (MQTT topic); it decides when the metering point
+		// msg.Tenant is the receiving RC number (MQTT topic); it decides when the metering point
 		// is assigned in several communities.
 		receiver := strings.ToUpper(msg.Tenant)
-		var tenant *string
-		if tenant, err = db.MeteringPointRevokeByConsentId(ctx, receiver, meters[0].consentId, meters[0].meter, meters[0].consentEnd); err != nil {
+		if tenants, err = db.MeteringPointRevokeByConsentId(ctx, receiver, meters[0].consentId, meters[0].meter, meters[0].consentEnd); err != nil {
 			logrus.WithField("tenant", msg.Tenant).Errorf("can not revoke metering point %+v - %+v", meters, err)
 			// keep the message visible in the history of the receiving community
-			if eeg, err = db.GetEegById(ctx, receiver); err != nil {
-				logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg by tenant %s (REVOKE metering point)", msg.Tenant)
+			if tenants, err = db.GetTenantsByRcNumber(ctx, receiver); err != nil || len(tenants) == 0 {
+				logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg by rc number %s (REVOKE metering point) - %v", msg.Tenant, err)
 				return
 			}
 			notify = false
-			break
-		}
-
-		eeg, err = db.GetEegById(ctx, *tenant)
-		if err != nil {
-			logrus.WithField("tenant", *tenant).Errorf("can not fetch eeg by tenant %s (REVOKE metering point)", *tenant)
-			return
 		}
 
 	case model.EBMS_ANTWORT_CCMS:
@@ -460,15 +454,20 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 	}
 
 	if eeg != nil {
+		tenants = []string{eeg.Id}
+	}
+	if len(tenants) == 0 {
+		logrus.WithField("tenant", msg.Tenant).Errorf("%+v", msg.Payload)
+		return
+	}
+	for _, tenant := range tenants {
 		if notify && len(meters) > 0 {
-			err = db.SaveNotification(eeg.Id, msg.MessageCode, []string{meters[0].meter}, convertCodes2Strings(meters[0].codes), msg.Protocol)
+			err = db.SaveNotification(tenant, msg.MessageCode, []string{meters[0].meter}, convertCodes2Strings(meters[0].codes), msg.Protocol)
 			if err != nil {
 				logrus.WithError(err).Error("can not save notification")
 			}
 		}
-		_ = db.SaveHistory(eeg.Id, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
-	} else {
-		logrus.WithField("tenant", msg.Tenant).Errorf("%+v", msg.Payload)
+		_ = db.SaveHistory(tenant, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
 	}
 }
 

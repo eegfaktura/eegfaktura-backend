@@ -14,10 +14,13 @@ this changelog highlights the changes relevant for overview and operations.
   rows without consent id in other communities and gave up with "Meteringpoint … is not unique"
   (13× in Prod within 30 days). The metering point stayed active, and neither history nor
   notification was written. The lookup now tries the receiving community (MQTT topic) and the exact
-  consent id first. A row of another community without consent id is only used when the receiving
-  community is unknown, so a revocation can no longer end another community's participation. If it
-  still fails, the message is kept in the history of the receiving community (without
-  notification) instead of being lost.
+  consent id first. The receiving community is resolved via its RC number, so a GEA with several
+  tenants per RC number (`GC100019-001`, `-002`, …) is revoked in all of them; a hit in several
+  tenants is only accepted when they share one RC number. The migration placeholder consent id
+  `Migration` counts as "no consent id". A row of another community without consent id is only
+  used when the receiving community is unknown, so a revocation can no longer end another
+  community's participation. If it still fails, the message is kept in the history of the
+  receiving community (all its tenants, without notification) instead of being lost.
 - `ANTWORT_CCMS` without code 176 is now written to the history as well (without notification).
 - eda tests compile again (`FindMeteringByStatus` without context).
 

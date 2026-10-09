@@ -20,13 +20,13 @@ func TestMeteringPointRevokeByConsentId_sameMeterInTwoTenants(t *testing.T) {
 	const meterA = "AT0030000000000000000000000111001"
 	const meterB = "AT0030000000000000000000000111002"
 	const meterC = "AT0030000000000000000000000111003"
-	setup := func(tenant, communityId string, meters ...string) {
+	setupRc := func(tenant, rcNumber, communityId string, meters ...string) {
 		_, err := testDB.DbInstance.Exec(`INSERT INTO base.eeg
 			(tenant, name, description, "rcNumber", area, gridoperator_code, gridoperator_name, "communityId",
 			 street, "streetNumber", city, zip, email)
 			VALUES ($1, 'REVOKE-TEST', 'Revoke-Test', $2, 'LOCAL', 'AT003000', 'Netz OÖ', $3,
 			 'Weg', '1', 'Linz', '4020', 'revoke-test@example.org')
-			ON CONFLICT (tenant) DO NOTHING`, tenant, tenant, communityId)
+			ON CONFLICT (tenant) DO NOTHING`, tenant, rcNumber, communityId)
 		require.NoError(t, err)
 		var rows [][]interface{}
 		for _, m := range meters {
@@ -38,6 +38,7 @@ func TestMeteringPointRevokeByConsentId_sameMeterInTwoTenants(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, db.ImportMasterdataFromExcel(ctx, buf, "test.xlsx", "EEG Stammdaten", tenant))
 	}
+	setup := func(tenant, communityId string, meters ...string) { setupRc(tenant, tenant, communityId, meters...) }
 	// old community without consent id, new community with consent id
 	setup("TE000011", "AT00300000000TC000011000000000001", meterA, meterB, meterC)
 	setup("TE000012", "AT00300000000TC000012000000000001", meterA, meterB)
@@ -53,18 +54,18 @@ func TestMeteringPointRevokeByConsentId_sameMeterInTwoTenants(t *testing.T) {
 
 	t.Run("exact consent id wins, even without receiving tenant", func(t *testing.T) {
 		consent := "CONSENT-A"
-		tenant, err := db.MeteringPointRevokeByConsentId(ctx, "", &consent, meterA, end)
+		tenants, err := db.MeteringPointRevokeByConsentId(ctx, "", &consent, meterA, end)
 		require.NoError(t, err)
-		assert.Equal(t, "TE000012", *tenant)
+		assert.Equal(t, []string{"TE000012"}, tenants)
 		assert.Equal(t, "INACTIVE", state("TE000012", meterA))
 		assert.Equal(t, "ACTIVE", state("TE000011", meterA))
 	})
 
 	t.Run("receiving tenant decides when no consent id is stored", func(t *testing.T) {
 		consent := "CONSENT-UNKNOWN"
-		tenant, err := db.MeteringPointRevokeByConsentId(ctx, "TE000011", &consent, meterB, end)
+		tenants, err := db.MeteringPointRevokeByConsentId(ctx, "TE000011", &consent, meterB, end)
 		require.NoError(t, err)
-		assert.Equal(t, "TE000011", *tenant)
+		assert.Equal(t, []string{"TE000011"}, tenants)
 		assert.Equal(t, "INACTIVE", state("TE000011", meterB))
 		assert.Equal(t, "ACTIVE", state("TE000012", meterB))
 	})
@@ -76,9 +77,9 @@ func TestMeteringPointRevokeByConsentId_sameMeterInTwoTenants(t *testing.T) {
 		assert.Equal(t, "ACTIVE", state("TE000011", meterC))
 
 		// without a receiving tenant the only assigned row is still found
-		tenant, err := db.MeteringPointRevokeByConsentId(ctx, "", &consent, meterC, end)
+		tenants, err := db.MeteringPointRevokeByConsentId(ctx, "", &consent, meterC, end)
 		require.NoError(t, err)
-		assert.Equal(t, "TE000011", *tenant)
+		assert.Equal(t, []string{"TE000011"}, tenants)
 		assert.Equal(t, "INACTIVE", state("TE000011", meterC))
 	})
 
@@ -87,5 +88,42 @@ func TestMeteringPointRevokeByConsentId_sameMeterInTwoTenants(t *testing.T) {
 		_, err := db.MeteringPointRevokeByConsentId(ctx, "", &consent, meterB, end)
 		assert.ErrorContains(t, err, "not unique")
 		assert.Equal(t, "ACTIVE", state("TE000012", meterB))
+	})
+	// GEA: one RC number owns several tenants; the MQTT topic carries the RC number
+	const meterG = "AT0030000000000000000000000111004"
+	const meterM = "AT0030000000000000000000000111005"
+	setupRc("GC000020-001", "GC000020", "AT00300000000TC000020000000000001", meterG, meterM)
+	setupRc("GC000020-002", "GC000020", "AT00300000000TC000020000000000002", meterG)
+	setup("TE000013", "AT00300000000TC000013000000000001", meterG)
+
+	t.Run("GEA: all tenants of the receiving RC number are revoked", func(t *testing.T) {
+		consent := "CONSENT-UNKNOWN"
+		tenants, err := db.MeteringPointRevokeByConsentId(ctx, "GC000020", &consent, meterG, end)
+		require.NoError(t, err)
+		assert.ElementsMatch(t, []string{"GC000020-001", "GC000020-002"}, tenants)
+		assert.Equal(t, "INACTIVE", state("GC000020-001", meterG))
+		assert.Equal(t, "INACTIVE", state("GC000020-002", meterG))
+		assert.Equal(t, "ACTIVE", state("TE000013", meterG))
+	})
+
+	t.Run("GEA: exact consent id in several tenants of one RC number", func(t *testing.T) {
+		_, err := testDB.DbInstance.Exec(`UPDATE base.meteringpoint SET consent_id = 'CONSENT-G', process_state = 'ACTIVE', status = 'ACTIVE'
+			WHERE tenant IN ('GC000020-001', 'GC000020-002') AND metering_point_id = $1`, meterG)
+		require.NoError(t, err)
+		consent := "CONSENT-G"
+		tenants, err := db.MeteringPointRevokeByConsentId(ctx, "", &consent, meterG, end)
+		require.NoError(t, err)
+		assert.ElementsMatch(t, []string{"GC000020-001", "GC000020-002"}, tenants)
+	})
+
+	t.Run("migration placeholder counts as no consent id", func(t *testing.T) {
+		_, err := testDB.DbInstance.Exec(`UPDATE base.meteringpoint SET consent_id = 'Migration'
+			WHERE tenant = 'GC000020-001' AND metering_point_id = $1`, meterM)
+		require.NoError(t, err)
+		consent := "CONSENT-UNKNOWN"
+		tenants, err := db.MeteringPointRevokeByConsentId(ctx, "GC000020", &consent, meterM, end)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"GC000020-001"}, tenants)
+		assert.Equal(t, "INACTIVE", state("GC000020-001", meterM))
 	})
 }
