@@ -75,10 +75,11 @@ type Result struct {
 }
 
 // FromMeteringPoint derives the grid operator from the metering point number. ok is false when
-// the number is too short to contain an operator number.
+// the number does not start with an operator number (AT + 6 digits), e.g. too short or a typo;
+// the caller then keeps the value it has.
 func FromMeteringPoint(meteringPoint string, alias map[string]string) (Result, bool) {
 	mp := strings.ToUpper(strings.TrimSpace(meteringPoint))
-	if len(mp) < 8 {
+	if len(mp) < 8 || !codePattern.MatchString(mp[:8]) {
 		return Result{}, false
 	}
 	prefix := mp[:8]

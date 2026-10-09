@@ -457,18 +457,28 @@ func UpdateMeteringPointPartial(ctx context.Context, db *sqlx.DB, tenant, userna
 	values["modifiedBy"] = username
 	values["modifiedAt"] = civil.Now()
 
-	// A new metering point number means a new grid operator (platform#107).
-	if newId, ok := values["metering_point_id"].(string); ok {
-		point := &model.MeteringPoint{MeteringPoint: newId}
-		if err := applyGridOperator(ctx, db, tenant, []*model.MeteringPoint{point}); err != nil {
-			return model.ErrUpdateMeter(err)
+	// The grid operator follows the metering point number (platform#107): a new number sets it,
+	// otherwise it is only filled in when nothing is stored yet (rows from before #107).
+	newId, idChanged := values["metering_point_id"].(string)
+	if !idChanged {
+		newId = meterId
+	}
+	point := &model.MeteringPoint{MeteringPoint: newId}
+	if err := applyGridOperator(ctx, db, tenant, []*model.MeteringPoint{point}); err != nil {
+		return model.ErrUpdateMeter(err)
+	}
+	if point.GridOperatorId.Valid {
+		var name interface{}
+		if point.GridOperatorName.Valid {
+			name = point.GridOperatorName.String
 		}
-		if point.GridOperatorId.Valid {
+		if idChanged {
 			values["grid_operator_id"] = point.GridOperatorId.String
-			values["grid_operator_name"] = nil
-			if point.GridOperatorName.Valid {
-				values["grid_operator_name"] = point.GridOperatorName.String
-			}
+			values["grid_operator_name"] = name
+		} else {
+			empty := goqu.L(`COALESCE("grid_operator_id", '') = ''`)
+			values["grid_operator_id"] = goqu.Case().When(empty, point.GridOperatorId.String).Else(goqu.C("grid_operator_id"))
+			values["grid_operator_name"] = goqu.Case().When(empty, name).Else(goqu.C("grid_operator_name"))
 		}
 	}
 

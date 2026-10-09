@@ -33,6 +33,7 @@ func TestFromMeteringPoint(t *testing.T) {
 		{"plain prefix", "AT0030000000000000000000000123456", Result{Id: "AT003000", Prefix: "AT003000"}, true},
 		{"lower case and blanks", " at0082000816000000000000004269401 ", Result{Id: "AT008000", Prefix: "AT008200", Aliased: true}, true},
 		{"too short", "AT00820", Result{}, false},
+		{"typo in operator number", "AT00 300000000000000000000123456", Result{}, false},
 		{"empty", "", Result{}, false},
 	}
 	for _, tt := range tests {

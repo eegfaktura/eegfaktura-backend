@@ -19,6 +19,7 @@ func TestNbAliasScripts(t *testing.T) {
 
 	const tenant = "TE000010"
 	const communityId = "AT00800000000TC000010000000000001"
+	t.Cleanup(func() { removeTestTenant(t, tenant) })
 	_, err = testDB.DbInstance.Exec(`INSERT INTO base.eeg
 		(tenant, name, description, "rcNumber", area, gridoperator_code, gridoperator_name, "communityId",
 		 street, "streetNumber", city, zip, email)
@@ -98,4 +99,81 @@ func TestNbAliasScripts(t *testing.T) {
 		WHERE tenant = 'TE000010' AND metering_point_id = 'AT0082000816000000000000000107001'`).Scan(&id, &name))
 	assert.Equal(t, "AT008000", id)
 	assert.NotEqual(t, "alt", name)
+}
+
+// removeTestTenant deletes a tenant created by a test (participants cascade to their metering
+// points, addresses, bank accounts and contact details; the import writes a notification), so it
+// does not stay in the shared test database.
+func removeTestTenant(t *testing.T, tenant string) {
+	for _, stmt := range []string{
+		`DELETE FROM base.notification WHERE tenant = $1`,
+		`DELETE FROM base.participant WHERE tenant = $1`,
+		`DELETE FROM base.eeg WHERE tenant = $1`,
+	} {
+		_, err := testDB.DbInstance.Exec(stmt, tenant)
+		require.NoError(t, err)
+	}
+}
+
+// platform#107: a partial update re-derives the grid operator when the metering point number
+// changes, fills it in when nothing is stored yet, and leaves a stored value alone otherwise.
+func TestUpdateMeteringPointPartial_gridOperator(t *testing.T) {
+	ctx := context.Background()
+	db, err := GetTestDB(ctx, testDB)
+	require.NoError(t, err)
+
+	defer func(orig func() map[string]string) { gridOperatorAlias = orig }(gridOperatorAlias)
+	gridOperatorAlias = func() map[string]string { return map[string]string{"AT008200": "AT008000"} }
+
+	const tenant = "TE000013"
+	const communityId = "AT00800000000TC000013000000000001"
+	t.Cleanup(func() { removeTestTenant(t, tenant) })
+	_, err = testDB.DbInstance.Exec(`INSERT INTO base.eeg
+		(tenant, name, description, "rcNumber", area, gridoperator_code, gridoperator_name, "communityId",
+		 street, "streetNumber", city, zip, email)
+		VALUES ('TE000013','NB-PARTIAL-TEST','Testgemeinschaft #107','TE000013','LOCAL','AT008000','Energienetze Steiermark',
+		 '` + communityId + `','Weg','1','Weiz','8160','nb-partial-test@example.org')
+		ON CONFLICT (tenant) DO NOTHING`)
+	require.NoError(t, err)
+
+	const empty, stored, renamed = "AT0082000816000000000000000107011", "AT0030000000000000000000000107012", "AT0082000816000000000000000107013"
+	row := func(zp string) []interface{} {
+		return []interface{}{"", communityId, "8160", "Weiz", "Weg", "1",
+			zp, "CONSUMPTION", "Partial", "NbAlias", "privat", "", "", "", "ACTIVE", "", ""}
+	}
+	f := buildImportSheet(t, [][]interface{}{row(empty), row(stored)})
+	buf, err := f.WriteToBuffer()
+	require.NoError(t, err)
+	require.NoError(t, db.ImportMasterdataFromExcel(ctx, buf, "test.xlsx", "EEG Stammdaten", tenant))
+
+	_, err = testDB.DbInstance.Exec(`UPDATE base.meteringpoint SET grid_operator_id = NULL, grid_operator_name = NULL
+		WHERE tenant = 'TE000013' AND metering_point_id = $1`, empty)
+	require.NoError(t, err)
+	_, err = testDB.DbInstance.Exec(`UPDATE base.meteringpoint SET grid_operator_id = 'AT009999', grid_operator_name = 'manuell'
+		WHERE tenant = 'TE000013' AND metering_point_id = $1`, stored)
+	require.NoError(t, err)
+
+	gridOperator := func(zp string) (id, participantId string, name *string) {
+		require.NoError(t, testDB.DbInstance.QueryRowx(`SELECT COALESCE(grid_operator_id, ''), grid_operator_name, participant_id
+			FROM base.meteringpoint WHERE tenant = 'TE000013' AND metering_point_id = $1`, zp).Scan(&id, &name, &participantId))
+		return
+	}
+	update := func(zp string, values map[string]interface{}) {
+		_, participantId, _ := gridOperator(zp)
+		require.NoError(t, db.UpdateMeteringPointPartial(ctx, tenant, "test", participantId, zp, values))
+	}
+
+	update(empty, map[string]interface{}{"equipmentName": "WP"})
+	id, _, _ := gridOperator(empty)
+	assert.Equal(t, "AT008000", id, "empty value is filled in")
+
+	update(stored, map[string]interface{}{"equipmentName": "WP"})
+	id, _, name := gridOperator(stored)
+	assert.Equal(t, "AT009999", id, "stored value stays")
+	require.NotNil(t, name)
+	assert.Equal(t, "manuell", *name)
+
+	update(stored, map[string]interface{}{"metering_point_id": renamed})
+	id, _, _ = gridOperator(renamed)
+	assert.Equal(t, "AT008000", id, "new metering point number derives again")
 }

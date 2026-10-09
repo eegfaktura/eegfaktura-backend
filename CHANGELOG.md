@@ -13,8 +13,13 @@ this changelog highlights the changes relevant for overview and operations.
   participant registration, Excel import, update and when the metering point number changes, the
   backend sets `grid_operator_id` to the first 8 characters of the metering point number, for EEG
   and BEG alike. Values sent by the client are ignored; a partial update of
-  `gridOperatorId`/`gridOperatorName` is refused (400). The name comes from `base.gridoperators`
-  (fallback: the EEG's own grid operator name).
+  `gridOperatorId`/`gridOperatorName` is refused (400); any other partial update fills in the grid
+  operator when none is stored yet. A metering point number whose first 8 characters are not
+  `AT` + 6 digits keeps its value. The name comes from `base.gridoperators` (fallback: the EEG's
+  own grid operator name).
+  **This already changes the receiver of EDA messages:** `getReceiverFrom` and the metering point
+  list prefer the stored `grid_operator_id` over the EEG's, so every metering point written after
+  the release is sent to the derived operator.
 - New config `grid-operator-alias` translates grid operator numbers that are only reachable under
   another number (Energienetze Steiermark `AT008200` … → `AT008000`). Read once at start; invalid
   or chained entries are logged as ERROR and ignored.
