@@ -14,6 +14,7 @@ this changelog highlights the changes relevant for overview and operations.
 - `security-scan.yml`: for now the vulnerable-dependency and misconfiguration findings are only reported (`SCAN_FAIL_ON: none` — the gate prints a warning in every run that it is off); leaked secrets still fail. To be tightened again once the known findings are paid down.
 - `pr-checks.yml` runs with `TZ=Europe/Berlin`, the time zone of the image (`Dockerfile`): the database tests expect local midnight of that zone and failed on GitHub's UTC runners.
 - `security-scan.yml`: the dependency scan no longer asks Maven Central for each pom — a new job "Build dependencies" resolves the poms beforehand (pinned Maven 3.9.11, cached) and hands them to Trivy; on GitHub's shared runner IPs Trivy's own lookups ended in `429 Too Many Requests` and failed the scan. The secret scan runs with `--offline-scan`; the gates no longer run (with a misleading "unreadable report") after a failed scan.
+- `rolling-release.yml`: no image build on a draft pull request — it runs when the pull request is marked ready for review (`ready_for_review`) and on every later push to it; `pr-checks.yml` still checks drafts. Pushes, tags and the deploy dispatch are unchanged.
 
 ## [1.1.4] – 2026-10-05
 
