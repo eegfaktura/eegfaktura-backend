@@ -771,20 +771,6 @@ func meteringPointRevoke(ctx context.Context, db *sqlx.DB, tenant, meterId strin
 	return tx.Commit()
 }
 
-// meteringPointRevokeByConsentId revokes a metering point after AUFHEBUNG_CCMI/CCMC. These
-// messages carry no community id, only the receiving RC number (MQTT topic). One RC number can
-// own several tenants (GEA: GC100019-001, GC100019-002, …) and a metering point may be assigned in
-// several communities (multiple participation, move), so the rows are searched step by step and
-// the first step that matches wins:
-//  1. tenants of the receiving RC number + exact consent id
-//  2. tenants of the receiving RC number + no consent id (or the migration placeholder), assigned
-//  3. any tenant + exact consent id
-//  4. any tenant + no consent id (or placeholder), assigned — only without a receiving RC number,
-//     otherwise it could revoke another community's participation of the same metering point
-//
-// Without a consent id the "assigned" steps take any consent. A step may hit several tenants
-// only if they all belong to the same RC number (the consent is given per RC number); otherwise
-// nothing is changed and an error is returned. receiver must be upper case.
 // RevokedTenant is a tenant in which a revocation was applied. WasActive tells whether the
 // metering point had status ACTIVE before, i.e. whether its participation really ended now
 // (platform#116: only then the member gets a mail).
@@ -802,6 +788,20 @@ func TenantNames(revoked []RevokedTenant) []string {
 	return names
 }
 
+// meteringPointRevokeByConsentId revokes a metering point after AUFHEBUNG_CCMI/CCMC. These
+// messages carry no community id, only the receiving RC number (MQTT topic). One RC number can
+// own several tenants (GEA: GC100019-001, GC100019-002, …) and a metering point may be assigned in
+// several communities (multiple participation, move), so the rows are searched step by step and
+// the first step that matches wins:
+//  1. tenants of the receiving RC number + exact consent id
+//  2. tenants of the receiving RC number + no consent id (or the migration placeholder), assigned
+//  3. any tenant + exact consent id
+//  4. any tenant + no consent id (or placeholder), assigned — only without a receiving RC number,
+//     otherwise it could revoke another community's participation of the same metering point
+//
+// Without a consent id the "assigned" steps take any consent. A step may hit several tenants
+// only if they all belong to the same RC number (the consent is given per RC number); otherwise
+// nothing is changed and an error is returned. receiver must be upper case.
 func meteringPointRevokeByConsentId(ctx context.Context, db *sqlx.DB, receiver string, consentId *string, meterId string, consentEnd civil.Date) ([]RevokedTenant, error) {
 	execDB := goqu.New("postgres", db)
 
@@ -809,11 +809,11 @@ func meteringPointRevokeByConsentId(ctx context.Context, db *sqlx.DB, receiver s
 	if err != nil {
 		return nil, model.ErrOpenTx(err)
 	}
+	// Commit explicitly on success and check its error: a mail goes out on the result
+	// (platform#116), so a revocation that was not persisted must not be reported as done.
+	committed := false
 	defer func() {
-		switch err {
-		case nil:
-			_ = tx.Commit()
-		default:
+		if !committed {
 			_ = tx.Rollback()
 		}
 	}()
@@ -844,16 +844,33 @@ func meteringPointRevokeByConsentId(ctx context.Context, db *sqlx.DB, receiver s
 	}
 
 	for _, where := range steps {
-		// read the status before the update in the same transaction (platform#116)
-		var revoked []RevokedTenant
-		if err = tx.From(TABLE_METERINGPOINT).
-			Select(goqu.C("tenant"), goqu.L(`bool_or("status" = ?)`, model.S_ACTIVE).As("was_active")).
-			Where(where).GroupBy(goqu.C("tenant")).Order(goqu.C("tenant").Asc()).
-			ScanStructsContext(ctx, &revoked); err != nil {
+		// Read and lock the rows before the update (platform#116). MQTT handlers run in parallel
+		// (SetOrderMatters(false)): with FOR UPDATE a second message for the same metering point
+		// waits for this transaction and then sees the row INACTIVE, so only one mail goes out.
+		var rows []struct {
+			Tenant string `db:"tenant"`
+			Status string `db:"status"`
+		}
+		if err = tx.From(TABLE_METERINGPOINT).Select(goqu.C("tenant"), goqu.C("status")).
+			Where(where).Order(goqu.C("tenant").Asc()).ForUpdate(exp.Wait).
+			ScanStructsContext(ctx, &rows); err != nil {
 			return nil, model.ErrUpdateMeter(err)
 		}
-		if len(revoked) == 0 {
+		if len(rows) == 0 {
 			continue
+		}
+		revoked := []RevokedTenant{}
+		index := map[string]int{}
+		for _, r := range rows {
+			i, ok := index[r.Tenant]
+			if !ok {
+				i = len(revoked)
+				index[r.Tenant] = i
+				revoked = append(revoked, RevokedTenant{Tenant: r.Tenant})
+			}
+			if r.Status == string(model.S_ACTIVE) {
+				revoked[i].WasActive = true
+			}
 		}
 		tenants := TenantNames(revoked)
 		var rcNumbers []string
@@ -882,6 +899,10 @@ func meteringPointRevokeByConsentId(ctx context.Context, db *sqlx.DB, receiver s
 		if err != nil {
 			return nil, model.ErrUpdateMeter(err)
 		}
+		if err = tx.Commit(); err != nil {
+			return nil, model.ErrUpdateMeter(err)
+		}
+		committed = true
 		return revoked, nil
 	}
 	err = model.ErrUpdateMeter(fmt.Errorf("Meteringpoint %s not found", meterId))

@@ -58,7 +58,7 @@ func sendMeteringPointInactiveMails(ctx context.Context, db database.Database, t
 			continue
 		}
 
-		// the participant's meter list skips the now inactive metering point, read it directly
+		// the direction is read from the assigned metering point row itself
 		direction := ""
 		if m, err := db.FindAssignedMeteringById(ctx, tenant, meterId); err == nil && m != nil {
 			direction = parser.DirectionText(m.Direction)

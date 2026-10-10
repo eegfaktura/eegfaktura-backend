@@ -6,7 +6,7 @@
 </head>
 <body>
 <p>Hallo {{.Participant.FirstName}},</p>
-<p>dein Zählpunkt <strong>{{.MeteringPoint}}</strong>{{if .Direction}} ({{.Direction}}){{end}} ist ab dem <strong>{{.EndDate}}</strong> nicht mehr Teil der Energiegemeinschaft {{.Eeg.Name}}.</p>
+<p>dein Zählpunkt <strong>{{.MeteringPoint}}</strong>{{if .Direction}} ({{.Direction}}){{end}} ist {{if .EndDate}}ab dem <strong>{{.EndDate}}</strong> {{end}}nicht mehr Teil der Energiegemeinschaft {{.Eeg.Name}}.</p>
 <p>{{.Reason}}</p>
 <p>Falls das nicht beabsichtigt war oder du Fragen hast, melde dich bitte bei deiner Energiegemeinschaft.</p>
 <p>Mit besten Grüßen</p>

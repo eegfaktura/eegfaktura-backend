@@ -18,3 +18,9 @@ func TestDirectionText(t *testing.T) {
 	assert.Equal(t, "Einspeisung", DirectionText(model.GENERATOR))
 	assert.Equal(t, "", DirectionText(""))
 }
+
+func TestFormatDateMissing(t *testing.T) {
+	// a missing consentEnd arrives as the Unix epoch
+	assert.Equal(t, "", FormatDate(civil.DateFor(1970, 1, 1)))
+	assert.Equal(t, "", FormatDate(civil.Date{}))
+}

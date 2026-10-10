@@ -105,6 +105,9 @@ func TestMeteringPointRevokeByConsentId_sameMeterInTwoTenants(t *testing.T) {
 		tenants := TenantNames(revoked)
 		require.NoError(t, err)
 		assert.ElementsMatch(t, []string{"GC000020-001", "GC000020-002"}, tenants)
+		for _, r := range revoked {
+			assert.True(t, r.WasActive, "%s was active before (platform#116)", r.Tenant)
+		}
 		assert.Equal(t, "INACTIVE", state("GC000020-001", meterG))
 		assert.Equal(t, "INACTIVE", state("GC000020-002", meterG))
 		assert.Equal(t, "ACTIVE", state("TE000013", meterG))

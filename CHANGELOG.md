@@ -22,7 +22,10 @@ this changelog highlights the changes relevant for overview and operations.
   - No mail for manual changes (archiving, editing in the UI or admin).
 
   One mail per metering point and member address (a GEA with several tenants per RC number sends it
-  once). A failed mail never undoes the revocation; the community gets an error notification. New
+  once). Parallel MQTT handlers cannot send it twice: the revoked rows are locked (`FOR UPDATE`)
+  before their previous status is read, and the commit error is checked before any mail goes out.
+  A failed mail never undoes the revocation; the community gets an error notification. Without a
+  consent end the mail names no date. New
   global template `zp-inactive-mail-template` (embedded, can be overridden per tenant like the other
   templates).
 

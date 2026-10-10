@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"strings"
 
 	"at.ourproject/vfeeg-backend/config"
 	"at.ourproject/vfeeg-backend/model"
@@ -27,8 +28,12 @@ type InactiveMailData struct {
 	Reason        string // one sentence: who ended the data release
 }
 
-// FormatDate renders a date as TT.MM.JJJJ.
+// FormatDate renders a date as TT.MM.JJJJ; "" for a missing date (zero value or the Unix epoch,
+// which is what a missing consentEnd in an EDA message turns into).
 func FormatDate(d civil.Date) string {
+	if d.Year() <= 1970 {
+		return ""
+	}
 	return fmt.Sprintf("%02d.%02d.%04d", d.Day(), int(d.Month()), d.Year())
 }
 
@@ -47,7 +52,7 @@ func DirectionText(d model.DirectionType) string {
 // SendMeteringPointInactiveMail renders the inactive mail and sends it to the member, with the
 // community in Cc. A member without e-mail address gets no mail.
 func SendMeteringPointInactiveMail(sendMail services.SendMailFunc, tenant string, data InactiveMailData) error {
-	if !data.Participant.Contact.Email.Valid || data.Participant.Contact.Email.String == "" {
+	if !data.Participant.Contact.Email.Valid || strings.TrimSpace(data.Participant.Contact.Email.String) == "" {
 		log.WithField("tenant", tenant).Warnf("Participant without email contact: %s (%s)", data.Participant.LastName, data.Participant.Id)
 		return nil
 	}

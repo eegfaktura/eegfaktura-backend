@@ -134,6 +134,15 @@ func TestInactiveMail(t *testing.T) {
 		assert.Empty(t, *mails)
 	})
 
+	t.Run("member ends the data release: one mail with the member sentence", func(t *testing.T) {
+		const mMember = "AT0030000000000000000000000116007"
+		meter(mMember, "a1160000-0000-0000-0000-000000000001", "TI000116", "ACTIVE", "C-MEMBER", "CONSUMPTION")
+		mails := captureInactiveMails(t, nil)
+		protocolCmRevImpHandler(context.Background(), responseMsg(model.EBMS_AUFHEBUNG_CCMC, model.CM_REV_CUS, "ti000116", mMember, "C-MEMBER", "1099"))
+		require.Len(t, *mails, 1)
+		assert.Contains(t, (*mails)[0].body, "Du hast die Datenfreigabe für diesen Zählpunkt beendet")
+	})
+
 	t.Run("member without e-mail: revocation applied, no mail", func(t *testing.T) {
 		mails := captureInactiveMails(t, nil)
 		protocolCmRevImpHandler(context.Background(), responseMsg(model.EBMS_AUFHEBUNG_CCMC, model.CM_REV_CUS, "ti000116", mNoMail, "C-NOMAIL", "1099"))
