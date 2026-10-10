@@ -8,6 +8,24 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Added
+- **Mail to the member when a metering point is no longer part of the community**
+  (platform#116, concept `konzept-zaehlpunkt-inaktiv-mail.md`). Subject "Dein Zählpunkt ist nicht
+  mehr Teil der Energiegemeinschaft"; it names the metering point, its direction, the end date
+  (consent end) and who ended the data release. The community gets a copy (Cc), same sending path
+  as the activation mail. Triggers:
+  - `AUFHEBUNG_CCMI` (grid operator) and `AUFHEBUNG_CCMC` (member): only when the metering point
+    really went from status ACTIVE to INACTIVE; a redelivery, a metering point that was not active
+    yet, or a revocation that could not be applied sends no mail.
+  - EEG deregistration: only with the grid operator's confirmation (`ANTWORT_CCMS` with code 176),
+    not with the community's own request (`AUFHEBUNG_CCMS`) and not with a rejection.
+  - No mail for manual changes (archiving, editing in the UI or admin).
+
+  One mail per metering point and member address (a GEA with several tenants per RC number sends it
+  once). A failed mail never undoes the revocation; the community gets an error notification. New
+  global template `zp-inactive-mail-template` (embedded, can be overridden per tenant like the other
+  templates).
+
 ### Fixed
 - **Revocations of the data release were dropped when a metering point exists in several
   communities.** `AUFHEBUNG_CCMI`/`AUFHEBUNG_CCMC` carry no community id; the lookup also matched

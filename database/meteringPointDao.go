@@ -32,7 +32,7 @@ type MeteringPointRepository interface {
 	RegisterMeteringPoint(ctx context.Context, tenant, username, participantId string, point *model.MeteringPoint) error
 	RemoveMeteringPoint(ctx context.Context, tenant, participantId, meterId string) error
 	MeteringPointRevoke(ctx context.Context, tenant, meterId string, consentEnd civil.Date) error
-	MeteringPointRevokeByConsentId(ctx context.Context, receiver string, consentId *string, meterId string, consentEnd civil.Date) ([]string, error)
+	MeteringPointRevokeByConsentId(ctx context.Context, receiver string, consentId *string, meterId string, consentEnd civil.Date) ([]RevokedTenant, error)
 	ImportMeteringPoints(ctx context.Context, tenant, username, participantId string, point []*model.MeteringPoint) error
 	UpdateMeteringPoint(ctx context.Context, tenant, username, participantId, meterId string, meteringPoint *model.MeteringPoint) error
 	UpdateMeteringPointPartial(ctx context.Context, tenant, username, participantId, meterId string, values map[string]interface{}) error
@@ -108,7 +108,7 @@ func (db *sqlDatabase) MeteringPointRevoke(ctx context.Context, tenant, meterId 
 	return meteringPointRevoke(ctx, db.db, tenant, meterId, consentEnd)
 }
 
-func (db *sqlDatabase) MeteringPointRevokeByConsentId(ctx context.Context, receiver string, consentId *string, meterId string, consentEnd civil.Date) ([]string, error) {
+func (db *sqlDatabase) MeteringPointRevokeByConsentId(ctx context.Context, receiver string, consentId *string, meterId string, consentEnd civil.Date) ([]RevokedTenant, error) {
 	return meteringPointRevokeByConsentId(ctx, db.db, receiver, consentId, meterId, consentEnd)
 }
 
@@ -785,7 +785,24 @@ func meteringPointRevoke(ctx context.Context, db *sqlx.DB, tenant, meterId strin
 // Without a consent id the "assigned" steps take any consent. A step may hit several tenants
 // only if they all belong to the same RC number (the consent is given per RC number); otherwise
 // nothing is changed and an error is returned. receiver must be upper case.
-func meteringPointRevokeByConsentId(ctx context.Context, db *sqlx.DB, receiver string, consentId *string, meterId string, consentEnd civil.Date) ([]string, error) {
+// RevokedTenant is a tenant in which a revocation was applied. WasActive tells whether the
+// metering point had status ACTIVE before, i.e. whether its participation really ended now
+// (platform#116: only then the member gets a mail).
+type RevokedTenant struct {
+	Tenant    string `db:"tenant"`
+	WasActive bool   `db:"was_active"`
+}
+
+// TenantNames returns the tenants of a revocation result.
+func TenantNames(revoked []RevokedTenant) []string {
+	names := make([]string, 0, len(revoked))
+	for _, r := range revoked {
+		names = append(names, r.Tenant)
+	}
+	return names
+}
+
+func meteringPointRevokeByConsentId(ctx context.Context, db *sqlx.DB, receiver string, consentId *string, meterId string, consentEnd civil.Date) ([]RevokedTenant, error) {
 	execDB := goqu.New("postgres", db)
 
 	tx, err := execDB.Begin()
@@ -827,13 +844,18 @@ func meteringPointRevokeByConsentId(ctx context.Context, db *sqlx.DB, receiver s
 	}
 
 	for _, where := range steps {
-		var tenants []string
-		if err = tx.From(TABLE_METERINGPOINT).Select("tenant").Distinct().Where(where).ScanValsContext(ctx, &tenants); err != nil {
+		// read the status before the update in the same transaction (platform#116)
+		var revoked []RevokedTenant
+		if err = tx.From(TABLE_METERINGPOINT).
+			Select(goqu.C("tenant"), goqu.L(`bool_or("status" = ?)`, model.S_ACTIVE).As("was_active")).
+			Where(where).GroupBy(goqu.C("tenant")).Order(goqu.C("tenant").Asc()).
+			ScanStructsContext(ctx, &revoked); err != nil {
 			return nil, model.ErrUpdateMeter(err)
 		}
-		if len(tenants) == 0 {
+		if len(revoked) == 0 {
 			continue
 		}
+		tenants := TenantNames(revoked)
 		var rcNumbers []string
 		if err = tx.From(TABLE_EEG).Select(goqu.Func("upper", goqu.I("rcNumber"))).Distinct().
 			Where(goqu.C("tenant").In(tenants)).ScanValsContext(ctx, &rcNumbers); err != nil {
@@ -860,7 +882,7 @@ func meteringPointRevokeByConsentId(ctx context.Context, db *sqlx.DB, receiver s
 		if err != nil {
 			return nil, model.ErrUpdateMeter(err)
 		}
-		return tenants, nil
+		return revoked, nil
 	}
 	err = model.ErrUpdateMeter(fmt.Errorf("Meteringpoint %s not found", meterId))
 	return nil, err

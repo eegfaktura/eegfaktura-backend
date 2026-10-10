@@ -54,7 +54,8 @@ func TestMeteringPointRevokeByConsentId_sameMeterInTwoTenants(t *testing.T) {
 
 	t.Run("exact consent id wins, even without receiving tenant", func(t *testing.T) {
 		consent := "CONSENT-A"
-		tenants, err := db.MeteringPointRevokeByConsentId(ctx, "", &consent, meterA, end)
+		revoked, err := db.MeteringPointRevokeByConsentId(ctx, "", &consent, meterA, end)
+		tenants := TenantNames(revoked)
 		require.NoError(t, err)
 		assert.Equal(t, []string{"TE000012"}, tenants)
 		assert.Equal(t, "INACTIVE", state("TE000012", meterA))
@@ -63,7 +64,8 @@ func TestMeteringPointRevokeByConsentId_sameMeterInTwoTenants(t *testing.T) {
 
 	t.Run("receiving tenant decides when no consent id is stored", func(t *testing.T) {
 		consent := "CONSENT-UNKNOWN"
-		tenants, err := db.MeteringPointRevokeByConsentId(ctx, "TE000011", &consent, meterB, end)
+		revoked, err := db.MeteringPointRevokeByConsentId(ctx, "TE000011", &consent, meterB, end)
+		tenants := TenantNames(revoked)
 		require.NoError(t, err)
 		assert.Equal(t, []string{"TE000011"}, tenants)
 		assert.Equal(t, "INACTIVE", state("TE000011", meterB))
@@ -77,7 +79,8 @@ func TestMeteringPointRevokeByConsentId_sameMeterInTwoTenants(t *testing.T) {
 		assert.Equal(t, "ACTIVE", state("TE000011", meterC))
 
 		// without a receiving tenant the only assigned row is still found
-		tenants, err := db.MeteringPointRevokeByConsentId(ctx, "", &consent, meterC, end)
+		revoked, err := db.MeteringPointRevokeByConsentId(ctx, "", &consent, meterC, end)
+		tenants := TenantNames(revoked)
 		require.NoError(t, err)
 		assert.Equal(t, []string{"TE000011"}, tenants)
 		assert.Equal(t, "INACTIVE", state("TE000011", meterC))
@@ -98,7 +101,8 @@ func TestMeteringPointRevokeByConsentId_sameMeterInTwoTenants(t *testing.T) {
 
 	t.Run("GEA: all tenants of the receiving RC number are revoked", func(t *testing.T) {
 		consent := "CONSENT-UNKNOWN"
-		tenants, err := db.MeteringPointRevokeByConsentId(ctx, "GC000020", &consent, meterG, end)
+		revoked, err := db.MeteringPointRevokeByConsentId(ctx, "GC000020", &consent, meterG, end)
+		tenants := TenantNames(revoked)
 		require.NoError(t, err)
 		assert.ElementsMatch(t, []string{"GC000020-001", "GC000020-002"}, tenants)
 		assert.Equal(t, "INACTIVE", state("GC000020-001", meterG))
@@ -111,7 +115,8 @@ func TestMeteringPointRevokeByConsentId_sameMeterInTwoTenants(t *testing.T) {
 			WHERE tenant IN ('GC000020-001', 'GC000020-002') AND metering_point_id = $1`, meterG)
 		require.NoError(t, err)
 		consent := "CONSENT-G"
-		tenants, err := db.MeteringPointRevokeByConsentId(ctx, "", &consent, meterG, end)
+		revoked, err := db.MeteringPointRevokeByConsentId(ctx, "", &consent, meterG, end)
+		tenants := TenantNames(revoked)
 		require.NoError(t, err)
 		assert.ElementsMatch(t, []string{"GC000020-001", "GC000020-002"}, tenants)
 	})
@@ -121,7 +126,8 @@ func TestMeteringPointRevokeByConsentId_sameMeterInTwoTenants(t *testing.T) {
 			WHERE tenant = 'GC000020-001' AND metering_point_id = $1`, meterM)
 		require.NoError(t, err)
 		consent := "CONSENT-UNKNOWN"
-		tenants, err := db.MeteringPointRevokeByConsentId(ctx, "GC000020", &consent, meterM, end)
+		revoked, err := db.MeteringPointRevokeByConsentId(ctx, "GC000020", &consent, meterM, end)
+		tenants := TenantNames(revoked)
 		require.NoError(t, err)
 		assert.Equal(t, []string{"GC000020-001"}, tenants)
 		assert.Equal(t, "INACTIVE", state("GC000020-001", meterM))

@@ -384,6 +384,10 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 	var tenants []string
 	// notify is false when the message is only recorded in the history (revocation not applied)
 	notify := true
+	// mailTenants get the "no longer part of the community" mail (platform#116): CCMI/CCMC only
+	// where the metering point really went from ACTIVE to INACTIVE, an EEG deregistration only with
+	// the grid operator's confirmation (ANTWORT_CCMS 176)
+	var mailTenants []string
 	switch msg.MessageCode {
 	case model.EBMS_AUFHEBUNG_CCMS:
 		eeg, err = db.GetEegByEcId(ctx, msg.Payload.EcId)
@@ -423,7 +427,8 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 		// msg.Tenant is the receiving RC number (MQTT topic); it decides when the metering point
 		// is assigned in several communities.
 		receiver := strings.ToUpper(msg.Tenant)
-		if tenants, err = db.MeteringPointRevokeByConsentId(ctx, receiver, meters[0].consentId, meters[0].meter, meters[0].consentEnd); err != nil {
+		var revoked []database.RevokedTenant
+		if revoked, err = db.MeteringPointRevokeByConsentId(ctx, receiver, meters[0].consentId, meters[0].meter, meters[0].consentEnd); err != nil {
 			logrus.WithField("tenant", msg.Tenant).Errorf("can not revoke metering point %+v - %+v", meters, err)
 			// keep the message visible in the history of the receiving community
 			if tenants, err = db.GetTenantsByRcNumber(ctx, receiver); err != nil || len(tenants) == 0 {
@@ -431,6 +436,13 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 				return
 			}
 			notify = false
+		} else {
+			tenants = database.TenantNames(revoked)
+			for _, r := range revoked {
+				if r.WasActive {
+					mailTenants = append(mailTenants, r.Tenant)
+				}
+			}
 		}
 
 	case model.EBMS_ANTWORT_CCMS:
@@ -448,6 +460,7 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 				logrus.WithField("tenant", eeg.Id).Errorf("can not revoke metering point %+v - %+v", meters, err)
 				return
 			}
+			mailTenants = []string{eeg.Id}
 		}
 	default:
 		return
@@ -468,6 +481,9 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 			}
 		}
 		_ = db.SaveHistory(tenant, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
+	}
+	if len(mailTenants) > 0 && len(meters) > 0 {
+		sendMeteringPointInactiveMails(ctx, db, mailTenants, meters[0].meter, meters[0].consentEnd, inactiveReasonFor(msg.MessageCode))
 	}
 }
 
