@@ -2,13 +2,10 @@ package parser
 
 import (
 	"fmt"
-	"strings"
 
-	"at.ourproject/vfeeg-backend/config"
 	"at.ourproject/vfeeg-backend/model"
 	"at.ourproject/vfeeg-backend/services"
 	"github.com/jjeffery/civil"
-	log "github.com/sirupsen/logrus"
 )
 
 // InactiveMailTemplate is the template config of the mail that tells a member that a metering point
@@ -52,25 +49,5 @@ func DirectionText(d model.DirectionType) string {
 // SendMeteringPointInactiveMail renders the inactive mail and sends it to the member, with the
 // community in Cc. A member without e-mail address gets no mail.
 func SendMeteringPointInactiveMail(sendMail services.SendMailFunc, tenant string, data InactiveMailData) error {
-	if !data.Participant.Contact.Email.Valid || strings.TrimSpace(data.Participant.Contact.Email.String) == "" {
-		log.WithField("tenant", tenant).Warnf("Participant without email contact: %s (%s)", data.Participant.LastName, data.Participant.Id)
-		return nil
-	}
-
-	tmplFS, source := resolveTemplateSource(tenant, InactiveMailTemplate)
-	templateConfig, err := config.ReadActivationMailTemplateConfig(tmplFS, InactiveMailTemplate)
-	if err != nil {
-		return err
-	}
-	log.Infof("Mail template %q for tenant %q resolved from %s", InactiveMailTemplate, tenant, source)
-
-	buf, err := ParseTemplate(tmplFS, templateConfig.TemplateFile, data)
-	if err != nil {
-		return err
-	}
-	return sendMail(tenant, data.Participant.Contact.Email.String,
-		InactiveMailSubject, data.Eeg.Email.Ptr(), buf,
-		buildInlineContent(tmplFS, templateConfig.InlinePictures),
-		buildAttachment(tmplFS, templateConfig.Attachment.Name, templateConfig.Attachment.Mime),
-	)
+	return sendTemplateMail(sendMail, tenant, InactiveMailSubject, InactiveMailTemplate, data.Eeg, data.Participant, data)
 }
