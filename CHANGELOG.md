@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.2.0] – 2026-10-11
+
 ### Added
 - **Mail to the member when a metering point is no longer part of the community**
   (platform#116, concept `konzept-zaehlpunkt-inaktiv-mail.md`). Subject "Dein Zählpunkt ist nicht
