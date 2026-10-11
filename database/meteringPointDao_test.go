@@ -1222,9 +1222,11 @@ func TestMeteringPointRevokeByConsentId_INIT(t *testing.T) {
 	consentEnd := civil.DateOf(time.UnixMilli(m.ConsentEnd))
 	fmt.Printf("Consent-End: %+s\n", consentEnd)
 
-	tenants, err := db.MeteringPointRevokeByConsentId(context.Background(), "", &consentId, meterId, consentEnd)
+	revoked, err := db.MeteringPointRevokeByConsentId(context.Background(), "", &consentId, meterId, consentEnd)
+	tenants := TenantNames(revoked)
 	require.NoError(t, err)
 	require.Equal(t, []string{"TE100201"}, tenants)
+	assert.False(t, revoked[0].WasActive, "an INIT metering point was not active (platform#116)")
 
 	meters, err := db.FindInactiveMeteringById(context.Background(), "TE100201", meterId)
 	require.NoError(t, err)
@@ -1259,9 +1261,11 @@ func TestMeteringPointRevokeByConsentId_ACTIVE(t *testing.T) {
 	consentEnd := civil.DateOf(time.UnixMilli(m.ConsentEnd))
 	fmt.Printf("Consent-End: %+s\n", consentEnd)
 
-	tenants, err := db.MeteringPointRevokeByConsentId(context.Background(), "", &consentId, meterId, consentEnd)
+	revoked, err := db.MeteringPointRevokeByConsentId(context.Background(), "", &consentId, meterId, consentEnd)
+	tenants := TenantNames(revoked)
 	require.NoError(t, err)
 	require.Equal(t, []string{"TE100201"}, tenants)
+	assert.True(t, revoked[0].WasActive, "an ACTIVE metering point ends its participation (platform#116)")
 
 	meters, err := db.FindNewMeteringById(context.Background(), "TE100201", meterId)
 	require.NoError(t, err)
