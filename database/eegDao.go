@@ -2,6 +2,8 @@ package database
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"at.ourproject/vfeeg-backend/model"
 	"github.com/doug-martin/goqu/v9"
@@ -17,6 +19,7 @@ type EegRepository interface {
 	GetEegById(ctx context.Context, tenant string) (*model.Eeg, error)
 	GetEegByIdForUser(ctx context.Context, tenant string) (*model.Eeg, error)
 	GetEegByEcId(ctx context.Context, edId string) (*model.Eeg, error)
+	GetTenantsByRcNumber(ctx context.Context, rcNumber string) ([]string, error)
 	UpdateEegPartial(ctx context.Context, tenant string, fields map[string]interface{}) error
 	GetGridOperators(ctx context.Context) (map[string]string, error)
 	FetchTenantsName(ctx context.Context, tenants []string, isSuperUser bool) ([]tenantsNameStruct, error)
@@ -44,6 +47,23 @@ func (db *sqlDatabase) GetEegByIdForUser(ctx context.Context, tenant string) (*m
 
 func (db *sqlDatabase) GetEegByEcId(ctx context.Context, edId string) (*model.Eeg, error) {
 	return getEegByEcId(ctx, db.db, edId)
+}
+
+// GetTenantsByRcNumber returns the tenants of an RC number (MQTT topic of incoming EDA messages).
+// A GEA owns several tenants per RC number (GC100019-001, GC100019-002, …).
+func (db *sqlDatabase) GetTenantsByRcNumber(ctx context.Context, rcNumber string) ([]string, error) {
+	stmt, args, err := pgDialect.From(TABLE_EEG).Select("tenant").Where(goqu.Or(
+		goqu.Func("upper", goqu.I("rcNumber")).Eq(strings.ToUpper(rcNumber)),
+		goqu.Func("upper", goqu.C("tenant")).Eq(strings.ToUpper(rcNumber)),
+	)).Order(goqu.C("tenant").Asc()).Prepared(true).ToSQL()
+	if err != nil {
+		return nil, model.ErrGetEeg(err)
+	}
+	var tenants []string
+	if err = db.db.SelectContext(ctx, &tenants, stmt, args...); err != nil {
+		return nil, model.ErrGetEeg(err)
+	}
+	return tenants, nil
 }
 
 func (db *sqlDatabase) UpdateEegPartial(ctx context.Context, tenant string, fields map[string]interface{}) error {
@@ -138,7 +158,26 @@ func insertEeg(ctx context.Context, db *sqlx.DB, tenant string, eeg *model.Eeg) 
 	return err
 }
 
+// eegProtectedUpdateFields must never be set through the generic EEG update:
+// the identity/tenant key and rcNumber/online/createdAt (model: skipupdate),
+// plus communityId and tenant, which route incoming EDA messages and identify
+// the community. The web round-trips the whole EEG object on save, so these are
+// dropped silently rather than rejected.
+var eegProtectedUpdateFields = func() map[string]struct{} {
+	m := map[string]struct{}{"tenant": {}, "communityId": {}}
+	for _, k := range model.SkipUpdateJSONKeys(model.Eeg{}) {
+		m[k] = struct{}{}
+	}
+	return m
+}()
+
 func updateEegPartial(ctx context.Context, db *sqlx.DB, tenant string, fields map[string]interface{}) error {
+	// Drop write-protected fields so a client cannot set tenant, rcNumber,
+	// communityId etc. through this generic update (mass assignment).
+	for k := range eegProtectedUpdateFields {
+		delete(fields, k)
+	}
+
 	// eeg.Email is the recipient of the ZP list mail and the billing CC —
 	// enforce the shared address rule before persisting (normalize,
 	// reject invalid).
@@ -154,11 +193,21 @@ func updateEegPartial(ctx context.Context, db *sqlx.DB, tenant string, fields ma
 		}
 	}
 
-	var eeg model.Eeg
-	updateRecord, err := buildRecordMap(&eeg, fields)
-	if err != nil {
-		return err
+	// Map every key to a known, updatable column. The key ends up as an SQL
+	// identifier, which goqu quotes but does not escape, so an unknown key is
+	// rejected instead of being passed through verbatim.
+	updateRecord := goqu.Record{}
+	for k, v := range fields {
+		col, ok := model.ResolveFlatUpdateColumn(model.Eeg{}, k)
+		if !ok {
+			return fmt.Errorf("field %q cannot be updated", k)
+		}
+		updateRecord[col] = v
 	}
+	if len(updateRecord) == 0 {
+		return nil
+	}
+
 	statement, _, err := pgDialect.Update(TABLE_EEG).Set(updateRecord).Where(goqu.Ex{"tenant": goqu.V(tenant)}).ToSQL()
 	if err != nil {
 		log.WithError(err).Errorf("Update EEG VALUES: %s", statement)
@@ -170,30 +219,7 @@ func updateEegPartial(ctx context.Context, db *sqlx.DB, tenant string, fields ma
 }
 
 func getGridOperators(ctx context.Context, db *sqlx.DB) (map[string]string, error) {
-
-	sql, _, err := pgDialect.From("base.gridoperators").ToSQL()
-
-	rows, err := db.QueryContext(ctx, sql)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var id string
-	var name string
-	result := map[string]string{}
-	for rows.Next() {
-		err = rows.Scan(&id, &name)
-		if err != nil {
-			return nil, err
-		}
-		result[id] = name
-	}
-	if err = rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return result, nil
+	return queryGridOperatorNames(ctx, db)
 }
 
 type tenantsNameStruct struct {

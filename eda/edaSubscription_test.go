@@ -19,8 +19,10 @@ import (
 	"testing"
 )
 
+var testDB *database.TestDatabase
+
 func TestMain(m *testing.M) {
-	testDB := database.SetupTestDatabase()
+	testDB = database.SetupTestDatabase()
 	db, err := database.GetTestDB(context.Background(), testDB)
 	if err != nil {
 		panic(err)
@@ -508,7 +510,7 @@ func TestProtocolEcReqOnlHandler(t *testing.T) {
 			msg := m.prepareMsg(t, m.msg)
 			protocolEcReqOnlHandler(ctx, msg)
 
-			meter, err := db.FindMeteringByStatus(msg.Tenant, m.meterId, m.expectedState)
+			meter, err := db.FindMeteringByStatus(ctx, msg.Tenant, m.meterId, m.expectedState)
 			require.NoError(t, err)
 			m.check(t, meter)
 		})
@@ -615,6 +617,107 @@ func TestProtocolCmRevImpHandler(t *testing.T) {
 		})
 	}
 
+}
+
+// Revocations that cannot be applied, and answers without code 176, only go to the history of the
+// community: no notification, no change of the metering point.
+func TestProtocolCmRevImpHandler_historyOnly(t *testing.T) {
+	tests := []struct {
+		name     string
+		msg      string
+		msgType  model.EbMsMessageType
+		msgProto model.EdaProtocol
+	}{
+		{
+			// the metering point is only in TE000015, with another consent id; the receiving
+			// community TE000016 must not revoke it
+			name:     "Aufhebung CCMI - not found in receiving community",
+			msg:      `{"conversationId":"AT003000202610090000000000000000901","messageId":"AT003000202610090000000000000000902","sender":"AT003000","receiver":"RC100181","messageCode":"AUFHEBUNG_CCMI","responseData":[{"meteringPoint":"AT0030000000000000000000000153014","responseCode":[1099],"consentEnd":1759269600000,"consentId":"CONSENT-UNKNOWN"}]}`,
+			msgType:  model.EBMS_AUFHEBUNG_CCMI,
+			msgProto: model.CM_REV_IMP,
+		},
+		{
+			name:     "Antwort CCMS - without 176",
+			msg:      `{"conversationId":"AT003000202610090000000000000000903","messageId":"AT003000202610090000000000000000904","sender":"AT003000","receiver":"RC100181","messageCode":"ANTWORT_CCMS","ecId":"AT00300000000TC000016000000000001","responseData":[{"meteringPoint":"AT0030000000000000000000000153014","responseCode":[99]}],"consentEnd":1759269600000}`,
+			msgType:  model.EBMS_ANTWORT_CCMS,
+			msgProto: model.CM_REV_SP,
+		},
+	}
+
+	count := func(t *testing.T, query string, args ...interface{}) int {
+		var n int
+		require.NoError(t, testDB.DbInstance.Get(&n, query, args...))
+		return n
+	}
+	const meterState = `SELECT process_state FROM base.meteringpoint WHERE tenant = 'TE000015' AND metering_point_id = 'AT0030000000000000000000000153014'`
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := model.SubscribeMessage{
+				MessageCode: tt.msgType,
+				Protocol:    tt.msgProto,
+				Tenant:      "te000016", // MQTT topic, lower case
+				Payload:     model.EbmsMessage{},
+			}
+			require.NoError(t, json.Unmarshal([]byte(tt.msg), &msg.Payload))
+
+			notifications := count(t, `SELECT count(*) FROM base.notification WHERE tenant = 'TE000016'`)
+			var stateBefore string
+			require.NoError(t, testDB.DbInstance.Get(&stateBefore, meterState))
+
+			protocolCmRevImpHandler(context.Background(), msg)
+
+			assert.Equal(t, 1, count(t, `SELECT count(*) FROM base.processhistory WHERE tenant = 'TE000016' AND "conversationId" = $1`, msg.Payload.ConversationId))
+			assert.Equal(t, notifications, count(t, `SELECT count(*) FROM base.notification WHERE tenant = 'TE000016'`))
+			var stateAfter string
+			require.NoError(t, testDB.DbInstance.Get(&stateAfter, meterState))
+			assert.Equal(t, stateBefore, stateAfter)
+		})
+	}
+}
+
+// GEA: the MQTT topic carries the RC number, which owns several tenants. A revocation reaches the
+// notification and history of every tenant of that RC number — also when it cannot be applied.
+func TestProtocolCmRevImpHandler_gea(t *testing.T) {
+	const meter = "AT0030000000000000000000000153099"
+	for _, tenant := range []string{"GC000030-001", "GC000030-002"} {
+		_, err := testDB.DbInstance.Exec(`INSERT INTO base.eeg
+			(tenant, name, description, "rcNumber", area, gridoperator_code, gridoperator_name, "communityId",
+			 street, "streetNumber", city, zip, email)
+			VALUES ($1, 'GEA-TEST', 'GEA-Test', 'GC000030', 'LOCAL', 'AT003000', 'Netz OÖ', $2,
+			 'Weg', '1', 'Linz', '4020', 'gea-test@example.org')`, tenant, "AT00300000000TC0000300000000"+tenant[9:])
+		require.NoError(t, err)
+		_, err = testDB.DbInstance.Exec(`INSERT INTO base.meteringpoint (metering_point_id, participant_id, tenant, direction,
+			status, process_state, "modifiedAt", "modifiedBy", "registeredSince", activesince, inactivesince, consent_id)
+			VALUES ($1, 'ea1142dc-03da-15ee-b82b-5a985b4b033a', $2, 'CONSUMPTION', 'ACTIVE', 'ACTIVE', now(), 'test',
+			 '2025-01-01', '2025-01-01', '2999-12-31', 'CONSENT-GEA')`, meter, tenant)
+		require.NoError(t, err)
+	}
+	count := func(query string, args ...interface{}) int {
+		var n int
+		require.NoError(t, testDB.DbInstance.Get(&n, query, args...))
+		return n
+	}
+	revoke := func(conversationId, consentId string) {
+		msg := model.SubscribeMessage{MessageCode: model.EBMS_AUFHEBUNG_CCMI, Protocol: model.CM_REV_IMP, Tenant: "gc000030"}
+		require.NoError(t, json.Unmarshal([]byte(`{"conversationId":"`+conversationId+`","sender":"AT003000","receiver":"GC000030","messageCode":"AUFHEBUNG_CCMI","responseData":[{"meteringPoint":"`+meter+`","responseCode":[1099],"consentEnd":1759269600000,"consentId":"`+consentId+`"}]}`), &msg.Payload))
+		protocolCmRevImpHandler(context.Background(), msg)
+	}
+	notifications := func() int {
+		return count(`SELECT count(*) FROM base.notification WHERE tenant IN ('GC000030-001', 'GC000030-002')`)
+	}
+
+	before := notifications()
+	revoke("AT003000202610090000000000000000911", "CONSENT-GEA")
+	assert.Equal(t, 2, count(`SELECT count(*) FROM base.meteringpoint WHERE metering_point_id = $1 AND process_state = 'INACTIVE'`, meter))
+	assert.Equal(t, 2, count(`SELECT count(DISTINCT tenant) FROM base.processhistory WHERE "conversationId" = 'AT003000202610090000000000000000911'`))
+	assert.Equal(t, before+2, notifications())
+
+	// not applicable (unknown consent, rows already carry one): history in both tenants, no notification
+	before = notifications()
+	revoke("AT003000202610090000000000000000912", "CONSENT-OTHER")
+	assert.Equal(t, 2, count(`SELECT count(DISTINCT tenant) FROM base.processhistory WHERE "conversationId" = 'AT003000202610090000000000000000912'`))
+	assert.Equal(t, before, notifications())
 }
 
 func TestMeteringPointRevokeActivationFlow(t *testing.T) {
@@ -846,7 +949,7 @@ func TestMeteringPointRevokeActivationFlow(t *testing.T) {
 
 			tt.invoke(msg)
 
-			meter, err := db.FindMeteringByStatus(msg.Tenant, tt.meter, tt.expectedState)
+			meter, err := db.FindMeteringByStatus(context.Background(), msg.Tenant, tt.meter, tt.expectedState)
 			require.NoError(t, err)
 			tt.check(t, meter)
 		})

@@ -235,22 +235,6 @@ func TestUpdateEegPartial1(t *testing.T) {
 			},
 		},
 		{
-			name:  "Set EEG Online true",
-			eeg:   "TE000001",
-			param: map[string]interface{}{"online": true},
-			test: func(t *testing.T, eeg *model.Eeg) {
-				assert.Equal(t, true, eeg.Online)
-			},
-		},
-		{
-			name:  "Set EEG Online false",
-			eeg:   "TE000001",
-			param: map[string]interface{}{"online": false},
-			test: func(t *testing.T, eeg *model.Eeg) {
-				assert.Equal(t, false, eeg.Online)
-			},
-		},
-		{
 			name:  "Set EEG IBAN",
 			eeg:   "TE000001",
 			param: map[string]interface{}{"iban": "AT11 1111 1111 1111 11"},
@@ -297,5 +281,66 @@ func TestUpdateEegPartial1(t *testing.T) {
 
 			tt.test(t, eeg)
 		})
+	}
+}
+
+// TestUpdateEegPartialDropsProtectedFields deckt F6 ab: der generische EEG-Update
+// darf geschuetzte Felder (tenant, rcNumber, online, communityId) nicht setzen,
+// auch wenn der Client sie mitschickt (die Web schickt das ganze Objekt zurueck).
+func TestUpdateEegPartialDropsProtectedFields(t *testing.T) {
+	db, err := GetDB(context.Background())
+	require.NoError(t, err)
+
+	before, err := db.GetEegById(context.Background(), "TE000001")
+	require.NoError(t, err)
+
+	err = db.UpdateEegPartial(context.Background(), "TE000001", map[string]interface{}{
+		"description": "F6-probe",
+		"rcNumber":    "HIJACK",
+		"online":      true,
+		"communityId": "AT00000000000000000000000000HIJACK",
+	})
+	require.NoError(t, err)
+
+	after, err := db.GetEegById(context.Background(), "TE000001")
+	require.NoError(t, err)
+
+	assert.Equal(t, "F6-probe", after.Description, "normales Feld muss geaendert sein")
+	assert.Equal(t, before.RcNumber, after.RcNumber, "rcNumber darf nicht geaendert sein")
+	assert.Equal(t, before.CommunityId, after.CommunityId, "communityId darf nicht geaendert sein")
+	assert.Equal(t, before.Online, after.Online, "online darf nicht geaendert sein")
+}
+
+// TestUpdateEegPartialRejectsUnknownField: ein unbekannter Schluessel wird als
+// SQL-Bezeichner verwendet und darf deshalb nicht durchgereicht werden.
+func TestUpdateEegPartialRejectsUnknownField(t *testing.T) {
+	db, err := GetDB(context.Background())
+	require.NoError(t, err)
+
+	before, err := db.GetEegById(context.Background(), "TE000001")
+	require.NoError(t, err)
+
+	err = db.UpdateEegPartial(context.Background(), "TE000001", map[string]interface{}{
+		"description":               "unknown-probe",
+		`description"=(SELECT 1)--`: "x",
+	})
+	assert.Error(t, err)
+
+	after, err := db.GetEegById(context.Background(), "TE000001")
+	require.NoError(t, err)
+	assert.Equal(t, before.Description, after.Description, "nichts darf geschrieben sein")
+}
+
+// TestUpdateEegOnlineState: online wird ueber den eigenen Weg gesetzt (admin-backend
+// nach der Ponton-Registrierung), nicht ueber den generischen Update.
+func TestUpdateEegOnlineState(t *testing.T) {
+	db, err := GetDB(context.Background())
+	require.NoError(t, err)
+
+	for _, want := range []bool{true, false} {
+		require.NoError(t, db.UpdateEegOnlineState(context.Background(), "TE000001", want))
+		eeg, err := db.GetEegById(context.Background(), "TE000001")
+		require.NoError(t, err)
+		assert.Equal(t, want, eeg.Online)
 	}
 }

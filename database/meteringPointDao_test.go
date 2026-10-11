@@ -274,7 +274,7 @@ func Test_ImportMeteringPoints(t *testing.T) {
 			err = db.ImportMeteringPoints(context.Background(), tt.args.tenant, "test", tt.args.participantId, tt.args.points)
 			require.NoError(t, err)
 
-			pUnderTest, err := db.QueryParticipant(context.Background(), tt.args.participantId)
+			pUnderTest, err := db.QueryParticipant(context.Background(), tt.args.tenant, tt.args.participantId)
 			require.NoError(t, err)
 
 			tt.validate(t, pUnderTest)
@@ -324,7 +324,11 @@ func Test_RegisterMeteringPoint(t *testing.T) {
 				t.Fatalf("An error occurred while creating mock: %s", err)
 			}
 
+			// registerMeteringPoint checks the participant's tenant first (#59).
+			mock.ExpectQuery(`SELECT "tenant" FROM "base"."participant"`).
+				WillReturnRows(sqlmock.NewRows([]string{"tenant"}).AddRow(tt.args.tenant))
 			mock.ExpectBegin()
+			expectGridOperatorLookup(mock)
 			mock.ExpectExec("INSERT (.+) \"base\".\"meteringpoint\"").WillReturnResult(sqlmock.NewResult(1, 1))
 			//mock.Mock.ExpectExec("INSERT INTO \"base\".\"participant_meter_state\" (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
 			mock.ExpectExec("INSERT INTO \"base\".\"metering_partition_factor\" (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
@@ -607,7 +611,7 @@ func Test_MeteringPointIntegration(t *testing.T) {
 				pUnderTest := findParticipantUnderTest(p, "TestUser1")
 				require.NotNil(t, pUnderTest)
 
-				return db.ConfirmParticipant(context.Background(), "test", pUnderTest.Id.String())
+				return db.ConfirmParticipant(context.Background(), "TE000004", "test", pUnderTest.Id.String())
 			},
 			valid: func(t *testing.T) {
 				pUnderTest := getParticipantUnderTest(t, "TestUser1")
@@ -938,7 +942,7 @@ func Test_RegistrationProcess(t *testing.T) {
 	pUnderTest := findParticipantUnderTest(pp)
 	require.NotNil(t, pUnderTest)
 
-	err = db.ConfirmParticipant(context.Background(), "test", pUnderTest.Id.String())
+	err = db.ConfirmParticipant(context.Background(), "TE000004", "test", pUnderTest.Id.String())
 	require.NoError(t, err)
 
 	pp, err = db.GetParticipants(context.Background(), "TE000004")
@@ -1218,10 +1222,11 @@ func TestMeteringPointRevokeByConsentId_INIT(t *testing.T) {
 	consentEnd := civil.DateOf(time.UnixMilli(m.ConsentEnd))
 	fmt.Printf("Consent-End: %+s\n", consentEnd)
 
-	tenant, err := db.MeteringPointRevokeByConsentId(context.Background(), &consentId, meterId, consentEnd)
+	revoked, err := db.MeteringPointRevokeByConsentId(context.Background(), "", &consentId, meterId, consentEnd)
+	tenants := TenantNames(revoked)
 	require.NoError(t, err)
-	require.NotNil(t, tenant)
-	require.Equal(t, "TE100201", *tenant)
+	require.Equal(t, []string{"TE100201"}, tenants)
+	assert.False(t, revoked[0].WasActive, "an INIT metering point was not active (platform#116)")
 
 	meters, err := db.FindInactiveMeteringById(context.Background(), "TE100201", meterId)
 	require.NoError(t, err)
@@ -1256,10 +1261,11 @@ func TestMeteringPointRevokeByConsentId_ACTIVE(t *testing.T) {
 	consentEnd := civil.DateOf(time.UnixMilli(m.ConsentEnd))
 	fmt.Printf("Consent-End: %+s\n", consentEnd)
 
-	tenant, err := db.MeteringPointRevokeByConsentId(context.Background(), &consentId, meterId, consentEnd)
+	revoked, err := db.MeteringPointRevokeByConsentId(context.Background(), "", &consentId, meterId, consentEnd)
+	tenants := TenantNames(revoked)
 	require.NoError(t, err)
-	require.NotNil(t, tenant)
-	require.Equal(t, "TE100201", *tenant)
+	require.Equal(t, []string{"TE100201"}, tenants)
+	assert.True(t, revoked[0].WasActive, "an ACTIVE metering point ends its participation (platform#116)")
 
 	meters, err := db.FindNewMeteringById(context.Background(), "TE100201", meterId)
 	require.NoError(t, err)

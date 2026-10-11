@@ -59,23 +59,10 @@ func resolveTemplateSource(tenant, templateConfigName string) (fs.FS, string) {
 func SendActivationMailFromTemplate(sendMail services.SendMailFunc,
 	tenant, subject string, eeg *model.Eeg, participant *model.EegParticipant, templateConfigName string) error {
 
-	tmplFS, source := resolveTemplateSource(tenant, templateConfigName)
-
-	templateConfig, err := config.ReadActivationMailTemplateConfig(tmplFS, templateConfigName)
-	if err != nil {
-		return err
-	}
-	log.Infof("Mail template %q for tenant %q resolved from %s", templateConfigName, tenant, source)
-
-	return sendMailFromTemplate(sendMail, tenant, subject, tmplFS, templateConfig, eeg, participant)
-}
-
-func sendMailFromTemplate(sendMail services.SendMailFunc, tenant, subject string, tmplFS fs.FS, templateConfig *model.ActivationMailTemplate, eeg *model.Eeg, participant *model.EegParticipant) error {
 	meterIds := []string{}
 	for i := range participant.MeteringPoint {
 		meterIds = append(meterIds, participant.MeteringPoint[i].MeteringPoint)
 	}
-
 	templateData := struct {
 		Eeg            *model.Eeg
 		Participant    *model.EegParticipant
@@ -83,12 +70,28 @@ func sendMailFromTemplate(sendMail services.SendMailFunc, tenant, subject string
 		MeteringPoint  string
 	}{eeg, participant, meterIds, strings.Join(meterIds, ", ")}
 
-	if !participant.Contact.Email.Valid {
+	return sendTemplateMail(sendMail, tenant, subject, templateConfigName, eeg, participant, templateData)
+}
+
+// sendTemplateMail renders a member mail from a template config (tenant dir, global dir, embedded
+// default) and sends it to the participant with the community in Cc. A participant without an
+// e-mail address is skipped. Shared by the activation and the inactive mail.
+func sendTemplateMail(sendMail services.SendMailFunc, tenant, subject, templateConfigName string,
+	eeg *model.Eeg, participant *model.EegParticipant, data interface{}) error {
+
+	tmplFS, source := resolveTemplateSource(tenant, templateConfigName)
+	templateConfig, err := config.ReadActivationMailTemplateConfig(tmplFS, templateConfigName)
+	if err != nil {
+		return err
+	}
+	log.Infof("Mail template %q for tenant %q resolved from %s", templateConfigName, tenant, source)
+
+	if !participant.Contact.Email.Valid || strings.TrimSpace(participant.Contact.Email.String) == "" {
 		log.Warnf("Participant without email contact: %s (%s)", participant.LastName, participant.Id)
 		return nil
 	}
 
-	buf, err := ParseTemplate(tmplFS, templateConfig.TemplateFile, templateData)
+	buf, err := ParseTemplate(tmplFS, templateConfig.TemplateFile, data)
 	if err != nil {
 		return err
 	}

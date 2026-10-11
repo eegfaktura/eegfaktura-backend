@@ -32,7 +32,7 @@ type MeteringPointRepository interface {
 	RegisterMeteringPoint(ctx context.Context, tenant, username, participantId string, point *model.MeteringPoint) error
 	RemoveMeteringPoint(ctx context.Context, tenant, participantId, meterId string) error
 	MeteringPointRevoke(ctx context.Context, tenant, meterId string, consentEnd civil.Date) error
-	MeteringPointRevokeByConsentId(ctx context.Context, consentId *string, meterId string, consentEnd civil.Date) (*string, error)
+	MeteringPointRevokeByConsentId(ctx context.Context, receiver string, consentId *string, meterId string, consentEnd civil.Date) ([]RevokedTenant, error)
 	ImportMeteringPoints(ctx context.Context, tenant, username, participantId string, point []*model.MeteringPoint) error
 	UpdateMeteringPoint(ctx context.Context, tenant, username, participantId, meterId string, meteringPoint *model.MeteringPoint) error
 	UpdateMeteringPointPartial(ctx context.Context, tenant, username, participantId, meterId string, values map[string]interface{}) error
@@ -108,8 +108,8 @@ func (db *sqlDatabase) MeteringPointRevoke(ctx context.Context, tenant, meterId 
 	return meteringPointRevoke(ctx, db.db, tenant, meterId, consentEnd)
 }
 
-func (db *sqlDatabase) MeteringPointRevokeByConsentId(ctx context.Context, consentId *string, meterId string, consentEnd civil.Date) (*string, error) {
-	return meteringPointRevokeByConsentId(ctx, db.db, consentId, meterId, consentEnd)
+func (db *sqlDatabase) MeteringPointRevokeByConsentId(ctx context.Context, receiver string, consentId *string, meterId string, consentEnd civil.Date) ([]RevokedTenant, error) {
+	return meteringPointRevokeByConsentId(ctx, db.db, receiver, consentId, meterId, consentEnd)
 }
 
 func (db *sqlDatabase) ImportMeteringPoints(ctx context.Context, tenant, username, participantId string, point []*model.MeteringPoint) error {
@@ -188,6 +188,10 @@ func (db *sqlDatabase) UpdateInActiveSinceDate(ctx context.Context, tenant, part
 }
 
 const TABLE_METERINGPOINT = "base.meteringpoint"
+
+// MIGRATION_CONSENT_ID is the placeholder consent id of metering points taken over from the old
+// system; for revocations it counts as "no consent id".
+const MIGRATION_CONSENT_ID = "Migration"
 const TABLE_PARTITION_FACT = "base.metering_partition_factor"
 const TABLE_PARTITION_FACT_VIEW = "base.activemeteringpartition"
 
@@ -269,6 +273,9 @@ func createMeteringEntries(tenant, username, participantId string, points []*mod
 //}
 
 func ImportMeteringPoints(ctx context.Context, tx *sqlx.Tx, tenant, username, participantId string, point []*model.MeteringPoint) error {
+	if err := applyGridOperator(ctx, tx, tenant, point); err != nil {
+		return err
+	}
 	meteringEntries, partFactEntries := createMeteringEntries(tenant, username, participantId, point, nil)
 	return saveMeteringPoint(ctx, tx, tenant, meteringEntries, partFactEntries)
 }
@@ -376,6 +383,14 @@ func calcActivePtr(status *model.StatusType) *model.ProcessStatus {
 }
 
 func registerMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, participantId string, point *model.MeteringPoint) error {
+	// Assert the participant belongs to the caller's tenant before inserting the
+	// metering point — the row was previously written before the participant was
+	// ever checked, so a foreign participant id would attach the meter (and its
+	// billing) to another tenant's member.
+	if err := assertParticipantTenant(ctx, db, tenant, participantId); err != nil {
+		return err
+	}
+
 	tx, err := db.Beginx()
 	if err != nil {
 		log.WithError(err).Error("Not able to open a transaction.")
@@ -391,12 +406,23 @@ func registerMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, p
 		}
 	}()
 
+	if err = applyGridOperator(ctx, tx, tenant, []*model.MeteringPoint{point}); err != nil {
+		return err
+	}
 	meteringEntries, partFactEntries := createMeteringEntries(tenant, username, participantId, []*model.MeteringPoint{point}, &point.ProcessState)
 	err = saveMeteringPoint(ctx, tx, tenant, meteringEntries, partFactEntries)
 	return err
 }
 
 func moveMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, sParticipantId, dParticipantId, meterId string) error {
+	// The UPDATE below scopes the source by tenant, but the target participant
+	// comes from the path unchecked — assert it belongs to the caller's tenant,
+	// otherwise a metering point could be moved onto a foreign participant (and
+	// into that tenant's billing).
+	if err := assertParticipantTenant(ctx, db, tenant, dParticipantId); err != nil {
+		return err
+	}
+
 	tx, err := db.Beginx()
 	if err != nil {
 		log.Errorf("Not able to open a transaction. %s", err.Error())
@@ -435,6 +461,36 @@ func UpdateMeteringPointPartial(ctx context.Context, db *sqlx.DB, tenant, userna
 	values["modifiedBy"] = username
 	values["modifiedAt"] = civil.Now()
 
+	// The grid operator follows the metering point number (platform#107): a new number sets it,
+	// otherwise it is only filled in when nothing is stored yet (rows from before #107).
+	newId, idChanged := values["metering_point_id"].(string)
+	if !idChanged {
+		newId = meterId
+	}
+	point := &model.MeteringPoint{MeteringPoint: newId}
+	if err := applyGridOperator(ctx, db, tenant, []*model.MeteringPoint{point}); err != nil {
+		if idChanged {
+			return model.ErrUpdateMeter(err)
+		}
+		// Only the fill-in of an empty value is lost; the update itself (e.g. activesince from an
+		// EDA answer) must still go through.
+		log.WithField("tenant", tenant).Warnf("Grid operator of %s not filled in: %v", meterId, err)
+	}
+	if point.GridOperatorId.Valid {
+		var name interface{}
+		if point.GridOperatorName.Valid {
+			name = point.GridOperatorName.String
+		}
+		if idChanged {
+			values["grid_operator_id"] = point.GridOperatorId.String
+			values["grid_operator_name"] = name
+		} else {
+			empty := goqu.L(`COALESCE("grid_operator_id", '') = ''`)
+			values["grid_operator_id"] = goqu.Case().When(empty, point.GridOperatorId.String).Else(goqu.C("grid_operator_id"))
+			values["grid_operator_name"] = goqu.Case().When(empty, name).Else(goqu.C("grid_operator_name"))
+		}
+	}
+
 	statement, _, err := pgDialect.Update(TABLE_METERINGPOINT).Set(values).
 		Where(goqu.Ex{
 			"tenant":            goqu.Op{"eq": tenant},
@@ -456,6 +512,12 @@ func UpdateMeteringPointPartial(ctx context.Context, db *sqlx.DB, tenant, userna
 }
 
 func UpdateMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, participantId, meterId string, meteringPoint *model.MeteringPoint) error {
+	// The number in the path is the row that is updated (metering_point_id is skipupdate); derive
+	// the grid operator from it, not from the body (platform#107).
+	meteringPoint.MeteringPoint = meterId
+	if err := applyGridOperator(ctx, db, tenant, []*model.MeteringPoint{meteringPoint}); err != nil {
+		return model.ErrUpdateMeter(err)
+	}
 	updateObject := *meteringPoint
 	updateObject.State = nil
 	updateObject.ModifiedBy = null.StringFrom(username)
@@ -709,64 +771,142 @@ func meteringPointRevoke(ctx context.Context, db *sqlx.DB, tenant, meterId strin
 	return tx.Commit()
 }
 
-func meteringPointRevokeByConsentId(ctx context.Context, db *sqlx.DB, consentId *string, meterId string, consentEnd civil.Date) (*string, error) {
+// RevokedTenant is a tenant in which a revocation was applied. WasActive tells whether the
+// metering point had status ACTIVE before, i.e. whether its participation really ended now
+// (platform#116: only then the member gets a mail).
+type RevokedTenant struct {
+	Tenant    string `db:"tenant"`
+	WasActive bool   `db:"was_active"`
+}
+
+// TenantNames returns the tenants of a revocation result.
+func TenantNames(revoked []RevokedTenant) []string {
+	names := make([]string, 0, len(revoked))
+	for _, r := range revoked {
+		names = append(names, r.Tenant)
+	}
+	return names
+}
+
+// meteringPointRevokeByConsentId revokes a metering point after AUFHEBUNG_CCMI/CCMC. These
+// messages carry no community id, only the receiving RC number (MQTT topic). One RC number can
+// own several tenants (GEA: GC100019-001, GC100019-002, …) and a metering point may be assigned in
+// several communities (multiple participation, move), so the rows are searched step by step and
+// the first step that matches wins:
+//  1. tenants of the receiving RC number + exact consent id
+//  2. tenants of the receiving RC number + no consent id (or the migration placeholder), assigned
+//  3. any tenant + exact consent id
+//  4. any tenant + no consent id (or placeholder), assigned — only without a receiving RC number,
+//     otherwise it could revoke another community's participation of the same metering point
+//
+// Without a consent id the "assigned" steps take any consent. A step may hit several tenants
+// only if they all belong to the same RC number (the consent is given per RC number); otherwise
+// nothing is changed and an error is returned. receiver must be upper case.
+func meteringPointRevokeByConsentId(ctx context.Context, db *sqlx.DB, receiver string, consentId *string, meterId string, consentEnd civil.Date) ([]RevokedTenant, error) {
 	execDB := goqu.New("postgres", db)
 
 	tx, err := execDB.Begin()
 	if err != nil {
 		return nil, model.ErrOpenTx(err)
 	}
+	// Commit explicitly on success and check its error: a mail goes out on the result
+	// (platform#116), so a revocation that was not persisted must not be reported as done.
+	committed := false
 	defer func() {
-		switch err {
-		case nil:
-			_ = tx.Commit()
-		default:
+		if !committed {
 			_ = tx.Rollback()
 		}
 	}()
 
-	var whereClause exp.Expression
+	meter := goqu.C("metering_point_id").Eq(meterId)
+	assignedWithoutConsent := goqu.And(
+		goqu.Or(goqu.C("consent_id").Is(nil), goqu.C("consent_id").Eq(MIGRATION_CONSENT_ID)),
+		goqu.C("flag").Eq(model.F_ASSIGNED))
+	if consentId == nil {
+		assignedWithoutConsent = goqu.And(goqu.C("flag").Eq(model.F_ASSIGNED))
+	}
+
+	var steps []exp.Expression
+	if receiver != "" {
+		inReceiver := goqu.C("tenant").In(tx.From(TABLE_EEG).Select("tenant").Where(goqu.Or(
+			goqu.Func("upper", goqu.I("rcNumber")).Eq(receiver),
+			goqu.Func("upper", goqu.C("tenant")).Eq(receiver))))
+		if consentId != nil {
+			steps = append(steps, goqu.And(meter, inReceiver, goqu.C("consent_id").Eq(*consentId)))
+		}
+		steps = append(steps, goqu.And(meter, inReceiver, assignedWithoutConsent))
+	}
 	if consentId != nil {
-		whereClause = goqu.And(
-			goqu.C("metering_point_id").Eq(meterId),
-			goqu.Or(
-				goqu.C("consent_id").Eq(consentId),
-				goqu.And(
-					goqu.C("consent_id").Is(nil),
-					goqu.C("flag").Eq(model.F_ASSIGNED))))
-	} else {
-		whereClause = goqu.And(
-			goqu.C("metering_point_id").Eq(meterId),
-			goqu.C("flag").Eq(model.F_ASSIGNED))
+		steps = append(steps, goqu.And(meter, goqu.C("consent_id").Eq(*consentId)))
+	}
+	if receiver == "" {
+		steps = append(steps, goqu.And(meter, assignedWithoutConsent))
 	}
 
-	update := tx.Update(TABLE_METERINGPOINT).
-		Set(goqu.Record{
-			"process_state": goqu.Case().
-				When(goqu.C("process_state").Eq("ACTIVE"), model.INACTIVE).Else(goqu.C("process_state")),
-			"status": goqu.Case().
-				When(goqu.C("status").Eq("INIT"), model.S_INIT).Else(model.S_INACTIVE),
-			"modifiedAt":    civil.Now(),
-			"modifiedBy":    "EVU",
-			"inactivesince": goqu.Case().When(goqu.C("inactivesince").IsNotNull(), consentEnd).Else(goqu.C("inactivesince")),
-		}).
-		Where(whereClause /*, goqu.ExOr{}*/).
-		Returning("tenant").
-		Executor()
+	for _, where := range steps {
+		// Read and lock the rows before the update (platform#116). MQTT handlers run in parallel
+		// (SetOrderMatters(false)): with FOR UPDATE a second message for the same metering point
+		// waits for this transaction and then sees the row INACTIVE, so only one mail goes out.
+		var rows []struct {
+			Tenant string `db:"tenant"`
+			Status string `db:"status"`
+		}
+		if err = tx.From(TABLE_METERINGPOINT).Select(goqu.C("tenant"), goqu.C("status")).
+			Where(where).Order(goqu.C("tenant").Asc()).ForUpdate(exp.Wait).
+			ScanStructsContext(ctx, &rows); err != nil {
+			return nil, model.ErrUpdateMeter(err)
+		}
+		if len(rows) == 0 {
+			continue
+		}
+		revoked := []RevokedTenant{}
+		index := map[string]int{}
+		for _, r := range rows {
+			i, ok := index[r.Tenant]
+			if !ok {
+				i = len(revoked)
+				index[r.Tenant] = i
+				revoked = append(revoked, RevokedTenant{Tenant: r.Tenant})
+			}
+			if r.Status == string(model.S_ACTIVE) {
+				revoked[i].WasActive = true
+			}
+		}
+		tenants := TenantNames(revoked)
+		var rcNumbers []string
+		if err = tx.From(TABLE_EEG).Select(goqu.Func("upper", goqu.I("rcNumber"))).Distinct().
+			Where(goqu.C("tenant").In(tenants)).ScanValsContext(ctx, &rcNumbers); err != nil {
+			return nil, model.ErrUpdateMeter(err)
+		}
+		if len(rcNumbers) != 1 {
+			log.Warnf("Meteringpoint %s is not unique. %d-[%+v]", meterId, len(tenants), tenants)
+			err = model.ErrUpdateMeter(fmt.Errorf("Meteringpoint %s is not unique", meterId))
+			return nil, err
+		}
 
-	stmt, _, err1 := update.ToSQL()
-	log.WithField("metering_point_id", meterId).Infof("Update Meteringpoint state: %s - %v", stmt, err1)
-	var tenants []string
-	if err = update.ScanVals(&tenants); err != nil {
-		return nil, model.ErrUpdateMeter(err)
+		_, err = tx.Update(TABLE_METERINGPOINT).
+			Set(goqu.Record{
+				"process_state": goqu.Case().
+					When(goqu.C("process_state").Eq("ACTIVE"), model.INACTIVE).Else(goqu.C("process_state")),
+				"status": goqu.Case().
+					When(goqu.C("status").Eq("INIT"), model.S_INIT).Else(model.S_INACTIVE),
+				"modifiedAt":    civil.Now(),
+				"modifiedBy":    "EVU",
+				"inactivesince": goqu.Case().When(goqu.C("inactivesince").IsNotNull(), consentEnd).Else(goqu.C("inactivesince")),
+			}).
+			Where(where).
+			Executor().ExecContext(ctx)
+		if err != nil {
+			return nil, model.ErrUpdateMeter(err)
+		}
+		if err = tx.Commit(); err != nil {
+			return nil, model.ErrUpdateMeter(err)
+		}
+		committed = true
+		return revoked, nil
 	}
-
-	if len(tenants) != 1 {
-		log.Warnf("Meteringpoint %s is not unique. %d-[%+v]", meterId, len(tenants), tenants)
-		err = model.ErrUpdateMeter(errors.New(fmt.Sprintf("Meteringpoint %s is not unique", meterId)))
-		return nil, err
-	}
-	return &tenants[0], nil
+	err = model.ErrUpdateMeter(fmt.Errorf("Meteringpoint %s not found", meterId))
+	return nil, err
 }
 
 func MeteringPointChangePartFactor(ctx context.Context, db *sqlx.DB, tenant string, meters []model.Meter) error {

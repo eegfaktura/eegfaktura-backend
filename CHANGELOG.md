@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+> **Branch `env/billing`:** the entries from here to the next note are only on this branch (feature environment), not on the default branch yet.
+
 ### Added
 - **Time-of-use tariffs (ZVT)**: `base.tariff` gains `useTimeTariff` plus two
   optional named time windows (`timeTariff{1,2}Active/Name/From/To/CentPerKWh`;
@@ -28,12 +30,156 @@ this changelog highlights the changes relevant for overview and operations.
   (was `en`) so clients don't mis-detect the language (minor spam-score signal). Per-tenant
   templates on the data volume are unaffected (operator cleanup).
 
+> **End of the `env/billing`-only entries.**
+
+### Added
+- **Mail to the member when a metering point is no longer part of the community**
+  (platform#116, concept `konzept-zaehlpunkt-inaktiv-mail.md`). Subject "Dein Zählpunkt ist nicht
+  mehr Teil der Energiegemeinschaft"; it names the metering point, its direction, the end date
+  (consent end) and who ended the data release. The community gets a copy (Cc), same sending path
+  as the activation mail. Triggers:
+  - `AUFHEBUNG_CCMI` (grid operator) and `AUFHEBUNG_CCMC` (member): only when the metering point
+    really went from status ACTIVE to INACTIVE; a redelivery, a metering point that was not active
+    yet, or a revocation that could not be applied sends no mail.
+  - EEG deregistration: only with the grid operator's confirmation (`ANTWORT_CCMS` with code 176),
+    not with the community's own request (`AUFHEBUNG_CCMS`) and not with a rejection.
+  - No mail for manual changes (archiving, editing in the UI or admin).
+
+  One mail per metering point and member address (a GEA with several tenants per RC number sends it
+  once). Parallel MQTT handlers cannot send it twice: the revoked rows are locked (`FOR UPDATE`)
+  before their previous status is read, and the commit error is checked before any mail goes out.
+  A failed mail never undoes the revocation; the community gets an error notification. Without a
+  consent end the mail names no date. New
+  global template `zp-inactive-mail-template` (embedded, can be overridden per tenant like the other
+  templates).
+
+### Fixed
+- **Revocations of the data release were dropped when a metering point exists in several
+  communities.** `AUFHEBUNG_CCMI`/`AUFHEBUNG_CCMC` carry no community id; the lookup also matched
+  rows without consent id in other communities and gave up with "Meteringpoint … is not unique"
+  (13× in Prod within 30 days). The metering point stayed active, and neither history nor
+  notification was written. The lookup now tries the receiving community (MQTT topic) and the exact
+  consent id first. The receiving community is resolved via its RC number, so a GEA with several
+  tenants per RC number (`GC100019-001`, `-002`, …) is revoked in all of them; a hit in several
+  tenants is only accepted when they share one RC number. The migration placeholder consent id
+  `Migration` counts as "no consent id". A row of another community without consent id is only
+  used when the receiving community is unknown, so a revocation can no longer end another
+  community's participation. If it still fails, the message is kept in the history of the
+  receiving community (all its tenants, without notification) instead of being lost.
+- `ANTWORT_CCMS` without code 176 is now written to the history as well (without notification).
+- eda tests compile again (`FindMeteringByStatus` without context).
+
+### Changed
+- **Grid operator of a metering point is derived from its number** (platform#107). On create,
+  participant registration, Excel import, update and when the metering point number changes, the
+  backend sets `grid_operator_id` to the first 8 characters of the metering point number, for EEG
+  and BEG alike. Values sent by the client are never taken over: a full update derives from the
+  number in the path, and a partial update of `gridOperatorId`/`gridOperatorName` is refused (400).
+  Any other partial update fills in the grid operator when none is stored yet; this includes
+  system updates such as `activesince`/`inactivesince` from EDA answers, and a failing lookup there
+  does not stop the update. A metering point number whose first 8 characters are not `AT` + 6
+  digits is not derived: an existing value is kept, a new metering point gets none (the web
+  dialog no longer accepts such numbers). The name comes from `base.gridoperators` (lowest name
+  per id; fallback: the EEG's own grid operator name).
+  **Effect on the EDA receiver:** for **BEG**, `getReceiverFrom` takes the metering point's stored
+  value, so every BEG metering point written after the release is sent to the derived operator.
+  For **EEG** the receiver stays the EEG's grid operator, except for the participation factor
+  change (CPF), where the web sends the stored metering point value.
+  **Deploy order:** this backend before eegfaktura-web with platform#107 (the web no longer
+  prefills the grid operator; with an old backend a new BEG metering point would get none).
+- New config `grid-operator-alias` translates grid operator numbers that are only reachable under
+  another number (Energienetze Steiermark `AT008200` … → `AT008000`). Read once at start; invalid,
+  chained or circular entries are logged as ERROR and ignored, an empty list as WARN. Sub-operators
+  that are reachable themselves (e.g. Netz OÖ `AT003470`) are not on the list.
+- Excel import: the column "Netzbetreiber" is optional and only compared. A different value or an
+  alias translation is reported as `W_GRID_OPERATOR_IGNORED` in the import log; rows are no longer
+  skipped because column A is empty (`E_PARTICIPANT_1002` is gone). The header row is also found
+  via the "Zählpunkt" column.
+- `scripts/nb-alias-107/`: check and correction scripts for existing metering points (run by the
+  operator).
+- `config.yaml`: default `eda-process-versions` raised to the schema sets valid since 2026-10-05
+  (ANFORDERUNG_ECON 02.40, ECOF 02.30, ECP 02.10, CPF 01.10). The grid operators deactivated the
+  old sets, so the old defaults were rejected by the Ponton messenger. Needs eda-xp >= 1.0.7.
+
+## [1.1.4] – 2026-10-05
+
 ### Security
+- The `PARTICIPANT_TENANT_ENFORCE` switch is gone: access to a participant of another
+  community is now always refused. The switch (introduced in 1.1.1 for a log-only rollout
+  phase) could turn the tenant check into logging only; every environment runs with the check
+  on. An environment that still sets `PARTICIPANT_TENANT_ENFORCE=false` is no longer affected
+  by it.
+
+## [1.1.3] – 2026-10-05
+
+### Security
+- The admin gRPC participant update (`UpdateParticipantValues`) applies the same
+  rules as the REST partial update: the participant must belong to the given
+  tenant, and every key must name an updatable field; all keys are checked
+  before the first write.
+- Adding a new version of a tariff (`POST /eeg/tariff` with an existing `id`)
+  is only possible for a tariff of the caller's own tenant, and deactivating
+  the previous version is scoped to the tenant as well.
+
+### Fixed
+- `Test_RegisterMeteringPoint` expects the participant tenant query added in
+  #59.
+
+## [1.1.2] – 2026-10-05
+
+### Security
+- Partial-update endpoints (metering point, participant) now resolve the
+  client-supplied field name against the target model and reject names that are
+  unknown or not updatable, instead of passing them to the SQL builder verbatim.
+  New helper `model.AllowedUpdateColumn` / `model.IsAllowedParticipantUpdatePath`
+  with unit tests.
+- GraphQL `updateEegModel` and `masterDataUpload` now take the tenant from the
+  verified request context (as the `eeg` query already does) and ignore the
+  tenant passed as an argument.
+- The EEG update (`POST /eeg`, GraphQL and the admin gRPC call) now maps every
+  field to a known, updatable column of the EEG and rejects anything else; until
+  now an unknown key was passed to the SQL builder as a column name verbatim. New
+  helper `model.ResolveFlatUpdateColumn`, which also covers the embedded address,
+  account, contact and website fields and accepts column names such as
+  `creditor_id` that the web sends.
+- The generic EEG update drops write-protected fields (`tenant`, `rcNumber`,
+  `communityId`, `online`, `createdAt`) instead of writing them; the web sends
+  single fields, other callers may round-trip the whole object. (#58)
+- The full participant update (`PUT /participant/{id}`) checks the tenant before
+  any write, including the child tables (addresses, contact, bank data). (#57)
+- Moving a metering point and registering one on a participant check the tenant
+  of the target participant as well. (#59)
+- The `/master` API (basic auth) requires the `EEG_ADMIN` group, like the
+  token-based endpoints. (#59)
+
+### Fixed
+- After the Ponton registration admin-backend could no longer switch a community
+  online: the generic EEG update drops `online` since the write-protection change,
+  so the admin gRPC call now sets it through the dedicated online-state update.
+
+## [1.1.1] – 2026-10-04
+
+### Security
+- **Five single-participant operations ignored the tenant.** `GET`/`PUT`/`DELETE` on a
+  participant, the partial update and the confirm step all resolved the row by `id` alone, so
+  an authenticated user who knew a participant ID of a *different* community could read,
+  change or delete that record — including bank details, contact data and addresses. The
+  middleware did validate the `tenant` header against the token, but the verified value was
+  only ever written to the log, never applied to the query. IDs offer no protection either:
+  they come from `uuid.NewUUID()`, which is time-based rather than random.
+  All five now go through `assertParticipantTenant` first. Reported by an external
+  contributor who reviewed the code and reported privately rather than opening an issue.
+  A staged rollout is possible: `PARTICIPANT_TENANT_ENFORCE=false` logs cross-tenant access
+  without rejecting it, so an environment can be observed before the check is switched on.
+  The full `PUT /participant/{id}` and the metering-point updates were already scoped
+  correctly and served as the template.
 - `google.golang.org/grpc` 1.81.0 -> 1.83.1, closing CVE-2026-84304 (HIGH): heap memory
   exhaustion through HTTP/2 DATA frame fragmentation. 1.82.1 — the version Dependabot
   originally proposed — only closes the earlier GHSA-hrxh-6v49-42gf, which is why the bump
   went straight to 1.83.1. The gRPC server is cluster-internal rather than exposed at the
   ingress, which limits who can reach it, but does not remove the exposure. (#41)
+- `google.golang.org/grpc` 1.83.1 -> 1.83.2 (Dependabot #50), patch release on top of the
+  CVE-2026-84304 fix above.
 
 ### Fixed
 - Two database connections were leaked on every `archiveTariff` call: both lookup queries
@@ -41,6 +187,12 @@ this changelog highlights the changes relevant for overview and operations.
   those connections never returned to the pool. `getGridOperators` leaked the same way on its
   scan-error path and ignored `rows.Err()`. Both are admin-triggered and rare, so they do not
   by themselves explain the production pool exhaustions of 2026-07-19 and 2026-08-11 — see #45.
+- A participant created through the API without a `residentAddress` block no longer produces an
+  address row with an empty `type`. Every read path joins `base.address` on
+  `type = 'RESIDENCE'` / `'BILLING'`, so such a row is invisible: the member list of the *whole
+  tenant* fails with `converting NULL to string is unsupported`, and the update path matches no
+  rows, so the address cannot be repaired through the UI either. Seen in production on
+  2026-09-08 and 2026-09-11 in two tenants. Rows already broken need a separate data repair.
 
 ### Added
 - CI builds `env/**` branches and deploys the resulting image into the matching feature
