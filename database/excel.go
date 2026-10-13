@@ -558,9 +558,11 @@ func importDebitType(raw, firstname, lastname string, importLog *model.Log) null
 	case "CORE", "B2B":
 		return null.StringFrom(v)
 	}
-	importLog.Messages = append(importLog.Messages, model.NewLogMessageFromVfeegError(
+	importLog.Messages = append(importLog.Messages, model.NewLogMessage(
+		"WARNING",
 		fmt.Sprintf("%s %s", firstname, lastname),
-		fmt.Errorf("unknown direct debit type %q (allowed: CORE, B2B, NONE, Kein SEPA); a new member gets none, which counts as CORE", raw)))
+		"W_DEBIT_TYPE_UNKNOWN",
+		fmt.Sprintf("unknown direct debit type %q (allowed: CORE, B2B, NONE, Kein SEPA); a new member gets none, which counts as CORE", raw)))
 	return null.String{}
 }
 
@@ -803,9 +805,11 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 							case !p.BankAccount.SepaDirectDebit.Valid:
 								p.BankAccount.SepaDirectDebit = debit
 							case p.BankAccount.SepaDirectDebit.String != debit.String:
-								importLog.Messages = append(importLog.Messages, model.NewLogMessageFromVfeegError(
+								importLog.Messages = append(importLog.Messages, model.NewLogMessage(
+									"WARNING",
 									fmt.Sprintf("%s %s", firstname, lastname),
-									fmt.Errorf("different direct debit types on several rows (%s, %s); a new member gets the first one",
+									"W_DEBIT_TYPE_CONFLICT",
+									fmt.Sprintf("different direct debit types on several rows (%s, %s); a new member gets the first one",
 										p.BankAccount.SepaDirectDebit.String, debit.String)))
 							}
 						} else {

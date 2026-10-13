@@ -453,6 +453,7 @@ func Test_transformExcelData_debitType(t *testing.T) {
 	}, debitTypes(participants))
 	require.Len(t, importLog.Messages, 1)
 	assert.Contains(t, importLog.Messages[0].Message, "Lastschrift")
+	assert.Equal(t, "W_DEBIT_TYPE_UNKNOWN", importLog.Messages[0].MessageCode)
 }
 
 // The export's header "DebitType" is read as well.
