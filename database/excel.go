@@ -548,6 +548,25 @@ func parseExcelDate(cell string) time.Time {
 // not taken over silently: the member is imported without e-mail and
 // the row is reported in the import log (admin notification), so the
 // tenant admin can correct it.
+// importDebitType reads the optional column "Einzugsart" (export header "DebitType"): NONE ("Kein
+// SEPA"), CORE or B2B, case-insensitive. Missing or empty stays empty, which counts as CORE
+// (platform#143). Any other value is reported and left empty.
+func importDebitType(raw, firstname, lastname string, importLog *model.Log) null.String {
+	v := strings.ToUpper(strings.TrimSpace(raw))
+	switch v {
+	case "":
+		return null.String{}
+	case "NONE", "KEIN SEPA":
+		return null.StringFrom("NONE")
+	case "CORE", "B2B":
+		return null.StringFrom(v)
+	}
+	importLog.Messages = append(importLog.Messages, model.NewLogMessageFromVfeegError(
+		fmt.Sprintf("%s %s", firstname, lastname),
+		fmt.Errorf("unbekannte Einzugsart %q (erlaubt: CORE, B2B, Kein SEPA) — Feld bleibt leer, zählt als CORE", raw)))
+	return null.String{}
+}
+
 func importEmail(raw, firstname, lastname string, importLog *model.Log) null.String {
 	normalized, err := model.ValidateEmailList(raw)
 	if err != nil {
@@ -810,6 +829,7 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 									BankName:         null.StringFrom(getColumValue(cols, colMap, "Bankname", "Bankname", nil)),
 									MandateReference: null.StringFrom(getColumValue(cols, colMap, "MandatRef", "MandateRef", nil)),
 									MandateDate:      getColumDate(cols, colMap, "MandatDat", "MandateDat", nil),
+									SepaDirectDebit:  importDebitType(getColumValue(cols, colMap, "Einzugsart", "DebitType", nil), firstname, lastname, importLog),
 								},
 								Contact: model.ContactInfo{
 									Email: importEmail(getColumValue(cols, colMap, "email", "email", nil), firstname, lastname, importLog),

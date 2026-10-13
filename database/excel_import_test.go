@@ -416,3 +416,52 @@ func Test_transformExcelData_communityId(t *testing.T) {
 	assert.Equal(t, "E_COMMUNITY_1000", importLog.Messages[1].MessageCode)
 	assert.Equal(t, "", importLog.Messages[1].Identifier)
 }
+
+// Optional column "Einzugsart" (platform#143): NONE/CORE/B2B and "Kein SEPA", case-insensitive;
+// missing or empty stays empty (= CORE), an unknown value is reported and left empty.
+func Test_transformExcelData_debitType(t *testing.T) {
+	f := excelize.NewFile()
+	const sheet = "EEG Stammdaten"
+	_, err := f.NewSheet(sheet)
+	require.NoError(t, err)
+	header := []interface{}{
+		"Netzbetreiber", "Gemeinschafts-ID", "PLZ", "Ort", "Straße", "Hausnummer",
+		"Zählpunkt", "Energierichtung", "Name 1", "Name 2", "BusinessRole",
+		"Mitglied seit", "email", "MitgliedsNr", "Zählpunktstatus",
+		"registriert seit", "Zugeteilte Menge in Prozent", "Einzugsart",
+	}
+	require.NoError(t, f.SetSheetRow(sheet, "A1", &[]interface{}{"[### Leerzeile für Importer ###]"}))
+	require.NoError(t, f.SetSheetRow(sheet, "A2", &header))
+	for i, debit := range []string{"CORE", "b2b", "Kein SEPA", "none", "", "Lastschrift"} {
+		nr := string(rune('1' + i))
+		row := []interface{}{"AT009999", testCommunityId, "4020", "Linz", "Weg", "1",
+			"AT00999900000000000000000000000" + "0" + nr, "CONSUMPTION", "Name" + nr, "Tester", "privat",
+			"", "m" + nr + "@example.org", "00" + nr, "ACTIVE", "", "100", debit}
+		cell, err := excelize.CoordinatesToCellName(1, 3+i)
+		require.NoError(t, err)
+		require.NoError(t, f.SetSheetRow(sheet, cell, &row))
+	}
+
+	participants, importLog := transformSheet(t, f, false)
+	require.Len(t, participants, 6)
+	got := []null.String{}
+	for _, p := range participants {
+		got = append(got, p.BankAccount.SepaDirectDebit)
+	}
+	assert.Equal(t, []null.String{
+		null.StringFrom("CORE"), null.StringFrom("B2B"), null.StringFrom("NONE"), null.StringFrom("NONE"),
+		{}, {},
+	}, got)
+	require.Len(t, importLog.Messages, 1)
+	assert.Contains(t, importLog.Messages[0].Message, "Lastschrift")
+}
+
+// Without the column the debit type stays empty, as before.
+func Test_transformExcelData_debitTypeColumnMissing(t *testing.T) {
+	f := buildImportSheet(t, [][]interface{}{{"AT009999", testCommunityId, "4020", "Linz", "Weg", "1",
+		"AT0099990000000000000000000000001", "CONSUMPTION", "Ohne", "Spalte", "privat",
+		"", "o@example.org", "001", "ACTIVE", "", "100"}})
+	participants, _ := transformSheet(t, f, false)
+	require.Len(t, participants, 1)
+	assert.False(t, participants[0].BankAccount.SepaDirectDebit.Valid)
+}
