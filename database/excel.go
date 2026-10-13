@@ -74,6 +74,7 @@ func (db *sqlDatabase) ImportMasterdataFromExcel(ctx context.Context, r io.Reade
 
 	db.reportDuplicateParticipantNumbers(ctx, strings.ToUpper(tenant), participants, importLog)
 
+	defaultDebit := 0
 	for _, p := range participants {
 		// Jeder Teilnehmer läuft in seiner eigenen Transaktion — ein Fehler wird
 		// protokolliert, die restlichen Zeilen werden trotzdem importiert.
@@ -83,7 +84,15 @@ func (db *sqlDatabase) ImportMasterdataFromExcel(ctx context.Context, r io.Reade
 				err,
 			))
 			log.Errorf("Error Import Participant from Excel: %s", err.Error())
+			continue
 		}
+		// only a member the import created gets an id; for an existing one it only adds metering points
+		if len(p.Id) > 0 && countsAsDefaultDebit(p) {
+			defaultDebit++
+		}
+	}
+	if m := defaultDebitTypeMessage(defaultDebit); m != nil {
+		importLog.Messages = append(importLog.Messages, m)
 	}
 
 	if len(importLog.Messages) > 0 {
@@ -263,12 +272,12 @@ func generateEegMastersheet(f *excelize.File, eeg *model.Eeg) error {
 	_ = f.SetRowStyle(sheet, line, line, styleIdHeaderTop)
 	line += 1
 	_ = f.SetSheetRow(sheet, fmt.Sprintf("A%d", line), &[]interface{}{
-		"Kontoinhaber", "IBAN", "SEPA",
+		"Kontoinhaber", "IBAN",
 	})
 	_ = f.SetRowStyle(sheet, line, line, styleIdHeader)
 	line += 1
 	_ = f.SetSheetRow(sheet, fmt.Sprintf("A%d", line), &[]interface{}{
-		eeg.Owner.String, eeg.Iban.String, eeg.Sepa,
+		eeg.Owner.String, eeg.Iban.String,
 	})
 	_ = f.SetRowStyle(sheet, line, line, styleId)
 
@@ -543,6 +552,25 @@ func parseExcelDate(cell string) time.Time {
 	return time.Now()
 }
 
+// countsAsDefaultDebit: the member has an IBAN but no direct debit type (column "Einzugsart" missing,
+// empty or with an unknown value). An empty type counts as CORE, so the member is debited.
+func countsAsDefaultDebit(p *model.EegParticipant) bool {
+	return strings.TrimSpace(p.BankAccount.Iban.String) != "" && !p.BankAccount.SepaDirectDebit.Valid
+}
+
+// defaultDebitTypeMessage is the one import message about members created without a direct debit type
+// (platform#143); nil when there are none.
+func defaultDebitTypeMessage(n int) *model.LogMessage {
+	if n == 0 {
+		return nil
+	}
+	return model.NewLogMessage(
+		"WARNING",
+		"Einzugsart",
+		"W_DEBIT_TYPE_DEFAULT",
+		fmt.Sprintf("%d new member(s) with an IBAN have no direct debit type (column 'Einzugsart' missing, empty or unknown): they count as CORE and are included in the direct debit. Set 'Kein SEPA' for members without a mandate.", n))
+}
+
 // importDebitType reads the optional column "Einzugsart" ("DebitType" works too): CORE, B2B, or
 // NONE / "Kein SEPA". Case, blanks and hyphens are ignored ("kein-sepa", "Kein  SEPA"). Missing or
 // empty stays empty, which counts as CORE (platform#143). Any other value is reported and left
@@ -558,9 +586,11 @@ func importDebitType(raw, firstname, lastname string, importLog *model.Log) null
 	case "CORE", "B2B":
 		return null.StringFrom(v)
 	}
-	importLog.Messages = append(importLog.Messages, model.NewLogMessageFromVfeegError(
+	importLog.Messages = append(importLog.Messages, model.NewLogMessage(
+		"WARNING",
 		fmt.Sprintf("%s %s", firstname, lastname),
-		fmt.Errorf("unknown direct debit type %q (allowed: CORE, B2B, NONE, Kein SEPA); a new member gets none, which counts as CORE", raw)))
+		"W_DEBIT_TYPE_UNKNOWN",
+		fmt.Sprintf("unknown direct debit type %q (allowed: CORE, B2B, NONE, Kein SEPA); a new member gets none, which counts as CORE", raw)))
 	return null.String{}
 }
 
@@ -803,9 +833,11 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 							case !p.BankAccount.SepaDirectDebit.Valid:
 								p.BankAccount.SepaDirectDebit = debit
 							case p.BankAccount.SepaDirectDebit.String != debit.String:
-								importLog.Messages = append(importLog.Messages, model.NewLogMessageFromVfeegError(
+								importLog.Messages = append(importLog.Messages, model.NewLogMessage(
+									"WARNING",
 									fmt.Sprintf("%s %s", firstname, lastname),
-									fmt.Errorf("different direct debit types on several rows (%s, %s); a new member gets the first one",
+									"W_DEBIT_TYPE_CONFLICT",
+									fmt.Sprintf("different direct debit types on several rows (%s, %s); a new member gets the first one",
 										p.BankAccount.SepaDirectDebit.String, debit.String)))
 							}
 						} else {
