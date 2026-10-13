@@ -10,10 +10,12 @@ this changelog highlights the changes relevant for overview and operations.
 
 ### Added
 - **Excel master data import reads the direct debit type** (platform#143). Optional column
-  „Einzugsart“ (the export's „DebitType“ works too): `CORE`, `B2B`, `NONE` or „Kein SEPA“,
-  case-insensitive. Without the column, or with an empty cell, the type stays empty, which counts as
-  CORE in the SEPA files (unchanged). An unknown value is reported in the import notification and
-  left empty.
+  „Einzugsart“ (header „DebitType“ works too): `CORE`, `B2B`, `NONE` or „Kein SEPA“; case, blanks
+  and hyphens are ignored. Without the column, or with an empty cell, the type stays empty, which
+  counts as CORE in the SEPA files (unchanged). An unknown value is reported in the import
+  notification and left empty. A member on several rows takes the first non-empty type; a different
+  one on a later row is reported. Like every master data column, it only applies to members the
+  import creates: for an existing member the import only adds metering points.
 
 ## [1.2.0] – 2026-10-11
 

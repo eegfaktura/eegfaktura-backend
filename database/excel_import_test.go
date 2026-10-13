@@ -21,18 +21,23 @@ import (
 const testCommunityId = "AT00999900000TC000009000000000001"
 
 func buildImportSheet(t *testing.T, rows [][]interface{}) *excelize.File {
+	return buildImportSheetWithColumns(t, nil, rows)
+}
+
+// buildImportSheetWithColumns appends optional columns (e.g. "Einzugsart") after the template's.
+func buildImportSheetWithColumns(t *testing.T, extra []interface{}, rows [][]interface{}) *excelize.File {
 	t.Helper()
 	f := excelize.NewFile()
 	const sheet = "EEG Stammdaten"
 	_, err := f.NewSheet(sheet)
 	require.NoError(t, err)
 
-	header := []interface{}{
+	header := append([]interface{}{
 		"Netzbetreiber", "Gemeinschafts-ID", "PLZ", "Ort", "Straße", "Hausnummer",
 		"Zählpunkt", "Energierichtung", "Name 1", "Name 2", "BusinessRole",
 		"Mitglied seit", "email", "MitgliedsNr", "Zählpunktstatus",
 		"registriert seit", "Zugeteilte Menge in Prozent",
-	}
+	}, extra...)
 	require.NoError(t, f.SetSheetRow(sheet, "A1", &[]interface{}{"[### Leerzeile für Importer ###]"}))
 	require.NoError(t, f.SetSheetRow(sheet, "A2", &header))
 	for i, r := range rows {
@@ -417,43 +422,61 @@ func Test_transformExcelData_communityId(t *testing.T) {
 	assert.Equal(t, "", importLog.Messages[1].Identifier)
 }
 
-// Optional column "Einzugsart" (platform#143): NONE/CORE/B2B and "Kein SEPA", case-insensitive;
-// missing or empty stays empty (= CORE), an unknown value is reported and left empty.
-func Test_transformExcelData_debitType(t *testing.T) {
-	f := excelize.NewFile()
-	const sheet = "EEG Stammdaten"
-	_, err := f.NewSheet(sheet)
-	require.NoError(t, err)
-	header := []interface{}{
-		"Netzbetreiber", "Gemeinschafts-ID", "PLZ", "Ort", "Straße", "Hausnummer",
-		"Zählpunkt", "Energierichtung", "Name 1", "Name 2", "BusinessRole",
-		"Mitglied seit", "email", "MitgliedsNr", "Zählpunktstatus",
-		"registriert seit", "Zugeteilte Menge in Prozent", "Einzugsart",
-	}
-	require.NoError(t, f.SetSheetRow(sheet, "A1", &[]interface{}{"[### Leerzeile für Importer ###]"}))
-	require.NoError(t, f.SetSheetRow(sheet, "A2", &header))
-	for i, debit := range []string{"CORE", "b2b", "Kein SEPA", "none", "", "Lastschrift"} {
-		nr := string(rune('1' + i))
-		row := []interface{}{"AT009999", testCommunityId, "4020", "Linz", "Weg", "1",
-			"AT00999900000000000000000000000" + "0" + nr, "CONSUMPTION", "Name" + nr, "Tester", "privat",
-			"", "m" + nr + "@example.org", "00" + nr, "ACTIVE", "", "100", debit}
-		cell, err := excelize.CoordinatesToCellName(1, 3+i)
-		require.NoError(t, err)
-		require.NoError(t, f.SetSheetRow(sheet, cell, &row))
-	}
+// Optional column "Einzugsart" (platform#143): CORE/B2B/NONE/"Kein SEPA", case, blanks and hyphens
+// ignored; empty stays empty (= CORE), an unknown value is reported and left empty.
+func debitRow(nr int, name, debit string) []interface{} {
+	n := string(rune('0' + nr))
+	return []interface{}{"AT009999", testCommunityId, "4020", "Linz", "Weg", "1",
+		"AT00999900000000000000000000000" + "1" + n, "CONSUMPTION", name, "Tester", "privat",
+		"", name + "@example.org", "00" + n, "ACTIVE", "", "100", debit}
+}
 
-	participants, importLog := transformSheet(t, f, false)
-	require.Len(t, participants, 6)
+func debitTypes(participants []*model.EegParticipant) []null.String {
 	got := []null.String{}
 	for _, p := range participants {
 		got = append(got, p.BankAccount.SepaDirectDebit)
 	}
+	return got
+}
+
+func Test_transformExcelData_debitType(t *testing.T) {
+	f := buildImportSheetWithColumns(t, []interface{}{"Einzugsart"}, [][]interface{}{
+		debitRow(1, "Anna", "CORE"), debitRow(2, "Berta", " b2b "), debitRow(3, "Clara", "Kein  SEPA"),
+		debitRow(4, "Dora", "kein-sepa"), debitRow(5, "Emil", "none"), debitRow(6, "Franz", ""),
+		debitRow(7, "Gerda", "Lastschrift"),
+	})
+	participants, importLog := transformSheet(t, f, false)
+	require.Len(t, participants, 7)
 	assert.Equal(t, []null.String{
 		null.StringFrom("CORE"), null.StringFrom("B2B"), null.StringFrom("NONE"), null.StringFrom("NONE"),
-		{}, {},
-	}, got)
+		null.StringFrom("NONE"), {}, {},
+	}, debitTypes(participants))
 	require.Len(t, importLog.Messages, 1)
 	assert.Contains(t, importLog.Messages[0].Message, "Lastschrift")
+}
+
+// The export's header "DebitType" is read as well.
+func Test_transformExcelData_debitTypeExportHeader(t *testing.T) {
+	f := buildImportSheetWithColumns(t, []interface{}{"DebitType"}, [][]interface{}{debitRow(1, "Anna", "B2B")})
+	participants, _ := transformSheet(t, f, false)
+	require.Len(t, participants, 1)
+	assert.Equal(t, null.StringFrom("B2B"), participants[0].BankAccount.SepaDirectDebit)
+}
+
+// A member on several rows: the first non-empty type counts, a different one is reported.
+func Test_transformExcelData_debitTypeSeveralRows(t *testing.T) {
+	row := func(nr int, debit string) []interface{} {
+		r := debitRow(nr, "Same", debit)
+		r[13] = "001" // same member number
+		return r
+	}
+	f := buildImportSheetWithColumns(t, []interface{}{"Einzugsart"}, [][]interface{}{row(1, ""), row(2, "Kein SEPA"), row(3, "CORE")})
+	participants, importLog := transformSheet(t, f, false)
+	require.Len(t, participants, 1)
+	require.Len(t, participants[0].MeteringPoint, 3)
+	assert.Equal(t, null.StringFrom("NONE"), participants[0].BankAccount.SepaDirectDebit)
+	require.Len(t, importLog.Messages, 1)
+	assert.Contains(t, importLog.Messages[0].Message, "different direct debit types")
 }
 
 // Without the column the debit type stays empty, as before.

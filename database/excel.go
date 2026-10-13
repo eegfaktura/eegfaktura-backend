@@ -543,30 +543,32 @@ func parseExcelDate(cell string) time.Time {
 	return time.Now()
 }
 
-// importEmail normalizes an imported e-mail (trim per ';'-part) and
-// validates it against the shared address rule. Invalid addresses are
-// not taken over silently: the member is imported without e-mail and
-// the row is reported in the import log (admin notification), so the
-// tenant admin can correct it.
-// importDebitType reads the optional column "Einzugsart" (export header "DebitType"): NONE ("Kein
-// SEPA"), CORE or B2B, case-insensitive. Missing or empty stays empty, which counts as CORE
-// (platform#143). Any other value is reported and left empty.
+// importDebitType reads the optional column "Einzugsart" ("DebitType" works too): CORE, B2B, or
+// NONE / "Kein SEPA". Case, blanks and hyphens are ignored ("kein-sepa", "Kein  SEPA"). Missing or
+// empty stays empty, which counts as CORE (platform#143). Any other value is reported and left
+// empty. The value only applies to members the import creates; for an existing member the import
+// adds metering points and leaves the master data as it is.
 func importDebitType(raw, firstname, lastname string, importLog *model.Log) null.String {
-	v := strings.ToUpper(strings.TrimSpace(raw))
+	v := strings.ToUpper(strings.ReplaceAll(strings.Join(strings.Fields(raw), ""), "-", ""))
 	switch v {
 	case "":
 		return null.String{}
-	case "NONE", "KEIN SEPA":
+	case "NONE", "KEINSEPA":
 		return null.StringFrom("NONE")
 	case "CORE", "B2B":
 		return null.StringFrom(v)
 	}
 	importLog.Messages = append(importLog.Messages, model.NewLogMessageFromVfeegError(
 		fmt.Sprintf("%s %s", firstname, lastname),
-		fmt.Errorf("unbekannte Einzugsart %q (erlaubt: CORE, B2B, Kein SEPA) — Feld bleibt leer, zählt als CORE", raw)))
+		fmt.Errorf("unknown direct debit type %q (allowed: CORE, B2B, NONE, Kein SEPA); left empty, counts as CORE", raw)))
 	return null.String{}
 }
 
+// importEmail normalizes an imported e-mail (trim per ';'-part) and
+// validates it against the shared address rule. Invalid addresses are
+// not taken over silently: the member is imported without e-mail and
+// the row is reported in the import log (admin notification), so the
+// tenant admin can correct it.
 func importEmail(raw, firstname, lastname string, importLog *model.Log) null.String {
 	normalized, err := model.ValidateEmailList(raw)
 	if err != nil {
@@ -793,6 +795,19 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 						var participant *model.EegParticipant
 						if p, ok := findParticipant(participants, firstname, lastname); ok {
 							participant = p
+							// member on several rows: the first non-empty direct debit type counts,
+							// a different one on a later row is reported
+							debit := importDebitType(getColumValue(cols, colMap, "Einzugsart", "DebitType", nil), firstname, lastname, importLog)
+							switch {
+							case !debit.Valid:
+							case !p.BankAccount.SepaDirectDebit.Valid:
+								p.BankAccount.SepaDirectDebit = debit
+							case p.BankAccount.SepaDirectDebit.String != debit.String:
+								importLog.Messages = append(importLog.Messages, model.NewLogMessageFromVfeegError(
+									fmt.Sprintf("%s %s", firstname, lastname),
+									fmt.Errorf("different direct debit types on several rows (%s, %s); %s is used",
+										p.BankAccount.SepaDirectDebit.String, debit.String, p.BankAccount.SepaDirectDebit.String)))
+							}
 						} else {
 							participant = &model.EegParticipant{
 								EegParticipantBase: model.EegParticipantBase{
