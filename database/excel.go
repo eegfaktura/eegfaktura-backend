@@ -74,6 +74,7 @@ func (db *sqlDatabase) ImportMasterdataFromExcel(ctx context.Context, r io.Reade
 
 	db.reportDuplicateParticipantNumbers(ctx, strings.ToUpper(tenant), participants, importLog)
 
+	defaultDebit := 0
 	for _, p := range participants {
 		// Jeder Teilnehmer läuft in seiner eigenen Transaktion — ein Fehler wird
 		// protokolliert, die restlichen Zeilen werden trotzdem importiert.
@@ -83,7 +84,15 @@ func (db *sqlDatabase) ImportMasterdataFromExcel(ctx context.Context, r io.Reade
 				err,
 			))
 			log.Errorf("Error Import Participant from Excel: %s", err.Error())
+			continue
 		}
+		// only a member the import created gets an id; for an existing one it only adds metering points
+		if len(p.Id) > 0 && countsAsDefaultDebit(p) {
+			defaultDebit++
+		}
+	}
+	if m := defaultDebitTypeMessage(defaultDebit); m != nil {
+		importLog.Messages = append(importLog.Messages, m)
 	}
 
 	if len(importLog.Messages) > 0 {
@@ -541,6 +550,25 @@ func parseExcelDate(cell string) time.Time {
 		return excelEpoch.Add(time.Second * time.Duration(days*86400))
 	}
 	return time.Now()
+}
+
+// countsAsDefaultDebit: the member has an IBAN but no direct debit type (column "Einzugsart" missing,
+// empty or with an unknown value). An empty type counts as CORE, so the member is debited.
+func countsAsDefaultDebit(p *model.EegParticipant) bool {
+	return strings.TrimSpace(p.BankAccount.Iban.String) != "" && !p.BankAccount.SepaDirectDebit.Valid
+}
+
+// defaultDebitTypeMessage is the one import message about members created without a direct debit type
+// (platform#143); nil when there are none.
+func defaultDebitTypeMessage(n int) *model.LogMessage {
+	if n == 0 {
+		return nil
+	}
+	return model.NewLogMessage(
+		"WARNING",
+		"Einzugsart",
+		"W_DEBIT_TYPE_DEFAULT",
+		fmt.Sprintf("%d new member(s) with an IBAN have no direct debit type (column 'Einzugsart' missing, empty or unknown): they count as CORE and are included in the direct debit. Set 'Kein SEPA' for members without a mandate.", n))
 }
 
 // importDebitType reads the optional column "Einzugsart" ("DebitType" works too): CORE, B2B, or

@@ -9,6 +9,10 @@ this changelog highlights the changes relevant for overview and operations.
 ## [Unreleased]
 
 ### Changed
+- **Excel import reports new members without a direct debit type** (platform#143, review F): one
+  warning with the number of members the import created with an IBAN but without „Einzugsart“
+  (column missing, empty or unknown) — they count as CORE and are included in the direct debit.
+  Members that already exist are not counted; the import only adds metering points to them.
 - Import messages for an unknown or conflicting direct debit type are warnings with their own codes
   (`W_DEBIT_TYPE_UNKNOWN`, `W_DEBIT_TYPE_CONFLICT`) instead of the generic error `E_UNDEFINED_0`.
 - **EEG master data export without the column „SEPA“** (platform#143, review H): the EEG switch

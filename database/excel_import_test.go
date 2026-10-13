@@ -489,3 +489,25 @@ func Test_transformExcelData_debitTypeColumnMissing(t *testing.T) {
 	require.Len(t, participants, 1)
 	assert.False(t, participants[0].BankAccount.SepaDirectDebit.Valid)
 }
+
+// Members created without a direct debit type are reported once (they count as CORE and are debited).
+func Test_defaultDebitType(t *testing.T) {
+	member := func(iban, debit string) *model.EegParticipant {
+		p := &model.EegParticipant{}
+		p.BankAccount.Iban = null.StringFrom(iban)
+		if debit != "" {
+			p.BankAccount.SepaDirectDebit = null.StringFrom(debit)
+		}
+		return p
+	}
+	assert.True(t, countsAsDefaultDebit(member("AT611904300234573201", "")))
+	assert.False(t, countsAsDefaultDebit(member("AT611904300234573201", "CORE")))
+	assert.False(t, countsAsDefaultDebit(member("AT611904300234573201", "NONE")))
+	assert.False(t, countsAsDefaultDebit(member("", "")), "without IBAN there is no direct debit")
+
+	assert.Nil(t, defaultDebitTypeMessage(0))
+	m := defaultDebitTypeMessage(2)
+	require.NotNil(t, m)
+	assert.Equal(t, "W_DEBIT_TYPE_DEFAULT", m.MessageCode)
+	assert.Contains(t, m.Message, "2 new member(s)")
+}
