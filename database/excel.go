@@ -560,7 +560,7 @@ func importDebitType(raw, firstname, lastname string, importLog *model.Log) null
 	}
 	importLog.Messages = append(importLog.Messages, model.NewLogMessageFromVfeegError(
 		fmt.Sprintf("%s %s", firstname, lastname),
-		fmt.Errorf("unknown direct debit type %q (allowed: CORE, B2B, NONE, Kein SEPA); left empty, counts as CORE", raw)))
+		fmt.Errorf("unknown direct debit type %q (allowed: CORE, B2B, NONE, Kein SEPA); a new member gets none, which counts as CORE", raw)))
 	return null.String{}
 }
 
@@ -805,8 +805,8 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 							case p.BankAccount.SepaDirectDebit.String != debit.String:
 								importLog.Messages = append(importLog.Messages, model.NewLogMessageFromVfeegError(
 									fmt.Sprintf("%s %s", firstname, lastname),
-									fmt.Errorf("different direct debit types on several rows (%s, %s); %s is used",
-										p.BankAccount.SepaDirectDebit.String, debit.String, p.BankAccount.SepaDirectDebit.String)))
+									fmt.Errorf("different direct debit types on several rows (%s, %s); a new member gets the first one",
+										p.BankAccount.SepaDirectDebit.String, debit.String)))
 							}
 						} else {
 							participant = &model.EegParticipant{
