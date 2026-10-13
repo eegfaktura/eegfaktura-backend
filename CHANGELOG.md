@@ -8,6 +8,10 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Changed
+- **EEG master data export without the column „SEPA“** (platform#143, review H): the EEG switch
+  „SEPA aktiv“ is no longer read since web#132 (`base.eeg.sepa` is still written, not read).
+
 ### Added
 - **Excel master data import reads the direct debit type** (platform#143). Optional column
   „Einzugsart“ (header „DebitType“ works too): `CORE`, `B2B`, `NONE` or „Kein SEPA“; case, blanks

@@ -263,12 +263,12 @@ func generateEegMastersheet(f *excelize.File, eeg *model.Eeg) error {
 	_ = f.SetRowStyle(sheet, line, line, styleIdHeaderTop)
 	line += 1
 	_ = f.SetSheetRow(sheet, fmt.Sprintf("A%d", line), &[]interface{}{
-		"Kontoinhaber", "IBAN", "SEPA",
+		"Kontoinhaber", "IBAN",
 	})
 	_ = f.SetRowStyle(sheet, line, line, styleIdHeader)
 	line += 1
 	_ = f.SetSheetRow(sheet, fmt.Sprintf("A%d", line), &[]interface{}{
-		eeg.Owner.String, eeg.Iban.String, eeg.Sepa,
+		eeg.Owner.String, eeg.Iban.String,
 	})
 	_ = f.SetRowStyle(sheet, line, line, styleId)
 
