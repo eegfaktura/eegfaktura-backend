@@ -11,7 +11,8 @@ this changelog highlights the changes relevant for overview and operations.
 ### Changed
 - **Excel import reports new members without a direct debit type** (platform#143, review F): one
   warning with the number of members the import created with an IBAN but without „Einzugsart“
-  (column missing, empty or unknown) — they count as CORE and are included in the direct debit.
+  (column missing, empty or unknown) — they are not debited until a type is set (web: an empty type
+  is no longer collected as CORE, team decision 14.10.).
   Members that already exist are not counted; the import only adds metering points to them.
 - Import messages for an unknown or conflicting direct debit type are warnings with their own codes
   (`W_DEBIT_TYPE_UNKNOWN`, `W_DEBIT_TYPE_CONFLICT`) instead of the generic error `E_UNDEFINED_0`.
@@ -21,8 +22,8 @@ this changelog highlights the changes relevant for overview and operations.
 ### Added
 - **Excel master data import reads the direct debit type** (platform#143). Optional column
   „Einzugsart“ (header „DebitType“ works too): `CORE`, `B2B`, `NONE` or „Kein SEPA“; case, blanks
-  and hyphens are ignored. Without the column, or with an empty cell, the type stays empty, which
-  counts as CORE in the SEPA files (unchanged). An unknown value is reported in the import
+  and hyphens are ignored. Without the column, or with an empty cell, the type stays empty; such a
+  member is not debited. An unknown value is reported in the import
   notification and left empty. A member on several rows takes the first non-empty type; a different
   one on a later row is reported. Like every master data column, it only applies to members the
   import creates: for an existing member the import only adds metering points.

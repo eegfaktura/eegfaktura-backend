@@ -423,7 +423,7 @@ func Test_transformExcelData_communityId(t *testing.T) {
 }
 
 // Optional column "Einzugsart" (platform#143): CORE/B2B/NONE/"Kein SEPA", case, blanks and hyphens
-// ignored; empty stays empty (= CORE), an unknown value is reported and left empty.
+// ignored; empty stays empty (not debited), an unknown value is reported and left empty.
 func debitRow(nr int, name, debit string) []interface{} {
 	n := string(rune('0' + nr))
 	return []interface{}{"AT009999", testCommunityId, "4020", "Linz", "Weg", "1",
@@ -490,7 +490,7 @@ func Test_transformExcelData_debitTypeColumnMissing(t *testing.T) {
 	assert.False(t, participants[0].BankAccount.SepaDirectDebit.Valid)
 }
 
-// Members created without a direct debit type are reported once (they count as CORE and are debited).
+// Members created without a direct debit type are reported once (they are not debited).
 func Test_defaultDebitType(t *testing.T) {
 	member := func(iban, debit string) *model.EegParticipant {
 		p := &model.EegParticipant{}
@@ -500,10 +500,10 @@ func Test_defaultDebitType(t *testing.T) {
 		}
 		return p
 	}
-	assert.True(t, countsAsDefaultDebit(member("AT611904300234573201", "")))
-	assert.False(t, countsAsDefaultDebit(member("AT611904300234573201", "CORE")))
-	assert.False(t, countsAsDefaultDebit(member("AT611904300234573201", "NONE")))
-	assert.False(t, countsAsDefaultDebit(member("", "")), "without IBAN there is no direct debit")
+	assert.True(t, missesDebitType(member("AT611904300234573201", "")))
+	assert.False(t, missesDebitType(member("AT611904300234573201", "CORE")))
+	assert.False(t, missesDebitType(member("AT611904300234573201", "NONE")))
+	assert.False(t, missesDebitType(member("", "")), "without IBAN there is no direct debit")
 
 	assert.Nil(t, defaultDebitTypeMessage(0))
 	m := defaultDebitTypeMessage(2)

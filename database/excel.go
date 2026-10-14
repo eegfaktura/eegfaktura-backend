@@ -87,7 +87,7 @@ func (db *sqlDatabase) ImportMasterdataFromExcel(ctx context.Context, r io.Reade
 			continue
 		}
 		// only a member the import created gets an id; for an existing one it only adds metering points
-		if len(p.Id) > 0 && countsAsDefaultDebit(p) {
+		if len(p.Id) > 0 && missesDebitType(p) {
 			defaultDebit++
 		}
 	}
@@ -552,9 +552,9 @@ func parseExcelDate(cell string) time.Time {
 	return time.Now()
 }
 
-// countsAsDefaultDebit: the member has an IBAN but no direct debit type (column "Einzugsart" missing,
-// empty or with an unknown value). An empty type counts as CORE, so the member is debited.
-func countsAsDefaultDebit(p *model.EegParticipant) bool {
+// missesDebitType: the member has an IBAN but no direct debit type (column "Einzugsart" missing,
+// empty or with an unknown value). Without a type the member is not debited (platform#143).
+func missesDebitType(p *model.EegParticipant) bool {
 	return strings.TrimSpace(p.BankAccount.Iban.String) != "" && !p.BankAccount.SepaDirectDebit.Valid
 }
 
@@ -568,12 +568,12 @@ func defaultDebitTypeMessage(n int) *model.LogMessage {
 		"WARNING",
 		"Einzugsart",
 		"W_DEBIT_TYPE_DEFAULT",
-		fmt.Sprintf("%d new member(s) with an IBAN have no direct debit type (column 'Einzugsart' missing, empty or unknown): they count as CORE and are included in the direct debit. Set 'Kein SEPA' for members without a mandate.", n))
+		fmt.Sprintf("%d new member(s) with an IBAN have no direct debit type (column 'Einzugsart' missing, empty or unknown): they are not debited until CORE, B2B or 'Kein SEPA' is set for them.", n))
 }
 
 // importDebitType reads the optional column "Einzugsart" ("DebitType" works too): CORE, B2B, or
 // NONE / "Kein SEPA". Case, blanks and hyphens are ignored ("kein-sepa", "Kein  SEPA"). Missing or
-// empty stays empty, which counts as CORE (platform#143). Any other value is reported and left
+// empty stays empty: such a member is not debited (platform#143). Any other value is reported and left
 // empty. The value only applies to members the import creates; for an existing member the import
 // adds metering points and leaves the master data as it is.
 func importDebitType(raw, firstname, lastname string, importLog *model.Log) null.String {
@@ -590,7 +590,7 @@ func importDebitType(raw, firstname, lastname string, importLog *model.Log) null
 		"WARNING",
 		fmt.Sprintf("%s %s", firstname, lastname),
 		"W_DEBIT_TYPE_UNKNOWN",
-		fmt.Sprintf("unknown direct debit type %q (allowed: CORE, B2B, NONE, Kein SEPA); a new member gets none, which counts as CORE", raw)))
+		fmt.Sprintf("unknown direct debit type %q (allowed: CORE, B2B, NONE, Kein SEPA); a new member gets none and is not debited", raw)))
 	return null.String{}
 }
 
