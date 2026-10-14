@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.3.0] – 2026-10-14
+
 ### Changed
 - **Excel import reports new members without a direct debit type** (platform#143, review F): one
   warning with the number of members the import created with an IBAN but without „Einzugsart“
