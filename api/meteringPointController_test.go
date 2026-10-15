@@ -17,6 +17,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// newTestMeteringHandler returns the metering point handler on the test
+// database that TestMain (eegController_test.go) set up.
+func newTestMeteringHandler(t *testing.T) *MeteringHandler {
+	t.Helper()
+	db, err := database.GetDB(context.Background())
+	require.NoError(t, err)
+	return NewMeteringHandler(db)
+}
+
 func TestRequestMeteringPointValues(t *testing.T) {
 	type args struct {
 		tenant      string
@@ -25,9 +34,10 @@ func TestRequestMeteringPointValues(t *testing.T) {
 	}
 
 	tests := []struct {
-		name  string
-		args  args
-		check func(t *testing.T, recorder *httptest.ResponseRecorder)
+		name      string
+		args      args
+		wantCalls int // how often the handler must ask MQTT for energy data
+		check     func(t *testing.T, recorder *httptest.ResponseRecorder)
 	}{
 		{
 			name: "Update EEG",
@@ -43,16 +53,19 @@ func TestRequestMeteringPointValues(t *testing.T) {
 			},
 		},
 		{
-			name: "Update EEG - sepp", // TODO: Add test cases.
+			// The requested period starts before the metering point is active
+			// (fixture: activesince 2024-01-01), so the request starts at activation.
+			name: "Update EEG - sepp",
 			args: args{
 				tenant:  "TE001006",
-				request: fmt.Sprintf(`{"meteringPoints": [{"meter": "AT000000000000000000001", "direction": "CONSUMPTION"}], "from": %d, "to": 23423434243234234}`, time.Date(2023, time.Month(11), 1, 0, 0, 0, 0, time.Local).UnixMilli()),
+				request: fmt.Sprintf(`{"meteringPoints": [{"meter": "AT0030000000000000000000000953013", "direction": "CONSUMPTION"}], "from": %d, "to": 23423434243234234}`, time.Date(2023, time.Month(11), 1, 0, 0, 0, 0, time.Local).UnixMilli()),
 				mqttReqFunc: func(eeg *model.Eeg, meter *model.MeteringPoint, fromDate, toDate int64) error {
 					fmt.Printf("FromDate %s\n", time.UnixMilli(fromDate).String())
 					assert.Equal(t, civil.DateFor(2024, 1, 1).Unix()*1000, fromDate)
 					return nil
 				},
 			},
+			wantCalls: 1,
 			check: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				fmt.Printf("recorder: %v\n", recorder)
 				assert.Equal(t, http.StatusNoContent, recorder.Code)
@@ -60,15 +73,21 @@ func TestRequestMeteringPointValues(t *testing.T) {
 		},
 	}
 
+	h := newTestMeteringHandler(t)
+	orig := mqttclient.RequestingEnergyData
+	t.Cleanup(func() { mqttclient.RequestingEnergyData = orig })
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req, _ := http.NewRequest("POST", "/meteringpoint/syncenergy", strings.NewReader(tt.args.request))
 			w := httptest.NewRecorder()
-			mqttclient.RequestingEnergyData = tt.args.mqttReqFunc
-			db, err := database.GetDB(context.Background())
-			require.NoError(t, err)
-			NewMeteringHandler(db).requestMeteringPointValues()(w, req, nil, tt.args.tenant)
+			calls := 0
+			mqttclient.RequestingEnergyData = func(eeg *model.Eeg, meter *model.MeteringPoint, fromDate, toDate int64) error {
+				calls++
+				return tt.args.mqttReqFunc(eeg, meter, fromDate, toDate)
+			}
+			h.requestMeteringPointValues()(w, req, nil, tt.args.tenant)
 			tt.check(t, w)
+			assert.Equal(t, tt.wantCalls, calls, "energy data requests sent via MQTT")
 		})
 	}
 }
@@ -77,14 +96,17 @@ func TestRequestChangePartitionFactor(t *testing.T) {
 	data := `{"meteringPoints":[{"meter":"AT0030000000000000000000000953016","direction":"GENERATION","activation":"2022-01-01","partFact":1}]}`
 	req, _ := http.NewRequest("POST", "/meteringpoint/changepartitionfactor", strings.NewReader(data))
 	w := httptest.NewRecorder()
+	orig := mqttclient.ChangePartitionFactor
+	t.Cleanup(func() { mqttclient.ChangePartitionFactor = orig })
+	calls := 0
 	mqttclient.ChangePartitionFactor = func(eeg *model.Eeg, meter []*model.ChangePartitionFactorRequest) error {
+		calls++
 		assert.Equal(t, "TE001006", eeg.Id)
 		return nil
 	}
 
-	db, err := database.GetDB(context.Background())
-	require.NoError(t, err)
-	NewMeteringHandler(db).requestChangePartitionFactor()(w, req, nil, "TE001006")
+	newTestMeteringHandler(t).requestChangePartitionFactor()(w, req, nil, "TE001006")
 
 	assert.Equal(t, http.StatusNoContent, w.Code)
+	assert.Equal(t, 1, calls, "partition factor change requests sent via MQTT")
 }
