@@ -962,8 +962,12 @@ func MeteringPointChangePartFactor(ctx context.Context, db *sqlx.DB, tenant, par
 		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", stmt)
 		return model.ErrUpdateMeter(err)
 	}
-	if n, _ := res.RowsAffected(); n < int64(len(meters)) {
-		log.WithField("tenant", tenant).Warnf("participation factor stored for %d of %d metering point(s) (no matching entry)", n, len(meters))
+	if n, err := res.RowsAffected(); err == nil && n < int64(len(meters)) {
+		ids := make([]string, 0, len(meters))
+		for _, m := range meters {
+			ids = append(ids, m.MeteringPoint)
+		}
+		log.WithField("tenant", tenant).Warnf("participation factor stored for %d of %d metering point(s) %v (no matching entry)", n, len(meters), ids)
 	}
 	return tx.Commit()
 }
@@ -1131,7 +1135,8 @@ func findAssignedMeteringById(ctx context.Context, db *sqlx.DB, tenant string, m
 			goqu.C("activesince"),
 			goqu.C("inactivesince"),
 			goqu.C("flag"),
-			goqu.C("metering_point_id").As("mid")).
+			goqu.C("metering_point_id").As("mid"),
+			goqu.C("participant_id").As("mid_pid")).
 		Where(goqu.C("tenant").Eq(tenant))
 
 	partFactStmt := pgDialect.From(TABLE_PARTITION_FACT_VIEW).
@@ -1145,6 +1150,9 @@ func findAssignedMeteringById(ctx context.Context, db *sqlx.DB, tenant string, m
 		"metering_point_id": goqu.Op{"in": meterIds},
 		"tenant":            tenant,
 		"mid":               goqu.C("metering_point_id"),
+		// the entry's own state: after an owner change the moved entry (flag 0) would otherwise match the
+		// current entry's state and the lookup returned two rows (support ticket 66110076)
+		"mid_pid":           goqu.C("participant_id"),
 		"mpfmid":            goqu.C("metering_point_id"),
 		"mpfpid":            goqu.C("participant_id"),
 		"state.flag":        model.F_ASSIGNED,
