@@ -943,7 +943,10 @@ func MeteringPointChangePartFactor(ctx context.Context, db *sqlx.DB, tenant stri
 			goqu.C("tenant"),
 			goqu.C("partFact"),
 			goqu.V("system").As("createdBy"),
-		).Where(goqu.C("metering_point_id").Eq(goqu.I("ma.meteringPoint")), goqu.C("tenant").Eq(tenant))
+		// only the current entry (flag 1): after an owner change the old member's entry of the same
+		// metering point stays in the community (flag 0) and must keep its factor (support ticket 66110076)
+		).Where(goqu.C("metering_point_id").Eq(goqu.I("ma.meteringPoint")), goqu.C("tenant").Eq(tenant),
+			goqu.C("flag").Eq(model.F_ASSIGNED))
 	stmt, _, err := goqu.Insert(TABLE_PARTITION_FACT).
 		Cols("metering_point_id", "participant_id", "tenant", "partFact", "createdBy").
 		FromQuery(insertQuery).ToSQL()

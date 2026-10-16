@@ -8,6 +8,13 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Fixed
+- **A participation factor change only updates the current entry of a metering point** (support ticket
+  66110076). After an owner change the metering point exists twice in a community: the old member's entry
+  (moved, inactive) and the new member's. The confirmation of the grid operator (ANTWORT_CPF) and the
+  factor field in the member form wrote the new factor to both entries, so the old member's history got
+  the new factor. Now only the current entry (flag 1) is updated.
+
 ## [1.3.0] – 2026-10-14
 
 ### Changed
