@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.3.1] – 2026-10-16
+
 ### Fixed
 - **Participation factor after an owner change** (support ticket 66110076). After an owner change a
   metering point exists twice in a community: the old member's entry (moved, inactive) and the new
