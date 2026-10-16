@@ -8,6 +8,22 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Fixed
+- **Participation factor after an owner change** (support ticket 66110076). After an owner change a
+  metering point exists twice in a community: the old member's entry (moved, inactive) and the new
+  member's.
+  - The confirmation of the grid operator (ANTWORT_CPF) wrote the new factor to both entries, so the old
+    member's history got it too. Now only the current entry (flag 1) is updated; the EDA answer names no
+    member, so an answer arriving after an owner change goes to the new member.
+  - The factor field in the member form failed for such a metering point („No metering factor found
+    N:2“), because the lookup matched the entries by number only. It now finds the member's own entry
+    and changes only that one.
+  - A factor answer that matches no entry is logged instead of being dropped silently.
+  - Editing such a metering point (save in the metering point form) answered 400 „More as one or zero
+    Meteringpoint are found!“ after the change was already stored, and the mail on deactivation left out
+    the direction: the lookup of the current entry also matched the moved entry. It now finds the
+    current entry once.
+
 ## [1.3.0] – 2026-10-14
 
 ### Changed

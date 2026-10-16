@@ -37,7 +37,7 @@ type MeteringPointRepository interface {
 	UpdateMeteringPoint(ctx context.Context, tenant, username, participantId, meterId string, meteringPoint *model.MeteringPoint) error
 	UpdateMeteringPointPartial(ctx context.Context, tenant, username, participantId, meterId string, values map[string]interface{}) error
 	UpdateActiveMeteringPoints(ctx context.Context, tenant string, ml []model.Meter) error
-	MeteringPointChangePartFactor(ctx context.Context, tenant string, meters []model.Meter) error
+	MeteringPointChangePartFactor(ctx context.Context, tenant, participantId string, meters []model.Meter) error
 	MoveMeteringPoint(ctx context.Context, tenant, username, sParticipantId, dParticipantId, meterId string) error
 	ArchiveMeteringPoint(ctx context.Context, tenant, participantId, meterId string) error
 	UpdateProcessStatus(
@@ -137,8 +137,8 @@ func (db *sqlDatabase) UpdateActiveMeteringPoints(ctx context.Context, tenant st
 	return UpdateActiveMeteringPoints(ctx, db.db, tenant, ml)
 }
 
-func (db *sqlDatabase) MeteringPointChangePartFactor(ctx context.Context, tenant string, meters []model.Meter) error {
-	return MeteringPointChangePartFactor(ctx, db.db, tenant, meters)
+func (db *sqlDatabase) MeteringPointChangePartFactor(ctx context.Context, tenant, participantId string, meters []model.Meter) error {
+	return MeteringPointChangePartFactor(ctx, db.db, tenant, participantId, meters)
 }
 
 func (db *sqlDatabase) MoveMeteringPoint(ctx context.Context, tenant, username, sParticipantId, dParticipantId, meterId string) error {
@@ -909,7 +909,11 @@ func meteringPointRevokeByConsentId(ctx context.Context, db *sqlx.DB, receiver s
 	return nil, err
 }
 
-func MeteringPointChangePartFactor(ctx context.Context, db *sqlx.DB, tenant string, meters []model.Meter) error {
+// MeteringPointChangePartFactor stores a new participation factor. After an owner change a metering point
+// exists twice in a community: the old member's moved entry (flag 0) and the current one (flag 1)
+// (support ticket 66110076). With a participant (member form) only that member's entry is changed;
+// without one (ANTWORT_CPF, the EDA message names no member) only the current entry.
+func MeteringPointChangePartFactor(ctx context.Context, db *sqlx.DB, tenant, participantId string, meters []model.Meter) error {
 
 	log.Debug("Change Partition Factor")
 
@@ -934,6 +938,11 @@ func MeteringPointChangePartFactor(ctx context.Context, db *sqlx.DB, tenant stri
 		return model.ErrUpdateMeter(err)
 	}
 
+	entry := goqu.C("flag").Eq(model.F_ASSIGNED)
+	if participantId != "" {
+		entry = goqu.C("participant_id").Eq(participantId)
+	}
+
 	withClause := goqu.L(
 		`(SELECT * FROM json_to_recordset(?::json) AS cols("meteringPoint" TEXT, direction TEXT, activation BIGINT, "partFact" INT))`, string(metersJson))
 	insertQuery := goqu.From(TABLE_METERINGPOINT, withClause.As("ma")).
@@ -943,15 +952,22 @@ func MeteringPointChangePartFactor(ctx context.Context, db *sqlx.DB, tenant stri
 			goqu.C("tenant"),
 			goqu.C("partFact"),
 			goqu.V("system").As("createdBy"),
-		).Where(goqu.C("metering_point_id").Eq(goqu.I("ma.meteringPoint")), goqu.C("tenant").Eq(tenant))
+		).Where(goqu.C("metering_point_id").Eq(goqu.I("ma.meteringPoint")), goqu.C("tenant").Eq(tenant), entry)
 	stmt, _, err := goqu.Insert(TABLE_PARTITION_FACT).
 		Cols("metering_point_id", "participant_id", "tenant", "partFact", "createdBy").
 		FromQuery(insertQuery).ToSQL()
 
-	_, err = tx.Exec(stmt)
+	res, err := tx.Exec(stmt)
 	if err != nil {
 		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", stmt)
 		return model.ErrUpdateMeter(err)
+	}
+	if n, err := res.RowsAffected(); err == nil && n < int64(len(meters)) {
+		ids := make([]string, 0, len(meters))
+		for _, m := range meters {
+			ids = append(ids, m.MeteringPoint)
+		}
+		log.WithField("tenant", tenant).Warnf("participation factor stored for %d of %d metering point(s) %v (no matching entry)", n, len(meters), ids)
 	}
 	return tx.Commit()
 }
@@ -984,7 +1000,8 @@ func findAllMeteringByTenant(ctx context.Context, tx *sqlx.DB, tenant, participa
 			goqu.C("inactivesince"),
 			goqu.C("flag"),
 			goqu.C("metering_point_id").As("mid"),
-			goqu.C("tenant").As("mid_tenant"))
+			goqu.C("tenant").As("mid_tenant"),
+			goqu.C("participant_id").As("mid_pid"))
 
 	partFactStmt := pgDialect.From(TABLE_PARTITION_FACT_VIEW).
 		Select(
@@ -1001,6 +1018,8 @@ func findAllMeteringByTenant(ctx context.Context, tx *sqlx.DB, tenant, participa
 			goqu.C("mpf_tenant").Eq(tenant),
 			goqu.C("participant_id").Eq(participantId),
 			goqu.C("mid").Eq(goqu.C("metering_point_id")),
+			// per member: after an owner change the number has a second entry (support ticket 66110076)
+			goqu.C("mid_pid").Eq(goqu.C("participant_id")),
 			goqu.C("mpfmid").Eq(goqu.C("metering_point_id")),
 			goqu.C("mpfpid").Eq(goqu.C("participant_id")),
 		).ToSQL()
@@ -1116,7 +1135,8 @@ func findAssignedMeteringById(ctx context.Context, db *sqlx.DB, tenant string, m
 			goqu.C("activesince"),
 			goqu.C("inactivesince"),
 			goqu.C("flag"),
-			goqu.C("metering_point_id").As("mid")).
+			goqu.C("metering_point_id").As("mid"),
+			goqu.C("participant_id").As("mid_pid")).
 		Where(goqu.C("tenant").Eq(tenant))
 
 	partFactStmt := pgDialect.From(TABLE_PARTITION_FACT_VIEW).
@@ -1130,6 +1150,9 @@ func findAssignedMeteringById(ctx context.Context, db *sqlx.DB, tenant string, m
 		"metering_point_id": goqu.Op{"in": meterIds},
 		"tenant":            tenant,
 		"mid":               goqu.C("metering_point_id"),
+		// the entry's own state: after an owner change the moved entry (flag 0) would otherwise match the
+		// current entry's state and the lookup returned two rows (support ticket 66110076)
+		"mid_pid":           goqu.C("participant_id"),
 		"mpfmid":            goqu.C("metering_point_id"),
 		"mpfpid":            goqu.C("participant_id"),
 		"state.flag":        model.F_ASSIGNED,
