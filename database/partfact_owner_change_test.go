@@ -61,9 +61,10 @@ func TestMeteringPointChangePartFactor_afterOwnerChange(t *testing.T) {
 		assert.Equal(t, 100, factor(oldOwner), "the old member's history keeps its factor")
 	})
 	t.Run("member form changes only that member's entry", func(t *testing.T) {
+		before := factor(newOwner)
 		change(oldOwner, 80)
 		assert.Equal(t, 80, factor(oldOwner))
-		assert.Equal(t, 99, factor(newOwner))
+		assert.Equal(t, before, factor(newOwner))
 	})
 	t.Run("member form finds one entry per member", func(t *testing.T) {
 		for _, p := range []string{oldOwner, newOwner} {
@@ -71,5 +72,10 @@ func TestMeteringPointChangePartFactor_afterOwnerChange(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, ms, 1, "one entry for member %s", p)
 		}
+	})
+	t.Run("the current entry is found once (metering point update, inactive mail)", func(t *testing.T) {
+		m, err := db.FindAssignedMeteringById(ctx, tenant, meter)
+		require.NoError(t, err)
+		assert.Equal(t, newOwner, m.ParticipantId)
 	})
 }
