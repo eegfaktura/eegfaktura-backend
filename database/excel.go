@@ -24,7 +24,19 @@ type ExcelRepository interface {
 	ImportMasterdataFromExcel(ctx context.Context, r io.Reader, filename, sheet, tenant string) error
 }
 
+// Unzip limits for uploaded workbooks (excelize allows 16 GB unzipped by default).
+// Uploads are capped at 15 MB by the ingress; real master data imports unzip to a few MB,
+// so 256 MB leaves ample headroom. Worksheets above 16 MB (the excelize default) are
+// unzipped to a temp file instead of memory.
+const (
+	excelUnzipSizeLimit    = 256 << 20
+	excelUnzipXMLSizeLimit = 16 << 20
+)
+
 func openReader(r io.Reader, filename string, opt ...excelize.Options) (*excelize.File, error) {
+	if len(opt) == 0 {
+		opt = []excelize.Options{{UnzipSizeLimit: excelUnzipSizeLimit, UnzipXMLSizeLimit: excelUnzipXMLSizeLimit}}
+	}
 	f, err := excelize.OpenReader(r, opt...)
 	if err != nil {
 		return nil, err

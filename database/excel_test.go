@@ -1,6 +1,7 @@
 package database
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -259,4 +260,22 @@ func TestExportZPListToExcel(t *testing.T) {
 	buf, err := ExportZPListToExcel(&ebmsMsgTest)
 	err = os.WriteFile("./test.xlsx", buf.Bytes(), 0644)
 	require.NoError(t, err)
+}
+
+func Test_openReader_rejectsOversizedWorkbook(t *testing.T) {
+	// A workbook part whose declared unzipped size exceeds the limit must be rejected
+	// before it is extracted.
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	_, err := zw.CreateRaw(&zip.FileHeader{
+		Name:               "xl/worksheets/sheet1.xml",
+		Method:             zip.Store,
+		UncompressedSize64: excelUnzipSizeLimit + 1,
+	})
+	require.NoError(t, err)
+	require.NoError(t, zw.Close())
+
+	_, err = openReader(bytes.NewReader(buf.Bytes()), "oversized.xlsx")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unzip size exceeds")
 }

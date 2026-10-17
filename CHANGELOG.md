@@ -14,6 +14,8 @@ this changelog highlights the changes relevant for overview and operations.
 - **Page size of the process history** (F4). `GET /process/history` now applies the page size (`ps`) to the
   database query; before, all entries in the period were read. `ps` must be between 0 (no paging, as used by
   eegfaktura-web) and 1000, other values are answered with 400.
+- **Size limit for the master data import** (F5). An uploaded Excel workbook may now unzip to at most
+  256 MB (before: the excelize default of 16 GB); larger files are rejected. Real imports are far below this.
 
 ## [1.3.1] – 2026-10-16
 
