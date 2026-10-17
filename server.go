@@ -174,6 +174,7 @@ func StartServer(db database.Database) {
 	r := InitRouters(db)
 
 	gqlSrv := handler.NewDefaultServer(generated.NewExecutableSchema(generated.Config{Resolvers: &graph.Resolver{}}))
+	gqlSrv.AroundOperations(middleware.GQLAdminCheckLog)
 	r.Handle("/query", middleware.GQLProtect(gqlSrv))
 
 	allowedOrigins := handlers.AllowedOrigins([]string{"*"})
