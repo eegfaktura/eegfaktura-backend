@@ -8,6 +8,10 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Fixed
+- **MQTT command with an invalid online flag** (F2). A `pontononlinestate` command whose `online` field is
+  not a boolean is now logged and dropped. Before, it stopped the message broker and with it the service.
+
 ## [1.3.1] – 2026-10-16
 
 ### Fixed
