@@ -35,12 +35,19 @@ const (
 )
 
 // openReader opens an uploaded workbook with its own temp directory. The returned cleanup
-// closes the file and removes the temp directory; on error nothing is left behind.
+// closes the file and removes the temp directory; on error or panic nothing is left behind.
 func openReader(r io.Reader, filename string) (*excelize.File, func(), error) {
 	tmpDir, err := os.MkdirTemp("", "excel-import-")
 	if err != nil {
 		return nil, nil, err
 	}
+	handedOver := false
+	defer func() {
+		if !handedOver {
+			_ = os.RemoveAll(tmpDir)
+		}
+	}()
+
 	f, err := excelize.OpenReader(r, excelize.Options{
 		UnzipSizeLimit:    excelUnzipSizeLimit,
 		UnzipXMLSizeLimit: excelUnzipXMLSizeLimit,
@@ -50,10 +57,10 @@ func openReader(r io.Reader, filename string) (*excelize.File, func(), error) {
 		if f != nil {
 			_ = f.Close()
 		}
-		_ = os.RemoveAll(tmpDir)
 		return nil, nil, err
 	}
 	f.Path = filename
+	handedOver = true
 	return f, func() {
 		_ = f.Close()
 		_ = os.RemoveAll(tmpDir)

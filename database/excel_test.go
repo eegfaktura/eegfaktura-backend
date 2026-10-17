@@ -340,3 +340,13 @@ func Test_openReader_cleanupRemovesTempDir(t *testing.T) {
 	cleanup()
 	requireEmptyDir(t, dir)
 }
+
+type panicReader struct{}
+
+func (panicReader) Read([]byte) (int, error) { panic("read failed") }
+
+func Test_openReader_panicRemovesTempDir(t *testing.T) {
+	dir := withTempDir(t)
+	require.Panics(t, func() { _, _, _ = openReader(panicReader{}, "panic.xlsx") })
+	requireEmptyDir(t, dir)
+}
