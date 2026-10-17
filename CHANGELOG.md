@@ -14,6 +14,17 @@ this changelog highlights the changes relevant for overview and operations.
   client id (`azp`), `sub`, number of access groups, member flag (`is_user`), superuser flag and
   operation type/name. This log is temporary and is removed when the role is enforced.
 
+### Fixed
+- **MQTT command with an invalid online flag** (F2). A `pontononlinestate` command whose `online` field is
+  not a boolean is now logged and dropped. Before, it stopped the message broker and with it the service.
+- **Negative page size of the process history** (F4). In `GET /process/history` a negative page size (`ps`)
+  is now rejected with 400; before, it crashed the request (recovered per request). Paging behaviour is unchanged.
+- **Size limit for the master data import** (F5). An uploaded Excel workbook may now unzip to at most
+  128 MiB in total (before: the excelize default of 16 GB); larger files are rejected. The shipped test
+  workbooks and typical templates unzip to a few MB.
+  Temporary files of an import are written to a directory of their own, which is removed afterwards, also
+  when the file is rejected.
+
 ## [1.3.1] – 2026-10-16
 
 ### Fixed

@@ -368,9 +368,9 @@ func Test_transformExcelData_shippedTemplate(t *testing.T) {
 	require.NoError(t, err)
 	defer reader.Close()
 
-	f, err := openReader(reader, "260716-vorlage-import-stammdaten.xlsx")
+	f, cleanup, err := openReader(reader, "260716-vorlage-import-stammdaten.xlsx")
 	require.NoError(t, err)
-	defer f.Close()
+	defer cleanup()
 
 	rows, err := f.Rows("EEG Stammdaten")
 	require.NoError(t, err)
