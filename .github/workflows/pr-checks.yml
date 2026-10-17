@@ -33,9 +33,9 @@ env:
   # Packages whose tests need a service: PostgreSQL via Testcontainers (api, database, eda) or a
   # running Keycloak (api/middleware). They run in the full suite only.
   INTEGRATION_PACKAGES: 'api api/middleware database eda'
-  # Known failing tests: api and eda tests do not compile, api/middleware needs a running Keycloak,
-  # mqtt fails under the race detector.
-  KNOWN_RED_PACKAGES: 'api api/middleware eda mqtt'
+  # Known failing tests: api tests do not compile, api/middleware needs a running Keycloak, mqtt
+  # fails under the race detector.
+  KNOWN_RED_PACKAGES: 'api api/middleware mqtt'
 
 jobs:
   unit:
@@ -126,8 +126,6 @@ jobs:
 
   known:
     name: Known errors
-    # Report-only: these packages have known failing tests; the job must not turn a PR red.
-    continue-on-error: true
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -159,6 +157,8 @@ jobs:
           (cd model && go generate ./...)
 
       - name: Known red packages (race detector)
+        # Report-only: these packages have known failing tests; the step must not turn a PR red.
+        continue-on-error: true
         run: |
           read -ra known <<< "$KNOWN_RED_PACKAGES"
           go test -race -count=1 "${known[@]/#/./}"
