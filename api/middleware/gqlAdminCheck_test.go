@@ -71,12 +71,13 @@ func TestGQLAdminCheck_NonAdminQueryIsLoggedAndPasses(t *testing.T) {
 	require.Equal(t, http.StatusOK, code)
 	require.Len(t, hits, 1)
 	e := hits[0]
-	require.Equal(t, logrus.WarnLevel, e.Level)
+	require.Equal(t, logrus.InfoLevel, e.Level)
 	require.Equal(t, logrus.Fields{
 		"tenant":              "TE100100",
 		"azp":                 "some-client",
 		"sub":                 "sub-123",
 		"access_groups_count": 1,
+		"is_user":             true,
 		"superuser":           false,
 		"operation_type":      "query",
 		"operation_name":      "LoadEeg",
@@ -98,6 +99,7 @@ func TestGQLAdminCheck_NonAdminMutationIsLogged(t *testing.T) {
 	require.Equal(t, "mutation", hits[0].Data["operation_type"])
 	require.Equal(t, "SaveEeg", hits[0].Data["operation_name"])
 	require.Equal(t, 0, hits[0].Data["access_groups_count"])
+	require.Equal(t, false, hits[0].Data["is_user"])
 }
 
 func TestGQLAdminCheck_SuperuserWithoutAdminIsLogged(t *testing.T) {

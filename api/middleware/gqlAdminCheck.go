@@ -8,7 +8,7 @@ import (
 )
 
 // F1, step 1 (log only): GQLProtect marks requests whose token has no
-// EEG_ADMIN group; GQLAdminCheckLog writes one WARN line per GraphQL
+// EEG_ADMIN group; GQLAdminCheckLog writes one INFO line per GraphQL
 // operation of such a request. Nothing is blocked; enforcing the role
 // follows after the log period.
 
@@ -20,6 +20,7 @@ type gqlNonAdmin struct {
 	sub               string
 	azp               string
 	accessGroupsCount int
+	isUser            bool
 	superuser         bool
 }
 
@@ -28,11 +29,15 @@ func withGQLNonAdmin(ctx context.Context, claims *PlatformClaims, superuser bool
 		sub:               claims.Subject,
 		azp:               claims.Authorized,
 		accessGroupsCount: len(claims.AccessGroups),
+		isUser:            claims.AccessGroups.IsUser(),
 		superuser:         superuser,
 	})
 }
 
 // GQLAdminCheckLog is a gqlgen operation middleware (handler.Server.AroundOperations).
+//
+// TODO(F1 step 2): temporary log; remove this hook and the context marker when
+// /query enforces the admin role.
 func GQLAdminCheckLog(ctx context.Context, next graphql.OperationHandler) graphql.ResponseHandler {
 	if m, ok := ctx.Value(gqlNonAdminCtxKey).(*gqlNonAdmin); ok {
 		fields := logrus.Fields{
@@ -40,6 +45,7 @@ func GQLAdminCheckLog(ctx context.Context, next graphql.OperationHandler) graphq
 			"azp":                 m.azp,
 			"sub":                 m.sub,
 			"access_groups_count": m.accessGroupsCount,
+			"is_user":             m.isUser,
 			"superuser":           m.superuser,
 		}
 		if graphql.HasOperationContext(ctx) {
@@ -48,7 +54,7 @@ func GQLAdminCheckLog(ctx context.Context, next graphql.OperationHandler) graphq
 				fields["operation_name"] = op.Name
 			}
 		}
-		logrus.WithFields(fields).Warn("gql-admin-check: non-admin token")
+		logrus.WithFields(fields).Info("gql-admin-check: non-admin token")
 	}
 	return next(ctx)
 }
