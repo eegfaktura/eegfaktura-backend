@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.3.2] – 2026-10-17
+
 ### Added
 - GraphQL requests without the admin role are logged (preparation for enforcing the role). Requests
   pass as before; one INFO line `gql-admin-check: non-admin token` per GraphQL operation, with tenant,
