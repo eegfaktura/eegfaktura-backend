@@ -120,38 +120,24 @@ func GQLProtect(next http.Handler) http.Handler {
 			}
 		}
 
-		// F1, step 1 (log only): REST write endpoints require the EEG_ADMIN group,
-		// /query does not check it yet. Tokens without it are logged and still
-		// passed through; enforcing the role follows after the log period.
-		if !superuser && !claims.AccessGroups.IsAdmin() {
-			logGQLNonAdmin(tenant, claims)
-		}
-
 		// put it in context
 		ctx := context.WithValue(
 			context.WithValue(r.Context(), tenantCtxKey, strings.ToUpper(tenant)),
 			superUserCtxKey, superuser)
+
+		// F1, step 1 (log only): REST write endpoints require the EEG_ADMIN group,
+		// /query does not check it yet. Tokens without it are only marked here and
+		// logged per operation by GQLAdminCheckLog; the request passes as before.
+		// Enforcing the role follows after the log period.
+		if !claims.AccessGroups.IsAdmin() {
+			ctx = withGQLNonAdmin(ctx, claims, superuser)
+		}
 
 		logrus.Printf("Access granted for tenant %s (%s)", tenant, r.URL.Path)
 		// and call the next with our new context
 		r = r.WithContext(ctx)
 		next.ServeHTTP(w, r)
 	})
-}
-
-// logGQLNonAdmin writes one searchable line per /query request whose token
-// lacks the admin group. It logs no e-mail and no token.
-func logGQLNonAdmin(tenant string, claims *PlatformClaims) {
-	user := claims.Username
-	if user == "" || strings.Contains(user, "@") {
-		user = claims.Subject
-	}
-	logrus.WithFields(logrus.Fields{
-		"tenant":                tenant,
-		"azp":                   claims.Authorized,
-		"user":                  user,
-		"access_groups_present": claims.AccessGroups != nil,
-	}).Warn("gql-admin-check: non-admin token")
 }
 
 func retrieveClaims(r *http.Request) (string, *PlatformClaims, error) {

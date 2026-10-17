@@ -10,7 +10,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ### Changed
 - GraphQL requests without the admin role are logged (preparation for enforcing the role). Requests
-  pass as before; the log line is `gql-admin-check: non-admin token`.
+  pass as before; one WARN line `gql-admin-check: non-admin token` per GraphQL operation, with tenant,
+  client id (`azp`), `sub`, number of access groups, superuser flag and operation type/name.
 
 ## [1.3.1] – 2026-10-16
 
