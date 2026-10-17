@@ -49,3 +49,24 @@ func TestMessageBroker_command_malformedOnlineState(t *testing.T) {
 		})
 	}
 }
+
+func TestParseOnlineState(t *testing.T) {
+	valid := []struct {
+		payload       string
+		online, found bool
+	}{
+		{payload: `{"online": true}`, online: true, found: true},
+		{payload: `{"online": false}`, online: false, found: true},
+		{payload: `{}`, online: false, found: false},
+	}
+	for _, tt := range valid {
+		online, found, err := parseOnlineState([]byte(tt.payload))
+		require.NoError(t, err, tt.payload)
+		require.Equal(t, tt.online, online, tt.payload)
+		require.Equal(t, tt.found, found, tt.payload)
+	}
+	for _, payload := range []string{`{"online": "true"}`, `{"online": null}`, `{"online": 1}`, `{"online": {}}`, `[true]`, `online`} {
+		_, _, err := parseOnlineState([]byte(payload))
+		require.Error(t, err, payload)
+	}
+}

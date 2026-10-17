@@ -26,11 +26,12 @@ type ExcelRepository interface {
 }
 
 // Unzip limits for uploaded workbooks (excelize allows 16 GB unzipped by default).
-// Uploads are capped at 15 MB by the ingress and real master data files unzip to a few MB,
-// so 64 MiB leaves ample headroom. Worksheets above 16 MiB (the excelize default) are
-// unzipped to a temp file instead of memory.
+// The limit is the sum of all parts, including images and styles. Uploads are capped at
+// 15 MB by the ingress; the shipped test workbooks and typical templates unzip to a few MB,
+// so 128 MiB leaves headroom. Worksheets above 16 MiB (the excelize default) are unzipped
+// to a temp file instead of memory.
 const (
-	excelUnzipSizeLimit    = 64 << 20
+	excelUnzipSizeLimit    = 128 << 20
 	excelUnzipXMLSizeLimit = 16 << 20
 )
 

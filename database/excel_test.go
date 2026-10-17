@@ -300,14 +300,15 @@ func Test_openReader_rejectsOversizedWorkbook(t *testing.T) {
 }
 
 func Test_openReader_rejectsWorkbookExceedingTotalLimit(t *testing.T) {
-	// Several worksheets, each below the total limit but above the in-memory limit, so
-	// excelize unzips them to temp files before the total exceeds the limit.
+	// Each entry is below the limit, together they exceed it. The two worksheets are above
+	// the in-memory limit, so excelize unzips them to temp files before the last entry
+	// (only declared, no data) pushes the total over the limit.
 	dir := withTempDir(t)
 	const sheetSize = excelUnzipXMLSizeLimit + 4<<20
 	chunk := bytes.Repeat([]byte("<row/>"), 1<<16)
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
-	for i := 1; i*sheetSize <= excelUnzipSizeLimit+sheetSize; i++ {
+	for i := 1; i <= 2; i++ {
 		w, err := zw.Create(fmt.Sprintf("xl/worksheets/sheet%d.xml", i))
 		require.NoError(t, err)
 		for written := 0; written < sheetSize; written += len(chunk) {
@@ -315,9 +316,15 @@ func Test_openReader_rejectsWorkbookExceedingTotalLimit(t *testing.T) {
 			require.NoError(t, err)
 		}
 	}
+	_, err := zw.CreateRaw(&zip.FileHeader{
+		Name:               "xl/media/image1.png",
+		Method:             zip.Store,
+		UncompressedSize64: excelUnzipSizeLimit - 2*sheetSize + 1<<20,
+	})
+	require.NoError(t, err)
 	require.NoError(t, zw.Close())
 
-	_, _, err := openReader(bytes.NewReader(buf.Bytes()), "oversized.xlsx")
+	_, _, err = openReader(bytes.NewReader(buf.Bytes()), "oversized.xlsx")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "unzip size exceeds")
 	requireEmptyDir(t, dir)
