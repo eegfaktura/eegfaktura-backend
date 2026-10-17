@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -25,34 +26,46 @@ type ExcelRepository interface {
 }
 
 // Unzip limits for uploaded workbooks (excelize allows 16 GB unzipped by default).
-// Uploads are capped at 15 MB by the ingress; real master data imports unzip to a few MB,
-// so 256 MB leaves ample headroom. Worksheets above 16 MB (the excelize default) are
+// Uploads are capped at 15 MB by the ingress and real master data files unzip to a few MB,
+// so 64 MiB leaves ample headroom. Worksheets above 16 MiB (the excelize default) are
 // unzipped to a temp file instead of memory.
 const (
-	excelUnzipSizeLimit    = 256 << 20
+	excelUnzipSizeLimit    = 64 << 20
 	excelUnzipXMLSizeLimit = 16 << 20
 )
 
-func openReader(r io.Reader, filename string, opt ...excelize.Options) (*excelize.File, error) {
-	if len(opt) == 0 {
-		opt = []excelize.Options{{UnzipSizeLimit: excelUnzipSizeLimit, UnzipXMLSizeLimit: excelUnzipXMLSizeLimit}}
-	}
-	f, err := excelize.OpenReader(r, opt...)
+// openReader opens an uploaded workbook with its own temp directory. The returned cleanup
+// closes the file and removes the temp directory; on error nothing is left behind.
+func openReader(r io.Reader, filename string) (*excelize.File, func(), error) {
+	tmpDir, err := os.MkdirTemp("", "excel-import-")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	f, err := excelize.OpenReader(r, excelize.Options{
+		UnzipSizeLimit:    excelUnzipSizeLimit,
+		UnzipXMLSizeLimit: excelUnzipXMLSizeLimit,
+		TmpDir:            tmpDir,
+	})
+	if err != nil {
+		if f != nil {
+			_ = f.Close()
+		}
+		_ = os.RemoveAll(tmpDir)
+		return nil, nil, err
 	}
 	f.Path = filename
-	return f, nil
+	return f, func() {
+		_ = f.Close()
+		_ = os.RemoveAll(tmpDir)
+	}, nil
 }
 
 func (db *sqlDatabase) ImportMasterdataFromExcel(ctx context.Context, r io.Reader, filename, sheet, tenant string) error {
-	var f *excelize.File
-	var err error
-
-	if f, err = openReader(r, filename); err != nil {
+	f, cleanup, err := openReader(r, filename)
+	if err != nil {
 		return err
 	}
-	defer func() { _ = f.Close() }()
+	defer cleanup()
 
 	rows, err := f.Rows(sheet)
 	if err != nil {

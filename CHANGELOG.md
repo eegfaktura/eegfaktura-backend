@@ -14,7 +14,9 @@ this changelog highlights the changes relevant for overview and operations.
 - **Invalid page size of the process history** (F4). `GET /process/history` answers a negative or
   non-numeric page size (`ps`) with 400; such values no longer crash the handler. Paging behaviour is unchanged.
 - **Size limit for the master data import** (F5). An uploaded Excel workbook may now unzip to at most
-  256 MB (before: the excelize default of 16 GB); larger files are rejected. Real imports are far below this.
+  64 MiB (before: the excelize default of 16 GB); larger files are rejected. Real imports are far below this.
+  Temporary files of an import are written to a directory of their own, which is removed afterwards, also
+  when the file is rejected.
 
 ## [1.3.1] – 2026-10-16
 

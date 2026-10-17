@@ -26,9 +26,9 @@ func Test_transformExcelData(t *testing.T) {
 	require.NoError(t, err)
 	defer reader.Close()
 
-	f, err := openReader(reader, "TE100200-Muster-Stammdatenimport.xlsx")
+	f, cleanup, err := openReader(reader, "TE100200-Muster-Stammdatenimport.xlsx")
 	require.NoError(t, err)
-	defer f.Close()
+	defer cleanup()
 
 	rows, err := f.Rows("EEG Stammdaten")
 	require.NoError(t, err)
@@ -218,8 +218,9 @@ func TestExportMasterdataToExcel(t *testing.T) {
 			args: args{participants: participants, eeg: eeg, tariffMap: tariffMap},
 			check: func(t *testing.T, buff *bytes.Buffer) {
 				r := bytes.NewReader(buff.Bytes())
-				f, err := openReader(r, "test")
+				f, cleanup, err := openReader(r, "test")
 				require.NoError(t, err)
+				defer cleanup()
 
 				rows, err := f.Rows("Mitglieder")
 				require.NoError(t, err)
@@ -262,9 +263,26 @@ func TestExportZPListToExcel(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// withTempDir points the process temp directory to an empty test directory.
+func withTempDir(t *testing.T) string {
+	dir := t.TempDir()
+	t.Setenv("TMP", dir)
+	t.Setenv("TEMP", dir)
+	t.Setenv("TMPDIR", dir)
+	require.Equal(t, dir, os.TempDir())
+	return dir
+}
+
+func requireEmptyDir(t *testing.T, dir string) {
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Empty(t, entries)
+}
+
 func Test_openReader_rejectsOversizedWorkbook(t *testing.T) {
 	// A workbook part whose declared unzipped size exceeds the limit must be rejected
 	// before it is extracted.
+	dir := withTempDir(t)
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	_, err := zw.CreateRaw(&zip.FileHeader{
@@ -275,7 +293,50 @@ func Test_openReader_rejectsOversizedWorkbook(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, zw.Close())
 
-	_, err = openReader(bytes.NewReader(buf.Bytes()), "oversized.xlsx")
+	_, _, err = openReader(bytes.NewReader(buf.Bytes()), "oversized.xlsx")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "unzip size exceeds")
+	requireEmptyDir(t, dir)
+}
+
+func Test_openReader_rejectsWorkbookExceedingTotalLimit(t *testing.T) {
+	// Several worksheets, each below the total limit but above the in-memory limit, so
+	// excelize unzips them to temp files before the total exceeds the limit.
+	dir := withTempDir(t)
+	const sheetSize = excelUnzipXMLSizeLimit + 4<<20
+	chunk := bytes.Repeat([]byte("<row/>"), 1<<16)
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for i := 1; i*sheetSize <= excelUnzipSizeLimit+sheetSize; i++ {
+		w, err := zw.Create(fmt.Sprintf("xl/worksheets/sheet%d.xml", i))
+		require.NoError(t, err)
+		for written := 0; written < sheetSize; written += len(chunk) {
+			_, err = w.Write(chunk)
+			require.NoError(t, err)
+		}
+	}
+	require.NoError(t, zw.Close())
+
+	_, _, err := openReader(bytes.NewReader(buf.Bytes()), "oversized.xlsx")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unzip size exceeds")
+	requireEmptyDir(t, dir)
+}
+
+func Test_openReader_cleanupRemovesTempDir(t *testing.T) {
+	dir := withTempDir(t)
+	reader, err := os.Open("../tests/TE100200-Muster-Stammdatenimport.xlsx")
+	require.NoError(t, err)
+	defer reader.Close()
+
+	f, cleanup, err := openReader(reader, "TE100200-Muster-Stammdatenimport.xlsx")
+	require.NoError(t, err)
+	_, err = f.GetRows("EEG Stammdaten")
+	require.NoError(t, err)
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+
+	cleanup()
+	requireEmptyDir(t, dir)
 }
