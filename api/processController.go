@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -8,6 +9,22 @@ import (
 	"at.ourproject/vfeeg-backend/database"
 	"github.com/gorilla/mux"
 )
+
+// maxHistoryPageSize is the largest page size accepted by /process/history.
+// A page size of 0 means "no paging" (used by eegfaktura-web).
+const maxHistoryPageSize = 1000
+
+// parseHistoryPageSize parses the ps query parameter: 0 (no paging) or 1..maxHistoryPageSize.
+func parseHistoryPageSize(ps string) (uint, error) {
+	pageSize, err := strconv.ParseInt(ps, 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	if pageSize < 0 || pageSize > maxHistoryPageSize {
+		return 0, fmt.Errorf("page size out of range: %d", pageSize)
+	}
+	return uint(pageSize), nil
+}
 
 func InitProcessRouter(r *mux.Router, db database.Database) *mux.Router {
 	h := NewProcessHandler(db)
@@ -48,8 +65,7 @@ func (h *ProcessHandler) fetchProcessHistory() middleware.JWTHandlerFunc {
 			return
 		}
 
-		psStr := r.URL.Query().Get("ps")
-		pageSize, err := strconv.ParseInt(psStr, 10, 64)
+		pageSize, err := parseHistoryPageSize(r.URL.Query().Get("ps"))
 		if err != nil {
 			respondWithError(w, http.StatusBadRequest, "invalid page size")
 			return
@@ -57,7 +73,7 @@ func (h *ProcessHandler) fetchProcessHistory() middleware.JWTHandlerFunc {
 
 		protocol := r.URL.Query().Get("protocol")
 
-		history, err := h.db.FetchEdaHistory(tenant, protocol, start, end, uint(pageSize))
+		history, err := h.db.FetchEdaHistory(tenant, protocol, start, end, pageSize)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

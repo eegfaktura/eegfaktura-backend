@@ -11,6 +11,9 @@ this changelog highlights the changes relevant for overview and operations.
 ### Fixed
 - **MQTT command with an invalid online flag** (F2). A `pontononlinestate` command whose `online` field is
   not a boolean is now logged and dropped. Before, it stopped the message broker and with it the service.
+- **Page size of the process history** (F4). `GET /process/history` now applies the page size (`ps`) to the
+  database query; before, all entries in the period were read. `ps` must be between 0 (no paging, as used by
+  eegfaktura-web) and 1000, other values are answered with 400.
 
 ## [1.3.1] – 2026-10-16
 
