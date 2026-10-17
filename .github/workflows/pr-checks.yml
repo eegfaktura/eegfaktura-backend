@@ -166,4 +166,4 @@ jobs:
 
       - name: Report the known failure
         if: steps.reportonly.outcome == 'failure'
-        run: echo "::warning::Known red packages failed (report-only): see the step log."
+        run: echo "::warning::Known red packages failed (report-only), see the step log."
