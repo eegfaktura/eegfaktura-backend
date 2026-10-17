@@ -12,8 +12,9 @@ this changelog highlights the changes relevant for overview and operations.
 - **MQTT command with an invalid online flag** (F2). A `pontononlinestate` command whose `online` field is
   not a boolean is now logged and dropped. Before, it stopped the message broker and with it the service.
 - **Page size of the process history** (F4). `GET /process/history` now applies the page size (`ps`) to the
-  database query; before, all entries in the period were read. `ps` must be between 0 (no paging, as used by
-  eegfaktura-web) and 1000, other values are answered with 400.
+  database query; before, all entries in the period were read. `ps` must be a non-negative number (0 = no
+  paging, as used by eegfaktura-web); values above 1000 are reduced to 1000, the rest follows via `next`.
+  Negative or non-numeric values are answered with 400.
 - **Size limit for the master data import** (F5). An uploaded Excel workbook may now unzip to at most
   256 MB (before: the excelize default of 16 GB); larger files are rejected. Real imports are far below this.
 
