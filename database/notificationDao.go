@@ -100,7 +100,7 @@ func fetchEdaHistory(db *sqlx.DB, tenant, protocol string, start, end int64, pag
 			goqu.C("date").Between(goqu.Range(startDate, endDate)))
 
 	if pageSize > 0 {
-		block = block.Limit(pageSize + 1)
+		block.Limit(pageSize + 1)
 	}
 
 	stmt, _, err := block.ToSQL()
@@ -137,7 +137,7 @@ func fetchEdaHistory(db *sqlx.DB, tenant, protocol string, start, end int64, pag
 	}
 
 	next := NextType{}
-	if len(h) > int(pageSize) {
+	if pageSize < uint(len(h)) {
 		last := h[pageSize]
 		next.Start = last.Date.Unix() * 1000
 		next.End = end

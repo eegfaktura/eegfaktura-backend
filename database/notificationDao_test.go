@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/require"
+	"math"
 	"testing"
 	"time"
 )
@@ -28,27 +29,11 @@ func TestFetchEdaHistory(t *testing.T) {
 	require.NotNil(t, res)
 }
 
-func TestFetchEdaHistory_appliesPageSizeLimit(t *testing.T) {
-	var mDB, mock, err = InitMockDatabase()
-	require.NoError(t, err)
-
+func TestFetchEdaHistory_pageSizeBounds(t *testing.T) {
 	start, _ := time.Parse(time.RFC3339Nano, "2023-10-03T17:00:00.000Z")
 	end, _ := time.Parse(time.RFC3339Nano, "2023-10-04T18:00:00.000Z")
 
-	// pageSize 2 must fetch one extra row (LIMIT 3) to detect a next page.
-	rows := sqlmock.NewRows([]string{"conversationId", "date", "message", "protocol", "tenant"}).
-		AddRow("1", start, "{}", "CR_MSG", "RC100298").
-		AddRow("2", start, "{}", "CR_MSG", "RC100298").
-		AddRow("3", end, "{}", "CR_MSG", "RC100298")
-	mock.ExpectQuery(`SELECT (.+) FROM "base"."processhistory" WHERE (.+) LIMIT 3$`).WillReturnRows(rows)
-
-	res, err := mDB.FetchEdaHistory("RC100298", "CR_MSG", start.UnixMilli(), end.UnixMilli(), 2)
-	require.NoError(t, err)
-	require.NoError(t, mock.ExpectationsWereMet())
-
-	b, err := json.Marshal(res)
-	require.NoError(t, err)
-	var out struct {
+	type result struct {
 		History struct {
 			Next struct {
 				Start    int64 `json:"start"`
@@ -57,8 +42,39 @@ func TestFetchEdaHistory_appliesPageSizeLimit(t *testing.T) {
 		}
 		Data map[string]map[string][]json.RawMessage `json:"data"`
 	}
-	require.NoError(t, json.Unmarshal(b, &out))
+	fetch := func(pageSize uint) result {
+		mDB, mock, err := InitMockDatabase()
+		require.NoError(t, err)
+		rows := sqlmock.NewRows([]string{"conversationId", "date", "message", "protocol", "tenant"}).
+			AddRow("1", start, "{}", "CR_MSG", "RC100298").
+			AddRow("2", start, "{}", "CR_MSG", "RC100298").
+			AddRow("3", end, "{}", "CR_MSG", "RC100298")
+		mock.ExpectQuery(`SELECT (.+) FROM "base"."processhistory" WHERE (.+)`).WillReturnRows(rows)
+
+		var res interface{}
+		require.NotPanics(t, func() {
+			res, err = mDB.FetchEdaHistory("RC100298", "CR_MSG", start.UnixMilli(), end.UnixMilli(), pageSize)
+		})
+		require.NoError(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+
+		b, err := json.Marshal(res)
+		require.NoError(t, err)
+		var out result
+		require.NoError(t, json.Unmarshal(b, &out))
+		return out
+	}
+
+	// Page size smaller than the result: first page plus next cursor.
+	out := fetch(2)
 	require.Len(t, out.Data["CR_MSG"], 2)
 	require.Equal(t, uint(2), out.History.Next.PageSize)
 	require.Equal(t, end.Unix()*1000, out.History.Next.Start)
+
+	// Page size larger than the result, up to the largest uint: all rows, no next cursor.
+	for _, ps := range []uint{3, 1000, math.MaxUint} {
+		out = fetch(ps)
+		require.Len(t, out.Data["CR_MSG"], 3)
+		require.Zero(t, out.History.Next.PageSize)
+	}
 }

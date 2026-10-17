@@ -1,7 +1,6 @@
 package api
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -11,23 +10,16 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// maxHistoryPageSize is the largest page size of /process/history; larger values are
-// clamped (callers page via "next"). A page size of 0 means "no paging" (used by eegfaktura-web).
-const maxHistoryPageSize = 1000
-
-// parseHistoryPageSize parses the ps query parameter: a non-negative integer, clamped to
-// maxHistoryPageSize. Negative and non-numeric values are an error.
+// parseHistoryPageSize parses the ps query parameter of /process/history: a non-negative
+// integer, 0 means "no paging" (used by eegfaktura-web). Negative and non-numeric values
+// are an error.
 func parseHistoryPageSize(ps string) (uint, error) {
-	// On overflow ParseInt returns the int64 bound with the sign of the input.
 	pageSize, err := strconv.ParseInt(ps, 10, 64)
-	if err != nil && !errors.Is(err, strconv.ErrRange) {
+	if err != nil {
 		return 0, err
 	}
 	if pageSize < 0 {
-		return 0, fmt.Errorf("negative page size: %s", ps)
-	}
-	if pageSize > maxHistoryPageSize {
-		return maxHistoryPageSize, nil
+		return 0, fmt.Errorf("negative page size: %d", pageSize)
 	}
 	return uint(pageSize), nil
 }
