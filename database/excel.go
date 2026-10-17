@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -24,23 +25,55 @@ type ExcelRepository interface {
 	ImportMasterdataFromExcel(ctx context.Context, r io.Reader, filename, sheet, tenant string) error
 }
 
-func openReader(r io.Reader, filename string, opt ...excelize.Options) (*excelize.File, error) {
-	f, err := excelize.OpenReader(r, opt...)
+// Unzip limits for uploaded workbooks (excelize allows 16 GB unzipped by default).
+// The limit is the sum of all parts, including images and styles. Uploads are capped at
+// 15 MB by the ingress; the shipped test workbooks and typical templates unzip to a few MB,
+// so 128 MiB leaves headroom. Worksheets above 16 MiB (the excelize default) are unzipped
+// to a temp file instead of memory.
+const (
+	excelUnzipSizeLimit    = 128 << 20
+	excelUnzipXMLSizeLimit = 16 << 20
+)
+
+// openReader opens an uploaded workbook with its own temp directory. The returned cleanup
+// closes the file and removes the temp directory; on error or panic nothing is left behind.
+func openReader(r io.Reader, filename string) (*excelize.File, func(), error) {
+	tmpDir, err := os.MkdirTemp("", "excel-import-")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	handedOver := false
+	defer func() {
+		if !handedOver {
+			_ = os.RemoveAll(tmpDir)
+		}
+	}()
+
+	f, err := excelize.OpenReader(r, excelize.Options{
+		UnzipSizeLimit:    excelUnzipSizeLimit,
+		UnzipXMLSizeLimit: excelUnzipXMLSizeLimit,
+		TmpDir:            tmpDir,
+	})
+	if err != nil {
+		if f != nil {
+			_ = f.Close()
+		}
+		return nil, nil, err
 	}
 	f.Path = filename
-	return f, nil
+	handedOver = true
+	return f, func() {
+		_ = f.Close()
+		_ = os.RemoveAll(tmpDir)
+	}, nil
 }
 
 func (db *sqlDatabase) ImportMasterdataFromExcel(ctx context.Context, r io.Reader, filename, sheet, tenant string) error {
-	var f *excelize.File
-	var err error
-
-	if f, err = openReader(r, filename); err != nil {
+	f, cleanup, err := openReader(r, filename)
+	if err != nil {
 		return err
 	}
-	defer func() { _ = f.Close() }()
+	defer cleanup()
 
 	rows, err := f.Rows(sheet)
 	if err != nil {
@@ -74,6 +107,7 @@ func (db *sqlDatabase) ImportMasterdataFromExcel(ctx context.Context, r io.Reade
 
 	db.reportDuplicateParticipantNumbers(ctx, strings.ToUpper(tenant), participants, importLog)
 
+	defaultDebit := 0
 	for _, p := range participants {
 		// Jeder Teilnehmer läuft in seiner eigenen Transaktion — ein Fehler wird
 		// protokolliert, die restlichen Zeilen werden trotzdem importiert.
@@ -83,7 +117,15 @@ func (db *sqlDatabase) ImportMasterdataFromExcel(ctx context.Context, r io.Reade
 				err,
 			))
 			log.Errorf("Error Import Participant from Excel: %s", err.Error())
+			continue
 		}
+		// only a member the import created gets an id; for an existing one it only adds metering points
+		if len(p.Id) > 0 && missesDebitType(p) {
+			defaultDebit++
+		}
+	}
+	if m := defaultDebitTypeMessage(defaultDebit); m != nil {
+		importLog.Messages = append(importLog.Messages, m)
 	}
 
 	if len(importLog.Messages) > 0 {
@@ -263,12 +305,12 @@ func generateEegMastersheet(f *excelize.File, eeg *model.Eeg) error {
 	_ = f.SetRowStyle(sheet, line, line, styleIdHeaderTop)
 	line += 1
 	_ = f.SetSheetRow(sheet, fmt.Sprintf("A%d", line), &[]interface{}{
-		"Kontoinhaber", "IBAN", "SEPA",
+		"Kontoinhaber", "IBAN",
 	})
 	_ = f.SetRowStyle(sheet, line, line, styleIdHeader)
 	line += 1
 	_ = f.SetSheetRow(sheet, fmt.Sprintf("A%d", line), &[]interface{}{
-		eeg.Owner.String, eeg.Iban.String, eeg.Sepa,
+		eeg.Owner.String, eeg.Iban.String,
 	})
 	_ = f.SetRowStyle(sheet, line, line, styleId)
 
@@ -543,6 +585,48 @@ func parseExcelDate(cell string) time.Time {
 	return time.Now()
 }
 
+// missesDebitType: the member has an IBAN but no direct debit type (column "Einzugsart" missing,
+// empty or with an unknown value). Without a type the member is not debited (platform#143).
+func missesDebitType(p *model.EegParticipant) bool {
+	return strings.TrimSpace(p.BankAccount.Iban.String) != "" && !p.BankAccount.SepaDirectDebit.Valid
+}
+
+// defaultDebitTypeMessage is the one import message about members created without a direct debit type
+// (platform#143); nil when there are none.
+func defaultDebitTypeMessage(n int) *model.LogMessage {
+	if n == 0 {
+		return nil
+	}
+	return model.NewLogMessage(
+		"WARNING",
+		"Einzugsart",
+		"W_DEBIT_TYPE_DEFAULT",
+		fmt.Sprintf("%d new member(s) with an IBAN have no direct debit type (column 'Einzugsart' missing, empty or unknown): they are not debited until CORE, B2B or 'Kein SEPA' is set for them.", n))
+}
+
+// importDebitType reads the optional column "Einzugsart" ("DebitType" works too): CORE, B2B, or
+// NONE / "Kein SEPA". Case, blanks and hyphens are ignored ("kein-sepa", "Kein  SEPA"). Missing or
+// empty stays empty: such a member is not debited (platform#143). Any other value is reported and left
+// empty. The value only applies to members the import creates; for an existing member the import
+// adds metering points and leaves the master data as it is.
+func importDebitType(raw, firstname, lastname string, importLog *model.Log) null.String {
+	v := strings.ToUpper(strings.ReplaceAll(strings.Join(strings.Fields(raw), ""), "-", ""))
+	switch v {
+	case "":
+		return null.String{}
+	case "NONE", "KEINSEPA":
+		return null.StringFrom("NONE")
+	case "CORE", "B2B":
+		return null.StringFrom(v)
+	}
+	importLog.Messages = append(importLog.Messages, model.NewLogMessage(
+		"WARNING",
+		fmt.Sprintf("%s %s", firstname, lastname),
+		"W_DEBIT_TYPE_UNKNOWN",
+		fmt.Sprintf("unknown direct debit type %q (allowed: CORE, B2B, NONE, Kein SEPA); a new member gets none and is not debited", raw)))
+	return null.String{}
+}
+
 // importEmail normalizes an imported e-mail (trim per ';'-part) and
 // validates it against the shared address rule. Invalid addresses are
 // not taken over silently: the member is imported without e-mail and
@@ -774,6 +858,21 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 						var participant *model.EegParticipant
 						if p, ok := findParticipant(participants, firstname, lastname); ok {
 							participant = p
+							// member on several rows: the first non-empty direct debit type counts,
+							// a different one on a later row is reported
+							debit := importDebitType(getColumValue(cols, colMap, "Einzugsart", "DebitType", nil), firstname, lastname, importLog)
+							switch {
+							case !debit.Valid:
+							case !p.BankAccount.SepaDirectDebit.Valid:
+								p.BankAccount.SepaDirectDebit = debit
+							case p.BankAccount.SepaDirectDebit.String != debit.String:
+								importLog.Messages = append(importLog.Messages, model.NewLogMessage(
+									"WARNING",
+									fmt.Sprintf("%s %s", firstname, lastname),
+									"W_DEBIT_TYPE_CONFLICT",
+									fmt.Sprintf("different direct debit types on several rows (%s, %s); a new member gets the first one",
+										p.BankAccount.SepaDirectDebit.String, debit.String)))
+							}
 						} else {
 							participant = &model.EegParticipant{
 								EegParticipantBase: model.EegParticipantBase{
@@ -810,6 +909,7 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 									BankName:         null.StringFrom(getColumValue(cols, colMap, "Bankname", "Bankname", nil)),
 									MandateReference: null.StringFrom(getColumValue(cols, colMap, "MandatRef", "MandateRef", nil)),
 									MandateDate:      getColumDate(cols, colMap, "MandatDat", "MandateDat", nil),
+									SepaDirectDebit:  importDebitType(getColumValue(cols, colMap, "Einzugsart", "DebitType", nil), firstname, lastname, importLog),
 								},
 								Contact: model.ContactInfo{
 									Email: importEmail(getColumValue(cols, colMap, "email", "email", nil), firstname, lastname, importLog),

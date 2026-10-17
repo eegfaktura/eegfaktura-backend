@@ -525,7 +525,8 @@ func protocolEcPrtChangeHandler(ctx context.Context, msg model.SubscribeMessage)
 	}
 
 	if len(meters) > 0 && errCode == 0 {
-		if err := db.MeteringPointChangePartFactor(ctx, eeg.Id, meters); err != nil {
+		// no participant in the EDA answer: the current entry of each metering point
+		if err := db.MeteringPointChangePartFactor(ctx, eeg.Id, "", meters); err != nil {
 			logrus.WithField("tenant", eeg.Id).Errorf("can not change partition factor. %v", err)
 			return
 		}

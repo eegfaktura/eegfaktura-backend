@@ -245,7 +245,7 @@ func (h *MeteringHandler) updateMeteringPointPartFact() middleware.JWTHandlerFun
 		}
 
 		if len(meters) == 1 {
-			err = h.db.MeteringPointChangePartFactor(r.Context(), tenant, meters)
+			err = h.db.MeteringPointChangePartFactor(r.Context(), tenant, participantId, meters)
 			if err != nil {
 				log.WithField("tenant", tenant).WithError(err).Error("failed to update metering point partition factor.")
 				respondWith(w, http.StatusBadRequest, tenant, err)

@@ -125,6 +125,14 @@ func GQLProtect(next http.Handler) http.Handler {
 			context.WithValue(r.Context(), tenantCtxKey, strings.ToUpper(tenant)),
 			superUserCtxKey, superuser)
 
+		// F1, step 1 (log only): REST write endpoints require the EEG_ADMIN group,
+		// /query does not check it yet. Tokens without it are only marked here and
+		// logged per operation by GQLAdminCheckLog; the request passes as before.
+		// Enforcing the role follows after the log period.
+		if !claims.AccessGroups.IsAdmin() {
+			ctx = withGQLNonAdmin(ctx, claims, superuser)
+		}
+
 		logrus.Printf("Access granted for tenant %s (%s)", tenant, r.URL.Path)
 		// and call the next with our new context
 		r = r.WithContext(ctx)

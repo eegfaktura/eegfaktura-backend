@@ -241,17 +241,43 @@ func (m *MessageBroker) received(inbound InboundMessage) {
 	}
 }
 
+// parseOnlineState reads the online flag of a pontononlinestate command. found is false
+// when the payload has no online field; a non-boolean value is an error.
+func parseOnlineState(payload []byte) (online, found bool, err error) {
+	msg := map[string]interface{}{}
+	if err := json.Unmarshal(payload, &msg); err != nil {
+		return false, false, err
+	}
+	value, found := msg["online"]
+	if !found {
+		return false, false, nil
+	}
+	online, isBool := value.(bool)
+	if !isBool {
+		return false, false, fmt.Errorf("field online is not a boolean")
+	}
+	return online, true, nil
+}
+
 func (m *MessageBroker) command(cmd CommandMessage) {
+
+	// Same as in received(): a malformed command must not kill the broker goroutine.
+	defer func() {
+		if r := recover(); r != nil {
+			log.WithField("tenant", cmd.tenant).
+				WithField("command", cmd.cmd).
+				Errorf("recovered from panic while handling MQTT command: %v\n%s", r, debug.Stack())
+		}
+	}()
+
 	switch cmd.cmd {
 	case "pontononlinestate":
-		msg := map[string]interface{}{}
-		err := json.Unmarshal(cmd.msg, &msg)
+		online, ok, err := parseOnlineState(cmd.msg)
 		if err != nil {
-			log.Errorf("Error from MQTT: (%s) cmd: %v - %v", cmd.tenant, cmd, err)
+			log.Errorf("Error from MQTT: (%s) cmd: %s - %v", cmd.tenant, cmd.cmd, err)
 			return
 		}
 
-		online, ok := msg["online"]
 		if ok {
 			log.Infof("Update EEG Online State to %v", online)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -263,7 +289,7 @@ func (m *MessageBroker) command(cmd CommandMessage) {
 				return
 			}
 
-			if err := db.UpdateEegOnlineState(ctx, strings.ToUpper(cmd.tenant), online.(bool)); err != nil {
+			if err := db.UpdateEegOnlineState(ctx, strings.ToUpper(cmd.tenant), online); err != nil {
 				log.Errorf("Error Command: %+v", err)
 			}
 		}

@@ -1034,7 +1034,7 @@ func Test_MeteringPointChangePartFact(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.wantErr(t, db.MeteringPointChangePartFactor(context.Background(), tt.args.tenant, tt.args.meters), fmt.Sprintf("MeteringPointChangePartFact(%v, %v)", tt.args.tenant, tt.args.meters))
+			tt.wantErr(t, db.MeteringPointChangePartFactor(context.Background(), tt.args.tenant, "", tt.args.meters), fmt.Sprintf("MeteringPointChangePartFact(%v, %v)", tt.args.tenant, tt.args.meters))
 		})
 	}
 }

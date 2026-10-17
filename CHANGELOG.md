@@ -32,6 +32,67 @@ this changelog highlights the changes relevant for overview and operations.
 
 > **End of the `env/billing`-only entries.**
 
+## [1.3.2] – 2026-10-17
+
+### Added
+- GraphQL requests without the admin role are logged (preparation for enforcing the role). Requests
+  pass as before; one INFO line `gql-admin-check: non-admin token` per GraphQL operation, with tenant,
+  client id (`azp`), `sub`, number of access groups, member flag (`is_user`), superuser flag and
+  operation type/name. This log is temporary and is removed when the role is enforced.
+
+### Fixed
+- **MQTT command with an invalid online flag** (F2). A `pontononlinestate` command whose `online` field is
+  not a boolean is now logged and dropped. Before, it stopped the message broker and with it the service.
+- **Negative page size of the process history** (F4). In `GET /process/history` a negative page size (`ps`)
+  is now rejected with 400; before, it crashed the request (recovered per request). Paging behaviour is unchanged.
+- **Size limit for the master data import** (F5). An uploaded Excel workbook may now unzip to at most
+  128 MiB in total (before: the excelize default of 16 GB); larger files are rejected. The shipped test
+  workbooks and typical templates unzip to a few MB.
+  Temporary files of an import are written to a directory of their own, which is removed afterwards, also
+  when the file is rejected.
+
+## [1.3.1] – 2026-10-16
+
+### Fixed
+- **Participation factor after an owner change** (support ticket 66110076). After an owner change a
+  metering point exists twice in a community: the old member's entry (moved, inactive) and the new
+  member's.
+  - The confirmation of the grid operator (ANTWORT_CPF) wrote the new factor to both entries, so the old
+    member's history got it too. Now only the current entry (flag 1) is updated; the EDA answer names no
+    member, so an answer arriving after an owner change goes to the new member.
+  - The factor field in the member form failed for such a metering point („No metering factor found
+    N:2“), because the lookup matched the entries by number only. It now finds the member's own entry
+    and changes only that one.
+  - A factor answer that matches no entry is logged instead of being dropped silently.
+  - Editing such a metering point (save in the metering point form) answered 400 „More as one or zero
+    Meteringpoint are found!“ after the change was already stored, and the mail on deactivation left out
+    the direction: the lookup of the current entry also matched the moved entry. It now finds the
+    current entry once.
+
+## [1.3.0] – 2026-10-14
+
+### Changed
+- **Excel import reports new members without a direct debit type** (platform#143, review F): one
+  warning with the number of members the import created with an IBAN but without „Einzugsart“
+  (column missing, empty or unknown) — they are not debited until a type is set (web: an empty type
+  is no longer collected as CORE, team decision 14.10.).
+  Members that already exist are not counted; the import only adds metering points to them.
+- Import messages for an unknown or conflicting direct debit type are warnings with their own codes
+  (`W_DEBIT_TYPE_UNKNOWN`, `W_DEBIT_TYPE_CONFLICT`) instead of the generic error `E_UNDEFINED_0`.
+- **EEG master data export without the column „SEPA“** (platform#143, review H): the EEG switch
+  „SEPA aktiv“ is no longer read since web#132 (`base.eeg.sepa` is still written, not read).
+
+### Added
+- **Excel master data import reads the direct debit type** (platform#143). Optional column
+  „Einzugsart“ (header „DebitType“ works too): `CORE`, `B2B`, `NONE` or „Kein SEPA“; case, blanks
+  and hyphens are ignored. Without the column, or with an empty cell, the type stays empty; such a
+  member is not debited. An unknown value is reported in the import
+  notification and left empty. A member on several rows takes the first non-empty type; a different
+  one on a later row is reported. Like every master data column, it only applies to members the
+  import creates: for an existing member the import only adds metering points.
+
+## [1.2.0] – 2026-10-11
+
 ### Added
 - **Mail to the member when a metering point is no longer part of the community**
   (platform#116, concept `konzept-zaehlpunkt-inaktiv-mail.md`). Subject "Dein Zählpunkt ist nicht
