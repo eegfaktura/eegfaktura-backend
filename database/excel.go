@@ -397,50 +397,50 @@ func generateParticipantMastersheet(f *excelize.File, participants []*model.EegP
 	err = sw.SetColWidth(colNr+5, colNr+5, 30.0)
 
 	line := 1
-	err = sw.SetRow(fmt.Sprintf("A%d", line),
-		[]interface{}{
-			excelize.Cell{Value: "Mit. Nr."},
-			excelize.Cell{Value: "Name 1"},
-			excelize.Cell{Value: "Name 2"},
-			excelize.Cell{Value: "Titel"},
-			excelize.Cell{Value: "Status"},
-			excelize.Cell{Value: "Mitglied seit."},
-			excelize.Cell{Value: "E-Mail"},
-			excelize.Cell{Value: "Telefonnummer"},
-			excelize.Cell{Value: "SteuerNr."},
-			excelize.Cell{Value: "Ust."},
-			excelize.Cell{Value: "IBAN."},
-			excelize.Cell{Value: "Kontoinhaber"},
-			excelize.Cell{Value: "Bankname"},
-			excelize.Cell{Value: "DebitType"},
-			excelize.Cell{Value: "Mandat-Ref."},
-			excelize.Cell{Value: "Mandat-Dat."},
-			excelize.Cell{Value: "PLZ"},
-			excelize.Cell{Value: "Ort"},
-			excelize.Cell{Value: "Straße"},
-			excelize.Cell{Value: "HausNr."},
-			excelize.Cell{Value: ""},
-			excelize.Cell{Value: "EEG-Role"},
-			excelize.Cell{Value: "teilnahme als"},
-			excelize.Cell{Value: "Status"},
-			excelize.Cell{Value: "Mitgliedstarif"},
-			excelize.Cell{Value: "Zählpunkt"},
-			excelize.Cell{Value: "ZP-Status"},
-			excelize.Cell{Value: "ZpNr."},
-			excelize.Cell{Value: "Zählpunktname"},
-			excelize.Cell{Value: "registriert"},
-			excelize.Cell{Value: "Bezugsrichtung"},
-			excelize.Cell{Value: "Teilnahme Fkt."},
-			excelize.Cell{Value: "WechselrichterNr."},
-			excelize.Cell{Value: "PLZ"},
-			excelize.Cell{Value: "Ort"},
-			excelize.Cell{Value: "Straße"},
-			excelize.Cell{Value: "HausNr."},
-			excelize.Cell{Value: "aktiviert"},
-			excelize.Cell{Value: "deaktiviert"},
-			excelize.Cell{Value: "Zp. Tarifname"},
-			excelize.Cell{Value: "Umspannwerk"},
-		}, excelize.RowOpts{StyleID: styleIdHeader, Height: 0.42 * 72})
+	header := []interface{}{
+		excelize.Cell{Value: "Mit. Nr."},
+		excelize.Cell{Value: "Name 1"},
+		excelize.Cell{Value: "Name 2"},
+		excelize.Cell{Value: "Titel"},
+		excelize.Cell{Value: "Status"},
+		excelize.Cell{Value: "Mitglied seit."},
+		excelize.Cell{Value: "E-Mail"},
+		excelize.Cell{Value: "Telefonnummer"},
+		excelize.Cell{Value: "SteuerNr."},
+		excelize.Cell{Value: "Ust."},
+		excelize.Cell{Value: "IBAN."},
+		excelize.Cell{Value: "Kontoinhaber"},
+		excelize.Cell{Value: "Bankname"},
+		excelize.Cell{Value: "DebitType"},
+		excelize.Cell{Value: "Mandat-Ref."},
+		excelize.Cell{Value: "Mandat-Dat."},
+		excelize.Cell{Value: "PLZ"},
+		excelize.Cell{Value: "Ort"},
+		excelize.Cell{Value: "Straße"},
+		excelize.Cell{Value: "HausNr."},
+		excelize.Cell{Value: ""},
+		excelize.Cell{Value: "EEG-Role"},
+		excelize.Cell{Value: "teilnahme als"},
+		excelize.Cell{Value: "Status"},
+		excelize.Cell{Value: "Mitgliedstarif"},
+		excelize.Cell{Value: "Zählpunkt"},
+		excelize.Cell{Value: "ZP-Status"},
+		excelize.Cell{Value: "ZpNr."},
+		excelize.Cell{Value: "Zählpunktname"},
+		excelize.Cell{Value: "registriert"},
+		excelize.Cell{Value: "Bezugsrichtung"},
+		excelize.Cell{Value: "Teilnahme Fkt."},
+		excelize.Cell{Value: "WechselrichterNr."},
+		excelize.Cell{Value: "PLZ"},
+		excelize.Cell{Value: "Ort"},
+		excelize.Cell{Value: "Straße"},
+		excelize.Cell{Value: "HausNr."},
+		excelize.Cell{Value: "aktiviert"},
+		excelize.Cell{Value: "deaktiviert"},
+		excelize.Cell{Value: "Zp. Tarifname"},
+		excelize.Cell{Value: "Umspannwerk"},
+	}
+	err = sw.SetRow(fmt.Sprintf("A%d", line), header, excelize.RowOpts{StyleID: styleIdHeader, Height: 0.42 * 72})
 	for _, c := range participants {
 		for _, m := range c.MeteringPoint {
 			line = line + 1
@@ -512,7 +512,9 @@ func generateParticipantMastersheet(f *excelize.File, participants []*model.EegP
 		}
 	}
 
-	err = f.AutoFilter(sheet, "A1:AH10", nil)
+	// filter over every column of the header and all rows (was A1:AH10: the columns from AI on had no filter)
+	lastCell, _ := excelize.CoordinatesToCellName(len(header), max(line, 2))
+	err = f.AutoFilter(sheet, "A1:"+lastCell, nil)
 	err = sw.Flush()
 	return err
 }
