@@ -247,7 +247,7 @@ func TestExportMasterdataToExcel(t *testing.T) {
 						filter = n.RefersTo
 					}
 				}
-				assert.True(t, strings.HasSuffix(filter, ":"+lastCell), "filter %q, want …:%s", filter, lastCell)
+				assert.True(t, strings.HasSuffix(filter, "!$A$1:"+lastCell), "filter %q, want …!$A$1:%s", filter, lastCell)
 			},
 			wantErr: assert.NoError,
 		},

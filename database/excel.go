@@ -512,11 +512,21 @@ func generateParticipantMastersheet(f *excelize.File, participants []*model.EegP
 		}
 	}
 
-	// filter over every column of the header and all rows (was A1:AH10: the columns from AI on had no filter)
-	lastCell, _ := excelize.CoordinatesToCellName(len(header), max(line, 2))
-	err = f.AutoFilter(sheet, "A1:"+lastCell, nil)
+	setAutoFilter(f, sheet, len(header), line)
 	err = sw.Flush()
 	return err
+}
+
+// setAutoFilter sets the filter over every header column and all rows (both exports had a fixed A1:AH10: the
+// master data columns from AI on and the rows after 10 had no filter). A failure only costs the filter buttons.
+func setAutoFilter(f *excelize.File, sheet string, columns, lastRow int) {
+	lastCell, err := excelize.CoordinatesToCellName(columns, lastRow)
+	if err == nil {
+		err = f.AutoFilter(sheet, "A1:"+lastCell, nil)
+	}
+	if err != nil {
+		log.WithError(err).Warnf("excel export: no auto filter on sheet %s", sheet)
+	}
 }
 
 // findParticipant sammelt die Zeilen eines Mitglieds ein (eine Zeile je Zählpunkt).
@@ -1073,18 +1083,18 @@ func generateZPListMastersheet(f *excelize.File, ebmsMsg *model.EbmsMessage) err
 	err = sw.SetColWidth(colNr, colNr+3, 12.0)
 
 	line := 1
-	err = sw.SetRow(fmt.Sprintf("A%d", line),
-		[]interface{}{
-			excelize.Cell{Value: "Nr."},
-			excelize.Cell{Value: "Zählpunktname"},
-			excelize.Cell{Value: "ConsentID"},
-			excelize.Cell{Value: "Bezugsrichtung"},
-			excelize.Cell{Value: "Teilnahme-faktor"},
-			excelize.Cell{Value: "statische Aufteilung"},
-			excelize.Cell{Value: "aktiviert"},
-			excelize.Cell{Value: "aktiv seit"},
-			excelize.Cell{Value: "aktiv bis"},
-		}, excelize.RowOpts{StyleID: styleIdHeader, Height: 0.42 * 72})
+	zpHeader := []interface{}{
+		excelize.Cell{Value: "Nr."},
+		excelize.Cell{Value: "Zählpunktname"},
+		excelize.Cell{Value: "ConsentID"},
+		excelize.Cell{Value: "Bezugsrichtung"},
+		excelize.Cell{Value: "Teilnahme-faktor"},
+		excelize.Cell{Value: "statische Aufteilung"},
+		excelize.Cell{Value: "aktiviert"},
+		excelize.Cell{Value: "aktiv seit"},
+		excelize.Cell{Value: "aktiv bis"},
+	}
+	err = sw.SetRow(fmt.Sprintf("A%d", line), zpHeader, excelize.RowOpts{StyleID: styleIdHeader, Height: 0.42 * 72})
 	idx := 0
 	for _, m := range ebmsMsg.MeterList {
 		line = line + 1
@@ -1103,7 +1113,7 @@ func generateZPListMastersheet(f *excelize.File, ebmsMsg *model.EbmsMessage) err
 			}, excelize.RowOpts{StyleID: styleId})
 	}
 
-	err = f.AutoFilter(sheet, "A1:AH10", nil)
+	setAutoFilter(f, sheet, len(zpHeader), line)
 	err = sw.Flush()
 	return err
 }

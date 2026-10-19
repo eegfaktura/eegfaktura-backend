@@ -9,9 +9,10 @@ this changelog highlights the changes relevant for overview and operations.
 ## [Unreleased]
 
 ### Fixed
-- **Master data export: the filter covers all columns** (customer request 19.10.2026). The Excel export set its
-  auto filter to `A1:AH10`, so the columns added later (from „aktiviert“ in AI to „Umspannwerk“) had no filter
-  button, and the range ended at row 10. It now spans every header column and all rows.
+- **Excel exports: the filter covers all columns and rows** (customer request 19.10.2026). The master data export set
+  its auto filter to `A1:AH10`: the columns AI–AO (Ort, Straße, HausNr., aktiviert, deaktiviert, Zp. Tarifname,
+  Umspannwerk) had no filter button, and rows after 10 were outside the range. The metering point list export had the
+  same fixed range. Both now span every header column and all rows.
 
 ### Added
 - CI: PR checks (tests on every pull request) and a security scan (leaked secrets in new commits,
