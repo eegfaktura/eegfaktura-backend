@@ -32,6 +32,21 @@ this changelog highlights the changes relevant for overview and operations.
 
 > **End of the `env/billing`-only entries.**
 
+### Fixed
+- **Excel exports: the filter covers all columns and rows** (customer request 19.10.2026). The master data export set
+  its auto filter to `A1:AH10`: the columns AI–AO (Ort, Straße, HausNr., aktiviert, deaktiviert, Zp. Tarifname,
+  Umspannwerk) had no filter button, and rows after 10 were outside the range. The metering point list export had the
+  same fixed range. Both now span every header column and all rows.
+
+### Added
+- CI: PR checks (tests on every pull request) and a security scan (leaked secrets in new commits,
+  vulnerable dependencies, Dockerfile/Kubernetes misconfigurations). Dependency and misconfiguration
+  findings are only reported and do not block; a leaked secret in new commits fails the check. Jobs for
+  known failing tests are report-only.
+- CI: every run keeps its scan and test results as artifacts for 30 days (`scan-*`,
+  `test-results-<job>`, `known-errors-<job>`) for a CI report collector; the secret scan keeps
+  outcomes and counts only.
+
 ## [1.3.2] – 2026-10-17
 
 ### Added
