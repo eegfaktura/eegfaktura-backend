@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -236,6 +237,17 @@ func TestExportMasterdataToExcel(t *testing.T) {
 
 				assert.Equal(t, 6, len(cols))
 				assert.Equal(t, "6", cols[1][19])
+
+				// the filter covers every header column and all rows (was A1:AH10)
+				lastCell, err := excelize.CoordinatesToCellName(len(cols[0]), len(cols), true)
+				require.NoError(t, err)
+				var filter string
+				for _, n := range f.GetDefinedName() {
+					if n.Name == "_xlnm._FilterDatabase" {
+						filter = n.RefersTo
+					}
+				}
+				assert.True(t, strings.HasSuffix(filter, "!$A$1:"+lastCell), "filter %q, want …!$A$1:%s", filter, lastCell)
 			},
 			wantErr: assert.NoError,
 		},
