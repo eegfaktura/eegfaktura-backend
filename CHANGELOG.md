@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.3.3] – 2026-10-19
+
 ### Fixed
 - **Excel exports: the filter covers all columns and rows** (customer request 19.10.2026). The master data export set
   its auto filter to `A1:AH10`: the columns AI–AO (Ort, Straße, HausNr., aktiviert, deaktiviert, Zp. Tarifname,
