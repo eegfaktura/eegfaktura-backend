@@ -336,6 +336,13 @@ func generateEegMastersheet(f *excelize.File, eeg *model.Eeg) error {
 	return nil
 }
 
+// labels of the derived member status in the master data export (decision 20.10.2026, platform#165)
+var memberActivityLabel = map[model.MemberActivityType]string{
+	model.MemberActive:   "aktiv",
+	model.MemberPending:  "in Anmeldung",
+	model.MemberInactive: "inaktiv",
+}
+
 func generateParticipantMastersheet(f *excelize.File, participants []*model.EegParticipant, tariffMap map[string]string) error {
 
 	getTariffName := func(id string) string {
@@ -443,7 +450,7 @@ func generateParticipantMastersheet(f *excelize.File, participants []*model.EegP
 	err = sw.SetRow(fmt.Sprintf("A%d", line), header, excelize.RowOpts{StyleID: styleIdHeader, Height: 0.42 * 72})
 	for _, c := range participants {
 		// platform#165: the member status from its metering points, the stored one stays ACTIVE after leaving
-		status := model.MemberActivity(c.MeteringPoint)
+		status := memberActivityLabel[model.MemberActivity(c.MeteringPoint)]
 		for _, m := range c.MeteringPoint {
 			line = line + 1
 			err = sw.SetRow(fmt.Sprintf("A%d", line),

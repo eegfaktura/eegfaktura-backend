@@ -129,35 +129,45 @@ const (
 	F_DELETED
 )
 
-// MemberActivity is the status of a member derived from its metering points (platform#165): ACTIVE with at least one
-// active metering point; PENDING without one but with one being registered, or with no metering point yet; INACTIVE
-// when all of them have left, were archived or rejected. The stored participant status is not changed.
-func MemberActivity(meters []*MeteringPoint) StatusType {
-	pending := len(meters) == 0
+// MemberActivityType is the status of a member derived from its metering points (platform#165).
+type MemberActivityType string
+
+const (
+	MemberActive   MemberActivityType = "ACTIVE"
+	MemberPending  MemberActivityType = "PENDING"
+	MemberInactive MemberActivityType = "INACTIVE"
+)
+
+// MemberActivity derives the member status from its metering points: ACTIVE with at least one active metering
+// point; PENDING without one but with one being registered (also the re-registration of a metering point that left,
+// which keeps status INACTIVE until it is active again), or with no metering point at all; INACTIVE when all of them
+// have left, were archived or rejected. The stored participant status is not changed.
+func MemberActivity(meters []*MeteringPoint) MemberActivityType {
+	if len(meters) == 0 {
+		return MemberPending
+	}
+	pending := false
 	for _, m := range meters {
-		if m == nil {
-			continue
+		if m.Status == S_ACTIVE {
+			return MemberActive
 		}
-		switch {
-		case m.Status == S_ACTIVE:
-			return S_ACTIVE
-		case m.Status == S_INIT && registering(m.ProcessState):
+		if registering(m.ProcessState) {
 			pending = true
 		}
 	}
 	if pending {
-		return StatusType(PENDING)
+		return MemberPending
 	}
-	return S_INACTIVE
+	return MemberInactive
 }
 
-// registering: a metering point that is not active yet and whose registration has not ended
+// registering: the registration of the metering point is running (by its process state, whatever its status)
 func registering(p ProcessStatusType) bool {
 	switch p {
-	case REJECTED, INVALID, REVOKED, ARCHIVED, ABORTED, INACTIVE:
-		return false
+	case NEW, INIT, PENDING, APPROVED:
+		return true
 	}
-	return true
+	return false
 }
 
 type MeteringPoint struct {

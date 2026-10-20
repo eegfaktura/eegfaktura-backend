@@ -238,6 +238,12 @@ func TestExportMasterdataToExcel(t *testing.T) {
 				assert.Equal(t, 6, len(cols))
 				assert.Equal(t, "6", cols[1][19])
 
+				// platform#165: both Status columns (E, X) show the member status derived from the metering points
+				for _, row := range cols[1:] {
+					assert.Contains(t, []string{"aktiv", "in Anmeldung", "inaktiv"}, row[4])
+					assert.Equal(t, row[4], row[23])
+				}
+
 				// the filter covers every header column and all rows (was A1:AH10)
 				lastCell, err := excelize.CoordinatesToCellName(len(cols[0]), len(cols), true)
 				require.NoError(t, err)
