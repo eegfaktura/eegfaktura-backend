@@ -104,9 +104,22 @@ func TestEnergyRequestSummary_singleMeter(t *testing.T) {
 	run.Add("AT0099990000000000000000000175001", 1, 2)
 	energyrequest.Save(ctx, db, "TE000175", []string{"AT0099990000000000000000000175001"}, run)
 
+	// stored as a boundary for older runs, but never summarised
 	rows, err := db.EnergyRequestRowsSince(ctx, before)
 	require.NoError(t, err)
+	var stored int
 	for _, r := range rows {
-		assert.NotEqual(t, "TE000175", r.Tenant)
+		if r.Tenant == "TE000175" {
+			stored++
+			var run energyrequest.Run
+			require.NoError(t, json.Unmarshal(r.Message, &run))
+			assert.True(t, run.NoSummary)
+		}
 	}
+	assert.Equal(t, 1, stored)
+
+	require.NoError(t, energyrequest.Check(ctx, db, time.Now().Add(energyrequest.Deadline)))
+	list, err := db.GetNotification("TE000175", 0, true)
+	require.NoError(t, err)
+	assert.Empty(t, list)
 }

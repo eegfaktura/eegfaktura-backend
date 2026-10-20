@@ -56,6 +56,9 @@ type Run struct {
 	CreatedAt int64        `json:"createdAt"`
 	Meters    []MeterRange `json:"meters"`
 	Skipped   []Skipped    `json:"skipped"`
+	// NoSummary marks a request for a single metering point: it gets no summary, but its answers belong to it and
+	// not to an older open run with that metering point
+	NoSummary bool `json:"noSummary,omitempty"`
 }
 
 type Rejected struct {
@@ -97,6 +100,9 @@ type answer struct {
 // Evaluate computes the summary of the run in row runRowId. rows are all relevant rows from runRowId on (ascending
 // id); tenants are the tenants of the run's community: the answers are stored under one of them (a GEA can share the
 // community id). done is true when every metering point has an answer or the deadline has passed.
+//
+// An answer belongs to the run when it comes after the run and before the next run of the same community with that
+// metering point. A metering point without an answer in that range and with a later run counts as requested again.
 func Evaluate(run Run, runRowId int64, rows []Row, tenants map[string]bool, now time.Time) (Summary, bool) {
 	s := Summary{Type: SummaryType, RunId: run.RunId, From: run.From, To: run.To, Requested: len(run.Meters),
 		Accepted: []MeterRange{}, Rejected: []Rejected{}, NoAnswer: []string{}, Skipped: run.Skipped,
@@ -105,29 +111,53 @@ func Evaluate(run Run, runRowId int64, rows []Row, tenants map[string]bool, now 
 		s.Skipped = []Skipped{}
 	}
 
-	for _, m := range run.Meters {
-		// answers after a later run of the same community with this metering point belong to that run
-		if nextRunWith(rows, runRowId, run.EcId, m.MeteringPoint) > 0 {
-			s.Superseded = append(s.Superseded, m.MeteringPoint)
+	// parse every row once: the answers per metering point (ascending id) and the first later run per metering point
+	type idAnswer struct {
+		id     int64
+		answer answer
+	}
+	answers := map[string][]idAnswer{}
+	nextRun := map[string]int64{}
+	for _, r := range rows {
+		if r.Id <= runRowId {
 			continue
 		}
-
-		var accepted bool
-		var rejected []string
-		for _, r := range rows {
-			if r.Id <= runRowId || r.Type != messageRow || !tenants[r.Tenant] {
+		switch {
+		case r.Type == RowTypeRun:
+			var later Run
+			if json.Unmarshal(r.Message, &later) != nil || !strings.EqualFold(later.EcId, run.EcId) {
 				continue
 			}
+			for _, m := range later.Meters {
+				if _, ok := nextRun[m.MeteringPoint]; !ok {
+					nextRun[m.MeteringPoint] = r.Id
+				}
+			}
+		case r.Type == messageRow && tenants[r.Tenant]:
 			var a answer
-			if json.Unmarshal(r.Message, &a) != nil || !contains(a.MeteringPoints, m.MeteringPoint) {
+			if json.Unmarshal(r.Message, &a) != nil || (a.Type != answerAccepted && a.Type != answerRejected) {
 				continue
+			}
+			for _, m := range a.MeteringPoints {
+				answers[m] = append(answers[m], idAnswer{id: r.Id, answer: a})
+			}
+		}
+	}
+
+	for _, m := range run.Meters {
+		upper, superseded := nextRun[m.MeteringPoint]
+		var answered, accepted bool
+		var rejected []string
+		for _, a := range answers[m.MeteringPoint] {
+			if superseded && a.id > upper {
+				break
 			}
 			// the latest answer counts
-			switch a.Type {
-			case answerAccepted:
-				accepted, rejected = true, nil
-			case answerRejected:
-				accepted, rejected = false, a.ResponseCodes
+			answered = true
+			accepted = a.answer.Type == answerAccepted
+			rejected = nil
+			if !accepted {
+				rejected = a.answer.ResponseCodes
 				if rejected == nil {
 					rejected = []string{}
 				}
@@ -135,6 +165,8 @@ func Evaluate(run Run, runRowId int64, rows []Row, tenants map[string]bool, now 
 		}
 
 		switch {
+		case !answered && superseded:
+			s.Superseded = append(s.Superseded, m.MeteringPoint)
 		case rejected != nil:
 			s.Rejected = append(s.Rejected, Rejected{MeteringPoint: m.MeteringPoint, Codes: rejected})
 		case accepted:
@@ -144,32 +176,4 @@ func Evaluate(run Run, runRowId int64, rows []Row, tenants map[string]bool, now 
 		}
 	}
 	return s, len(s.NoAnswer) == 0 || now.Sub(time.UnixMilli(run.CreatedAt)) >= Deadline
-}
-
-// nextRunWith returns the row id of the first run after runRowId of the same community that requests meter, or 0.
-func nextRunWith(rows []Row, runRowId int64, ecId, meter string) int64 {
-	for _, r := range rows {
-		if r.Id <= runRowId || r.Type != RowTypeRun {
-			continue
-		}
-		var run Run
-		if json.Unmarshal(r.Message, &run) != nil || !strings.EqualFold(run.EcId, ecId) {
-			continue
-		}
-		for _, m := range run.Meters {
-			if m.MeteringPoint == meter {
-				return r.Id
-			}
-		}
-	}
-	return 0
-}
-
-func contains(list []string, s string) bool {
-	for _, e := range list {
-		if e == s {
-			return true
-		}
-	}
-	return false
 }

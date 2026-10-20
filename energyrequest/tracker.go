@@ -13,6 +13,9 @@ import (
 // CheckInterval is how often open runs are evaluated.
 const CheckInterval = 5 * time.Minute
 
+// readAgainMargin is how many rows below the last row read the next check starts when no run is open.
+const readAgainMargin = 1000
+
 // Store is the part of the database the summary needs (implemented by database.Database).
 type Store interface {
 	SaveEnergyRequestRow(ctx context.Context, tenant, rowType string, value interface{}) (int64, error)
@@ -83,17 +86,21 @@ func (r *Run) dropSkipped(meter string) {
 }
 
 // Save stores the run before the requests are sent, so every answer has a higher row id. A request with fewer than
-// two metering points gets no summary. Errors are logged: the request itself goes on.
+// two metering points gets no summary; it is still stored when it sends a request, so its answer is not counted for
+// an older open run. Errors are logged: the request itself goes on.
 func Save(ctx context.Context, store Store, tenant string, requested []string, r *Run) {
 	distinct := map[string]bool{}
 	for _, m := range requested {
-		distinct[m] = true
+		if !distinct[m] {
+			distinct[m] = true
+			r.Skip(m, ReasonNotFound) // no-op for metering points that were found (requested or skipped)
+		}
 	}
 	if len(distinct) < 2 {
-		return
-	}
-	for m := range distinct {
-		r.Skip(m, ReasonNotFound) // no-op for metering points that were found (requested or skipped)
+		if len(r.Meters) == 0 {
+			return
+		}
+		r.NoSummary = true
 	}
 	r.CreatedAt = time.Now().UnixMilli()
 	if _, err := store.SaveEnergyRequestRow(ctx, tenant, RowTypeRun, r); err != nil {
@@ -156,10 +163,12 @@ func Check(ctx context.Context, store Store, now time.Time) error {
 		}
 	}
 
-	// next start: the oldest run still open, else after the last row read
+	// next start: the oldest run still open, else shortly before the last row read. Serial ids are not committed in
+	// id order: a run row can become visible after a row with a higher id, so a margin is read again (a closed run
+	// read again is recognised by its summary, which always has a higher id).
 	next := from
-	if maxId > 0 {
-		next = maxId + 1
+	if maxId-readAgainMargin > from {
+		next = maxId - readAgainMargin
 	}
 	tenantsByEcId := map[string]map[string]bool{}
 	for _, r := range rows {
@@ -167,7 +176,7 @@ func Check(ctx context.Context, store Store, now time.Time) error {
 			continue
 		}
 		var run Run
-		if err := json.Unmarshal(r.Message, &run); err != nil || closed[run.RunId] {
+		if err := json.Unmarshal(r.Message, &run); err != nil || closed[run.RunId] || run.NoSummary {
 			continue
 		}
 		tenants, ok := tenantsByEcId[run.EcId]

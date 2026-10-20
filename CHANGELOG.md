@@ -18,14 +18,18 @@ this changelog highlights the changes relevant for overview and operations.
 - **Summary of an energy data request in Messages** (platform#173). A request for two or more metering points
   (dialog „Werte anfordern“) gets one summary notification once every metering point has answered, at the latest
   24 hours after the request: requested, accepted (with the requested period, for the energy data check in web),
-  rejected (with the answer codes), no answer, not requested (with the reason: not registered, not assigned, no or no
+  rejected (with the answer texts), no answer, not requested (with the reason: not registered, not assigned, no or no
   active period, not found; these were skipped silently before), and requested again later. The single answer
   notifications stay unchanged. The energy data itself is not tracked: the backend drops CR_MSG since 12.06.2026.
   - No schema change: the request is an additional notification row (process `ENERGY_REQUEST`), hidden from
     Messages; reads are id ranges on the primary key.
   - A check every 5 minutes (and at start) writes the summaries; an advisory lock keeps it to one summary per request.
-  - Answers are matched by community id and metering point (GEA tenants sharing a community id included); a
-    metering point requested again in a later request belongs to that one.
+  - Answers are matched by community id and metering point (GEA tenants sharing a community id included). An answer
+    belongs to the request before it; a later request for the same metering point (also a single one, stored without
+    summary) takes the answers after it.
+  - A request whose deadline passes while the backend is down for more than about an hour gets no summary.
+  - **Deploy order:** web with the matching release first (platform#173), else Messages shows the summary as an
+    empty entry.
 - CI: PR checks (tests on every pull request) and a security scan (leaked secrets in new commits,
   vulnerable dependencies, Dockerfile/Kubernetes misconfigurations). Dependency and misconfiguration
   findings are only reported and do not block; a leaked secret in new commits fails the check. Jobs for

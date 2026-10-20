@@ -95,6 +95,34 @@ func TestEvaluate_laterRunSupersedes(t *testing.T) {
 	assert.Len(t, s.Rejected, 1)
 }
 
+func TestEvaluate_answerBeforeALaterRunStays(t *testing.T) {
+	run := testRun("ZP1", "ZP2")
+	later := testRun("ZP1", "ZP3")
+	rows := []Row{
+		answerRow(t, 11, "RC100100", answerAccepted, "ZP1"), // before the later run: belongs to this run
+		row(t, 20, "RC100100", RowTypeRun, later),
+		answerRow(t, 21, "RC100100", answerRejected, "ZP1", "86"), // belongs to the later run
+	}
+	s, _ := Evaluate(run, 10, rows, tenants, created)
+	assert.Equal(t, []MeterRange{{MeteringPoint: "ZP1", From: sepFrom, To: sepTo}}, s.Accepted)
+	assert.Empty(t, s.Superseded)
+	assert.Empty(t, s.Rejected)
+}
+
+func TestEvaluate_singleMeterRequestTakesItsAnswer(t *testing.T) {
+	// a later request for one metering point has no summary, but its answer is not counted for this run
+	run := testRun("ZP1", "ZP2")
+	single := testRun("ZP2")
+	single.NoSummary = true
+	rows := []Row{
+		row(t, 20, "RC100100", RowTypeRun, single),
+		answerRow(t, 21, "RC100100", answerRejected, "ZP2", "86"),
+	}
+	s, _ := Evaluate(run, 10, rows, tenants, created)
+	assert.Equal(t, []string{"ZP2"}, s.Superseded)
+	assert.Empty(t, s.Rejected)
+}
+
 func TestEvaluate_latestAnswerWins(t *testing.T) {
 	run := testRun("ZP1", "ZP2")
 	rows := []Row{
