@@ -142,3 +142,20 @@ func convertCodes2Strings(codes []int16) []string {
 	}
 	return strCodes
 }
+
+// energySpan returns the earliest start and the latest end over the energy blocks of a CR_MSG.
+func energySpan(energy []*model.Energy) (int64, int64, bool) {
+	var from, to int64
+	for _, e := range energy {
+		if e == nil {
+			continue
+		}
+		if from == 0 || e.Start < from {
+			from = e.Start
+		}
+		if e.End > to {
+			to = e.End
+		}
+	}
+	return from, to, from > 0
+}

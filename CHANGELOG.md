@@ -15,6 +15,16 @@ this changelog highlights the changes relevant for overview and operations.
   same fixed range. Both now span every header column and all rows.
 
 ### Added
+- **Summary of an energy data request in Messages** (platform#173). A request for two or more metering points
+  (dialog „Werte anfordern“) gets one summary notification once every metering point has a final state, at the
+  latest 24 hours after the request: requested, complete, rejected (with the answer codes), no answer, accepted but
+  incomplete data, not requested (with the reason: not registered, not assigned, no or no active period, not found;
+  these were skipped silently before), and requested again later. The single answer notifications stay unchanged.
+  - No schema change: the request and the deliveries of its metering points are additional notification rows
+    (process `ENERGY_REQUEST`), hidden from Messages; reads are id ranges on the primary key.
+  - A check every 5 minutes (and at start) writes the summaries; an advisory lock keeps it to one summary per request.
+  - Answers are matched by community id and metering point (GEA tenants sharing a community id included); a
+    metering point requested again in a later request belongs to that one.
 - CI: PR checks (tests on every pull request) and a security scan (leaked secrets in new commits,
   vulnerable dependencies, Dockerfile/Kubernetes misconfigurations). Dependency and misconfiguration
   findings are only reported and do not block; a leaked secret in new commits fails the check. Jobs for

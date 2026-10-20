@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"at.ourproject/vfeeg-backend/database"
+	"at.ourproject/vfeeg-backend/energyrequest"
 	"at.ourproject/vfeeg-backend/model"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
 	"at.ourproject/vfeeg-backend/parser"
@@ -191,6 +192,10 @@ func protocolCrMsgHandler(ctx context.Context, msg model.SubscribeMessage) {
 			energy := msg.Payload.Energy[i]
 			historyValue := map[string]interface{}{"meter": msg.Payload.Meter.MeteringPoint, "from": energy.Start, "to": energy.End}
 			_ = db.SaveHistory(eeg.Id, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", "CR_MSG", historyValue)
+		}
+		// platform#173: deliveries of metering points of an open energy request count for its summary
+		if from, to, ok := energySpan(msg.Payload.Energy); ok {
+			energyrequest.RecordDelivery(ctx, db, eeg.Id, msg.Payload.EcId, msg.Payload.Meter.MeteringPoint, from, to)
 		}
 	}
 	return
