@@ -114,7 +114,11 @@ func TestRun_AddAndSkip(t *testing.T) {
 	r.Skip("ZP1", ReasonNotAssigned)
 	r.Skip("ZP2", ReasonNotRegistered)
 	r.Skip("ZP2", ReasonNotAssigned)
+	// an ended participation first, then the assigned one without an inactive date: its reason counts
+	r.Skip("ZP3", ReasonNotAssigned)
+	r.Skip("ZP3", ReasonNoActivePeriod)
 
 	assert.Equal(t, []MeterRange{{MeteringPoint: "ZP1", From: sepFrom, To: sepTo}}, r.Meters)
-	assert.Equal(t, []Skipped{{MeteringPoint: "ZP2", Reason: ReasonNotRegistered}}, r.Skipped)
+	assert.Equal(t, []Skipped{{MeteringPoint: "ZP2", Reason: ReasonNotRegistered},
+		{MeteringPoint: "ZP3", Reason: ReasonNoActivePeriod}}, r.Skipped)
 }

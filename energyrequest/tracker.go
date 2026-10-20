@@ -53,15 +53,19 @@ func (r *Run) Add(meter string, from, to int64) {
 	r.Meters = append(r.Meters, MeterRange{MeteringPoint: meter, From: from, To: to})
 }
 
-// Skip records a metering point that is not requested, unless it is requested for another participation.
+// Skip records a metering point that is not requested, unless it is requested for another participation. Of
+// several participations, the reason of the assigned one counts: NOT_ASSIGNED (an ended participation) gives way.
 func (r *Run) Skip(meter, reason string) {
 	for _, m := range r.Meters {
 		if m.MeteringPoint == meter {
 			return
 		}
 	}
-	for _, s := range r.Skipped {
+	for i, s := range r.Skipped {
 		if s.MeteringPoint == meter {
+			if s.Reason == ReasonNotAssigned {
+				r.Skipped[i].Reason = reason
+			}
 			return
 		}
 	}
