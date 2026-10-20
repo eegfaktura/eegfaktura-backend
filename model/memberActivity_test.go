@@ -20,6 +20,8 @@ func TestMemberActivity(t *testing.T) {
 	assert.Equal(t, MemberPending, MemberActivity([]*MeteringPoint{mp(S_INACTIVE, INACTIVE), mp(S_INIT, PENDING)}))
 	assert.Equal(t, MemberPending, MemberActivity([]*MeteringPoint{mp(S_INIT, NEW)}))
 	assert.Equal(t, MemberPending, MemberActivity(nil))
-	// re-registration of a metering point that left: status stays INACTIVE until it is active again
-	assert.Equal(t, MemberPending, MemberActivity([]*MeteringPoint{mp(S_INACTIVE, PENDING)}))
+	// INACTIVE with a registration state (stale in prod, or a re-registration): inactive until active again
+	assert.Equal(t, MemberInactive, MemberActivity([]*MeteringPoint{mp(S_INACTIVE, PENDING)}))
+	// no status at all (occurs once in prod) with a registration state: pending
+	assert.Equal(t, MemberPending, MemberActivity([]*MeteringPoint{mp("", PENDING)}))
 }

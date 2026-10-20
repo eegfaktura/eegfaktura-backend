@@ -139,9 +139,11 @@ const (
 )
 
 // MemberActivity derives the member status from its metering points: ACTIVE with at least one active metering
-// point; PENDING without one but with one being registered (also the re-registration of a metering point that left,
-// which keeps status INACTIVE until it is active again), or with no metering point at all; INACTIVE when all of them
-// have left, were archived or rejected. The stored participant status is not changed.
+// point; PENDING without one but with one not yet active (status INIT) whose registration is running, or with no
+// metering point at all; INACTIVE when all of them have left, were archived or rejected. A metering point with status
+// INACTIVE never counts as registering: in prod (20.10.2026) 36 members have only such rows with a stale registration
+// state and could not be told apart from a re-registration; a re-registered one counts once it is active again.
+// The stored participant status is not changed.
 func MemberActivity(meters []*MeteringPoint) MemberActivityType {
 	if len(meters) == 0 {
 		return MemberPending
@@ -151,7 +153,7 @@ func MemberActivity(meters []*MeteringPoint) MemberActivityType {
 		if m.Status == S_ACTIVE {
 			return MemberActive
 		}
-		if registering(m.ProcessState) {
+		if m.Status != S_INACTIVE && registering(m.ProcessState) {
 			pending = true
 		}
 	}
@@ -161,7 +163,7 @@ func MemberActivity(meters []*MeteringPoint) MemberActivityType {
 	return MemberInactive
 }
 
-// registering: the registration of the metering point is running (by its process state, whatever its status)
+// registering: the registration of the metering point is running (by its process state)
 func registering(p ProcessStatusType) bool {
 	switch p {
 	case NEW, INIT, PENDING, APPROVED:
