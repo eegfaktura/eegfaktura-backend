@@ -11,8 +11,8 @@ this changelog highlights the changes relevant for overview and operations.
 ### Changed
 - **Master data export: member status from the metering points** (platform#165, decision 20.10.2026). Both „Status“
   columns showed the stored member status, which stays ACTIVE after a member left. They now show „aktiv“ (at least one
-  active metering point), „in Anmeldung“ (a registration is running, also the re-registration of a metering point that
-  left) or „inaktiv“ (all left, archived or rejected). A revocation counts once it is confirmed (the metering point's
+  active metering point), „in Anmeldung“ (a metering point not yet active whose registration is running; a metering point
+  that left counts as inactive until it is active again) or „inaktiv“ (all left, archived or rejected). A revocation counts once it is confirmed (the metering point's
   status turns INACTIVE then, also with a later end date). Members without metering points have no row in the export,
   as before. Stored data is unchanged; the import does not read the column.
 
