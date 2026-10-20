@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.5.0] – 2026-10-20
+
 ### Changed
 - **Master data export: member status from the metering points** (platform#165, decision 20.10.2026). Both „Status“
   columns showed the stored member status, which stays ACTIVE after a member left. They now show „aktiv“ (at least one
