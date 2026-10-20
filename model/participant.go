@@ -129,6 +129,37 @@ const (
 	F_DELETED
 )
 
+// MemberActivity is the status of a member derived from its metering points (platform#165): ACTIVE with at least one
+// active metering point; PENDING without one but with one being registered, or with no metering point yet; INACTIVE
+// when all of them have left, were archived or rejected. The stored participant status is not changed.
+func MemberActivity(meters []*MeteringPoint) StatusType {
+	pending := len(meters) == 0
+	for _, m := range meters {
+		if m == nil {
+			continue
+		}
+		switch {
+		case m.Status == S_ACTIVE:
+			return S_ACTIVE
+		case m.Status == S_INIT && registering(m.ProcessState):
+			pending = true
+		}
+	}
+	if pending {
+		return StatusType(PENDING)
+	}
+	return S_INACTIVE
+}
+
+// registering: a metering point that is not active yet and whose registration has not ended
+func registering(p ProcessStatusType) bool {
+	switch p {
+	case REJECTED, INVALID, REVOKED, ARCHIVED, ABORTED, INACTIVE:
+		return false
+	}
+	return true
+}
+
 type MeteringPoint struct {
 	MeteringPoint    string            `json:"meteringPoint" db:"metering_point_id" goqu:"skipupdate"`
 	ParticipantId    string            `json:"participantId,omitempty" db:"participant_id" goqu:"skipupdate,skipinsert"`

@@ -442,6 +442,8 @@ func generateParticipantMastersheet(f *excelize.File, participants []*model.EegP
 	}
 	err = sw.SetRow(fmt.Sprintf("A%d", line), header, excelize.RowOpts{StyleID: styleIdHeader, Height: 0.42 * 72})
 	for _, c := range participants {
+		// platform#165: the member status from its metering points, the stored one stays ACTIVE after leaving
+		status := model.MemberActivity(c.MeteringPoint)
 		for _, m := range c.MeteringPoint {
 			line = line + 1
 			err = sw.SetRow(fmt.Sprintf("A%d", line),
@@ -465,7 +467,7 @@ func generateParticipantMastersheet(f *excelize.File, participants []*model.EegP
 						}
 						return strings.Join(titles, ", ")
 					}()},
-					excelize.Cell{Value: c.Status},
+					excelize.Cell{Value: status},
 					excelize.Cell{Value: getNullDate(c.ParticipantSince), StyleID: styleIdDate},
 					excelize.Cell{Value: c.Contact.Email.String},
 					excelize.Cell{Value: c.Contact.Phone.String},
@@ -490,7 +492,7 @@ func generateParticipantMastersheet(f *excelize.File, participants []*model.EegP
 							return "Business"
 						}
 					}()},
-					excelize.Cell{Value: c.Status},
+					excelize.Cell{Value: status},
 					excelize.Cell{Value: getTariffName(c.TariffId.String), StyleID: styleDateId},
 					excelize.Cell{Value: m.MeteringPoint},
 					excelize.Cell{Value: m.ProcessState},

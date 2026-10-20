@@ -8,6 +8,12 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Changed
+- **Master data export: member status from the metering points** (platform#165, decision 20.10.2026). Both „Status“
+  columns showed the stored member status, which stays ACTIVE after a member left. They now show ACTIVE (at least one
+  active metering point), PENDING (one being registered, or none yet) or INACTIVE (all left, archived or rejected).
+  Stored data is unchanged; the import does not read the column.
+
 ## [1.4.0] – 2026-10-20
 
 ### Fixed
