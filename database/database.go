@@ -37,6 +37,7 @@ type Database interface {
 	ExcelRepository
 	TariffRepository
 	MqttRepository
+	EnergyRequestRepository
 }
 
 type MqttRepository interface {

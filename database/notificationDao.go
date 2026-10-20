@@ -186,7 +186,8 @@ func getNotification(db *sqlx.DB, tenant string, start int64, isAdmin bool) ([]m
 	n := []model.EegNotification{}
 
 	statement := pgDialect.From("base.notification").Select(&n).
-		Where(goqu.C("tenant").Eq(tenant), goqu.C("id").Gt(start))
+		Where(goqu.C("tenant").Eq(tenant), goqu.C("id").Gt(start),
+			goqu.C("process").Neq(model.N_PROCESS_ENERGY_REQUEST))
 	if !isAdmin {
 		statement = statement.Where(goqu.C("role").Eq("USER"))
 	}

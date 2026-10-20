@@ -10,6 +10,7 @@ import (
 
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"at.ourproject/vfeeg-backend/database"
+	"at.ourproject/vfeeg-backend/energyrequest"
 	"at.ourproject/vfeeg-backend/model"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
 	"at.ourproject/vfeeg-backend/util"
@@ -393,14 +394,31 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 
 		if eeg.Online {
 			var errorList []string
+			requested := meters
 			meters, err := h.db.FindMeteringByIds(r.Context(), tenant, meters)
 			if err != nil {
 				log.WithField("tenant", tenant).WithError(err).Error("failed to request metering point values.")
 				respondWith(w, http.StatusInternalServerError, tenant, err)
 				return
 			}
+			// platform#173: record the run (requested and skipped metering points) before sending, so the answers
+			// can be summarised
+			run := energyrequest.NewRun(eeg.CommunityId, fromDate, toDate)
+			type energyRequest struct {
+				meter    *model.MeteringPoint
+				from, to int64
+			}
+			var send []energyRequest
 			for _, m := range meters {
-				if m.Status == model.S_INIT || m.State.Flag != model.F_ASSIGNED || !m.State.ActiveSince.Valid || !m.State.InactiveSince.Valid {
+				switch {
+				case m.Status == model.S_INIT:
+					run.Skip(m.MeteringPoint, energyrequest.ReasonNotRegistered)
+					continue
+				case m.State.Flag != model.F_ASSIGNED:
+					run.Skip(m.MeteringPoint, energyrequest.ReasonNotAssigned)
+					continue
+				case !m.State.ActiveSince.Valid || !m.State.InactiveSince.Valid:
+					run.Skip(m.MeteringPoint, energyrequest.ReasonNoActivePeriod)
 					continue
 				}
 
@@ -408,12 +426,19 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 				_inactiveSince := m.State.InactiveSince.Date.Unix() * 1000
 
 				if _activeSince > toDate || _inactiveSince < fromDate {
+					run.Skip(m.MeteringPoint, energyrequest.ReasonNotActiveInPeriod)
 					continue
 				}
 
 				from := util.MaxTimeStamp(_activeSince, fromDate)
 				to := util.MinTimeStamp(_inactiveSince, toDate)
+				run.Add(m.MeteringPoint, from, to)
+				send = append(send, energyRequest{meter: m, from: from, to: to})
+			}
+			energyrequest.Save(r.Context(), h.db, tenant, requested, run)
 
+			for _, s := range send {
+				m, from, to := s.meter, s.from, s.to
 				if err = mqttclient.RequestingEnergyData(eeg, m, from, to); err != nil {
 					log.WithField("tenant", tenant).Errorf("request Metering values %v (%s - %s)", m,
 						time.UnixMilli(from).String(), time.UnixMilli(toDate).String())

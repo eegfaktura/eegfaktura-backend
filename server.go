@@ -17,6 +17,7 @@ import (
 	"at.ourproject/vfeeg-backend/config"
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/eda"
+	"at.ourproject/vfeeg-backend/energyrequest"
 	"at.ourproject/vfeeg-backend/graph"
 	"at.ourproject/vfeeg-backend/graph/generated"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
@@ -168,6 +169,7 @@ func StartServer(db database.Database) {
 	ctx := context.Background()
 
 	eda.InitEdaSubscription(ctx)
+	energyrequest.Start(ctx, db)
 	mqttclient.InitErrorSubscriptions()
 
 	quit := captureOsInterrupt()
