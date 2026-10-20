@@ -50,8 +50,12 @@ func TestEnergyRequestSummary(t *testing.T) {
 	require.NoError(t, err)
 	rows, err := db.EnergyRequestRowsSince(ctx, lowerBound)
 	require.NoError(t, err)
+	// only this test's rows: other tests leave rows in the shared database
 	var runs, answers int
 	for _, r := range rows {
+		if r.Tenant != "TE000173" && r.Tenant != "TE000174" {
+			continue
+		}
 		if r.Type == energyrequest.RowTypeRun {
 			runs++
 		} else {

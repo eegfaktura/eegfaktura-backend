@@ -27,7 +27,10 @@ this changelog highlights the changes relevant for overview and operations.
   - Answers are matched by community id and metering point (GEA tenants sharing a community id included). An answer
     belongs to the request before it; a later request for the same metering point (also a single one, stored without
     summary) takes the answers after it.
-  - A request whose deadline passes while the backend is down for more than about an hour gets no summary.
+  - A request gets no summary if the backend (re)starts more than about an hour after its deadline (the start looks
+    back 25 hours).
+  - Answers carry no period: an answer that arrives after a later request for the same metering point (also for
+    another period) counts for the later one; the earlier summary lists the metering point as requested again.
   - **Deploy order:** web with the matching release first (platform#173), else Messages shows the summary as an
     empty entry.
 - CI: PR checks (tests on every pull request) and a security scan (leaked secrets in new commits,

@@ -42,7 +42,8 @@ func (db *sqlDatabase) EnergyRequestLowerBound(ctx context.Context) (int64, erro
 	err := db.db.GetContext(ctx, &id, `WITH m AS (SELECT COALESCE(max(id), 0) AS max_id FROM base.notification)
 		SELECT COALESCE(min(n.id), (SELECT max_id FROM m) + 1) FROM base.notification n
 		WHERE n.id > (SELECT max_id FROM m) - 500000 AND n.process = $1 AND n.type = $2
-		  AND n.date > (now() AT TIME ZONE 'utc') - interval '25 hours'`,
+		  AND n.date > (now() AT TIME ZONE 'utc') - interval '25 hours'
+		  AND COALESCE(n.notification->>'noSummary', 'false') <> 'true'`,
 		model.N_PROCESS_ENERGY_REQUEST, energyrequest.RowTypeRun)
 	return id, err
 }
