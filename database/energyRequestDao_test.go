@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// platform#173: run, answers, deliveries and summary live in base.notification; the hidden rows are not listed.
+// platform#173: run, answers and summary live in base.notification; the hidden run row is not listed.
 func TestEnergyRequestSummary(t *testing.T) {
 	ctx := context.Background()
 	db, err := GetDB(ctx)
@@ -45,28 +45,20 @@ func TestEnergyRequestSummary(t *testing.T) {
 	// answers as the CR_REQ_PT handler stores them, under the tenant GetEegByEcId returns
 	require.NoError(t, db.SaveNotification("TE000174", model.EBMS_ZP_RES, []string{"AT0099990000000000000000000173001"}, []string{}, model.CR_REQ_PT))
 	require.NoError(t, db.SaveNotification("TE000174", model.EBMS_ZP_REJ, []string{"AT0099990000000000000000000173002"}, []string{"Zählpunkt nicht gefunden"}, model.CR_REQ_PT))
-	// a delivery of a metering point of the open run is recorded, one of another metering point is not
-	energyrequest.RecordDelivery(ctx, db, "TE000174", ecId, "AT0099990000000000000000000173001", from,
-		time.Date(2026, 10, 1, 0, 0, 0, 0, time.Local).UnixMilli())
-	energyrequest.RecordDelivery(ctx, db, "TE000174", ecId, "AT0099990000000000000000000179999", from, to)
 
 	lowerBound, err := db.EnergyRequestLowerBound(ctx)
 	require.NoError(t, err)
 	rows, err := db.EnergyRequestRowsSince(ctx, lowerBound)
 	require.NoError(t, err)
-	var runs, data, answers int
+	var runs, answers int
 	for _, r := range rows {
-		switch r.Type {
-		case energyrequest.RowTypeRun:
+		if r.Type == energyrequest.RowTypeRun {
 			runs++
-		case energyrequest.RowTypeData:
-			data++
-		default:
+		} else {
 			answers++
 		}
 	}
 	assert.Equal(t, 1, runs)
-	assert.Equal(t, 1, data, "only deliveries of metering points of open runs")
 	assert.GreaterOrEqual(t, answers, 2)
 
 	require.NoError(t, energyrequest.Check(ctx, db, time.Now()))
@@ -80,7 +72,7 @@ func TestEnergyRequestSummary(t *testing.T) {
 	require.NoError(t, json.Unmarshal(list[0].Message, &s))
 	assert.Equal(t, energyrequest.SummaryType, s.Type)
 	assert.Equal(t, 2, s.Requested)
-	assert.Equal(t, 1, s.Complete)
+	assert.Equal(t, []energyrequest.MeterRange{{MeteringPoint: "AT0099990000000000000000000173001", From: from, To: to}}, s.Accepted)
 	assert.Equal(t, []energyrequest.Rejected{{MeteringPoint: "AT0099990000000000000000000173002", Codes: []string{"Zählpunkt nicht gefunden"}}}, s.Rejected)
 	assert.Equal(t, []energyrequest.Skipped{{MeteringPoint: "AT0099990000000000000000000173003", Reason: energyrequest.ReasonNotActiveInPeriod}}, s.Skipped)
 

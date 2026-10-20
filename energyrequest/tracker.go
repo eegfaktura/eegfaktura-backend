@@ -3,7 +3,6 @@ package energyrequest
 import (
 	"context"
 	"encoding/json"
-	"strings"
 	"sync"
 	"time"
 
@@ -23,22 +22,12 @@ type Store interface {
 	CloseEnergyRequest(ctx context.Context, tenant string, runRowId int64, summary Summary) (bool, error)
 }
 
-// tracker holds only derived state, rebuilt from the database on every check: where to start reading and which
-// (community, metering point) pairs belong to open runs, so the CR_MSG handler does not query per delivery.
-type tracker struct {
-	mu         sync.Mutex
-	lowerBound int64                      // 0 = not known yet (after a start)
-	open       map[string]map[string]bool // ecId -> metering points of open runs
-	registered []registration             // runs registered since the last read
+// lowerBound is the only state in memory: the row id the next check starts reading from (0 = not known yet, after
+// a start). It is derived from the database on every check.
+var lowerBound struct {
+	sync.Mutex
+	id int64
 }
-
-type registration struct {
-	rowId  int64
-	ecId   string
-	meters []string
-}
-
-var current = &tracker{open: map[string]map[string]bool{}}
 
 // NewRun starts collecting a run for a request of the community ecId for the period from..to.
 func NewRun(ecId string, from, to int64) *Run {
@@ -49,6 +38,7 @@ func NewRun(ecId string, from, to int64) *Run {
 // Add records a metering point that is requested for from..to. A metering point that occurs twice (several
 // participations in the period) is merged to the widest period.
 func (r *Run) Add(meter string, from, to int64) {
+	r.dropSkipped(meter)
 	for i := range r.Meters {
 		if r.Meters[i].MeteringPoint == meter {
 			if from < r.Meters[i].From {
@@ -57,12 +47,10 @@ func (r *Run) Add(meter string, from, to int64) {
 			if to > r.Meters[i].To {
 				r.Meters[i].To = to
 			}
-			r.dropSkipped(meter)
 			return
 		}
 	}
 	r.Meters = append(r.Meters, MeterRange{MeteringPoint: meter, From: from, To: to})
-	r.dropSkipped(meter)
 }
 
 // Skip records a metering point that is not requested, unless it is requested for another participation.
@@ -101,39 +89,11 @@ func Save(ctx context.Context, store Store, tenant string, requested []string, r
 		return
 	}
 	for m := range distinct {
-		r.markNotFound(m)
+		r.Skip(m, ReasonNotFound) // no-op for metering points that were found (requested or skipped)
 	}
 	r.CreatedAt = time.Now().UnixMilli()
-	id, err := store.SaveEnergyRequestRow(ctx, tenant, RowTypeRun, r)
-	if err != nil {
+	if _, err := store.SaveEnergyRequestRow(ctx, tenant, RowTypeRun, r); err != nil {
 		logrus.WithField("tenant", tenant).WithError(err).Error("energy request summary: cannot save run")
-		return
-	}
-	meters := make([]string, 0, len(r.Meters))
-	for _, m := range r.Meters {
-		meters = append(meters, m.MeteringPoint)
-	}
-	current.register(registration{rowId: id, ecId: r.EcId, meters: meters})
-}
-
-func (r *Run) markNotFound(meter string) {
-	for _, m := range r.Meters {
-		if m.MeteringPoint == meter {
-			return
-		}
-	}
-	r.Skip(meter, ReasonNotFound)
-}
-
-// RecordDelivery writes a hidden DATA row when a metering point of an open run gets energy data (from..to over all
-// blocks of the message). Deliveries of other metering points are ignored without a database access.
-func RecordDelivery(ctx context.Context, store Store, tenant, ecId, meter string, from, to int64) {
-	if !current.tracked(ecId, meter) {
-		return
-	}
-	d := Data{Type: RowTypeData, EcId: ecId, MeteringPoint: meter, From: from, To: to}
-	if _, err := store.SaveEnergyRequestRow(ctx, tenant, RowTypeData, d); err != nil {
-		logrus.WithField("tenant", tenant).WithError(err).Error("energy request summary: cannot save delivery")
 	}
 }
 
@@ -155,49 +115,22 @@ func Start(ctx context.Context, store Store) {
 	}()
 }
 
-// Check evaluates the open runs and writes the summaries of the finished ones.
+// Check evaluates the open runs and writes the summaries of the finished ones. It reads from the oldest open run on
+// (found once after a start), so each check reads at most about a day of rows while a run is open.
 func Check(ctx context.Context, store Store, now time.Time) error {
-	return current.check(ctx, store, now)
-}
+	lowerBound.Lock()
+	defer lowerBound.Unlock()
 
-func (t *tracker) register(reg registration) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.registered = append(t.registered, reg)
-	// the new row id is above every row read so far, so the lower bound already includes it
-	t.addOpen(reg.ecId, reg.meters)
-}
-
-func (t *tracker) tracked(ecId, meter string) bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.open[strings.ToUpper(ecId)][meter]
-}
-
-func (t *tracker) addOpen(ecId string, meters []string) {
-	key := strings.ToUpper(ecId)
-	if t.open[key] == nil {
-		t.open[key] = map[string]bool{}
-	}
-	for _, m := range meters {
-		t.open[key][m] = true
-	}
-}
-
-func (t *tracker) check(ctx context.Context, store Store, now time.Time) error {
-	t.mu.Lock()
-	lowerBound := t.lowerBound
-	t.mu.Unlock()
-
-	if lowerBound == 0 {
+	from := lowerBound.id
+	if from == 0 {
 		lb, err := store.EnergyRequestLowerBound(ctx)
 		if err != nil {
 			return err
 		}
-		lowerBound = lb
+		from = lb
 	}
 
-	rows, err := store.EnergyRequestRowsSince(ctx, lowerBound)
+	rows, err := store.EnergyRequestRowsSince(ctx, from)
 	if err != nil {
 		return err
 	}
@@ -219,12 +152,12 @@ func (t *tracker) check(ctx context.Context, store Store, now time.Time) error {
 		}
 	}
 
-	tenantsByEcId := map[string]map[string]bool{}
-	open := map[string]map[string]bool{}
-	next := maxId + 1
-	if maxId == 0 {
-		next = lowerBound
+	// next start: the oldest run still open, else after the last row read
+	next := from
+	if maxId > 0 {
+		next = maxId + 1
 	}
+	tenantsByEcId := map[string]map[string]bool{}
 	for _, r := range rows {
 		if r.Type != RowTypeRun {
 			continue
@@ -240,48 +173,23 @@ func (t *tracker) check(ctx context.Context, store Store, now time.Time) error {
 				return err
 			}
 			tenants = map[string]bool{r.Tenant: true}
-			for _, tn := range list {
-				tenants[tn] = true
+			for _, t := range list {
+				tenants[t] = true
 			}
 			tenantsByEcId[run.EcId] = tenants
 		}
 
 		summary, done := Evaluate(run, r.Id, rows, tenants, now)
-		if done {
-			if _, err := store.CloseEnergyRequest(ctx, r.Tenant, r.Id, summary); err != nil {
-				return err
+		if !done {
+			if r.Id < next {
+				next = r.Id
 			}
 			continue
 		}
-		if r.Id < next {
-			next = r.Id
-		}
-		key := strings.ToUpper(run.EcId)
-		if open[key] == nil {
-			open[key] = map[string]bool{}
-		}
-		for _, m := range run.Meters {
-			open[key][m.MeteringPoint] = true
+		if _, err := store.CloseEnergyRequest(ctx, r.Tenant, r.Id, summary); err != nil {
+			return err
 		}
 	}
-
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	// runs registered after the rows were read are not in rows: keep them open
-	var kept []registration
-	for _, reg := range t.registered {
-		if reg.rowId > maxId {
-			kept = append(kept, reg)
-			if reg.rowId < next {
-				next = reg.rowId
-			}
-		}
-	}
-	t.registered = kept
-	t.open = open
-	for _, reg := range kept {
-		t.addOpen(reg.ecId, reg.meters)
-	}
-	t.lowerBound = next
+	lowerBound.id = next
 	return nil
 }

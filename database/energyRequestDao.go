@@ -47,7 +47,7 @@ func (db *sqlDatabase) EnergyRequestLowerBound(ctx context.Context) (int64, erro
 	return id, err
 }
 
-// EnergyRequestRowsSince returns the rows the evaluation needs from fromId on: the hidden rows and the answers
+// EnergyRequestRowsSince returns the rows the evaluation needs from fromId on: the hidden run rows and the answers
 // (ANTWORT_PT, ABLEHNUNG_PT) and summaries among the EDA notifications.
 func (db *sqlDatabase) EnergyRequestRowsSince(ctx context.Context, fromId int64) ([]energyrequest.Row, error) {
 	rows := []energyrequest.Row{}
