@@ -8,6 +8,13 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Fixed
+- **Tests: the middleware tests run without Keycloak** (platform#180). `TestMain` in `api/middleware` called
+  `InitKeycloak()` against localhost:7080, so the Protect, ConditionProtect, auth and GQLAdminCheck tests never ran
+  (they mock `VerifyTokenClaims`). `TestMain` is removed; `api/middleware` now runs in the blocking unit and full CI
+  jobs. The database test helper waits for the second "ready to accept connections" log line of PostgreSQL (the first
+  one comes from the temporary initdb server). No change to the service.
+
 ## [1.5.1] – 2026-10-20
 
 ### Changed
