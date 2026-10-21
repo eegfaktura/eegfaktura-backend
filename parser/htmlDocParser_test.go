@@ -136,7 +136,7 @@ func TestParseTemplate(t *testing.T) {
 				Meteringpoints []string
 			}{eeg, participant, []string{"AT0010000000000000000000000111"}}},
 			bytes.NewBufferString(strings.Trim(`<!DOCTYPE html>
-        <html lang="en">
+        <html lang="de">
         <head>
             <meta charset="UTF-8">
             <title>Aktivierung Zählpunkt</title>
