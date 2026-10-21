@@ -14,6 +14,10 @@ this changelog highlights the changes relevant for overview and operations.
   (they mock `VerifyTokenClaims`). `TestMain` is removed; `api/middleware` now runs in the blocking unit and full CI
   jobs. The database test helper waits for the second "ready to accept connections" log line of PostgreSQL (the first
   one comes from the temporary initdb server). No change to the service.
+- **MQTT broker: data race on the stop channel** (platform#180). `Listen` replaced the stop channel created by
+  `NewMessageBroker` inside its own goroutine, while `Stop` and `OnDisConnect` read it from other goroutines. `Listen`
+  now uses the channel from the constructor. The broker is started once and stopped at shutdown, as before.
+  `mqtt` runs in the blocking full CI job (race detector).
 
 ## [1.5.1] – 2026-10-20
 

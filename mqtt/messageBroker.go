@@ -169,7 +169,6 @@ func (m *MessageBroker) ConfigRoutes(cl mqtt.Client) {
 
 func (m *MessageBroker) Listen() {
 	log.Info("Broker start listening ...")
-	m.close = NewCloseC()
 
 	for {
 		select {

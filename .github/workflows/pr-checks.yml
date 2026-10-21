@@ -35,9 +35,8 @@ env:
   # Packages whose tests need a service: PostgreSQL via Testcontainers (api, database, eda).
   # They run in the full suite only.
   INTEGRATION_PACKAGES: 'api database eda'
-  # Known failing tests: api tests do not compile, mqtt fails under the race detector
-  # (platform#180).
-  KNOWN_RED_PACKAGES: 'api mqtt'
+  # Known failing tests: api tests do not compile (platform#180).
+  KNOWN_RED_PACKAGES: 'api'
   # go test -json is kept as the result file; the console shows the test output read back from it
   # (as with go test -v). Exit codes are go test's (pipefail).
   GO_TEST_OUTPUT: '(fromjson? // {Action: "output", Output: (. + "\n")}) | select(.Action == "output" or .Action == "build-output") | .Output'
