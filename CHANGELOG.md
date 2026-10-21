@@ -31,6 +31,10 @@ this changelog highlights the changes relevant for overview and operations.
 ### Changed
 - **Docker image: Go pinned to 1.25.14** (platform#180). Both stages of the `Dockerfile` used the floating tag
   `golang:1.25`; they now use `golang:1.25.14`, the version of the CI.
+- **Tests: PostgreSQL 18 in the database tests** (platform#180). The Testcontainers database of the tests used
+  `postgres:15-alpine`, while every zone runs PostgreSQL 18; the tests now use `postgres:18.6-alpine`. PostgreSQL 18
+  also logs "ready to accept connections" twice (initdb server, then the real server), so the wait for the second line
+  stays. No change to the service.
 
 ## [1.5.1] – 2026-10-20
 
