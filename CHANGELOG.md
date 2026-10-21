@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.6.0] – 2026-10-21
+
 ### Added
 - **Time-of-use tariffs (ZVT)**: `base.tariff` gains `useTimeTariff` plus two
   optional named time windows (`timeTariff{1,2}Active/Name/From/To/CentPerKWh`;
