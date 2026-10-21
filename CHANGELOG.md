@@ -8,6 +8,29 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Added
+- **Time-of-use tariffs (ZVT)**: `base.tariff` gains `useTimeTariff` plus two
+  optional named time windows (`timeTariff{1,2}Active/Name/From/To/CentPerKWh`;
+  `time` columns, 15-min raster, `From > To` crosses midnight). `centPerKWh`
+  stays the base price; existing tariffs are unchanged (`useTimeTariff=false`).
+  Both views are extended: `base.activeTariff` passes the new fields through
+  (From/To as `HH:MM` text) and `base.billing_masterdata` exposes them as
+  `tariff_use_time_tariff` / `tariff_time{1,2}_*` for the billing service.
+  Saving a tariff validates the windows server-side: only consumer/producer
+  tariffs, active windows need from/to/price on the 15-min raster,
+  `Von ≠ Bis`, the two windows must not overlap (cyclic check, midnight
+  crossing allowed) and free kWh are rejected in time-based mode.
+  Migration `20260711120000_zvt_time_tariff` (up/down; `schema.sql`,
+  `schema.hcl` and `atlas.sum` updated in sync).
+
+### Changed
+- Mail deliverability: the global default activation mail template declares `lang="de"`
+  (was `en`) so clients don't mis-detect the language (minor spam-score signal). Per-tenant
+  templates on the data volume are unaffected (operator cleanup). The parser test expects `lang="de"` (it still
+  expected `en`; env/billing builds ran no PR checks).
+- **Docker image: Go pinned to 1.25.14** (platform#180). Both stages of the `Dockerfile` used the floating tag
+  `golang:1.25`; they now use `golang:1.25.14`, the version of the CI.
+
 ### Fixed
 - **Tests: the middleware tests run without Keycloak** (platform#180). `TestMain` in `api/middleware` called
   `InitKeycloak()` against localhost:7080, so the Protect, ConditionProtect, auth and GQLAdminCheck tests never ran
@@ -27,10 +50,6 @@ this changelog highlights the changes relevant for overview and operations.
   `eda/edaSubscription.go`, and the unreachable `return` in `util/time.go`.
 - **CI: `gofmt` check in the unit job** (platform#180). Six files were not formatted (import order, alignment); they
   are formatted now, and the unit job fails on a tracked `.go` file that `gofmt -l` reports.
-
-### Changed
-- **Docker image: Go pinned to 1.25.14** (platform#180). Both stages of the `Dockerfile` used the floating tag
-  `golang:1.25`; they now use `golang:1.25.14`, the version of the CI.
 
 ## [1.5.1] – 2026-10-20
 
