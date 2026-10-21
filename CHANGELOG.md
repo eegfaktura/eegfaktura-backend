@@ -37,6 +37,13 @@ this changelog highlights the changes relevant for overview and operations.
   `html/template` (GO-2026-6599, -6600, -6603, -6605, -6607, -6608, -6610 to -6613, -6617). Still open:
   GO-2026-6809 (`crypto/x509`), fixed only in Go 1.26.10 (released 2026-10-19, not yet 7 days old).
 
+### Security
+- **Dependencies: `golang.org/x/net` v0.60.0, `golang.org/x/crypto` v0.57.0** (platform#180). Fixes the govulncheck
+  findings GO-2026-6603, -6610, -6611, -6612, -6617 (x/net) and GO-2026-6354, -6355 (x/crypto). x/net v0.60.0
+  needs x/crypto v0.57.0 and Go 1.26; `go mod tidy` also raises x/mod, x/sync, x/sys, x/text and x/tools (minor).
+  Still open: `github.com/golang-jwt/jwt` v3 (GO-2025-3553, no fix in v3) and `github.com/xuri/excelize/v2` v2.11.0
+  (GO-2026-6684, -6685, -6688, -6689, fixed only in unreleased commits).
+
 ## [1.5.1] – 2026-10-20
 
 ### Changed
