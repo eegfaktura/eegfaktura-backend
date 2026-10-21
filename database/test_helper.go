@@ -107,7 +107,9 @@ func createContainer(ctx context.Context) (testcontainers.Container, string, str
 			Image:        "postgres:15-alpine",
 			ExposedPorts: []string{port},
 			Env:          env,
-			WaitingFor:   wait.ForLog("database system is ready to accept connections"),
+			// The message appears twice: first from the temporary server of initdb, then from
+			// the real server.
+			WaitingFor: wait.ForLog("database system is ready to accept connections").WithOccurrence(2),
 		},
 		Started: true,
 	}
