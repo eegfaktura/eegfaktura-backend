@@ -1152,10 +1152,10 @@ func findAssignedMeteringById(ctx context.Context, db *sqlx.DB, tenant string, m
 		"mid":               goqu.C("metering_point_id"),
 		// the entry's own state: after an owner change the moved entry (flag 0) would otherwise match the
 		// current entry's state and the lookup returned two rows (support ticket 66110076)
-		"mid_pid":           goqu.C("participant_id"),
-		"mpfmid":            goqu.C("metering_point_id"),
-		"mpfpid":            goqu.C("participant_id"),
-		"state.flag":        model.F_ASSIGNED,
+		"mid_pid":    goqu.C("participant_id"),
+		"mpfmid":     goqu.C("metering_point_id"),
+		"mpfpid":     goqu.C("participant_id"),
+		"state.flag": model.F_ASSIGNED,
 	}
 
 	stmt, _, err := pgDialect.From(TABLE_METERINGPOINT, stateStmt.As("state"), partFactStmt.As("mpfpF3")).Select(&model.MeteringPoint{}).

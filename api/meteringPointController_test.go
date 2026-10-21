@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -8,10 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
 	"github.com/jjeffery/civil"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRequestMeteringPointValues(t *testing.T) {
@@ -62,7 +65,9 @@ func TestRequestMeteringPointValues(t *testing.T) {
 			req, _ := http.NewRequest("POST", "/meteringpoint/syncenergy", strings.NewReader(tt.args.request))
 			w := httptest.NewRecorder()
 			mqttclient.RequestingEnergyData = tt.args.mqttReqFunc
-			requestMeteringPointValues()(w, req, nil, tt.args.tenant)
+			db, err := database.GetDB(context.Background())
+			require.NoError(t, err)
+			NewMeteringHandler(db).requestMeteringPointValues()(w, req, nil, tt.args.tenant)
 			tt.check(t, w)
 		})
 	}
@@ -77,7 +82,9 @@ func TestRequestChangePartitionFactor(t *testing.T) {
 		return nil
 	}
 
-	requestChangePartitionFactor()(w, req, nil, "TE001006")
+	db, err := database.GetDB(context.Background())
+	require.NoError(t, err)
+	NewMeteringHandler(db).requestChangePartitionFactor()(w, req, nil, "TE001006")
 
 	assert.Equal(t, http.StatusNoContent, w.Code)
 }
