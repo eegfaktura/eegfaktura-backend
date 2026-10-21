@@ -285,7 +285,7 @@ func protocolEcReqOnlHandler(ctx context.Context, msg model.SubscribeMessage) {
 			codes = []int16{0}
 		} else if codesContains(REJECTED_VALID_CODES, codes) {
 			status = model.ACTIVE
-			activeSince = civil.NullDate{civil.Today(), true}
+			activeSince = civil.NullDate{Date: civil.Today(), Valid: true}
 			codes = []int16{0}
 			statusCode = &codes[0]
 		} else if codesContains(REJECTED_INVALID_CODES, codes) {

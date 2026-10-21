@@ -70,6 +70,9 @@ jobs:
             --go-grpc_out=. --go-grpc_opt=paths=source_relative ./proto/*.proto
           (cd model && go generate ./...)
 
+      - name: go vet
+        run: go vet ./...
+
       - name: Unit tests
         run: |
           set -euo pipefail

@@ -256,7 +256,7 @@ func (h *MeteringHandler) updateMeteringPointPartFact() middleware.JWTHandlerFun
 			respondWithData(w, http.StatusAccepted, ms[0])
 		} else {
 			log.WithField("tenant", tenant).Errorf("failed to update metering point partition factor. Err: No PRTFACT specified %v", ms)
-			respondWith(w, http.StatusBadRequest, tenant, &model.VfeegError{999, errors.New(fmt.Sprintf("No metering factor found N:%d", len(meters)))})
+			respondWith(w, http.StatusBadRequest, tenant, &model.VfeegError{Code: 999, Err: errors.New(fmt.Sprintf("No metering factor found N:%d", len(meters)))})
 		}
 	}
 }

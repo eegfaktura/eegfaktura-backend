@@ -22,6 +22,9 @@ this changelog highlights the changes relevant for overview and operations.
   the handler functions from before the `MeteringHandler`/`ParticipantHandler` refactoring and the old
   `QueryParticipant` signature; they now build the handlers with the test database. `api` runs in the blocking full CI
   job; the report-only "Known errors" job is removed, as no package is left in it. No change to the service.
+- **CI: `go vet` blocks the unit job** (platform#180). The four findings are fixed without a change in behaviour: keyed
+  fields in the struct literals in `api/meteringPointController.go`, `mqtt/subscriptionHandler.go` and
+  `eda/edaSubscription.go`, and the unreachable `return` in `util/time.go`.
 
 ## [1.5.1] – 2026-10-20
 
