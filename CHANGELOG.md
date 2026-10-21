@@ -15,7 +15,7 @@ this changelog highlights the changes relevant for overview and operations.
   jobs. The database test helper waits for the second "ready to accept connections" log line of PostgreSQL (the first
   one comes from the temporary initdb server). No change to the service.
 - **MQTT broker: data race on the stop channel** (platform#180). `Listen` replaced the stop channel created by
-  `NewMessageBroker` inside its own goroutine, while `Stop` and `OnDisConnect` read it from other goroutines. `Listen`
+  `NewMessageBroker` inside its own goroutine, while `Stop` reads it from another goroutine. `Listen`
   now uses the channel from the constructor. The broker is started once and stopped at shutdown, as before.
   `mqtt` runs in the blocking full CI job (race detector).
 - **Tests: the `api` tests compile again** (platform#180). The metering point and participant controller tests called
