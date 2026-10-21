@@ -104,7 +104,7 @@ func createContainer(ctx context.Context) (testcontainers.Container, string, str
 
 	req := testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        "postgres:15-alpine",
+			Image:        "postgres:18.6-alpine", // the zones run PostgreSQL 18
 			ExposedPorts: []string{port},
 			Env:          env,
 			// The message appears twice: first from the temporary server of initdb, then from

@@ -28,6 +28,12 @@ this changelog highlights the changes relevant for overview and operations.
   (was `en`) so clients don't mis-detect the language (minor spam-score signal). Per-tenant
   templates on the data volume are unaffected (operator cleanup). The parser test expects `lang="de"` (it still
   expected `en`; env/billing builds ran no PR checks).
+- **Docker image: Go pinned to 1.25.14** (platform#180). Both stages of the `Dockerfile` used the floating tag
+  `golang:1.25`; they now use `golang:1.25.14`, the version of the CI.
+- **Tests: PostgreSQL 18 in the database tests** (platform#180). The Testcontainers database of the tests used
+  `postgres:15-alpine`, while every zone runs PostgreSQL 18; the tests now use `postgres:18.6-alpine`. PostgreSQL 18
+  also logs "ready to accept connections" twice (initdb server, then the real server), so the wait for the second line
+  stays. No change to the service.
 - **Go 1.26: toolchain raised to 1.26.9 and pinned** (platform#180). Both `Dockerfile` stages used the floating
   tag `golang:1.25`; `go.mod` (`go 1.26.0`), CI (`GO_VERSION`) and both stages (`golang:1.26.9`) now use 1.26.9, the newest 1.26 patch release older than
   7 days. It fixes the standard library findings of govulncheck in `net/http`, `net/textproto`, `crypto/tls` and
