@@ -73,6 +73,15 @@ jobs:
       - name: go vet
         run: go vet ./...
 
+      - name: gofmt
+        run: |
+          set -euo pipefail
+          unformatted="$(git ls-files -z '*.go' | xargs -0 gofmt -l)"
+          if [ -n "$unformatted" ]; then
+            printf '::error file=%s::not gofmt-formatted\n' $unformatted
+            exit 1
+          fi
+
       - name: Unit tests
         run: |
           set -euo pipefail

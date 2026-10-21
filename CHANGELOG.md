@@ -25,6 +25,8 @@ this changelog highlights the changes relevant for overview and operations.
 - **CI: `go vet` blocks the unit job** (platform#180). The four findings are fixed without a change in behaviour: keyed
   fields in the struct literals in `api/meteringPointController.go`, `mqtt/subscriptionHandler.go` and
   `eda/edaSubscription.go`, and the unreachable `return` in `util/time.go`.
+- **CI: `gofmt` check in the unit job** (platform#180). Six files were not formatted (import order, alignment); they
+  are formatted now, and the unit job fails on a tracked `.go` file that `gofmt -l` reports.
 
 ## [1.5.1] – 2026-10-20
 

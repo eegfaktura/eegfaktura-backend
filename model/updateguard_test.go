@@ -13,8 +13,8 @@ func TestAllowedUpdateColumn_MeteringPoint(t *testing.T) {
 		{"tariff_id", true, "tariff_id"},
 		{"transformer", true, "transformer"},
 		// skipupdate / not updatable
-		{"meteringPoint", false, ""},  // db metering_point_id, skipupdate
-		{"participantId", false, ""},  // skipupdate
+		{"meteringPoint", false, ""},    // db metering_point_id, skipupdate
+		{"participantId", false, ""},    // skipupdate
 		{"participantState", false, ""}, // db:"-" via State, skipupdate
 		// injected / unknown
 		{`equipmentName"=(SELECT 1`, false, ""},
@@ -60,13 +60,13 @@ func TestIsAllowedParticipantUpdatePath(t *testing.T) {
 		}
 	}
 	denied := []string{
-		"id",                       // skipupdate
-		"tenant",                   // not a field
-		"contact.evil",             // unknown sub-field
-		"unknownGroup.email",       // unknown group
-		"accountInfo.type",         // not a BankInfo field
-		`firstname"=(SELECT 1 /*`,  // injection
-		"a.b.c",                    // too many segments
+		"id",                      // skipupdate
+		"tenant",                  // not a field
+		"contact.evil",            // unknown sub-field
+		"unknownGroup.email",      // unknown group
+		"accountInfo.type",        // not a BankInfo field
+		`firstname"=(SELECT 1 /*`, // injection
+		"a.b.c",                   // too many segments
 		"",
 	}
 	for _, p := range denied {
