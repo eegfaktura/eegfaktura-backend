@@ -28,6 +28,8 @@ this changelog highlights the changes relevant for overview and operations.
   (was `en`) so clients don't mis-detect the language (minor spam-score signal). Per-tenant
   templates on the data volume are unaffected (operator cleanup). The parser test expects `lang="de"` (it still
   expected `en`; env/billing builds ran no PR checks).
+- **Docker image: Go pinned to 1.25.14** (platform#180). Both stages of the `Dockerfile` used the floating tag
+  `golang:1.25`; they now use `golang:1.25.14`, the version of the CI.
 
 ### Fixed
 - **Tests: the middleware tests run without Keycloak** (platform#180). `TestMain` in `api/middleware` called
@@ -48,10 +50,6 @@ this changelog highlights the changes relevant for overview and operations.
   `eda/edaSubscription.go`, and the unreachable `return` in `util/time.go`.
 - **CI: `gofmt` check in the unit job** (platform#180). Six files were not formatted (import order, alignment); they
   are formatted now, and the unit job fails on a tracked `.go` file that `gofmt -l` reports.
-
-### Changed
-- **Docker image: Go pinned to 1.25.14** (platform#180). Both stages of the `Dockerfile` used the floating tag
-  `golang:1.25`; they now use `golang:1.25.14`, the version of the CI.
 
 ## [1.5.1] – 2026-10-20
 
