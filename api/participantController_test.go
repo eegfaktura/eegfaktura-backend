@@ -208,12 +208,12 @@ func Test_confirmParticipantOnline(t *testing.T) {
 				"id": "ea9942db-03da-11ee-b82b-5a985b4b033a",
 			})
 
-			confirmParticipant()(w, req, claims, tt.args.tenant)
-
 			db, err := database.GetDB(context.Background())
 			require.NoError(t, err)
 
-			pUnderTest, err := db.QueryParticipant("ea9942db-03da-11ee-b82b-5a985b4b033a")
+			NewParticipantHandler(db).confirmParticipant()(w, req, claims, tt.args.tenant)
+
+			pUnderTest, err := db.QueryParticipant(context.Background(), tt.args.tenant, "ea9942db-03da-11ee-b82b-5a985b4b033a")
 			require.NoError(t, err)
 			tt.check(t, w, pUnderTest)
 		})

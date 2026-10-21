@@ -18,6 +18,10 @@ this changelog highlights the changes relevant for overview and operations.
   `NewMessageBroker` inside its own goroutine, while `Stop` and `OnDisConnect` read it from other goroutines. `Listen`
   now uses the channel from the constructor. The broker is started once and stopped at shutdown, as before.
   `mqtt` runs in the blocking full CI job (race detector).
+- **Tests: the `api` tests compile again** (platform#180). The metering point and participant controller tests called
+  the handler functions from before the `MeteringHandler`/`ParticipantHandler` refactoring and the old
+  `QueryParticipant` signature; they now build the handlers with the test database. `api` runs in the blocking full CI
+  job; the report-only "Known errors" job is removed, as no package is left in it. No change to the service.
 
 ## [1.5.1] – 2026-10-20
 
