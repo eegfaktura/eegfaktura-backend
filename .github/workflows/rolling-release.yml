@@ -1,7 +1,7 @@
 # Stage 1 (build-only) fuer eegfaktura-master — das prod-Backend
 # (go.mod-Modul at.ourproject/vfeeg-backend, Binary `vfeeg-backend`).
 #
-# Baut den selbst-enthaltenen Dockerfile (Go 1.25 + protoc + go generate).
+# Baut den selbst-enthaltenen Dockerfile (Go 1.26 + protoc + go generate).
 # PR-Events bauen nur (kein Push, fork-sicher); Push auf den Default-Branch
 # baut + pusht nach ghcr.io/<repo>.
 #

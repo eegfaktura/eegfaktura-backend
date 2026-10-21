@@ -31,6 +31,11 @@ this changelog highlights the changes relevant for overview and operations.
 ### Changed
 - **Docker image: Go pinned to 1.25.14** (platform#180). Both stages of the `Dockerfile` used the floating tag
   `golang:1.25`; they now use `golang:1.25.14`, the version of the CI.
+- **Go 1.26: toolchain raised to 1.26.9** (platform#180). `go.mod` (`go 1.26.0`), CI (`GO_VERSION`) and both
+  `Dockerfile` stages (`golang:1.26.9`) move from Go 1.25.14 to 1.26.9, the newest 1.26 patch release older than
+  7 days. It fixes the standard library findings of govulncheck in `net/http`, `net/textproto`, `crypto/tls` and
+  `html/template` (GO-2026-6599, -6600, -6603, -6605, -6607, -6608, -6610 to -6613, -6617). Still open:
+  GO-2026-6809 (`crypto/x509`), fixed only in Go 1.26.10 (released 2026-10-19, not yet 7 days old).
 
 ## [1.5.1] – 2026-10-20
 
