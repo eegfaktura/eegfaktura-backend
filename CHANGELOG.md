@@ -26,7 +26,8 @@ this changelog highlights the changes relevant for overview and operations.
 ### Changed
 - Mail deliverability: the global default activation mail template declares `lang="de"`
   (was `en`) so clients don't mis-detect the language (minor spam-score signal). Per-tenant
-  templates on the data volume are unaffected (operator cleanup).
+  templates on the data volume are unaffected (operator cleanup). The parser test expects `lang="de"` (it still
+  expected `en`; env/billing builds ran no PR checks).
 
 ### Fixed
 - **Tests: the middleware tests run without Keycloak** (platform#180). `TestMain` in `api/middleware` called
