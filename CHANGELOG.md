@@ -8,6 +8,11 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Notes
+- Go 1.26: with `go 1.26.0` the GODEBUG defaults of 1.26 apply (`cryptocustomrand`, `httpservecontentmaxranges`,
+  `tlssecpmlkem`, `urlstrictcolons`); none affects the backend. The Green Tea garbage collector is the default:
+  watch the pod memory after the first rollout (opt-out at build time: `GOEXPERIMENT=nogreenteagc`). (platform#180)
+
 ### Fixed
 - **Tests: the middleware tests run without Keycloak** (platform#180). `TestMain` in `api/middleware` called
   `InitKeycloak()` against localhost:7080, so the Protect, ConditionProtect, auth and GQLAdminCheck tests never ran
@@ -29,10 +34,8 @@ this changelog highlights the changes relevant for overview and operations.
   are formatted now, and the unit job fails on a tracked `.go` file that `gofmt -l` reports.
 
 ### Changed
-- **Docker image: Go pinned to 1.25.14** (platform#180). Both stages of the `Dockerfile` used the floating tag
-  `golang:1.25`; they now use `golang:1.25.14`, the version of the CI.
-- **Go 1.26: toolchain raised to 1.26.9** (platform#180). `go.mod` (`go 1.26.0`), CI (`GO_VERSION`) and both
-  `Dockerfile` stages (`golang:1.26.9`) move from Go 1.25.14 to 1.26.9, the newest 1.26 patch release older than
+- **Go 1.26: toolchain raised to 1.26.9 and pinned** (platform#180). Both `Dockerfile` stages used the floating
+  tag `golang:1.25`; `go.mod` (`go 1.26.0`), CI (`GO_VERSION`) and both stages (`golang:1.26.9`) now use 1.26.9, the newest 1.26 patch release older than
   7 days. It fixes the standard library findings of govulncheck in `net/http`, `net/textproto`, `crypto/tls` and
   `html/template` (GO-2026-6599, -6600, -6603, -6605, -6607, -6608, -6610 to -6613, -6617). Still open:
   GO-2026-6809 (`crypto/x509`), fixed only in Go 1.26.10 (released 2026-10-19, not yet 7 days old).
