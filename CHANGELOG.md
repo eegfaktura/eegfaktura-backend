@@ -9,6 +9,12 @@ this changelog highlights the changes relevant for overview and operations.
 ## [Unreleased]
 
 ### Fixed
+- **EDA: ZUSTIMMUNG_ECON/ECOF with code 172 sets the metering point to INVALID again** (platform#180). Code 172
+  (âKunde hat Datenfreigabe abgelehntâ) had an empty `case` since 2025-09-22: the line for 173 was inserted between
+  the label and the body of 172, and Go has no fallthrough. A consent message with 172 only went to the history; the
+  metering point stayed in its state (usually PENDING) and the community got no notification. 172 and 173 now share
+  the body again, as introduced on 2024-12-09: process state INVALID, status code 172, a notification for the
+  admins. ABLEHNUNG_ECON/ECOF is unchanged. Metering points that received 172 before stay as they are.
 - **Tests: the middleware tests run without Keycloak** (platform#180). `TestMain` in `api/middleware` called
   `InitKeycloak()` against localhost:7080, so the Protect, ConditionProtect, auth and GQLAdminCheck tests never ran
   (they mock `VerifyTokenClaims`). `TestMain` is removed; `api/middleware` now runs in the blocking unit and full CI

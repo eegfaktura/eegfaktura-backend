@@ -303,12 +303,9 @@ func protocolEcReqOnlHandler(ctx context.Context, msg model.SubscribeMessage) {
 			case CONSENT_GRANTED:
 				status = model.APPROVED
 				consentId = &consentIds[i]
-				break
-			case CUSTOMER_HAS_REFUSED_DATA_RELEASE:
-			case CUSTOMER_DID_NOT_RESPOND_TO_DATA_RELEASE:
+			case CUSTOMER_HAS_REFUSED_DATA_RELEASE, CUSTOMER_DID_NOT_RESPOND_TO_DATA_RELEASE:
 				status = model.INVALID
 				statusCode = &c
-				break
 			}
 		}
 	case model.EBMS_ONLINE_REG_ANSWER, model.EBMS_OFFLINE_REG_ANSWER:
