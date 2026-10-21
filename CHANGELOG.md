@@ -28,6 +28,10 @@ this changelog highlights the changes relevant for overview and operations.
 - **CI: `gofmt` check in the unit job** (platform#180). Six files were not formatted (import order, alignment); they
   are formatted now, and the unit job fails on a tracked `.go` file that `gofmt -l` reports.
 
+### Changed
+- **Docker image: Go pinned to 1.25.14** (platform#180). Both stages of the `Dockerfile` used the floating tag
+  `golang:1.25`; they now use `golang:1.25.14`, the version of the CI.
+
 ## [1.5.1] – 2026-10-20
 
 ### Changed
