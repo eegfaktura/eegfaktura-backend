@@ -8,10 +8,31 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
-### Notes
-- Go 1.26: with `go 1.26.0` the GODEBUG defaults of 1.26 apply (`cryptocustomrand`, `httpservecontentmaxranges`,
-  `tlssecpmlkem`, `urlstrictcolons`); none affects the backend. The Green Tea garbage collector is the default:
-  watch the pod memory after the first rollout (opt-out at build time: `GOEXPERIMENT=nogreenteagc`). (platform#180)
+### Added
+- **Time-of-use tariffs (ZVT)**: `base.tariff` gains `useTimeTariff` plus two
+  optional named time windows (`timeTariff{1,2}Active/Name/From/To/CentPerKWh`;
+  `time` columns, 15-min raster, `From > To` crosses midnight). `centPerKWh`
+  stays the base price; existing tariffs are unchanged (`useTimeTariff=false`).
+  Both views are extended: `base.activeTariff` passes the new fields through
+  (From/To as `HH:MM` text) and `base.billing_masterdata` exposes them as
+  `tariff_use_time_tariff` / `tariff_time{1,2}_*` for the billing service.
+  Saving a tariff validates the windows server-side: only consumer/producer
+  tariffs, active windows need from/to/price on the 15-min raster,
+  `Von ≠ Bis`, the two windows must not overlap (cyclic check, midnight
+  crossing allowed) and free kWh are rejected in time-based mode.
+  Migration `20260711120000_zvt_time_tariff` (up/down; `schema.sql`,
+  `schema.hcl` and `atlas.sum` updated in sync).
+
+### Changed
+- Mail deliverability: the global default activation mail template declares `lang="de"`
+  (was `en`) so clients don't mis-detect the language (minor spam-score signal). Per-tenant
+  templates on the data volume are unaffected (operator cleanup). The parser test expects `lang="de"` (it still
+  expected `en`; env/billing builds ran no PR checks).
+- **Go 1.26: toolchain raised to 1.26.9 and pinned** (platform#180). Both `Dockerfile` stages used the floating
+  tag `golang:1.25`; `go.mod` (`go 1.26.0`), CI (`GO_VERSION`) and both stages (`golang:1.26.9`) now use 1.26.9, the newest 1.26 patch release older than
+  7 days. It fixes the standard library findings of govulncheck in `net/http`, `net/textproto`, `crypto/tls` and
+  `html/template` (GO-2026-6599, -6600, -6603, -6605, -6607, -6608, -6610 to -6613, -6617). Still open:
+  GO-2026-6809 (`crypto/x509`), fixed only in Go 1.26.10 (released 2026-10-19, not yet 7 days old).
 
 ### Fixed
 - **Tests: the middleware tests run without Keycloak** (platform#180). `TestMain` in `api/middleware` called
@@ -33,19 +54,17 @@ this changelog highlights the changes relevant for overview and operations.
 - **CI: `gofmt` check in the unit job** (platform#180). Six files were not formatted (import order, alignment); they
   are formatted now, and the unit job fails on a tracked `.go` file that `gofmt -l` reports.
 
-### Changed
-- **Go 1.26: toolchain raised to 1.26.9 and pinned** (platform#180). Both `Dockerfile` stages used the floating
-  tag `golang:1.25`; `go.mod` (`go 1.26.0`), CI (`GO_VERSION`) and both stages (`golang:1.26.9`) now use 1.26.9, the newest 1.26 patch release older than
-  7 days. It fixes the standard library findings of govulncheck in `net/http`, `net/textproto`, `crypto/tls` and
-  `html/template` (GO-2026-6599, -6600, -6603, -6605, -6607, -6608, -6610 to -6613, -6617). Still open:
-  GO-2026-6809 (`crypto/x509`), fixed only in Go 1.26.10 (released 2026-10-19, not yet 7 days old).
-
 ### Security
 - **Dependencies: `golang.org/x/net` v0.60.0, `golang.org/x/crypto` v0.57.0** (platform#180). Fixes the govulncheck
   findings GO-2026-6603, -6610, -6611, -6612, -6617 (x/net) and GO-2026-6354, -6355 (x/crypto). x/net v0.60.0
   needs x/crypto v0.57.0 and Go 1.26; `go mod tidy` also raises x/mod, x/sync, x/sys, x/text and x/tools (minor).
   Still open: `github.com/golang-jwt/jwt` v3 (GO-2025-3553, no fix in v3) and `github.com/xuri/excelize/v2` v2.11.0
   (GO-2026-6684, -6685, -6688, -6689, fixed only in unreleased commits).
+
+### Notes
+- Go 1.26: with `go 1.26.0` the GODEBUG defaults of 1.26 apply (`cryptocustomrand`, `httpservecontentmaxranges`,
+  `tlssecpmlkem`, `urlstrictcolons`); none affects the backend. The Green Tea garbage collector is the default:
+  watch the pod memory after the first rollout (opt-out at build time: `GOEXPERIMENT=nogreenteagc`). (platform#180)
 
 ## [1.5.1] – 2026-10-20
 
