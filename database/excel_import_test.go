@@ -181,7 +181,7 @@ func Test_transformExcelData_gridOperatorFromMeteringPoint(t *testing.T) {
 			zp, "CONSUMPTION", name, "Muster", "privat", "", "", "", "ACTIVE", "", ""}
 	}
 	f := buildImportSheet(t, [][]interface{}{
-		row("", "AT0030000000000000000000000000001", "Leer"),          // column A empty
+		row("", "AT0030000000000000000000000000001", "Leer"),           // column A empty
 		row("AT003000", "AT0030000000000000000000000000002", "Gleich"), // same as derived
 		row("AT003100", "AT0030000000000000000000000000003", "Anders"), // differs -> hint
 		row("", "AT0082000816000000000000004269401", "Alias"),          // alias -> hint

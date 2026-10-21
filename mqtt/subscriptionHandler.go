@@ -8,8 +8,8 @@ import (
 func GetSubsriptions() []model.Subscriptions {
 	return []model.Subscriptions{
 		{
-			model.ERROR,
-			errorHandler,
+			Protocol: model.ERROR,
+			Handler:  errorHandler,
 		},
 	}
 }

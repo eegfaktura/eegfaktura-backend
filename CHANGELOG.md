@@ -8,8 +8,6 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
-> **Branch `env/billing`:** the entries from here to the next note are only on this branch (feature environment), not on the default branch yet.
-
 ### Added
 - **Time-of-use tariffs (ZVT)**: `base.tariff` gains `useTimeTariff` plus two
   optional named time windows (`timeTariff{1,2}Active/Name/From/To/CentPerKWh`;
@@ -30,7 +28,31 @@ this changelog highlights the changes relevant for overview and operations.
   (was `en`) so clients don't mis-detect the language (minor spam-score signal). Per-tenant
   templates on the data volume are unaffected (operator cleanup).
 
-> **End of the `env/billing`-only entries.**
+### Fixed
+- **Tests: the middleware tests run without Keycloak** (platform#180). `TestMain` in `api/middleware` called
+  `InitKeycloak()` against localhost:7080, so the Protect, ConditionProtect, auth and GQLAdminCheck tests never ran
+  (they mock `VerifyTokenClaims`). `TestMain` is removed; `api/middleware` now runs in the blocking unit and full CI
+  jobs. The database test helper waits for the second "ready to accept connections" log line of PostgreSQL (the first
+  one comes from the temporary initdb server). No change to the service.
+- **MQTT broker: data race on the stop channel** (platform#180). `Listen` replaced the stop channel created by
+  `NewMessageBroker` inside its own goroutine, while `Stop` reads it from another goroutine. `Listen`
+  now uses the channel from the constructor. The broker is started once and stopped at shutdown, as before.
+  `mqtt` runs in the blocking full CI job (race detector).
+- **Tests: the `api` tests compile again** (platform#180). The metering point and participant controller tests called
+  the handler functions from before the `MeteringHandler`/`ParticipantHandler` refactoring and the old
+  `QueryParticipant` signature; they now build the handlers with the test database. `api` runs in the blocking full CI
+  job; the report-only "Known errors" job is removed, as no package is left in it. No change to the service.
+- **CI: `go vet` blocks the unit job** (platform#180). The four findings are fixed without a change in behaviour: keyed
+  fields in the struct literals in `api/meteringPointController.go`, `mqtt/subscriptionHandler.go` and
+  `eda/edaSubscription.go`, and the unreachable `return` in `util/time.go`.
+- **CI: `gofmt` check in the unit job** (platform#180). Six files were not formatted (import order, alignment); they
+  are formatted now, and the unit job fails on a tracked `.go` file that `gofmt -l` reports.
+
+### Changed
+- **Docker image: Go pinned to 1.25.14** (platform#180). Both stages of the `Dockerfile` used the floating tag
+  `golang:1.25`; they now use `golang:1.25.14`, the version of the CI.
+
+## [1.5.1] – 2026-10-20
 
 ### Changed
 - **Master data export: member status from the metering points** (platform#165, decision 20.10.2026). Both „Status“

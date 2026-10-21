@@ -7,7 +7,9 @@ import (
 )
 
 func TestMemberActivity(t *testing.T) {
-	mp := func(s StatusType, p ProcessStatusType) *MeteringPoint { return &MeteringPoint{Status: s, ProcessState: p} }
+	mp := func(s StatusType, p ProcessStatusType) *MeteringPoint {
+		return &MeteringPoint{Status: s, ProcessState: p}
+	}
 
 	assert.Equal(t, MemberActive, MemberActivity([]*MeteringPoint{mp(S_INACTIVE, INACTIVE), mp(S_ACTIVE, ACTIVE)}))
 	// a revocation is requested but not confirmed yet: still active

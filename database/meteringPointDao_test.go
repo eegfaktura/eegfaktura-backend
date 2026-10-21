@@ -665,7 +665,7 @@ func Test_MeteringPointIntegration(t *testing.T) {
 		{
 			name: "Revoke Metering Point",
 			test: func(t *testing.T) error {
-				return db.MeteringPointRevoke(context.Background(), 
+				return db.MeteringPointRevoke(context.Background(),
 					tenant,
 					meter.MeteringPoint,
 					civil.Today(),

@@ -1,15 +1,13 @@
 # Tests on every pull request: the unit tests (no Docker, no Keycloak) and the full suite (every
 # package with the race detector; the DAO tests start PostgreSQL through Testcontainers, which
-# needs the Docker of the GitHub-hosted runner). The packages with known failing tests run in their
-# own job "Known errors", so the two test jobs keep a clean signal; that job is report-only, and a
-# package leaves KNOWN_RED_PACKAGES with its fix.
+# needs the Docker of the GitHub-hosted runner).
 #
 # A fresh checkout does not compile without codegen: protoc for proto/*.proto
 # (the tracked *.pb.go are stale), then go-jsonschema for model/registration_model.go.
 # Versions fixed, each release older than 7 days (checked 2026-10-09): Go 1.25.14 (2026-08-19),
 # protoc 29.3 (2025-01-08); protoc-gen-go, protoc-gen-go-grpc and go-jsonschema at the versions in
 # go.mod. Actions pinned by commit SHA.
-# Every job keeps its output as an artifact for 30 days (test-results-<job>, known-errors-<job>),
+# Every job keeps its output as an artifact for 30 days (test-results-<job>),
 # for the CI report collector (vfeeg-development/eegfaktura-dev).
 
 name: PR Checks
@@ -32,12 +30,9 @@ env:
   # The time zone of the service (Dockerfile: ENV TZ): dates are built in time.Local, and the
   # database tests expect local midnight of that zone. GitHub's runners run in UTC.
   TZ: 'Europe/Berlin'
-  # Packages whose tests need a service: PostgreSQL via Testcontainers (api, database, eda) or a
-  # running Keycloak (api/middleware). They run in the full suite only.
-  INTEGRATION_PACKAGES: 'api api/middleware database eda'
-  # Known failing tests: api tests do not compile, api/middleware needs a running Keycloak, mqtt
-  # fails under the race detector.
-  KNOWN_RED_PACKAGES: 'api api/middleware mqtt'
+  # Packages whose tests need a service: PostgreSQL via Testcontainers (api, database, eda).
+  # They run in the full suite only.
+  INTEGRATION_PACKAGES: 'api database eda'
   # go test -json is kept as the result file; the console shows the test output read back from it
   # (as with go test -v). Exit codes are go test's (pipefail).
   GO_TEST_OUTPUT: '(fromjson? // {Action: "output", Output: (. + "\n")}) | select(.Action == "output" or .Action == "build-output") | .Output'
@@ -74,6 +69,18 @@ jobs:
             --go_out=. --go_opt=paths=source_relative \
             --go-grpc_out=. --go-grpc_opt=paths=source_relative ./proto/*.proto
           (cd model && go generate ./...)
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: gofmt
+        run: |
+          set -euo pipefail
+          unformatted="$(git ls-files -z '*.go' | xargs -0 gofmt -l)"
+          if [ -n "$unformatted" ]; then
+            printf '::error file=%s::not gofmt-formatted\n' $unformatted
+            exit 1
+          fi
 
       - name: Unit tests
         run: |
@@ -134,12 +141,8 @@ jobs:
       - name: Full test suite
         run: |
           set -euo pipefail
-          module="$(go list -m)"
-          read -ra known <<< "$KNOWN_RED_PACKAGES"
-          exclude="$(printf "^${module}/%s\$\n" "${known[@]}" | paste -sd'|')"
-          mapfile -t pkgs < <(go list ./... | grep -vE "$exclude")
           mkdir -p "$RUNNER_TEMP/results"
-          go test -json -race -count=1 "${pkgs[@]}" \
+          go test -json -race -count=1 ./... \
             | tee "$RUNNER_TEMP/results/full.json" | jq -Rrj --unbuffered "$GO_TEST_OUTPUT"
 
       - name: Keep the test results
@@ -147,62 +150,6 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test-results-full
-          path: ${{ runner.temp }}/results
-          if-no-files-found: ignore
-          retention-days: 30
-
-  known:
-    name: Known errors
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: false
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: ${{ env.GO_VERSION }}
-
-      - name: Generate code
-        run: |
-          set -euo pipefail
-          curl -fsSLo "$RUNNER_TEMP/protoc.zip" \
-            "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip"
-          echo "${PROTOC_SHA256}  $RUNNER_TEMP/protoc.zip" | sha256sum -c -
-          unzip -q "$RUNNER_TEMP/protoc.zip" -d "$RUNNER_TEMP/protoc"
-          gopath="$(go env GOPATH)"
-          export PATH="$RUNNER_TEMP/protoc/bin:$gopath/bin:$PATH"
-          # inside the module: the versions come from go.mod
-          go install google.golang.org/protobuf/cmd/protoc-gen-go \
-            google.golang.org/grpc/cmd/protoc-gen-go-grpc github.com/atombender/go-jsonschema
-          protoc --experimental_allow_proto3_optional=true --proto_path=. \
-            --go_out=. --go_opt=paths=source_relative \
-            --go-grpc_out=. --go-grpc_opt=paths=source_relative ./proto/*.proto
-          (cd model && go generate ./...)
-
-      - name: Known red packages (race detector)
-        id: reportonly
-        # Report-only: these packages have known failing tests; the step must not turn a PR red.
-        continue-on-error: true
-        run: |
-          set -o pipefail
-          read -ra known <<< "$KNOWN_RED_PACKAGES"
-          mkdir -p "$RUNNER_TEMP/results"
-          go test -json -race -count=1 "${known[@]/#/./}" \
-            | tee "$RUNNER_TEMP/results/known.json" | jq -Rrj --unbuffered "$GO_TEST_OUTPUT"
-
-      - name: Report the known failure
-        if: steps.reportonly.outcome == 'failure'
-        run: echo "::warning::Known red packages failed (report-only), see the step log."
-
-      - name: Keep the test results
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: known-errors-known
           path: ${{ runner.temp }}/results
           if-no-files-found: ignore
           retention-days: 30
