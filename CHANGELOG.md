@@ -28,8 +28,11 @@ this changelog highlights the changes relevant for overview and operations.
   (was `en`) so clients don't mis-detect the language (minor spam-score signal). Per-tenant
   templates on the data volume are unaffected (operator cleanup). The parser test expects `lang="de"` (it still
   expected `en`; env/billing builds ran no PR checks).
-- **Docker image: Go pinned to 1.25.14** (platform#180). Both stages of the `Dockerfile` used the floating tag
-  `golang:1.25`; they now use `golang:1.25.14`, the version of the CI.
+- **Go 1.26: toolchain raised to 1.26.9 and pinned** (platform#180). Both `Dockerfile` stages used the floating
+  tag `golang:1.25`; `go.mod` (`go 1.26.0`), CI (`GO_VERSION`) and both stages (`golang:1.26.9`) now use 1.26.9, the newest 1.26 patch release older than
+  7 days. It fixes the standard library findings of govulncheck in `net/http`, `net/textproto`, `crypto/tls` and
+  `html/template` (GO-2026-6599, -6600, -6603, -6605, -6607, -6608, -6610 to -6613, -6617). Still open:
+  GO-2026-6809 (`crypto/x509`), fixed only in Go 1.26.10 (released 2026-10-19, not yet 7 days old).
 
 ### Fixed
 - **Tests: the middleware tests run without Keycloak** (platform#180). `TestMain` in `api/middleware` called
@@ -50,6 +53,18 @@ this changelog highlights the changes relevant for overview and operations.
   `eda/edaSubscription.go`, and the unreachable `return` in `util/time.go`.
 - **CI: `gofmt` check in the unit job** (platform#180). Six files were not formatted (import order, alignment); they
   are formatted now, and the unit job fails on a tracked `.go` file that `gofmt -l` reports.
+
+### Security
+- **Dependencies: `golang.org/x/net` v0.60.0, `golang.org/x/crypto` v0.57.0** (platform#180). Fixes the govulncheck
+  findings GO-2026-6603, -6610, -6611, -6612, -6617 (x/net) and GO-2026-6354, -6355 (x/crypto). x/net v0.60.0
+  needs x/crypto v0.57.0 and Go 1.26; `go mod tidy` also raises x/mod, x/sync, x/sys, x/text and x/tools (minor).
+  Still open: `github.com/golang-jwt/jwt` v3 (GO-2025-3553, no fix in v3) and `github.com/xuri/excelize/v2` v2.11.0
+  (GO-2026-6684, -6685, -6688, -6689, fixed only in unreleased commits).
+
+### Notes
+- Go 1.26: with `go 1.26.0` the GODEBUG defaults of 1.26 apply (`cryptocustomrand`, `httpservecontentmaxranges`,
+  `tlssecpmlkem`, `urlstrictcolons`); none affects the backend. The Green Tea garbage collector is the default:
+  watch the pod memory after the first rollout (opt-out at build time: `GOEXPERIMENT=nogreenteagc`). (platform#180)
 
 ## [1.5.1] – 2026-10-20
 
