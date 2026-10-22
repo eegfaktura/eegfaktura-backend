@@ -643,7 +643,7 @@ func meteringPointPerformAnswerMsg(ctx context.Context, sendMail services.SendMa
 			})
 
 			if len(participant.MeteringPoint) > 0 {
-				if err = parser.SendActivationMailFromTemplate(sendMail,
+				if err = parser.SendActivationMailFromTemplate(sendMail, db,
 					eeg.Id, subject, eeg, participant, templateConfigName); err != nil {
 					logrus.WithField("tenant", eeg.Id).WithError(err).Error("Error Sending Mail")
 					_ = db.SaveNotificationFromMap(database.CreateNotificationMessageFromLog(

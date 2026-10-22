@@ -8,6 +8,24 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Added
+- **Editable member mail texts** (konzept-mail-texte-editierbar.md): a community customises subject and text of
+  the three member mails `consent-request` (Freigabe-Aufforderung), `zp-active` and `zp-inactive`. New REST API
+  under `/eeg/mailtemplates` (EEG_ADMIN, tenant header): catalog, read, save (`version`, 409 on a stale version),
+  reset, image/PDF upload (type checked on the content: PNG/JPEG ≤ 1 MB, max. 10; one PDF ≤ 3 MB; all files
+  ≤ 6 MB), preview (sample member, real community data) and test mail (to the login's e-mail or the community
+  address, no Cc, subject prefixed `[Test] `). Texts are sanitised with bluemonday driven by
+  `mailtemplate/mail-html-policy.json` (shared with eegfaktura-billing); placeholders (`<span|div data-ph>` in the
+  text, `{key}` in the subject) are replaced as escaped values, never through a template engine.
+  Sending: a stored version of the tenant goes first (images inline as `cid:`, optional PDF attachment, size checked
+  before eda-xp); otherwise the existing resolution (volume per tenant → volume global → embedded) is unchanged.
+  A stored version that can not be rendered sends that default and an error notification to the community. On
+  startup, communities whose customised mail is based on an older default get one notification.
+  Migration `20261022120000_mail_templates` (two new tables, up/down; `schema.sql`, `schema.hcl`, `atlas.sum`).
+
+### Changed
+- The mail send log line no longer contains the subject (a customised subject can contain member data).
+
 ### Fixed
 - **EDA: ZUSTIMMUNG_ECON/ECOF with code 172 sets the metering point to INVALID again** (platform#180). Code 172
   („Kunde hat Datenfreigabe abgelehnt“) had an empty `case` since 2025-09-22: the line for 173 was inserted between

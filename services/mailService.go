@@ -27,7 +27,8 @@ type Attachment struct {
 }
 
 func SendMail(tenant, to, subject string, cc *string, body *bytes.Buffer, inlineContent []*Attachment, attachment *Attachment) error {
-	log.WithField("tenant", tenant).Infof("Send Mail: from:%s sub: %s, att: %v", tenant, subject, inlineContent != nil)
+	// no subject in the log: a customised subject can contain member data
+	log.WithField("tenant", tenant).Infof("Send Mail: from:%s inline: %d, att: %v", tenant, len(inlineContent), attachment != nil)
 	to, cc, err := normalizedRecipients(to, cc)
 	if err != nil {
 		return err
