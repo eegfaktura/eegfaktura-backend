@@ -86,7 +86,7 @@ func sendHtmlInlineAttachment(sender, recipient, subject string, cc *string, htm
 	defer conn.Close()
 	c := protobuf.NewSendMailServiceClient(conn)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	ctx, cancel := context.WithTimeout(context.Background(), sendTimeout(iContent, attachment))
 	defer cancel()
 
 	inlineContent := []*protobuf.Attachment{}
@@ -130,6 +130,27 @@ func sendHtmlInlineAttachment(sender, recipient, subject string, cc *string, htm
 		return errors.New(*r.Message)
 	}
 	return checkRejectedRecipients(r.GetRejectedRecipients())
+}
+
+// largeMailBytes is the file size from which a mail gets the long timeout: the
+// eegfaktura logo stays below it, a community's images and PDF (up to 6 MB) need longer.
+const largeMailBytes = 256 * 1024
+
+// sendTimeout is the gRPC timeout for a mail: 5 s as before, 30 s for mails with larger files.
+func sendTimeout(inline []*Attachment, attachment *Attachment) time.Duration {
+	size := 0
+	for _, a := range inline {
+		if a != nil && a.Filecontent != nil {
+			size += a.Filecontent.Len()
+		}
+	}
+	if attachment != nil && attachment.Filecontent != nil {
+		size += attachment.Filecontent.Len()
+	}
+	if size > largeMailBytes {
+		return 30 * time.Second
+	}
+	return 5 * time.Second
 }
 
 func SendMailWithAttachment(sender, recipient, subject string, cc *string, htmlBody *bytes.Buffer, attachment *Attachment) error {

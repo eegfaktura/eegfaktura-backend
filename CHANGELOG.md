@@ -16,7 +16,8 @@ this changelog highlights the changes relevant for overview and operations.
   ≤ 6 MB), preview (sample member, real community data) and test mail (to the login's e-mail or the community
   address, no Cc, subject prefixed `[Test] `). Texts are sanitised with bluemonday driven by
   `mailtemplate/mail-html-policy.json` (shared with eegfaktura-billing); placeholders (`<span|div data-ph>` in the
-  text, `{key}` in the subject) are replaced as escaped values, never through a template engine.
+  text, `{key}` in the subject; zp-inactive also has `directionText`/`endDateText`, which carry their own
+  wording and are empty without a value) are replaced as escaped values, never through a template engine.
   Sending: a stored version of the tenant goes first (images inline as `cid:`, optional PDF attachment, size checked
   before eda-xp); otherwise the existing resolution (volume per tenant → volume global → embedded) is unchanged.
   A stored version that can not be rendered sends that default and an error notification to the community. On
@@ -25,6 +26,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ### Changed
 - The mail send log line no longer contains the subject (a customised subject can contain member data).
+- The gRPC call to eda-xp for a mail with inline images and attachment gets 30 s instead of 5 s when its files
+  exceed 256 KB (a customised mail may carry up to 6 MB); smaller mails keep 5 s.
 
 ### Fixed
 - Error notifications of a failed member mail (consent request / metering point active) and of a failed metering
