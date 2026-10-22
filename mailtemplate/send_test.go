@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func strPtr(s string) *string { return &s }
+
 type notice struct {
 	tenant  string
 	typ     model.NotificationType
@@ -66,7 +68,7 @@ func capture(sent *[]sentMail) services.SendMailFunc {
 
 func TestSendStored_UsesCustomisedVersion(t *testing.T) {
 	store := &fakeStore{templates: map[string]*model.MailTemplate{
-		"TE000300/zp-active": {Tenant: "TE000300", MailKey: KeyZpActive, Version: 2,
+		"TE000300/zp-active": {Tenant: "TE000300", MailKey: KeyZpActive, Version: 2, AttachmentFileId: strPtr("pdf"),
 			Subject:  `Aktiv: {meteringPoint}`,
 			BodyHtml: `<p>Servus <span data-ph="member.firstName">Vorname</span></p><img src="mailfile:` + ownImage + `">`},
 	}, files: []model.MailTemplateFile{
@@ -110,7 +112,7 @@ func TestSendStored_BrokenVersionFallsBackWithNotification(t *testing.T) {
 	for name, store := range map[string]*fakeStore{
 		"unknown placeholder": {templates: broken},
 		"too large": {templates: map[string]*model.MailTemplate{
-			"TE000300/zp-active": {Tenant: "TE000300", MailKey: KeyZpActive, Subject: "x", BodyHtml: `<p>x</p>`}}, files: tooLarge},
+			"TE000300/zp-active": {Tenant: "TE000300", MailKey: KeyZpActive, Subject: "x", BodyHtml: `<p>x</p>`, AttachmentFileId: strPtr("pdf")}}, files: tooLarge},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var sent []sentMail

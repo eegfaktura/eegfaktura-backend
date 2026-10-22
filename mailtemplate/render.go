@@ -49,21 +49,28 @@ type Rendered struct {
 // ErrTooLarge is returned when the files of a mail exceed its size limit.
 var ErrTooLarge = errors.New("mail too large")
 
+// ErrMissingFile is returned when a file the mail uses is not available.
+var ErrMissingFile = errors.New("file of the mail not available")
+
 // Render renders a stored (or edited) subject and body with the placeholder
 // values in the fixed outer frame. The body is sanitised again first, so a
 // stored text never reaches a member unchecked. files are the files of this
-// mail of this community, with content.
-func Render(def *Definition, subject, body string, data *Data, files []model.MailTemplateFile, mode ImageMode) (*Rendered, error) {
+// mail of this community the caller allows (with content); attachmentId names
+// the PDF, "" for none.
+func Render(def *Definition, subject, body, attachmentId string, data *Data, files []model.MailTemplateFile, mode ImageMode) (*Rendered, error) {
 	byId := map[string]*model.MailTemplateFile{}
 	var attachment *model.MailTemplateFile
 	for i := range files {
 		f := &files[i]
-		switch f.Kind {
-		case model.MailFileKindImage:
+		switch {
+		case f.Kind == model.MailFileKindImage:
 			byId[f.Id] = f
-		case model.MailFileKindAttachment:
+		case f.Kind == model.MailFileKindAttachment && f.Id == attachmentId:
 			attachment = f
 		}
+	}
+	if attachmentId != "" && attachment == nil {
+		return nil, fmt.Errorf("%w: PDF attachment %s", ErrMissingFile, attachmentId)
 	}
 
 	cleanSubject, err := SanitizeSubject(def, subject)

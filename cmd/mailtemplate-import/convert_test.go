@@ -73,7 +73,7 @@ func TestConvertTheTenHandMadeTemplates(t *testing.T) {
 			}
 
 			// what the import saves renders with sample data
-			_, err = mailtemplate.Render(mailtemplate.Lookup(c.Key), c.Subject, c.Body, mailtemplate.SampleData(nil), uploadsAsFiles(c), mailtemplate.ImagesDataURI)
+			_, err = mailtemplate.Render(mailtemplate.Lookup(c.Key), c.Subject, c.Body, c.AttachmentPreId(), mailtemplate.SampleData(nil), uploadsAsFiles(c), mailtemplate.ImagesDataURI)
 			assert.NoError(t, err)
 		})
 	}

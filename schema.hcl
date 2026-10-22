@@ -298,6 +298,10 @@ table "mail_template" {
     null = false
     type = text
   }
+  column "attachment_file_id" {
+    null = true
+    type = uuid
+  }
   primary_key "mail_template_pk" {
     columns = [column.tenant, column.mail_key]
   }
@@ -340,6 +344,11 @@ table "mail_template_file" {
     null    = false
     type    = timestamptz
     default = sql("now()")
+  }
+  column "committed" {
+    null    = false
+    type    = boolean
+    default = false
   }
   primary_key {
     columns = [column.id]

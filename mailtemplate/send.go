@@ -47,7 +47,11 @@ func SendStored(ctx context.Context, store Store, sendMail services.SendMailFunc
 		notifyFallback(store, def, tenant, identifier, err)
 		return false, nil
 	}
-	r, err := Render(def, t.Subject, t.BodyHtml, data, files, ImagesInline)
+	attachmentId := ""
+	if t.AttachmentFileId != nil {
+		attachmentId = *t.AttachmentFileId
+	}
+	r, err := Render(def, t.Subject, t.BodyHtml, attachmentId, data, files, ImagesInline)
 	if err != nil {
 		notifyFallback(store, def, tenant, identifier, err)
 		return false, nil

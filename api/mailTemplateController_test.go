@@ -128,26 +128,28 @@ func decode[T any](t *testing.T, w *httptest.ResponseRecorder) T {
 }
 
 type mtDTO struct {
-	Key             string `json:"key"`
-	Subject         string `json:"subject"`
-	BodyHtml        string `json:"bodyHtml"`
-	Customized      bool   `json:"customized"`
-	Version         int    `json:"version"`
-	DefaultVersion  int    `json:"defaultVersion"`
-	DefaultChanged  bool   `json:"defaultChanged"`
-	DefaultSubject  string `json:"defaultSubject"`
-	DefaultBodyHtml string `json:"defaultBodyHtml"`
-	UpdatedBy       *string
-	Placeholders    []struct {
+	Key              string  `json:"key"`
+	Subject          string  `json:"subject"`
+	BodyHtml         string  `json:"bodyHtml"`
+	Customized       bool    `json:"customized"`
+	Version          int     `json:"version"`
+	DefaultVersion   int     `json:"defaultVersion"`
+	DefaultChanged   bool    `json:"defaultChanged"`
+	DefaultSubject   string  `json:"defaultSubject"`
+	DefaultBodyHtml  string  `json:"defaultBodyHtml"`
+	AttachmentFileId *string `json:"attachmentFileId"`
+	UpdatedBy        *string
+	Placeholders     []struct {
 		Key   string `json:"key"`
 		Block bool   `json:"block"`
 	} `json:"placeholders"`
 	Files []struct {
-		Id       string `json:"id"`
-		Kind     string `json:"kind"`
-		Filename string `json:"filename"`
-		MimeType string `json:"mimeType"`
-		Size     int64  `json:"size"`
+		Id        string `json:"id"`
+		Kind      string `json:"kind"`
+		Filename  string `json:"filename"`
+		MimeType  string `json:"mimeType"`
+		Size      int64  `json:"size"`
+		Committed bool   `json:"committed"`
 	} `json:"files"`
 	Limits map[string]int64 `json:"limits"`
 }
@@ -203,17 +205,25 @@ func TestMailTemplates_HappyPath(t *testing.T) {
 	assert.Equal(t, "image/png", img["mimeType"])
 	assert.Equal(t, "Logo neu.png", img["filename"])
 
+	assert.Equal(t, false, img["committed"], "an upload is a draft")
+
 	w = c.upload("admin", mtTenant, "consent-request", "attachment", "anleitung.pdf", minimalPDF)
 	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	pdfId := decode[map[string]interface{}](t, w)["id"].(string)
 
 	body := `<p>Hallo <span data-ph="member.firstName">Vorname</span>!</p><img src="mailfile:` + imgId + `" alt="Logo"><div data-ph="eeg.contactBlock">x</div>`
 	w = c.json("admin", mtTenant, "PUT", "/eeg/mailtemplates/consent-request", map[string]interface{}{
-		"subject": `Hallo {member.firstName}`, "bodyHtml": body, "version": 0})
+		"subject": `Hallo {member.firstName}`, "bodyHtml": body, "version": 0, "attachmentFileId": pdfId})
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	saved := decode[mtDTO](t, w)
 	assert.True(t, saved.Customized)
 	assert.Equal(t, 1, saved.Version)
-	assert.Len(t, saved.Files, 2)
+	require.NotNil(t, saved.AttachmentFileId)
+	assert.Equal(t, pdfId, *saved.AttachmentFileId)
+	require.Len(t, saved.Files, 2)
+	for _, f := range saved.Files {
+		assert.True(t, f.Committed, f.Filename)
+	}
 	require.NotNil(t, saved.UpdatedBy)
 	assert.Equal(t, "admin", *saved.UpdatedBy)
 
@@ -266,22 +276,52 @@ func TestMailTemplates_HappyPath(t *testing.T) {
 	assert.Empty(t, reset.Files, "reset deletes the files")
 }
 
-func TestMailTemplates_PutDeletesUnreferencedImages(t *testing.T) {
+func TestMailTemplates_FileLifecycle(t *testing.T) {
 	c := newMailTemplateClient(t)
-	ids := []string{}
-	for i := 0; i < 2; i++ {
-		w := c.upload("admin", mtTenant, "zp-active", "image", "a.png", logoPNG(t))
-		require.Equal(t, http.StatusCreated, w.Code)
-		ids = append(ids, decode[map[string]interface{}](t, w)["id"].(string))
+	upload := func(kind string, content []byte) string {
+		w := c.upload("admin", mtTenant, "zp-active", kind, "f", content)
+		require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+		return decode[map[string]interface{}](t, w)["id"].(string)
 	}
+	committed := func() map[string]bool {
+		w := c.json("admin", mtTenant, "GET", "/eeg/mailtemplates/zp-active", nil)
+		out := map[string]bool{}
+		for _, f := range decode[mtDTO](t, w).Files {
+			out[f.Id] = f.Committed
+		}
+		return out
+	}
+	img1, img2, other := upload("image", logoPNG(t)), upload("image", logoPNG(t)), upload("image", logoPNG(t))
+	pdf := upload("attachment", minimalPDF)
+
 	w := c.json("admin", mtTenant, "PUT", "/eeg/mailtemplates/zp-active", map[string]interface{}{
-		"subject": "S", "bodyHtml": `<p>x</p><img src="mailfile:` + ids[1] + `">`, "version": 0})
+		"subject": "S", "bodyHtml": `<p>x</p><img src="mailfile:` + img1 + `">`, "version": 0, "attachmentFileId": pdf})
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-	saved := decode[mtDTO](t, w)
-	require.Len(t, saved.Files, 1)
-	assert.Equal(t, ids[1], saved.Files[0].Id)
-	w = c.do("admin", mtTenant, "GET", "/eeg/mailtemplates/zp-active/files/"+ids[0], nil, "")
-	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Equal(t, map[string]bool{img1: true, img2: false, other: false, pdf: true}, committed(),
+		"used files are committed; fresh drafts (also of other editors) stay")
+
+	// a file the saved version uses can not be deleted; a draft can
+	w = c.do("admin", mtTenant, "DELETE", "/eeg/mailtemplates/zp-active/files/"+img1, nil, "")
+	assert.Equal(t, http.StatusConflict, w.Code)
+	w = c.do("admin", mtTenant, "DELETE", "/eeg/mailtemplates/zp-active/files/"+pdf, nil, "")
+	assert.Equal(t, http.StatusConflict, w.Code)
+	w = c.do("admin", mtTenant, "DELETE", "/eeg/mailtemplates/zp-active/files/"+other, nil, "")
+	assert.Equal(t, http.StatusNoContent, w.Code)
+
+	// the next version uses img2 and no PDF: img1 and the PDF go
+	w = c.json("admin", mtTenant, "PUT", "/eeg/mailtemplates/zp-active", map[string]interface{}{
+		"subject": "S", "bodyHtml": `<p>x</p><img src="mailfile:` + img2 + `">`, "version": 1, "attachmentFileId": nil})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Nil(t, decode[mtDTO](t, w).AttachmentFileId)
+	assert.Equal(t, map[string]bool{img2: true}, committed())
+
+	// referencing a PDF that does not exist (or an image as PDF) → 400
+	for _, id := range []string{"00000000-0000-0000-0000-000000000000", img2, "not-a-uuid"} {
+		w = c.json("admin", mtTenant, "PUT", "/eeg/mailtemplates/zp-active", map[string]interface{}{
+			"subject": "S", "bodyHtml": `<p>x</p>`, "version": 2, "attachmentFileId": id})
+		require.Equal(t, http.StatusBadRequest, w.Code, id)
+		assert.Equal(t, "attachmentFileId", decode[mtErrors](t, w).Errors[0].Field)
+	}
 }
 
 func TestMailTemplates_Validation(t *testing.T) {

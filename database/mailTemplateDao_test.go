@@ -42,31 +42,62 @@ func TestMailTemplateDao(t *testing.T) {
 	})
 	assert.ErrorIs(t, err, refused)
 
+	// a stale draft of an abandoned edit
+	staleImg := img()
+	require.NoError(t, db.InsertMailTemplateFile(ctx, staleImg, ok))
+	_, err = testDB.DbInstance.Exec(`UPDATE base.mail_template_file SET created_at = now() - interval '25 hours' WHERE id = $1`, staleImg.Id)
+	require.NoError(t, err)
+	files, err := db.ListMailTemplateFiles(ctx, tenant, key, false)
+	require.NoError(t, err)
+	assert.Len(t, files, 3, "a draft older than 24 h is not listed")
+
+	// the check sees all files of the mail and can refuse the save
+	_, err = db.SaveMailTemplate(ctx, &model.MailTemplate{Tenant: tenant, MailKey: key, Subject: "S", BodyHtml: "<p>B</p>",
+		DefaultVersion: 1, UpdatedBy: "admin"}, 0, nil, func(all []model.MailTemplateFile) error {
+		assert.Len(t, all, 4)
+		return refused
+	})
+	assert.ErrorIs(t, err, refused)
+	none, err = db.GetMailTemplate(ctx, tenant, key)
+	require.NoError(t, err)
+	assert.Nil(t, none, "a refused save writes nothing")
+
+	pdfId := pdf.Id
 	saved, err := db.SaveMailTemplate(ctx, &model.MailTemplate{Tenant: tenant, MailKey: key, Subject: "S", BodyHtml: "<p>B</p>",
-		DefaultVersion: 1, UpdatedBy: "admin"}, 0, []string{keepImg.Id})
+		DefaultVersion: 1, UpdatedBy: "admin", AttachmentFileId: &pdfId}, 0, []string{keepImg.Id}, ok)
 	require.NoError(t, err)
 	assert.Equal(t, 1, saved.Version)
 	assert.Equal(t, 1, saved.NotifiedDefaultVersion)
 	assert.Equal(t, "admin", saved.UpdatedBy)
+	require.NotNil(t, saved.AttachmentFileId)
+	assert.Equal(t, pdf.Id, *saved.AttachmentFileId)
 
-	files, err := db.ListMailTemplateFiles(ctx, tenant, key, false)
-	require.NoError(t, err)
-	var ids []string
-	for _, f := range files {
-		ids = append(ids, f.Id)
-		assert.Nil(t, f.Content)
+	state := func() map[string]bool {
+		all, err := listMailTemplateFiles(ctx, testDB.DbInstance, tenant, key, false, true)
+		require.NoError(t, err)
+		out := map[string]bool{}
+		for _, f := range all {
+			out[f.Id] = f.Committed
+			assert.Nil(t, f.Content)
+		}
+		return out
 	}
-	assert.ElementsMatch(t, []string{keepImg.Id, pdf.Id}, ids, "unreferenced images are deleted, the PDF stays")
+	assert.Equal(t, map[string]bool{keepImg.Id: true, pdf.Id: true, dropImg.Id: false}, state(),
+		"used files are committed, a fresh draft of another editor stays, the stale draft is deleted")
 
-	_, err = db.SaveMailTemplate(ctx, &model.MailTemplate{Tenant: tenant, MailKey: key, Subject: "S2", BodyHtml: "<p>B</p>", DefaultVersion: 1, UpdatedBy: "x"}, 0, nil)
+	_, err = db.SaveMailTemplate(ctx, &model.MailTemplate{Tenant: tenant, MailKey: key, Subject: "S2", BodyHtml: "<p>B</p>", DefaultVersion: 1, UpdatedBy: "x"}, 0, nil, ok)
 	var conflict *MailTemplateVersionError
 	require.True(t, errors.As(err, &conflict))
 	assert.Equal(t, 1, conflict.Current)
 
-	saved, err = db.SaveMailTemplate(ctx, &model.MailTemplate{Tenant: tenant, MailKey: key, Subject: "S2", BodyHtml: "<p>B</p>", DefaultVersion: 1, UpdatedBy: "x"}, 1, []string{keepImg.Id})
+	// the next version drops the PDF and uses the other image: the old committed files go
+	saved, err = db.SaveMailTemplate(ctx, &model.MailTemplate{Tenant: tenant, MailKey: key, Subject: "S2", BodyHtml: "<p>B</p>", DefaultVersion: 1, UpdatedBy: "x"}, 1, []string{dropImg.Id}, ok)
 	require.NoError(t, err)
 	assert.Equal(t, 2, saved.Version)
 	assert.Equal(t, "S2", saved.Subject)
+	assert.Nil(t, saved.AttachmentFileId)
+	assert.Equal(t, map[string]bool{dropImg.Id: true}, state())
+	keepImg = dropImg
 
 	f, err := db.GetMailTemplateFile(ctx, keepImg.Id)
 	require.NoError(t, err)

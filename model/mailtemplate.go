@@ -15,6 +15,8 @@ type MailTemplate struct {
 	NotifiedDefaultVersion int       `json:"-" db:"notified_default_version"`
 	UpdatedAt              time.Time `json:"-" db:"updated_at"`
 	UpdatedBy              string    `json:"-" db:"updated_by"`
+	// AttachmentFileId is the PDF of this version, nil for none.
+	AttachmentFileId *string `json:"-" db:"attachment_file_id"`
 }
 
 // MailTemplateFile is an image or the PDF attachment of a member mail of one
@@ -29,6 +31,8 @@ type MailTemplateFile struct {
 	Size      int64     `json:"size" db:"size"`
 	Content   []byte    `json:"-" db:"content"`
 	CreatedAt time.Time `json:"-" db:"created_at"`
+	// Committed files belong to the saved version; uploads are drafts and never sent.
+	Committed bool `json:"committed" db:"committed"`
 }
 
 const (

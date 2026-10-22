@@ -79,6 +79,7 @@ type mailTemplateDTO struct {
 	DefaultBodyHtml string                     `json:"defaultBodyHtml"`
 	UpdatedAt       *time.Time                 `json:"updatedAt"`
 	UpdatedBy       *string                    `json:"updatedBy"`
+	AttachmentFile  *string                    `json:"attachmentFileId"`
 	Placeholders    []mailtemplate.Placeholder `json:"placeholders"`
 	Files           []model.MailTemplateFile   `json:"files"`
 	Limits          mailtemplate.Limits        `json:"limits"`
@@ -89,6 +90,25 @@ type mailTemplateRequest struct {
 	Subject   string `json:"subject"`
 	BodyHtml  string `json:"bodyHtml"`
 	Version   int    `json:"version"`
+	// AttachmentFileId: the PDF; null = none. Preview and test mail without the field use the saved version's PDF.
+	AttachmentFileId json.RawMessage `json:"attachmentFileId"`
+}
+
+// attachment returns the PDF id of a request; present=false when the field is missing.
+func (req *mailTemplateRequest) attachment() (id *string, present bool, err *mailtemplate.ValidationError) {
+	raw := strings.TrimSpace(string(req.AttachmentFileId))
+	if raw == "" {
+		return nil, false, nil
+	}
+	if raw == "null" {
+		return nil, true, nil
+	}
+	var v string
+	if json.Unmarshal(req.AttachmentFileId, &v) != nil || uuid.Parse(v) == nil {
+		return nil, true, &mailtemplate.ValidationError{Field: "attachmentFileId", Message: "Ungültige Datei-ID."}
+	}
+	v = strings.ToLower(v)
+	return &v, true, nil
 }
 
 func summaryOf(def *mailtemplate.Definition, t *model.MailTemplate) mailTemplateSummary {
@@ -113,7 +133,7 @@ func dtoOf(def *mailtemplate.Definition, t *model.MailTemplate, files []model.Ma
 		Placeholders: def.Placeholders, Files: files, Limits: def.Limits,
 	}
 	if t != nil {
-		dto.Subject, dto.BodyHtml, dto.Version = t.Subject, t.BodyHtml, t.Version
+		dto.Subject, dto.BodyHtml, dto.Version, dto.AttachmentFile = t.Subject, t.BodyHtml, t.Version, t.AttachmentFileId
 	}
 	return dto
 }
@@ -266,10 +286,23 @@ func (h *MailTemplateHandler) save() middleware.JWTHandlerFunc {
 		if !ok {
 			return
 		}
+		attachmentId, _, aerr := req.attachment()
+		if aerr != nil {
+			respondValidation(w, aerr)
+			return
+		}
+		images := mailtemplate.ReferencedImages(body)
 		saved, err := h.db.SaveMailTemplate(r.Context(), &model.MailTemplate{
 			Tenant: tenant, MailKey: def.Key, Subject: subject, BodyHtml: body,
-			DefaultVersion: def.DefaultVersion, UpdatedBy: claims.Username,
-		}, req.Version, mailtemplate.ReferencedImages(body))
+			DefaultVersion: def.DefaultVersion, UpdatedBy: claims.Username, AttachmentFileId: attachmentId,
+		}, req.Version, images, func(all []model.MailTemplateFile) error {
+			return checkVersionFiles(def, tenant, images, attachmentId, all)
+		})
+		var verr *mailtemplate.ValidationError
+		if errors.As(err, &verr) {
+			respondValidation(w, verr)
+			return
+		}
 		var conflict *database.MailTemplateVersionError
 		if errors.As(err, &conflict) {
 			respondWithJSON(w, http.StatusConflict, map[string]interface{}{
@@ -289,6 +322,44 @@ func (h *MailTemplateHandler) save() middleware.JWTHandlerFunc {
 		log.WithField("tenant", tenant).Infof("mail template %s saved, version %d", def.Key, saved.Version)
 		respondWithJSON(w, http.StatusOK, dtoOf(def, saved, files))
 	}
+}
+
+// checkVersionFiles checks the files a version will use: they exist for this
+// mail and tenant, have the right kind and stay within the limits.
+func checkVersionFiles(def *mailtemplate.Definition, tenant string, images []string, attachmentId *string, all []model.MailTemplateFile) error {
+	byId := map[string]*model.MailTemplateFile{}
+	for i := range all {
+		if !strings.EqualFold(all[i].Tenant, tenant) {
+			return errors.New("tenant mismatch")
+		}
+		byId[all[i].Id] = &all[i]
+	}
+	var total int64
+	seen := map[string]bool{}
+	for _, id := range images {
+		f := byId[id]
+		if f == nil || f.Kind != model.MailFileKindImage {
+			return &mailtemplate.ValidationError{Field: "bodyHtml", Message: "Ein Bild im Text gibt es nicht (mehr); bitte erneut einfügen."}
+		}
+		if !seen[id] {
+			seen[id] = true
+			total += f.Size
+		}
+	}
+	if len(seen) > def.Limits.MaxImages {
+		return &mailtemplate.ValidationError{Field: "bodyHtml", Message: fmt.Sprintf("Höchstens %d Bilder je Mail.", def.Limits.MaxImages)}
+	}
+	if attachmentId != nil {
+		f := byId[*attachmentId]
+		if f == nil || f.Kind != model.MailFileKindAttachment {
+			return &mailtemplate.ValidationError{Field: "attachmentFileId", Message: "Den PDF-Anhang gibt es nicht (mehr)."}
+		}
+		total += f.Size
+	}
+	if total > def.Limits.MaxTotalBytes {
+		return &mailtemplate.ValidationError{Field: "files", Message: fmt.Sprintf("Alle Dateien einer Mail zusammen dürfen höchstens %s groß sein.", formatBytes(def.Limits.MaxTotalBytes))}
+	}
+	return nil
 }
 
 func (h *MailTemplateHandler) reset() middleware.JWTHandlerFunc {
@@ -377,11 +448,15 @@ func (h *MailTemplateHandler) uploadFile() middleware.JWTHandlerFunc {
 			Filename: cleanFilename(header.Filename, mimeType), MimeType: mimeType,
 			Size: int64(len(content)), Content: content,
 		}
+		// uploads are drafts: the limits apply to the drafts here and to the saved version on PUT
 		err = h.db.InsertMailTemplateFile(r.Context(), f, func(existing []model.MailTemplateFile) error {
 			images, attachments, total := 0, 0, f.Size
 			for _, e := range existing {
 				if !strings.EqualFold(e.Tenant, tenant) {
 					return errors.New("tenant mismatch")
+				}
+				if e.Committed {
+					continue
 				}
 				total += e.Size
 				if e.Kind == model.MailFileKindImage {
@@ -392,11 +467,11 @@ func (h *MailTemplateHandler) uploadFile() middleware.JWTHandlerFunc {
 			}
 			switch {
 			case kind == model.MailFileKindImage && images >= limits.MaxImages:
-				return &mailtemplate.ValidationError{Field: "file", Message: fmt.Sprintf("Höchstens %d Bilder je Mail.", limits.MaxImages)}
+				return &mailtemplate.ValidationError{Field: "file", Message: fmt.Sprintf("Höchstens %d neue Bilder je Mail vor dem Speichern.", limits.MaxImages)}
 			case kind == model.MailFileKindAttachment && attachments >= limits.MaxAttachments:
-				return &mailtemplate.ValidationError{Field: "file", Message: fmt.Sprintf("Höchstens %d PDF-Anhang je Mail; bitte den vorhandenen zuerst löschen.", limits.MaxAttachments)}
+				return &mailtemplate.ValidationError{Field: "file", Message: fmt.Sprintf("Höchstens %d neuer PDF-Anhang je Mail vor dem Speichern; bitte den anderen zuerst löschen.", limits.MaxAttachments)}
 			case total > limits.MaxTotalBytes:
-				return &mailtemplate.ValidationError{Field: "file", Message: fmt.Sprintf("Alle Dateien einer Mail zusammen dürfen höchstens %s groß sein.", formatBytes(limits.MaxTotalBytes))}
+				return &mailtemplate.ValidationError{Field: "file", Message: fmt.Sprintf("Neue Dateien einer Mail dürfen zusammen höchstens %s groß sein.", formatBytes(limits.MaxTotalBytes))}
 			}
 			return nil
 		})
@@ -482,6 +557,17 @@ func (h *MailTemplateHandler) deleteFile() middleware.JWTHandlerFunc {
 		if !ok {
 			return
 		}
+		if f.Committed {
+			t, ok := h.loadTemplate(w, r, tenant, def)
+			if !ok {
+				return
+			}
+			if t != nil && usesFile(t, f.Id) {
+				respondWithJSON(w, http.StatusConflict, map[string]string{
+					"message": "Die gespeicherte Fassung verwendet diese Datei; bitte zuerst ohne sie speichern."})
+				return
+			}
+		}
 		if _, err := h.db.DeleteMailTemplateFile(r.Context(), tenant, def.Key, f.Id); err != nil {
 			respondServerError(w, tenant, err)
 			return
@@ -490,23 +576,60 @@ func (h *MailTemplateHandler) deleteFile() middleware.JWTHandlerFunc {
 	}
 }
 
+// usesFile reports whether the saved version uses a file.
+func usesFile(t *model.MailTemplate, id string) bool {
+	if t.AttachmentFileId != nil && strings.EqualFold(*t.AttachmentFileId, id) {
+		return true
+	}
+	for _, ref := range mailtemplate.ReferencedImages(t.BodyHtml) {
+		if strings.EqualFold(ref, id) {
+			return true
+		}
+	}
+	return false
+}
+
 // render renders an unsaved version with the sample member and the real community; false after an answer.
 func (h *MailTemplateHandler) render(w http.ResponseWriter, r *http.Request, tenant string, def *mailtemplate.Definition,
 	req *mailTemplateRequest, mode mailtemplate.ImageMode) (*mailtemplate.Rendered, *model.Eeg, bool) {
 
+	// an unsaved text may use the saved version's files and the drafts of this mail
 	files, ok := h.loadFiles(w, r, tenant, def, true)
 	if !ok {
 		return nil, nil, false
 	}
-	if _, _, ok = sanitize(w, def, req, files); !ok {
+	subject, body, ok := sanitize(w, def, req, files)
+	if !ok {
 		return nil, nil, false
+	}
+	attachmentId, present, aerr := req.attachment()
+	if aerr != nil {
+		respondValidation(w, aerr)
+		return nil, nil, false
+	}
+	if !present {
+		t, ok := h.loadTemplate(w, r, tenant, def)
+		if !ok {
+			return nil, nil, false
+		}
+		if t != nil {
+			attachmentId = t.AttachmentFileId
+		}
+	}
+	attachment := ""
+	if attachmentId != nil {
+		attachment = *attachmentId
 	}
 	eeg, err := h.db.GetEegById(r.Context(), tenant)
 	if err != nil || eeg == nil || !strings.EqualFold(eeg.Id, tenant) {
 		respondWithJSON(w, http.StatusNotFound, map[string]string{"message": "EEG nicht gefunden"})
 		return nil, nil, false
 	}
-	rendered, err := mailtemplate.Render(def, req.Subject, req.BodyHtml, mailtemplate.SampleData(eeg), files, mode)
+	rendered, err := mailtemplate.Render(def, subject, body, attachment, mailtemplate.SampleData(eeg), files, mode)
+	if errors.Is(err, mailtemplate.ErrMissingFile) {
+		respondValidation(w, &mailtemplate.ValidationError{Field: "attachmentFileId", Message: "Den PDF-Anhang gibt es nicht (mehr)."})
+		return nil, nil, false
+	}
 	if errors.Is(err, mailtemplate.ErrTooLarge) {
 		respondValidation(w, &mailtemplate.ValidationError{Field: "files", Message: fmt.Sprintf("Die Dateien der Mail sind zusammen größer als %s.", formatBytes(def.Limits.MaxTotalBytes))})
 		return nil, nil, false

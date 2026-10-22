@@ -51,6 +51,16 @@ type Conversion struct {
 	Findings []Finding
 }
 
+// AttachmentPreId returns the pre-upload id of the PDF, "" for none.
+func (c *Conversion) AttachmentPreId() string {
+	for _, f := range c.Files {
+		if f.Kind == "attachment" {
+			return f.PreId
+		}
+	}
+	return ""
+}
+
 // Blocked reports whether the mail must not be imported.
 func (c *Conversion) Blocked() bool {
 	for _, f := range c.Findings {

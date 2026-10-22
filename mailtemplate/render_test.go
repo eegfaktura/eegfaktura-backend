@@ -99,7 +99,7 @@ func TestDefaultMatchesLegacyTemplates(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.key, func(t *testing.T) {
 			def := Lookup(tc.key)
-			r, err := Render(def, def.DefaultSubject, def.DefaultBody, data, nil, ImagesInline)
+			r, err := Render(def, def.DefaultSubject, def.DefaultBody, "", data, nil, ImagesInline)
 			require.NoError(t, err)
 
 			wantText, wantImages := visible(t, renderLegacy(t, tc.legacy, tc.legacyData))
@@ -123,7 +123,7 @@ func TestRender_PlaceholderValuesAreEscaped(t *testing.T) {
 	data := &Data{FirstName: `<script>alert("x")</script>`, MeteringPoints: []string{`<img src=x onerror=alert(1)>`}, Eeg: eeg}
 	r, err := Render(def, `Hallo {member.firstName}`,
 		`<p>Hallo <span data-ph="member.firstName">Vorname</span></p><div data-ph="meteringPoints">x</div><div data-ph="eeg.contactBlock">x</div>`,
-		data, nil, ImagesInline)
+		"", data, nil, ImagesInline)
 	require.NoError(t, err)
 	assert.NotContains(t, r.Html, "<script>")
 	assert.NotContains(t, r.Html, "<img src=x")
@@ -140,7 +140,7 @@ func TestRender_MissingValuesAreEmpty(t *testing.T) {
 	def := Lookup(KeyZpInactive)
 	r, err := Render(def, def.DefaultSubject,
 		`<p>Nr. <span data-ph="member.number">Mitgliedsnummer</span>, Ende <span data-ph="endDate">Enddatum</span>.</p><div data-ph="eeg.contactBlock">x</div>`,
-		&Data{}, nil, ImagesInline)
+		"", &Data{}, nil, ImagesInline)
 	require.NoError(t, err)
 	text, _ := visible(t, r.Html)
 	assert.Equal(t, "Nr. , Ende .", text)
@@ -150,7 +150,7 @@ func TestRender_MissingValuesAreEmpty(t *testing.T) {
 // Without direction or end date the zp-inactive default must not read "()" or "ab dem ".
 func TestRender_InactiveDefaultWithoutDirectionAndEndDate(t *testing.T) {
 	def := Lookup(KeyZpInactive)
-	r, err := Render(def, def.DefaultSubject, def.DefaultBody, &Data{FirstName: "Maria", MeteringPoints: []string{"AT1"},
+	r, err := Render(def, def.DefaultSubject, def.DefaultBody, "", &Data{FirstName: "Maria", MeteringPoints: []string{"AT1"},
 		Reason: "Weil.", Eeg: testEeg()}, nil, ImagesInline)
 	require.NoError(t, err)
 	text, _ := visible(t, r.Html)
@@ -158,7 +158,7 @@ func TestRender_InactiveDefaultWithoutDirectionAndEndDate(t *testing.T) {
 	assert.NotContains(t, text, "()")
 	assert.NotContains(t, text, "ab dem")
 
-	r, err = Render(def, def.DefaultSubject, def.DefaultBody, &Data{MeteringPoints: []string{"AT1"}, Direction: "Einspeisung",
+	r, err = Render(def, def.DefaultSubject, def.DefaultBody, "", &Data{MeteringPoints: []string{"AT1"}, Direction: "Einspeisung",
 		Eeg: testEeg()}, nil, ImagesInline)
 	require.NoError(t, err)
 	text, _ = visible(t, r.Html)
@@ -175,7 +175,7 @@ func TestRender_ImagesAndAttachment(t *testing.T) {
 	}
 	body := `<p>a</p><img src="mailfile:` + ownImage + `" alt="Logo"><p><img src="mailfile:` + ownImage + `"></p>`
 
-	r, err := Render(def, "Betreff", body, &Data{}, files, ImagesInline)
+	r, err := Render(def, "Betreff", body, "a1", &Data{}, files, ImagesInline)
 	require.NoError(t, err)
 	_, images := visible(t, r.Html)
 	assert.Equal(t, []string{"cid:" + ownImage, "cid:" + ownImage}, images)
@@ -185,14 +185,14 @@ func TestRender_ImagesAndAttachment(t *testing.T) {
 	assert.Equal(t, "anleitung.pdf", r.Attachment.Filename)
 	assert.Equal(t, "application/pdf", r.Attachment.MimeType)
 
-	r, err = Render(def, "Betreff", body, &Data{}, files, ImagesDataURI)
+	r, err = Render(def, "Betreff", body, "a1", &Data{}, files, ImagesDataURI)
 	require.NoError(t, err)
 	_, images = visible(t, r.Html)
 	assert.True(t, strings.HasPrefix(images[0], "data:image/png;base64,"))
 	assert.Empty(t, r.Inline)
 
 	// an image of another mail or community is dropped, never fetched
-	r, err = Render(def, "Betreff", `<p>a</p><img src="mailfile:00000000-0000-0000-0000-000000000000">`, &Data{}, files, ImagesInline)
+	r, err = Render(def, "Betreff", `<p>a</p><img src="mailfile:00000000-0000-0000-0000-000000000000">`, "", &Data{}, files, ImagesInline)
 	require.NoError(t, err)
 	assert.NotContains(t, r.Html, "<img")
 }
@@ -204,12 +204,12 @@ func TestRender_TooLarge(t *testing.T) {
 		{Id: ownImage, Kind: model.MailFileKindImage, Filename: "a.png", MimeType: "image/png", Content: big},
 		{Id: "a1", Kind: model.MailFileKindAttachment, Filename: "b.pdf", MimeType: "application/pdf", Content: big},
 	}
-	_, err := Render(def, "Betreff", `<img src="mailfile:`+ownImage+`">`, &Data{}, files, ImagesInline)
+	_, err := Render(def, "Betreff", `<img src="mailfile:`+ownImage+`">`, "a1", &Data{}, files, ImagesInline)
 	assert.True(t, errors.Is(err, ErrTooLarge), "%v", err)
 }
 
 func TestRender_UnknownPlaceholderFails(t *testing.T) {
-	_, err := Render(Lookup(KeyZpActive), "Betreff", `<p><span data-ph="reason">x</span></p>`, &Data{}, nil, ImagesInline)
+	_, err := Render(Lookup(KeyZpActive), "Betreff", `<p><span data-ph="reason">x</span></p>`, "", &Data{}, nil, ImagesInline)
 	assert.Error(t, err)
 }
 

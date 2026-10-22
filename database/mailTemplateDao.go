@@ -15,7 +15,7 @@ import (
 type MailTemplateRepository interface {
 	ListMailTemplates(ctx context.Context, tenant string) ([]model.MailTemplate, error)
 	GetMailTemplate(ctx context.Context, tenant, key string) (*model.MailTemplate, error)
-	SaveMailTemplate(ctx context.Context, t *model.MailTemplate, expectedVersion int, keepImages []string) (*model.MailTemplate, error)
+	SaveMailTemplate(ctx context.Context, t *model.MailTemplate, expectedVersion int, images []string, check func(all []model.MailTemplateFile) error) (*model.MailTemplate, error)
 	DeleteMailTemplate(ctx context.Context, tenant, key string) error
 	ListMailTemplateFiles(ctx context.Context, tenant, key string, withContent bool) ([]model.MailTemplateFile, error)
 	GetMailTemplateFile(ctx context.Context, id string) (*model.MailTemplateFile, error)
@@ -34,8 +34,14 @@ func (e *MailTemplateVersionError) Error() string {
 	return fmt.Sprintf("mail template was changed, current version %d", e.Current)
 }
 
-const mailTemplateColumns = `tenant, mail_key, subject, body_html, version, default_version, notified_default_version, updated_at, updated_by`
-const mailTemplateFileColumns = `id, tenant, mail_key, kind, filename, mime_type, size, created_at`
+const mailTemplateColumns = `tenant, mail_key, subject, body_html, version, default_version, notified_default_version, updated_at, updated_by, attachment_file_id`
+const mailTemplateFileColumns = `id, tenant, mail_key, kind, filename, mime_type, size, created_at, committed`
+
+// draftMaxAge: older drafts are not listed and are removed by the next save.
+const draftMaxAge = `interval '24 hours'`
+
+// notStale selects the files of the saved version and the drafts of the last 24 h.
+const notStale = `(committed OR created_at > now() - ` + draftMaxAge + `)`
 
 func (db *sqlDatabase) ListMailTemplates(ctx context.Context, tenant string) ([]model.MailTemplate, error) {
 	rows := []model.MailTemplate{}
@@ -62,15 +68,22 @@ func getMailTemplate(ctx context.Context, q sqlx.QueryerContext, tenant, key str
 	return &t, nil
 }
 
-// SaveMailTemplate inserts (expectedVersion 0) or updates the customised mail
-// and deletes the images of the mail that are not in keepImages. A version
-// mismatch is a *MailTemplateVersionError.
-func (db *sqlDatabase) SaveMailTemplate(ctx context.Context, t *model.MailTemplate, expectedVersion int, keepImages []string) (*model.MailTemplate, error) {
+// SaveMailTemplate inserts (expectedVersion 0) or updates the customised mail.
+// The referenced images and t.AttachmentFileId become part of the version
+// (committed); committed files it no longer uses and drafts older than 24 h are
+// deleted, fresh drafts of other editors stay. check sees all files of the mail
+// and can refuse the save (missing file, limits). A version mismatch is a
+// *MailTemplateVersionError.
+func (db *sqlDatabase) SaveMailTemplate(ctx context.Context, t *model.MailTemplate, expectedVersion int, images []string,
+	check func(all []model.MailTemplateFile) error) (*model.MailTemplate, error) {
 	tx, err := db.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, mailTemplateLock(t.Tenant, t.MailKey)); err != nil {
+		return nil, err
+	}
 
 	current := 0
 	err = tx.GetContext(ctx, &current,
@@ -82,51 +95,55 @@ func (db *sqlDatabase) SaveMailTemplate(ctx context.Context, t *model.MailTempla
 		return nil, &MailTemplateVersionError{Current: current}
 	}
 
+	all, err := listMailTemplateFiles(ctx, tx, t.Tenant, t.MailKey, false, true)
+	if err != nil {
+		return nil, err
+	}
+	if err = check(all); err != nil {
+		return nil, err
+	}
+
 	if current == 0 {
-		res, err := tx.ExecContext(ctx,
-			`INSERT INTO base.mail_template (tenant, mail_key, subject, body_html, version, default_version, notified_default_version, updated_at, updated_by)
-			 VALUES ($1, $2, $3, $4, 1, $5, $5, now(), $6) ON CONFLICT (tenant, mail_key) DO NOTHING`,
-			t.Tenant, t.MailKey, t.Subject, t.BodyHtml, t.DefaultVersion, t.UpdatedBy)
-		if err != nil {
-			return nil, err
-		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			// created concurrently since the select above
-			_ = tx.Rollback()
-			existing, err := db.GetMailTemplate(ctx, t.Tenant, t.MailKey)
-			if err != nil || existing == nil {
-				return nil, &MailTemplateVersionError{Current: 1}
-			}
-			return nil, &MailTemplateVersionError{Current: existing.Version}
-		}
+		_, err = tx.ExecContext(ctx,
+			`INSERT INTO base.mail_template (tenant, mail_key, subject, body_html, version, default_version, notified_default_version, updated_at, updated_by, attachment_file_id)
+			 VALUES ($1, $2, $3, $4, 1, $5, $5, now(), $6, $7)`,
+			t.Tenant, t.MailKey, t.Subject, t.BodyHtml, t.DefaultVersion, t.UpdatedBy, t.AttachmentFileId)
 	} else {
 		_, err = tx.ExecContext(ctx,
 			`UPDATE base.mail_template SET subject = $3, body_html = $4, version = version + 1, default_version = $5,
-			 notified_default_version = GREATEST(notified_default_version, $5), updated_at = now(), updated_by = $6
+			 notified_default_version = GREATEST(notified_default_version, $5), updated_at = now(), updated_by = $6,
+			 attachment_file_id = $7
 			 WHERE tenant = $1 AND mail_key = $2`,
-			t.Tenant, t.MailKey, t.Subject, t.BodyHtml, t.DefaultVersion, t.UpdatedBy)
-		if err != nil {
-			return nil, err
-		}
+			t.Tenant, t.MailKey, t.Subject, t.BodyHtml, t.DefaultVersion, t.UpdatedBy, t.AttachmentFileId)
 	}
-
-	var images []string
-	if err = tx.SelectContext(ctx, &images,
-		`SELECT id::text FROM base.mail_template_file WHERE tenant = $1 AND mail_key = $2 AND kind = $3`,
-		t.Tenant, t.MailKey, model.MailFileKindImage); err != nil {
+	if err != nil {
 		return nil, err
 	}
-	keep := map[string]bool{}
-	for _, id := range keepImages {
-		keep[id] = true
-	}
+
+	used := map[string]bool{}
 	for _, id := range images {
-		if keep[id] {
-			continue
+		used[id] = true
+	}
+	if t.AttachmentFileId != nil {
+		used[*t.AttachmentFileId] = true
+	}
+	for _, f := range all {
+		if used[f.Id] {
+			if !f.Committed {
+				if _, err = tx.ExecContext(ctx, `UPDATE base.mail_template_file SET committed = true WHERE id = $1`, f.Id); err != nil {
+					return nil, err
+				}
+			}
+		} else if f.Committed {
+			if _, err = tx.ExecContext(ctx, `DELETE FROM base.mail_template_file WHERE id = $1`, f.Id); err != nil {
+				return nil, err
+			}
 		}
-		if _, err = tx.ExecContext(ctx, `DELETE FROM base.mail_template_file WHERE id = $1`, id); err != nil {
-			return nil, err
-		}
+	}
+	if _, err = tx.ExecContext(ctx,
+		`DELETE FROM base.mail_template_file WHERE tenant = $1 AND mail_key = $2 AND NOT committed AND created_at < now() - `+draftMaxAge,
+		t.Tenant, t.MailKey); err != nil {
+		return nil, err
 	}
 
 	saved, err := getMailTemplate(ctx, tx, t.Tenant, t.MailKey)
@@ -134,6 +151,10 @@ func (db *sqlDatabase) SaveMailTemplate(ctx context.Context, t *model.MailTempla
 		return nil, err
 	}
 	return saved, tx.Commit()
+}
+
+func mailTemplateLock(tenant, key string) string {
+	return "mail_template_file/" + tenant + "/" + key
 }
 
 // DeleteMailTemplate removes the customised mail and all its files.
@@ -152,18 +173,23 @@ func (db *sqlDatabase) DeleteMailTemplate(ctx context.Context, tenant, key strin
 	return tx.Commit()
 }
 
+// ListMailTemplateFiles returns the files of the saved version and the drafts of the last 24 h.
 func (db *sqlDatabase) ListMailTemplateFiles(ctx context.Context, tenant, key string, withContent bool) ([]model.MailTemplateFile, error) {
-	return listMailTemplateFiles(ctx, db.db, tenant, key, withContent)
+	return listMailTemplateFiles(ctx, db.db, tenant, key, withContent, false)
 }
 
-func listMailTemplateFiles(ctx context.Context, q sqlx.QueryerContext, tenant, key string, withContent bool) ([]model.MailTemplateFile, error) {
+func listMailTemplateFiles(ctx context.Context, q sqlx.QueryerContext, tenant, key string, withContent, includeStale bool) ([]model.MailTemplateFile, error) {
 	cols := mailTemplateFileColumns
 	if withContent {
 		cols += ", content"
 	}
+	where := `tenant = $1 AND mail_key = $2`
+	if !includeStale {
+		where += ` AND ` + notStale
+	}
 	files := []model.MailTemplateFile{}
 	err := sqlx.SelectContext(ctx, q, &files,
-		`SELECT `+cols+` FROM base.mail_template_file WHERE tenant = $1 AND mail_key = $2 ORDER BY created_at, id`, tenant, key)
+		`SELECT `+cols+` FROM base.mail_template_file WHERE `+where+` ORDER BY created_at, id`, tenant, key)
 	return files, err
 }
 
@@ -181,18 +207,19 @@ func (db *sqlDatabase) GetMailTemplateFile(ctx context.Context, id string) (*mod
 	return &f, nil
 }
 
-// InsertMailTemplateFile stores a file after check accepted the files the mail
-// already has. Uploads to the same mail are serialised, so the limits hold.
+// InsertMailTemplateFile stores an upload as a draft after check accepted the
+// files the mail already has. Uploads and saves of the same mail are
+// serialised, so the limits hold.
 func (db *sqlDatabase) InsertMailTemplateFile(ctx context.Context, f *model.MailTemplateFile, check func(existing []model.MailTemplateFile) error) error {
 	tx, err := db.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, "mail_template_file/"+f.Tenant+"/"+f.MailKey); err != nil {
+	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, mailTemplateLock(f.Tenant, f.MailKey)); err != nil {
 		return err
 	}
-	existing, err := listMailTemplateFiles(ctx, tx, f.Tenant, f.MailKey, false)
+	existing, err := listMailTemplateFiles(ctx, tx, f.Tenant, f.MailKey, false, false)
 	if err != nil {
 		return err
 	}
@@ -200,8 +227,8 @@ func (db *sqlDatabase) InsertMailTemplateFile(ctx context.Context, f *model.Mail
 		return err
 	}
 	if err = tx.GetContext(ctx, &f.CreatedAt,
-		`INSERT INTO base.mail_template_file (id, tenant, mail_key, kind, filename, mime_type, size, content)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING created_at`,
+		`INSERT INTO base.mail_template_file (id, tenant, mail_key, kind, filename, mime_type, size, content, committed)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false) RETURNING created_at`,
 		f.Id, f.Tenant, f.MailKey, f.Kind, f.Filename, f.MimeType, f.Size, f.Content); err != nil {
 		return err
 	}
