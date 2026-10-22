@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 
 	"at.ourproject/vfeeg-backend/model"
@@ -157,6 +158,7 @@ func TestSendStored_BrokenVersionFallsBackWithNotification(t *testing.T) {
 			assert.Equal(t, "ADMIN", n.role)
 			assert.Contains(t, n.message, `"type":"Mail"`)
 			assert.Contains(t, n.message, "Zählpunkt aktiv")
+			assert.NotContains(t, n.message, "image ", "internal details stay in the log")
 		})
 	}
 }
@@ -171,4 +173,13 @@ func TestNotifyDefaultChanges(t *testing.T) {
 
 	// a failing store is logged, not fatal
 	NotifyDefaultChanges(context.Background(), &fakeStore{noticeErr: errors.New("db down")})
+}
+
+func TestFallbackReason(t *testing.T) {
+	def := Lookup(KeyZpActive)
+	assert.Equal(t, "Unbekannter Platzhalter: x", fallbackReason(def, &ValidationError{Field: "bodyHtml", Message: "Unbekannter Platzhalter: x"}))
+	assert.Equal(t, "Die Dateien der Mail sind zusammen größer als 6 MB.", fallbackReason(def, fmt.Errorf("%w: 7 bytes", ErrTooLarge)))
+	generic := fallbackReason(def, errors.New(`pq: relation "base.mail_template_file" does not exist`))
+	assert.NotContains(t, generic, "pq:")
+	assert.Contains(t, generic, "nicht verarbeitet")
 }

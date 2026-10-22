@@ -3,6 +3,7 @@ package mailtemplate
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -66,11 +67,26 @@ func SendStored(ctx context.Context, store Store, sendMail services.SendMailFunc
 // notifyFallback tells the community that its customised mail was not used.
 func notifyFallback(store Store, def *Definition, tenant, identifier string, cause error) {
 	log.WithField("tenant", tenant).WithError(cause).Errorf("mail template %s: can not render, sending default", def.Key)
-	msg := fmt.Sprintf("Ihre angepasste Mail „%s“ konnte nicht verwendet werden; es wurde der Standardtext verschickt. Grund: %s", def.Name, cause.Error())
+	msg := fmt.Sprintf("Ihre angepasste Mail „%s“ konnte nicht verwendet werden; es wurde der Standardtext verschickt. Grund: %s", def.Name, fallbackReason(def, cause))
 	_ = store.SaveNotificationFromMap(database.CreateNotificationMessageFromLog(&model.Log{
 		Operation: "Mail",
 		Messages:  []*model.LogMessage{model.NewLogMessage("ERROR", identifier, "E_MAIL_TEMPLATE", msg)},
 	}), tenant, model.N_TYPE_ERROR, model.N_PROCESS_EDA_PROCESS, "ADMIN")
+}
+
+// fallbackReason is what the community reads about a failed customised mail:
+// the texts written for it (validation, size), otherwise a generic sentence.
+// The full error is only logged.
+func fallbackReason(def *Definition, cause error) string {
+	var verr *ValidationError
+	switch {
+	case errors.As(cause, &verr):
+		return verr.Message
+	case errors.Is(cause, ErrTooLarge):
+		return fmt.Sprintf("Die Dateien der Mail sind zusammen größer als %d MB.", def.Limits.MaxTotalBytes/(1024*1024))
+	default:
+		return "Die angepasste Fassung konnte nicht verarbeitet werden; bitte im Editor prüfen und erneut speichern."
+	}
 }
 
 // NoticeStore is what the default-change notice needs from the database.
