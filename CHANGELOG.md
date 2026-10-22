@@ -14,18 +14,31 @@ this changelog highlights the changes relevant for overview and operations.
   under `/eeg/mailtemplates` (EEG_ADMIN, tenant header): catalog, read, save (`version`, 409 on a stale version),
   reset, image/PDF upload (type checked on the content: PNG/JPEG ≤ 1 MB, max. 10; one PDF ≤ 3 MB; all files
   ≤ 6 MB), preview (sample member, real community data) and test mail (to the login's e-mail or the community
-  address, no Cc, subject prefixed `[Test] `). Texts are sanitised with bluemonday driven by
-  `mailtemplate/mail-html-policy.json` (shared with eegfaktura-billing); placeholders (`<span|div data-ph>` in the
-  text, `{key}` in the subject; zp-inactive also has `directionText`/`endDateText`, which carry their own
-  wording and are empty without a value) are replaced as escaped values, never through a template engine.
-  Sending: a stored version of the tenant goes first (images inline as `cid:`, optional PDF attachment, size checked
-  before eda-xp); otherwise the existing resolution (volume per tenant → volume global → embedded) is unchanged.
-  A stored version that can not be rendered sends that default and an error notification to the community. On
-  startup, communities whose customised mail is based on an older default get one notification.
-  Migration `20261022120000_mail_templates` (two new tables, up/down; `schema.sql`, `schema.hcl`, `atlas.sum`).
+  address, no Cc, subject prefixed `[Test] `).
+  Uploads are drafts and are never sent; saving (`attachmentFileId` names the PDF) makes the used files part of the
+  version, deletes files the version no longer uses and drafts older than 24 h; a file the saved version uses can
+  not be deleted (409). `legacyTemplateActive` tells the editor that a hand-made volume template still applies;
+  the preview of the unchanged default then shows that template.
+  Texts are sanitised with bluemonday driven by `mailtemplate/mail-html-policy.json`, tested against the case list
+  `mailtemplate/mail-html-policy-cases.json` (both shared with eegfaktura-billing). Placeholders are
+  `<span|div data-ph>` in the text (blocks only at top level) and `{key}` in the subject (only the catalog key
+  syntax; `{EEG}` stays text); they are replaced as escaped values, never through a template engine.
+  `eeg.contactBlock` shows name, contact person, address, phone, e-mail and website of the community, each only
+  when present (decision G.1; today's signature has no contact person). zp-inactive also has
+  `directionText`/`endDateText`, which carry their own wording and are empty without a value.
+  Sending: a stored version of the tenant goes first (only its committed, referenced files; images inline as
+  `cid:`, optional PDF, size checked before eda-xp); otherwise the existing resolution (volume per tenant → volume
+  global → embedded) is unchanged. A stored version that can not be rendered (including a missing image) sends
+  that default and an error notification to the community (validation/size text or a generic sentence; details only
+  in the log). On startup, communities whose customised mail is based on an older default get one notification
+  (written together with its "notified" mark).
+  Migrations `20261022120000_mail_templates` (two new tables) and `20261023120000_mail_template_file_drafts`
+  (`committed`, `attachment_file_id`), both additive with down; `schema.sql`, `schema.hcl` updated, `atlas.sum`
+  regenerated with `atlas migrate hash` (it was hashed over CRLF files before and did not validate).
 - **`cmd/mailtemplate-import`**: one-off operator tool that converts the hand-made mail templates of a volume copy
   (`<TENANT>/templates`) into the new format and imports them through the REST API (dry run, `-test-mail eeg`).
-  Unmappable template expressions stop the import of that tenant. See `cmd/mailtemplate-import/README.md`.
+  Unmappable template expressions (also inside attributes) stop the import of that tenant; `-overwrite` replaces a
+  saved version only by the save itself. See `cmd/mailtemplate-import/README.md`.
 
 ### Changed
 - The mail send log line no longer contains the subject (a customised subject can contain member data).
