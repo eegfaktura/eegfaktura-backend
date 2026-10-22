@@ -17,12 +17,14 @@ this changelog highlights the changes relevant for overview and operations.
   address, no Cc, subject prefixed `[Test] `).
   Uploads are drafts and are never sent; saving (`attachmentFileId` names the PDF) makes the used files part of the
   version, deletes files the version no longer uses and drafts older than 24 h; a file the saved version uses can
-  not be deleted (409). `legacyTemplateActive` tells the editor that a hand-made volume template still applies;
-  the preview of the unchanged default then shows that template.
+  not be deleted (409); an image the text references must exist when saving (400 otherwise).
+  `legacyTemplateActive` tells the editor that a hand-made volume template still applies; preview and test mail
+  of the unchanged default (compared after sanitising) or with `useDefault: true` then use that template.
   Texts are sanitised with bluemonday driven by `mailtemplate/mail-html-policy.json`, tested against the case list
   `mailtemplate/mail-html-policy-cases.json` (both shared with eegfaktura-billing). Placeholders are
   `<span|div data-ph>` in the text (blocks only at top level) and `{key}` in the subject (only the catalog key
-  syntax; `{EEG}` stays text); they are replaced as escaped values, never through a template engine.
+  syntax; `{EEG}` stays text); they are replaced as escaped values, never through a template engine. "{{" in
+  text is written as "{<!-- -->{" (client-side template engines); link URLs are kept as written.
   `eeg.contactBlock` shows name, contact person, address, phone, e-mail and website of the community, each only
   when present (decision G.1; today's signature has no contact person). zp-inactive also has
   `directionText`/`endDateText`, which carry their own wording and are empty without a value.
