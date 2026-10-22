@@ -956,3 +956,55 @@ func TestMeteringPointRevokeActivationFlow(t *testing.T) {
 	}
 
 }
+
+// ZUSTIMMUNG_ECON with 172 (customer refused the data release) or 173 (customer did not respond)
+// sets the metering point to INVALID with the code and notifies the community (platform#180).
+func TestProtocolEcReqOnlHandler_approvalRefused(t *testing.T) {
+	const tenant = "TE000172"
+	const ecId = "AT00300000000TC000172000000000001"
+	_, err := testDB.DbInstance.Exec(`INSERT INTO base.eeg
+		(tenant, name, description, "rcNumber", area, gridoperator_code, gridoperator_name, "communityId",
+		 street, "streetNumber", city, zip, email)
+		VALUES ($1, 'EEG-172', 'Test 172', 'TE000172', 'LOCAL', 'AT003000', 'Netz OÖ', $2,
+		 'Weg', '1', 'Linz', '4020', 'test-172@example.org')`, tenant, ecId)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name  string
+		meter string
+		code  int16
+	}{
+		{name: "172 refused", meter: "AT0030000000000000000000000172001", code: CUSTOMER_HAS_REFUSED_DATA_RELEASE},
+		{name: "173 no response", meter: "AT0030000000000000000000000173001", code: CUSTOMER_DID_NOT_RESPOND_TO_DATA_RELEASE},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := testDB.DbInstance.Exec(`INSERT INTO base.meteringpoint (metering_point_id, participant_id, tenant, direction,
+				status, process_state, "modifiedAt", "modifiedBy", "registeredSince", flag)
+				VALUES ($1, 'ea1142dc-03da-15ee-b82b-5a985b4b033a', $2, 'CONSUMPTION', 'INIT', 'PENDING', now(), 'test',
+				 '2026-10-01', 1)`, tt.meter, tenant)
+			require.NoError(t, err)
+
+			msg := model.SubscribeMessage{MessageCode: model.EBMS_ONLINE_REG_APPROVAL, Protocol: model.EC_REQ_ONL, Tenant: strings.ToLower(tenant)}
+			require.NoError(t, json.Unmarshal([]byte(fmt.Sprintf(`{"conversationId":"RC000172202610210000000000000%d","messageId":"AT003000202610210000000000000%d","sender":"AT003000","receiver":"TE000172","messageCode":"ZUSTIMMUNG_ECON","messageCodeVersion":"01.12","requestId":"Z172","ecId":"%s","responseData":[{"meteringPoint":"%s","responseCode":[%d]}]}`,
+				tt.code, tt.code, ecId, tt.meter, tt.code)), &msg.Payload))
+
+			protocolEcReqOnlHandler(context.Background(), msg)
+
+			var row struct {
+				ProcessState string `db:"process_state"`
+				StatusCode   *int16 `db:"statusCode"`
+			}
+			require.NoError(t, testDB.DbInstance.Get(&row, `SELECT process_state, "statusCode" FROM base.meteringpoint WHERE tenant = $1 AND metering_point_id = $2`, tenant, tt.meter))
+			assert.Equal(t, string(model.INVALID), row.ProcessState)
+			require.NotNil(t, row.StatusCode)
+			assert.Equal(t, tt.code, *row.StatusCode)
+
+			var n int
+			require.NoError(t, testDB.DbInstance.Get(&n, `SELECT count(*) FROM base.notification WHERE tenant = $1
+				AND notification->>'type' = 'ZUSTIMMUNG_ECON' AND (notification->'meteringPoints')::jsonb ? $2
+				AND (notification->'responseCodes')::jsonb ? $3`, tenant, tt.meter, convertCodes2Strings([]int16{tt.code})[0]))
+			assert.Equal(t, 1, n)
+		})
+	}
+}
