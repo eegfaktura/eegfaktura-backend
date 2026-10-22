@@ -3,6 +3,7 @@ package mailtemplate
 import (
 	_ "embed"
 	"encoding/json"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -97,26 +98,20 @@ func (p *htmlPolicy) bluemondayPolicy() *bluemonday.Policy {
 	sort.Strings(all)
 	bm.AllowURLSchemes(all...)
 
-	styleProps := make([]string, 0, len(p.Styles))
-	for prop := range p.Styles {
-		styleProps = append(styleProps, prop)
-	}
-	sort.Strings(styleProps)
-
+	// style passes bluemonday unchanged on the elements that may carry it; the
+	// second pass keeps only the declarations of the policy (cleanStyle), which
+	// also copes with "text-align:center;;" or upper case values
 	for el, attrs := range p.Elements {
 		bm.AllowElements(el)
 		for _, attr := range attrs {
-			if attr == "style" {
-				for _, prop := range styleProps {
-					bm.AllowStyles(prop).MatchingEnum(p.Styles[prop]...).OnElements(el)
-				}
-				continue
-			}
 			bm.AllowAttrs(attr).OnElements(el)
 		}
 	}
 	return bm
 }
+
+// imgWidth is the accepted value of img[width]: pixels or percent.
+var imgWidth = regexp.MustCompile(`^[0-9]{1,4}%?$`)
 
 // cleanStyle keeps only the declarations of a style attribute the policy allows.
 func (p *htmlPolicy) cleanStyle(style string) string {

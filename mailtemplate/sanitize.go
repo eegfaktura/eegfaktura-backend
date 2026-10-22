@@ -174,9 +174,19 @@ func (s *sanitizer) cleanElement(el *html.Node) (elementAction, error) {
 				continue
 			}
 		case policy.urlSchemes(name, a.Key) != nil:
-			if !s.urlAllowed(name, a.Key, a.Val) {
+			clean, ok := s.cleanURL(name, a.Key, a.Val)
+			if !ok {
 				continue
 			}
+			a.Val = clean
+		case name == "img" && a.Key == "width":
+			a.Val = strings.TrimSpace(a.Val)
+			if !imgWidth.MatchString(a.Val) {
+				continue
+			}
+		case a.Key == "data-ph" && strings.TrimSpace(a.Val) == "":
+			// an empty placeholder attribute counts as none: the element is unwrapped
+			continue
 		case a.Key == "data-ph":
 			ph := s.def.Placeholder(a.Val)
 			if ph == nil {
@@ -216,10 +226,17 @@ func (s *sanitizer) cleanElement(el *html.Node) (elementAction, error) {
 	return keep, nil
 }
 
-func (s *sanitizer) urlAllowed(el, key, val string) bool {
-	u, err := url.Parse(strings.TrimSpace(val))
+// cleanURL returns the value to keep for a URL attribute, false to drop it:
+// scheme of the policy for this attribute, a host for https, an address for
+// mailto, and for mailfile: an image of this mail (ids compared in lower case).
+func (s *sanitizer) cleanURL(el, key, val string) (string, bool) {
+	val = strings.TrimSpace(val)
+	if strings.ContainsAny(val, " \t\r\n") {
+		return "", false
+	}
+	u, err := url.Parse(val)
 	if err != nil {
-		return false
+		return "", false
 	}
 	scheme := strings.ToLower(u.Scheme)
 	allowed := false
@@ -229,25 +246,31 @@ func (s *sanitizer) urlAllowed(el, key, val string) bool {
 		}
 	}
 	if !allowed {
-		return false
+		return "", false
 	}
-	if scheme == mailfileScheme {
-		id := u.Opaque
-		return id == BuiltinLogoId || (s.fileOK != nil && s.fileOK(id))
+	switch scheme {
+	case mailfileScheme:
+		id := strings.ToLower(u.Opaque)
+		if id == BuiltinLogoId || (id != "" && s.fileOK != nil && s.fileOK(id)) {
+			return mailfileScheme + ":" + id, true
+		}
+		return "", false
+	case "https":
+		return val, u.Host != "" && u.Opaque == ""
+	case "mailto":
+		return val, strings.TrimSpace(u.Opaque) != ""
 	}
-	if scheme == "https" && u.Host == "" {
-		return false
-	}
-	return true
+	return val, true
 }
 
-// MailfileId returns the file id of an <img src="mailfile:..."> value.
+// MailfileId returns the file id (lower case) of an <img src="mailfile:..."> value.
 func MailfileId(src string) (string, bool) {
-	u, err := url.Parse(src)
+	u, err := url.Parse(strings.TrimSpace(src))
 	if err != nil || strings.ToLower(u.Scheme) != mailfileScheme {
 		return "", false
 	}
-	return u.Opaque, u.Opaque != ""
+	id := strings.ToLower(u.Opaque)
+	return id, id != ""
 }
 
 // ReferencedImages returns the file ids a stored body references.
