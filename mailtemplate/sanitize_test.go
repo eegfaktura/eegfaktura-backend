@@ -150,6 +150,12 @@ func TestSanitizeSubject(t *testing.T) {
 	assert.Error(t, err, "block placeholders are not allowed in the subject")
 	_, err = SanitizeSubject(def, "Lone { and } and {} and { meteringPoint } stay")
 	assert.NoError(t, err)
+	// only the catalog key syntax is a placeholder; other braces are text
+	for _, text := range []string{"Neu bei der {EEG}", "{Eeg.name}", "{x1}", "{member.first_name}", "{.eeg}", "{eeg.}"} {
+		out, err := SanitizeSubject(def, text)
+		assert.NoError(t, err, text)
+		assert.Equal(t, text, out)
+	}
 	_, err = SanitizeSubject(def, " \n ")
 	assert.Error(t, err)
 	_, err = SanitizeSubject(def, strings.Repeat("ä", MaxSubjectChars+1))
@@ -164,6 +170,9 @@ func TestRenderSubject(t *testing.T) {
 		FirstName: "Ma\nria", MeteringPoints: []string{"AT1"}})
 	require.NoError(t, err)
 	assert.Equal(t, "Zählpunkt AT1 von Ma ria {x", got)
+	got, err = renderSubject(def, "{EEG}: {meteringPoint}", &Data{MeteringPoints: []string{"AT1"}})
+	require.NoError(t, err)
+	assert.Equal(t, "{EEG}: AT1", got)
 }
 
 // The policy file is a byte-identical copy of the one in eegfaktura-billing: a

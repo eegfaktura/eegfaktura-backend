@@ -61,8 +61,9 @@ func SanitizeBody(def *Definition, in string, fileOK FileCheck) (string, error) 
 	return out, nil
 }
 
-// subjectToken is a placeholder in a subject: {key} with the key syntax of the catalog.
-var subjectToken = regexp.MustCompile(`\{([A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z][A-Za-z0-9]*)*)\}`)
+// subjectToken is a placeholder in a subject: {key} with the key syntax of the
+// catalog (section H); anything else in braces, e.g. {EEG}, is text.
+var subjectToken = regexp.MustCompile(`\{([a-z][A-Za-z]*(?:\.[A-Za-z]+)*)\}`)
 
 var spaces = regexp.MustCompile(`\s+`)
 
