@@ -60,8 +60,6 @@ func resolveTemplateSource(tenant, templateConfigName string) (fs.FS, string) {
 	return embedded, "embedded"
 }
 
-// SendActivationMailFromTemplate sends the consent-request or the zp-active mail (by template
-// config name). store holds the community's customised mails; nil sends the legacy template.
 // TenantTemplateActive reports whether a hand-made template of the community on
 // the data volume applies to a mail (used while it has no saved version).
 func TenantTemplateActive(tenant, templateConfigName string) bool {
@@ -104,6 +102,8 @@ func RenderLegacyPreview(tenant, templateConfigName string, eeg *model.Eeg, data
 	return out, nil
 }
 
+// SendActivationMailFromTemplate sends the consent-request or the zp-active mail (by template
+// config name). store holds the community's customised mails; nil sends the legacy template.
 func SendActivationMailFromTemplate(sendMail services.SendMailFunc, store mailtemplate.Store,
 	tenant, subject string, eeg *model.Eeg, participant *model.EegParticipant, templateConfigName string) error {
 
