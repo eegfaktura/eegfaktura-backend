@@ -156,33 +156,44 @@ func TestConvert_Images(t *testing.T) {
 	assert.True(t, ConvertTenant(fs, "TE000300")[0].Blocked(), "a disguised image stops the import")
 }
 
-// The import uploads the files, swaps the ids and saves; an error after an upload resets the mail.
+// The import uploads drafts, swaps the ids and saves with the current version;
+// on an error the community's saved version stays and the drafts are deleted.
 func TestImportMail(t *testing.T) {
 	png, err := os.ReadFile("../../public/templates/eegfaktura-logo.png")
 	require.NoError(t, err)
-	fs := templateFS(`<p>Hallo {{.Participant.FirstName}}</p><img src="cid:logo"/>`, `InlinePictures = [ { Filepath="l.png", contentId="logo" } ]`)
+	fs := templateFS(`<p>Hallo {{.Participant.FirstName}}</p><img src="cid:logo"/>`,
+		`InlinePictures = [ { Filepath="l.png", contentId="logo" } ]`, `Attachment = { Name="a.pdf", Mime="application/pdf" }`)
 	fs["l.png"] = &fstest.MapFile{Data: png}
+	fs["a.pdf"] = &fstest.MapFile{Data: []byte("%PDF-1.4\n%%EOF\n")}
 	c := ConvertTenant(fs, "TE000300")[0]
-	require.False(t, c.Blocked())
+	require.False(t, c.Blocked(), findingTexts(c))
 
 	var calls []string
 	var saved map[string]interface{}
-	failPut := false
+	failPut, customized := false, false
+	ids := []string{"11111111-2222-3333-4444-555555555555", "66666666-7777-8888-9999-000000000000"}
+	uploads := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls = append(calls, r.Method+" "+r.URL.Path)
 		assert.Equal(t, "Bearer secret", r.Header.Get("Authorization"))
 		assert.Equal(t, "TE000300", r.Header.Get("tenant"))
 		switch {
 		case r.Method == "GET":
-			_, _ = io.WriteString(w, `{"customized":false,"files":[]}`)
+			if customized {
+				_, _ = io.WriteString(w, `{"customized":true,"version":3}`)
+			} else {
+				_, _ = io.WriteString(w, `{"customized":false,"version":0}`)
+			}
 		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/files"):
 			w.WriteHeader(http.StatusCreated)
-			_, _ = io.WriteString(w, `{"id":"11111111-2222-3333-4444-555555555555"}`)
+			_, _ = io.WriteString(w, `{"id":"`+ids[uploads%2]+`"}`)
+			uploads++
 		case r.Method == "PUT":
 			if failPut {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
+			saved = nil
 			_ = json.NewDecoder(r.Body).Decode(&saved)
 			_, _ = io.WriteString(w, `{}`)
 		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/test"):
@@ -193,17 +204,31 @@ func TestImportMail(t *testing.T) {
 	}))
 	defer srv.Close()
 	client := &apiClient{base: srv.URL, token: "secret", http: srv.Client()}
+	const p = "/eeg/mailtemplates/consent-request"
 
 	require.NoError(t, client.importMail(c, false, "eeg"))
-	assert.Equal(t, []string{"GET /eeg/mailtemplates/consent-request", "POST /eeg/mailtemplates/consent-request/files",
-		"PUT /eeg/mailtemplates/consent-request", "POST /eeg/mailtemplates/consent-request/test"}, calls)
-	assert.Contains(t, saved["bodyHtml"], "mailfile:11111111-2222-3333-4444-555555555555")
+	assert.Equal(t, []string{"GET " + p, "POST " + p + "/files", "POST " + p + "/files", "PUT " + p, "POST " + p + "/test"}, calls)
+	assert.Contains(t, saved["bodyHtml"], "mailfile:"+ids[0])
 	assert.NotContains(t, saved["bodyHtml"], c.Files[0].PreId)
+	assert.Equal(t, ids[1], saved["attachmentFileId"])
 	assert.Equal(t, float64(0), saved["version"])
 
-	calls, failPut = nil, true
+	// a customised mail is skipped without -overwrite
+	calls, customized, uploads = nil, true, 0
 	assert.Error(t, client.importMail(c, false, ""))
-	assert.Equal(t, "DELETE /eeg/mailtemplates/consent-request", calls[len(calls)-1], "a failed import is reset")
+	assert.Equal(t, []string{"GET " + p}, calls)
+
+	// -overwrite saves over the current version, the saved version is never deleted first
+	calls = nil
+	require.NoError(t, client.importMail(c, true, ""))
+	assert.Equal(t, []string{"GET " + p, "POST " + p + "/files", "POST " + p + "/files", "PUT " + p}, calls)
+	assert.Equal(t, float64(3), saved["version"])
+
+	// a failed save leaves the saved version alone and deletes only the drafts
+	calls, failPut, uploads = nil, true, 0
+	assert.Error(t, client.importMail(c, true, ""))
+	assert.Equal(t, []string{"GET " + p, "POST " + p + "/files", "POST " + p + "/files", "PUT " + p,
+		"DELETE " + p + "/files/" + ids[0], "DELETE " + p + "/files/" + ids[1]}, calls)
 }
 
 func findingTexts(c *Conversion) string {

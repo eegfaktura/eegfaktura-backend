@@ -57,13 +57,13 @@ export MAILTPL_IMPORT_TOKEN=…
 | `-test-mail eeg\|me` | after the import, send a test mail to the community address or to the token's e-mail |
 
 Per mail the tool:
-1. reads the current version (`GET`);
-2. resets it if `-overwrite` is set;
-3. uploads the files;
-4. saves with `version: 0`;
-5. sends the test mail, if requested.
+1. reads the current version (`GET`); a mail the community has already customised is skipped unless `-overwrite` is set;
+2. uploads the images and the PDF as drafts;
+3. saves with the current version and `attachmentFileId` (`PUT`), so `-overwrite` replaces the community's version
+   only in this one step;
+4. sends the test mail, if requested.
 
-If a step fails after the first upload, the mail is reset (`DELETE`). The volume template then applies
-again. The exit code is 1 if any mail was not imported.
+If a step fails, the community's saved version stays untouched and the uploaded drafts are deleted again. The volume
+template then still applies where there was no saved version. The exit code is 1 if any mail was not imported.
 
 After the community has approved the import (two weeks without objection, G.4), remove the volume template.

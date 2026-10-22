@@ -176,41 +176,38 @@ func (a *apiClient) json(tenant, method, path string, in, out interface{}) error
 	return err
 }
 
-// importMail uploads the files, saves the text and optionally sends a test
-// mail. On an error after the first upload the mail is reset, so nothing
-// half-imported stays behind (the volume template applies again).
-func (a *apiClient) importMail(c *Conversion, overwrite bool, testMail string) (err error) {
+// importMail uploads the files as drafts, saves the text and optionally sends
+// a test mail. The saved version of the community is only replaced by the PUT
+// itself (with its current version): if anything fails before, it stays
+// untouched and the uploaded drafts are deleted again.
+func (a *apiClient) importMail(c *Conversion, overwrite bool, testMail string) error {
 	path := "/eeg/mailtemplates/" + c.Key
 	var current struct {
 		Customized bool `json:"customized"`
-		Files      []struct {
-			Id string `json:"id"`
-		} `json:"files"`
+		Version    int  `json:"version"`
 	}
-	if err = a.json(c.Tenant, "GET", path, nil, &current); err != nil {
+	if err := a.json(c.Tenant, "GET", path, nil, &current); err != nil {
 		return err
 	}
 	if current.Customized && !overwrite {
 		return errors.New("die Gemeinschaft hat diese Mail schon angepasst (-overwrite ersetzt sie)")
 	}
-	if current.Customized || len(current.Files) > 0 {
-		if err = a.json(c.Tenant, "DELETE", path, nil, nil); err != nil {
-			return err
+
+	var drafts []string
+	cleanup := func() {
+		for _, id := range drafts {
+			_ = a.json(c.Tenant, "DELETE", path+"/files/"+id, nil, nil)
 		}
 	}
-	defer func() {
-		if err != nil {
-			_ = a.json(c.Tenant, "DELETE", path, nil, nil)
-		}
-	}()
-
 	body := c.Body
+	var attachmentId interface{}
 	for _, f := range c.Files {
 		var buf bytes.Buffer
 		mw := multipart.NewWriter(&buf)
 		_ = mw.WriteField("kind", f.Kind)
 		fw, err := mw.CreateFormFile("file", f.Filename)
 		if err != nil {
+			cleanup()
 			return err
 		}
 		_, _ = fw.Write(f.Content)
@@ -219,13 +216,23 @@ func (a *apiClient) importMail(c *Conversion, overwrite bool, testMail string) (
 			Id string `json:"id"`
 		}
 		if _, err = a.do(c.Tenant, "POST", path+"/files", &buf, mw.FormDataContentType(), &uploaded); err != nil {
+			cleanup()
 			return err
+		}
+		drafts = append(drafts, uploaded.Id)
+		if f.Kind == "attachment" {
+			attachmentId = uploaded.Id
 		}
 		body = strings.ReplaceAll(body, "mailfile:"+f.PreId, "mailfile:"+uploaded.Id)
 	}
 
-	if err = a.json(c.Tenant, "PUT", path, map[string]interface{}{
-		"subject": c.Subject, "bodyHtml": body, "version": 0}, nil); err != nil {
+	version := 0
+	if current.Customized {
+		version = current.Version
+	}
+	if err := a.json(c.Tenant, "PUT", path, map[string]interface{}{
+		"subject": c.Subject, "bodyHtml": body, "version": version, "attachmentFileId": attachmentId}, nil); err != nil {
+		cleanup()
 		return err
 	}
 	if testMail != "" {
