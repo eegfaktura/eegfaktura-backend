@@ -581,7 +581,7 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 						"Zählpunktliste",
 						err,
 					)}}),
-					msg.Payload.EcId, model.N_TYPE_ERROR, model.N_PROCESS_EDA_PROCESS, "ADMIN")
+					eeg.Id, model.N_TYPE_ERROR, model.N_PROCESS_EDA_PROCESS, "ADMIN")
 			}
 		}
 		if err = services.SyncMeteringPoints(msg.Tenant, &msg.Payload); err != nil {
@@ -651,7 +651,7 @@ func meteringPointPerformAnswerMsg(ctx context.Context, sendMail services.SendMa
 							participant.MeteringPoint[0].MeteringPoint,
 							err,
 						)}}),
-						ecId, model.N_TYPE_ERROR, model.N_PROCESS_EDA_PROCESS, "ADMIN")
+						eeg.Id, model.N_TYPE_ERROR, model.N_PROCESS_EDA_PROCESS, "ADMIN")
 				}
 			} else {
 				logrus.WithField("tenant", eeg.Id).Warn("No MeteringPoint for activation mail")

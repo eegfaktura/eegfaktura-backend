@@ -27,6 +27,9 @@ this changelog highlights the changes relevant for overview and operations.
 - The mail send log line no longer contains the subject (a customised subject can contain member data).
 
 ### Fixed
+- Error notifications of a failed member mail (consent request / metering point active) and of a failed metering
+  point list mail were saved under the community id (ecId) instead of the tenant and never reached the community's
+  admins. They are saved under the tenant now.
 - **EDA: ZUSTIMMUNG_ECON/ECOF with code 172 sets the metering point to INVALID again** (platform#180). Code 172
   („Kunde hat Datenfreigabe abgelehnt“) had an empty `case` since 2025-09-22: the line for 173 was inserted between
   the label and the body of 172, and Go has no fallthrough. A consent message with 172 only went to the history; the
