@@ -555,19 +555,16 @@ func (h *MailTemplateHandler) deleteFile() middleware.JWTHandlerFunc {
 		if !ok {
 			return
 		}
-		if f.Committed {
-			t, ok := h.loadTemplate(w, r, tenant, def)
-			if !ok {
-				return
-			}
-			if t != nil && usesFile(t, f.Id) {
-				respondWithJSON(w, http.StatusConflict, map[string]string{
-					"message": "Die gespeicherte Fassung verwendet diese Datei; bitte zuerst ohne sie speichern."})
-				return
-			}
-		}
-		if _, err := h.db.DeleteMailTemplateFile(r.Context(), tenant, def.Key, f.Id); err != nil {
+		// only drafts are deleted; a committed file belongs to the saved version (a save
+		// deletes the ones it no longer uses), checked again under the save lock
+		deleted, err := h.db.DeleteMailTemplateFile(r.Context(), tenant, def.Key, f.Id)
+		if err != nil {
 			respondServerError(w, tenant, err)
+			return
+		}
+		if !deleted {
+			respondWithJSON(w, http.StatusConflict, map[string]string{
+				"message": "Die gespeicherte Fassung verwendet diese Datei; bitte zuerst ohne sie speichern."})
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -583,19 +580,6 @@ func imageCheck(files []model.MailTemplateFile) mailtemplate.FileCheck {
 		}
 	}
 	return func(id string) bool { return images[id] }
-}
-
-// usesFile reports whether the saved version uses a file.
-func usesFile(t *model.MailTemplate, id string) bool {
-	if t.AttachmentFileId != nil && strings.EqualFold(*t.AttachmentFileId, id) {
-		return true
-	}
-	for _, ref := range mailtemplate.ReferencedImages(t.BodyHtml) {
-		if strings.EqualFold(ref, id) {
-			return true
-		}
-	}
-	return false
 }
 
 // render renders an unsaved version with the sample member and the real community; false after an answer.

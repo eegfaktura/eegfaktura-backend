@@ -265,15 +265,29 @@ func (db *sqlDatabase) InsertMailTemplateFile(ctx context.Context, f *model.Mail
 	return tx.Commit()
 }
 
-// DeleteMailTemplateFile deletes a file of a community's mail; false if there was none.
+// DeleteMailTemplateFile deletes a draft of a community's mail; false if there
+// is no such draft. A committed file belongs to the saved version and is never
+// deleted here; the lock orders the delete with a concurrent save, so a save
+// cannot commit a file that is deleted at the same moment.
 func (db *sqlDatabase) DeleteMailTemplateFile(ctx context.Context, tenant, key, id string) (bool, error) {
-	res, err := db.db.ExecContext(ctx,
-		`DELETE FROM base.mail_template_file WHERE id = $1 AND tenant = $2 AND mail_key = $3`, id, tenant, key)
+	tx, err := db.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, mailTemplateLock(tenant, key)); err != nil {
+		return false, err
+	}
+	res, err := tx.ExecContext(ctx,
+		`DELETE FROM base.mail_template_file WHERE id = $1 AND tenant = $2 AND mail_key = $3 AND NOT committed`, id, tenant, key)
 	if err != nil {
 		return false, err
 	}
 	n, err := res.RowsAffected()
-	return n > 0, err
+	if err != nil {
+		return false, err
+	}
+	return n > 0, tx.Commit()
 }
 
 // NotifyMailTemplateDefaultChange writes one notification per community whose

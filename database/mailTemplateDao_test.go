@@ -117,6 +117,14 @@ func TestMailTemplateDao(t *testing.T) {
 	deleted, err := db.DeleteMailTemplateFile(ctx, "TE000399", key, keepImg.Id)
 	require.NoError(t, err)
 	assert.False(t, deleted, "a file is only deleted for its own tenant")
+	deleted, err = db.DeleteMailTemplateFile(ctx, tenant, key, keepImg.Id)
+	require.NoError(t, err)
+	assert.False(t, deleted, "a committed file of the saved version is never deleted as a draft")
+	draft := img()
+	require.NoError(t, db.InsertMailTemplateFile(ctx, draft, ok))
+	deleted, err = db.DeleteMailTemplateFile(ctx, tenant, key, draft.Id)
+	require.NoError(t, err)
+	assert.True(t, deleted)
 
 	// default change notice: notification and claim in one transaction, once
 	_, err = testDB.DbInstance.Exec(`UPDATE base.mail_template SET default_version = 0, notified_default_version = 0 WHERE tenant = $1 AND mail_key = $2`, tenant, key)
