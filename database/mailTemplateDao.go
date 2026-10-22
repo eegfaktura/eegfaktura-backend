@@ -73,8 +73,9 @@ func getMailTemplate(ctx context.Context, q sqlx.QueryerContext, tenant, key str
 
 // SaveMailTemplate inserts (expectedVersion 0) or updates the customised mail.
 // The referenced images and t.AttachmentFileId become part of the version
-// (committed); committed files it no longer uses and drafts older than 24 h are
-// deleted, fresh drafts of other editors stay. check sees all files of the mail
+// (committed, also a draft older than 24 h); committed files it no longer uses
+// and unreferenced drafts older than 24 h are deleted, fresh drafts of other
+// editors stay. check sees all files of the mail
 // and can refuse the save (missing file, limits). A version mismatch is a
 // *MailTemplateVersionError.
 func (db *sqlDatabase) SaveMailTemplate(ctx context.Context, t *model.MailTemplate, expectedVersion int, images []string,

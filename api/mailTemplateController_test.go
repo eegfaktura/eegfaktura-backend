@@ -321,6 +321,46 @@ InlinePictures = [ { Filepath="l.png", contentId="logo-1" } ]`), 0o644))
 	assert.False(t, decode[mtDTO](t, w).LegacyTemplateActive)
 }
 
+// An image the text references must exist when saving: an old draft is kept and
+// committed, a vanished one is a 400 instead of being dropped silently.
+func TestMailTemplates_SaveReferencedImages(t *testing.T) {
+	c := newMailTemplateClient(t)
+	db, err := database.GetDB(context.Background())
+	require.NoError(t, err)
+	upload := func() string {
+		w := c.upload("admin", mtTenant, "zp-active", "image", "a.png", logoPNG(t))
+		require.Equal(t, http.StatusCreated, w.Code)
+		return decode[map[string]interface{}](t, w)["id"].(string)
+	}
+	old, gone := upload(), upload()
+	_, err = execTestSQL(context.Background(), db,
+		`UPDATE base.mail_template_file SET created_at = now() - interval '25 hours' WHERE id = $1`, old)
+	require.NoError(t, err)
+
+	w := c.json("admin", mtTenant, "PUT", "/eeg/mailtemplates/zp-active", map[string]interface{}{
+		"subject": "S", "bodyHtml": `<p>x</p><img src="mailfile:` + old + `">`, "version": 0})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	saved := decode[mtDTO](t, w)
+	assert.Contains(t, saved.BodyHtml, "mailfile:"+old)
+	found := false
+	for _, f := range saved.Files {
+		if f.Id == old {
+			found = true
+			assert.True(t, f.Committed, "a referenced old draft is committed, not purged")
+		}
+	}
+	assert.True(t, found)
+
+	w = c.do("admin", mtTenant, "DELETE", "/eeg/mailtemplates/zp-active/files/"+gone, nil, "")
+	require.Equal(t, http.StatusNoContent, w.Code)
+	w = c.json("admin", mtTenant, "PUT", "/eeg/mailtemplates/zp-active", map[string]interface{}{
+		"subject": "S", "bodyHtml": `<p>x</p><img src="mailfile:` + gone + `">`, "version": 1})
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	errs := decode[mtErrors](t, w)
+	assert.Equal(t, "bodyHtml", errs.Errors[0].Field)
+	assert.Equal(t, "Ein Bild im Text gibt es nicht (mehr); bitte erneut einfügen.", errs.Errors[0].Message)
+}
+
 func TestMailTemplates_FileLifecycle(t *testing.T) {
 	c := newMailTemplateClient(t)
 	upload := func(kind string, content []byte) string {
@@ -501,8 +541,10 @@ func TestMailTemplates_TenantIsolationAndRole(t *testing.T) {
 	// nor reference it in its own mail
 	w = c.json("other", mtOtherTenant, "PUT", "/eeg/mailtemplates/zp-active", map[string]interface{}{
 		"subject": "S", "bodyHtml": `<p>x</p><img src="mailfile:` + imgId + `">`, "version": 0})
-	require.Equal(t, http.StatusOK, w.Code)
-	assert.NotContains(t, decode[mtDTO](t, w).BodyHtml, imgId)
+	require.Equal(t, http.StatusBadRequest, w.Code, "an image of another community does not exist for this one")
+	assert.NotContains(t, w.Body.String(), mtTenant)
+	w = c.json("other", mtOtherTenant, "GET", "/eeg/mailtemplates/zp-active", nil)
+	assert.False(t, decode[mtDTO](t, w).Customized, "nothing saved")
 	// the file of a mail is not served under another mail key
 	w = c.do("admin", mtTenant, "GET", "/eeg/mailtemplates/consent-request/files/"+imgId, nil, "")
 	assert.Equal(t, http.StatusNotFound, w.Code)

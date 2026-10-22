@@ -245,20 +245,14 @@ func decodeRequest(w http.ResponseWriter, r *http.Request) (*mailTemplateRequest
 }
 
 // sanitize checks subject and body of a request; false after a 400 answer.
-func sanitize(w http.ResponseWriter, def *mailtemplate.Definition, req *mailTemplateRequest, files []model.MailTemplateFile) (string, string, bool) {
-	images := map[string]bool{}
-	for _, f := range files {
-		if f.Kind == model.MailFileKindImage {
-			images[f.Id] = true
-		}
-	}
+func sanitize(w http.ResponseWriter, def *mailtemplate.Definition, req *mailTemplateRequest, fileOK mailtemplate.FileCheck) (string, string, bool) {
 	var errs []*mailtemplate.ValidationError
 	var verr *mailtemplate.ValidationError
 	subject, err := mailtemplate.SanitizeSubject(def, req.Subject)
 	if errors.As(err, &verr) {
 		errs = append(errs, verr)
 	}
-	body, err := mailtemplate.SanitizeBody(def, req.BodyHtml, func(id string) bool { return images[id] })
+	body, err := mailtemplate.SanitizeBody(def, req.BodyHtml, fileOK)
 	if errors.As(err, &verr) {
 		errs = append(errs, verr)
 	}
@@ -283,11 +277,10 @@ func (h *MailTemplateHandler) save() middleware.JWTHandlerFunc {
 			respondValidation(w, &mailtemplate.ValidationError{Field: "version", Message: "Ungültige Version."})
 			return
 		}
-		files, ok := h.loadFiles(w, r, tenant, def, false)
-		if !ok {
-			return
-		}
-		subject, body, ok := sanitize(w, def, req, files)
+		// every well-formed image id stays in the text; whether the file exists (also as
+		// an older draft) is decided under the lock of the save, so a vanished image is
+		// a 400 and never silently dropped
+		subject, body, ok := sanitize(w, def, req, func(id string) bool { return uuid.Parse(id) != nil })
 		if !ok {
 			return
 		}
@@ -320,7 +313,7 @@ func (h *MailTemplateHandler) save() middleware.JWTHandlerFunc {
 			respondServerError(w, tenant, err)
 			return
 		}
-		files, ok = h.loadFiles(w, r, tenant, def, false)
+		files, ok := h.loadFiles(w, r, tenant, def, false)
 		if !ok {
 			return
 		}
@@ -581,6 +574,17 @@ func (h *MailTemplateHandler) deleteFile() middleware.JWTHandlerFunc {
 	}
 }
 
+// imageCheck accepts the images among files.
+func imageCheck(files []model.MailTemplateFile) mailtemplate.FileCheck {
+	images := map[string]bool{}
+	for _, f := range files {
+		if f.Kind == model.MailFileKindImage {
+			images[f.Id] = true
+		}
+	}
+	return func(id string) bool { return images[id] }
+}
+
 // usesFile reports whether the saved version uses a file.
 func usesFile(t *model.MailTemplate, id string) bool {
 	if t.AttachmentFileId != nil && strings.EqualFold(*t.AttachmentFileId, id) {
@@ -603,7 +607,7 @@ func (h *MailTemplateHandler) render(w http.ResponseWriter, r *http.Request, ten
 	if !ok {
 		return nil, nil, false
 	}
-	subject, body, ok := sanitize(w, def, req, files)
+	subject, body, ok := sanitize(w, def, req, imageCheck(files))
 	if !ok {
 		return nil, nil, false
 	}
