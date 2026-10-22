@@ -226,3 +226,22 @@ func TestCatalog(t *testing.T) {
 	assert.Equal(t, map[string]bool{KeyConsentRequest: true, KeyZpActive: true, KeyZpInactive: true}, keys)
 	assert.Nil(t, Lookup("billing-document"))
 }
+
+func TestTemplateBracesAreBrokenUp(t *testing.T) {
+	def := Lookup(KeyZpActive)
+	stored, err := SanitizeBody(def, `<p>Hallo {{name}} und {{{x}}}</p><p><a href="https://x.example/?q={{1}}">{{link}}</a></p>`, nil)
+	require.NoError(t, err)
+	assert.Contains(t, stored, `Hallo {<!-- -->{name}} und {<!-- -->{<!-- -->{x}}}`)
+	assert.Contains(t, stored, `href="https://x.example/?q={{1}}"`, "attributes stay")
+	assert.Contains(t, stored, `>{<!-- -->{link}}</a>`)
+	again, err := SanitizeBody(def, stored, nil)
+	require.NoError(t, err)
+	assert.Equal(t, stored, again, "idempotent")
+
+	r, err := Render(def, "S", stored, "", &Data{FirstName: "{{constructor}}", Eeg: testEeg()}, nil, ImagesInline)
+	require.NoError(t, err)
+	assert.NotContains(t, strings.ReplaceAll(r.Html, `href="https://x.example/?q={{1}}"`, ""), "{{")
+	r, err = Render(def, "S", `<p><span data-ph="member.firstName">x</span></p>`, "", &Data{FirstName: "{{constructor}}"}, nil, ImagesInline)
+	require.NoError(t, err)
+	assert.Contains(t, r.Html, "{<!-- -->{constructor}}", "member values are broken up too")
+}

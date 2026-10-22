@@ -51,6 +51,7 @@ func SanitizeBody(def *Definition, in string, fileOK FileCheck) (string, error) 
 	if !hasContent(root) {
 		return "", &ValidationError{Field: "bodyHtml", Message: "Der Text ist leer."}
 	}
+	breakTemplateBraces(root)
 	out, err := renderChildren(root)
 	if err != nil {
 		return "", err
@@ -371,4 +372,27 @@ func canonicalBody(body string) string {
 		return body
 	}
 	return out
+}
+
+// breakTemplateBraces splits every "{{" in text as "{<!-- -->{", so no
+// client-side template engine (e.g. in a webmail) evaluates EEG text or
+// member values. Attributes are not touched (a "{{" in a link stays). Same
+// rule as in eegfaktura-billing.
+func breakTemplateBraces(n *html.Node) {
+	for c := n.FirstChild; c != nil; {
+		next := c.NextSibling
+		switch c.Type {
+		case html.TextNode:
+			if i := strings.Index(c.Data, "{{"); i >= 0 {
+				rest := &html.Node{Type: html.TextNode, Data: c.Data[i+1:]}
+				c.Data = c.Data[:i+1]
+				n.InsertBefore(&html.Node{Type: html.CommentNode, Data: " "}, next)
+				n.InsertBefore(rest, next)
+				next = rest // the rest may contain more
+			}
+		case html.ElementNode:
+			breakTemplateBraces(c)
+		}
+		c = next
+	}
 }

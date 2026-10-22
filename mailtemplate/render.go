@@ -158,6 +158,8 @@ func Render(def *Definition, subject, body, attachmentId string, data *Data, fil
 		return nil, fmt.Errorf("%w: files %d bytes, limit %d bytes", ErrTooLarge, fileBytes, def.Limits.MaxTotalBytes)
 	}
 
+	// placeholder values are text too
+	breakTemplateBraces(root)
 	bodyHtml, err := renderChildren(root)
 	if err != nil {
 		return nil, err
