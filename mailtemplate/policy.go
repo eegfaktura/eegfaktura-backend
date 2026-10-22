@@ -82,21 +82,11 @@ func (p *htmlPolicy) requiredAttrs(el string) []string {
 // attribute: URL schemes per element, required attributes, placeholders, files.
 func (p *htmlPolicy) bluemondayPolicy() *bluemonday.Policy {
 	bm := bluemonday.NewPolicy()
-	bm.RequireParseableURLs(true)
-	bm.AllowRelativeURLs(false)
-
-	schemes := map[string]bool{}
-	for _, list := range p.URLSchemes {
-		for _, s := range list {
-			schemes[s] = true
-		}
-	}
-	all := make([]string, 0, len(schemes))
-	for s := range schemes {
-		all = append(all, s)
-	}
-	sort.Strings(all)
-	bm.AllowURLSchemes(all...)
+	// URLs pass bluemonday as written: with parseable URLs required it would
+	// re-encode them (umlaut domains, "|" in a path). The second pass checks
+	// every URL attribute against the schemes of the policy (sanitizer.cleanURL):
+	// no whitespace, parseable, scheme per attribute, host for https.
+	bm.RequireParseableURLs(false)
 
 	// style passes bluemonday unchanged on the elements that may carry it; the
 	// second pass keeps only the declarations of the policy (cleanStyle), which
