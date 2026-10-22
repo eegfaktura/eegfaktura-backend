@@ -24,7 +24,7 @@ golang-migrate + Atlas · Eclipse Paho (MQTT) · Keycloak/OIDC (JWT) · Viper ·
 
 ## Prerequisites
 
-- **Go**: version 1.25 or higher.
+- **Go**: version 1.26 or higher.
 - **PostgreSQL**: for data storage.
 - **MQTT Broker**: (e.g., Mosquitto) for real-time messaging.
 - **Protoc**: Protocol Buffers compiler (if modifying `.proto` files).
