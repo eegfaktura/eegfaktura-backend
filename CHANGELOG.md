@@ -23,6 +23,9 @@ this changelog highlights the changes relevant for overview and operations.
   A stored version that can not be rendered sends that default and an error notification to the community. On
   startup, communities whose customised mail is based on an older default get one notification.
   Migration `20261022120000_mail_templates` (two new tables, up/down; `schema.sql`, `schema.hcl`, `atlas.sum`).
+- **`cmd/mailtemplate-import`**: one-off operator tool that converts the hand-made mail templates of a volume copy
+  (`<TENANT>/templates`) into the new format and imports them through the REST API (dry run, `-test-mail eeg`).
+  Unmappable template expressions stop the import of that tenant. See `cmd/mailtemplate-import/README.md`.
 
 ### Changed
 - The mail send log line no longer contains the subject (a customised subject can contain member data).

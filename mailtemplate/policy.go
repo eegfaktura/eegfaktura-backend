@@ -38,6 +38,16 @@ func mustLoadPolicy(data []byte) *htmlPolicy {
 	return &p
 }
 
+// AllowedElements returns the HTML elements the policy allows.
+func AllowedElements() []string {
+	out := make([]string, 0, len(policy.Elements))
+	for el := range policy.Elements {
+		out = append(out, el)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // allowsAttr reports whether the policy allows attribute attr on element el.
 func (p *htmlPolicy) allowsAttr(el, attr string) bool {
 	for _, a := range p.Elements[el] {
