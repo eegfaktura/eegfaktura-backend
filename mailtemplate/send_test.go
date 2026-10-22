@@ -22,9 +22,15 @@ type notice struct {
 	message string
 }
 
+type storedFile struct {
+	model.MailTemplateFile
+	draft bool
+}
+
 type fakeStore struct {
 	templates map[string]*model.MailTemplate
-	files     []model.MailTemplateFile
+	files     []storedFile
+	requested []string
 	loadErr   error
 	notices   []notice
 	claimed   map[string][]string
@@ -37,8 +43,17 @@ func (s *fakeStore) GetMailTemplate(_ context.Context, tenant, key string) (*mod
 	return s.templates[tenant+"/"+key], nil
 }
 
-func (s *fakeStore) ListMailTemplateFiles(context.Context, string, string, bool) ([]model.MailTemplateFile, error) {
-	return s.files, nil
+func (s *fakeStore) GetCommittedMailTemplateFiles(_ context.Context, _, _ string, ids []string) ([]model.MailTemplateFile, error) {
+	s.requested = append(s.requested, ids...)
+	var out []model.MailTemplateFile
+	for _, f := range s.files {
+		for _, id := range ids {
+			if f.Id == id && !f.draft {
+				out = append(out, f.MailTemplateFile)
+			}
+		}
+	}
+	return out, nil
 }
 
 func (s *fakeStore) SaveNotificationFromMap(v map[string]interface{}, tenant string, typ model.NotificationType, _ model.NotificationProcess, role string) error {
@@ -71,9 +86,10 @@ func TestSendStored_UsesCustomisedVersion(t *testing.T) {
 		"TE000300/zp-active": {Tenant: "TE000300", MailKey: KeyZpActive, Version: 2, AttachmentFileId: strPtr("pdf"),
 			Subject:  `Aktiv: {meteringPoint}`,
 			BodyHtml: `<p>Servus <span data-ph="member.firstName">Vorname</span></p><img src="mailfile:` + ownImage + `">`},
-	}, files: []model.MailTemplateFile{
-		{Id: ownImage, Tenant: "TE000300", Kind: model.MailFileKindImage, Filename: "x.png", MimeType: "image/png", Content: []byte("png")},
-		{Id: "pdf", Tenant: "TE000300", Kind: model.MailFileKindAttachment, Filename: "a.pdf", MimeType: "application/pdf", Content: []byte("%PDF")},
+	}, files: []storedFile{
+		{MailTemplateFile: model.MailTemplateFile{Id: ownImage, Tenant: "TE000300", Kind: model.MailFileKindImage, Filename: "x.png", MimeType: "image/png", Content: []byte("png")}},
+		{MailTemplateFile: model.MailTemplateFile{Id: "pdf", Tenant: "TE000300", Kind: model.MailFileKindAttachment, Filename: "a.pdf", MimeType: "application/pdf", Content: []byte("%PDF")}},
+		{MailTemplateFile: model.MailTemplateFile{Id: "unused", Tenant: "TE000300", Kind: model.MailFileKindImage, Content: []byte("big")}},
 	}}
 	var sent []sentMail
 	cc := "eeg@example.org"
@@ -90,6 +106,7 @@ func TestSendStored_UsesCustomisedVersion(t *testing.T) {
 	require.Len(t, sent[0].inline, 1)
 	require.NotNil(t, sent[0].attachment)
 	assert.Empty(t, store.notices)
+	assert.ElementsMatch(t, []string{ownImage, "pdf"}, store.requested, "only the referenced files are loaded")
 }
 
 func TestSendStored_NoCustomisedVersion(t *testing.T) {
@@ -108,11 +125,16 @@ func TestSendStored_BrokenVersionFallsBackWithNotification(t *testing.T) {
 		// a placeholder the catalog does not (or no longer) know
 		"TE000300/zp-active": {Tenant: "TE000300", MailKey: KeyZpActive, Subject: "x", BodyHtml: `<p><span data-ph="member.iban">x</span></p>`},
 	}
-	tooLarge := []model.MailTemplateFile{{Id: "pdf", Tenant: "TE000300", Kind: model.MailFileKindAttachment, Content: make([]byte, 7*1024*1024)}}
+	tooLarge := []storedFile{{MailTemplateFile: model.MailTemplateFile{Id: "pdf", Tenant: "TE000300", Kind: model.MailFileKindAttachment, Content: make([]byte, 7*1024*1024)}}}
+	png := model.MailTemplateFile{Id: ownImage, Tenant: "TE000300", Kind: model.MailFileKindImage, Content: []byte("png")}
+	withImage := map[string]*model.MailTemplate{
+		"TE000300/zp-active": {Tenant: "TE000300", MailKey: KeyZpActive, Subject: "x", BodyHtml: `<p>x</p><img src="mailfile:` + ownImage + `">`}}
 	for name, store := range map[string]*fakeStore{
 		"unknown placeholder": {templates: broken},
 		"too large": {templates: map[string]*model.MailTemplate{
 			"TE000300/zp-active": {Tenant: "TE000300", MailKey: KeyZpActive, Subject: "x", BodyHtml: `<p>x</p>`, AttachmentFileId: strPtr("pdf")}}, files: tooLarge},
+		"referenced image missing":      {templates: withImage},
+		"referenced image only a draft": {templates: withImage, files: []storedFile{{MailTemplateFile: png, draft: true}}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var sent []sentMail

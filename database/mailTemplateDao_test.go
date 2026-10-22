@@ -85,6 +85,16 @@ func TestMailTemplateDao(t *testing.T) {
 	assert.Equal(t, map[string]bool{keepImg.Id: true, pdf.Id: true, dropImg.Id: false}, state(),
 		"used files are committed, a fresh draft of another editor stays, the stale draft is deleted")
 
+	loaded, err := db.GetCommittedMailTemplateFiles(ctx, tenant, key, []string{keepImg.Id, dropImg.Id, "not-a-uuid", pdf.Id, keepImg.Id})
+	require.NoError(t, err)
+	require.Len(t, loaded, 2, "only committed files, each once")
+	for _, f := range loaded {
+		assert.NotEmpty(t, f.Content)
+	}
+	loaded, err = db.GetCommittedMailTemplateFiles(ctx, "TE000399", key, []string{keepImg.Id})
+	require.NoError(t, err)
+	assert.Empty(t, loaded, "never files of another tenant")
+
 	_, err = db.SaveMailTemplate(ctx, &model.MailTemplate{Tenant: tenant, MailKey: key, Subject: "S2", BodyHtml: "<p>B</p>", DefaultVersion: 1, UpdatedBy: "x"}, 0, nil, ok)
 	var conflict *MailTemplateVersionError
 	require.True(t, errors.As(err, &conflict))

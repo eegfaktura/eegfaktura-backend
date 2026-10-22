@@ -72,6 +72,13 @@ func Render(def *Definition, subject, body, attachmentId string, data *Data, fil
 	if attachmentId != "" && attachment == nil {
 		return nil, fmt.Errorf("%w: PDF attachment %s", ErrMissingFile, attachmentId)
 	}
+	// an image the text uses but that is not available fails the mail instead of
+	// silently disappearing (the sender then falls back to the default)
+	for _, id := range ReferencedImages(body) {
+		if byId[id] == nil {
+			return nil, fmt.Errorf("%w: image %s", ErrMissingFile, id)
+		}
+	}
 
 	cleanSubject, err := SanitizeSubject(def, subject)
 	if err != nil {

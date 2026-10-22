@@ -191,10 +191,11 @@ func TestRender_ImagesAndAttachment(t *testing.T) {
 	assert.True(t, strings.HasPrefix(images[0], "data:image/png;base64,"))
 	assert.Empty(t, r.Inline)
 
-	// an image of another mail or community is dropped, never fetched
-	r, err = Render(def, "Betreff", `<p>a</p><img src="mailfile:00000000-0000-0000-0000-000000000000">`, "", &Data{}, files, ImagesInline)
-	require.NoError(t, err)
-	assert.NotContains(t, r.Html, "<img")
+	// an image that is not among the files (deleted, another mail or community) fails the mail
+	_, err = Render(def, "Betreff", `<p>a</p><img src="mailfile:00000000-0000-0000-0000-000000000000">`, "", &Data{}, files, ImagesInline)
+	assert.ErrorIs(t, err, ErrMissingFile)
+	_, err = Render(def, "Betreff", `<p>a</p>`, "missing-pdf", &Data{}, files, ImagesInline)
+	assert.ErrorIs(t, err, ErrMissingFile)
 }
 
 func TestRender_TooLarge(t *testing.T) {

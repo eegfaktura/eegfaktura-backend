@@ -8,6 +8,7 @@ import (
 
 	"at.ourproject/vfeeg-backend/model"
 	"github.com/jmoiron/sqlx"
+	"github.com/pborman/uuid"
 )
 
 // MailTemplateRepository stores the member mails a community customised
@@ -19,6 +20,7 @@ type MailTemplateRepository interface {
 	DeleteMailTemplate(ctx context.Context, tenant, key string) error
 	ListMailTemplateFiles(ctx context.Context, tenant, key string, withContent bool) ([]model.MailTemplateFile, error)
 	GetMailTemplateFile(ctx context.Context, id string) (*model.MailTemplateFile, error)
+	GetCommittedMailTemplateFiles(ctx context.Context, tenant, key string, ids []string) ([]model.MailTemplateFile, error)
 	InsertMailTemplateFile(ctx context.Context, f *model.MailTemplateFile, check func(existing []model.MailTemplateFile) error) error
 	DeleteMailTemplateFile(ctx context.Context, tenant, key, id string) (bool, error)
 	ClaimMailTemplateDefaultNotices(ctx context.Context, key string, defaultVersion int) ([]string, error)
@@ -205,6 +207,32 @@ func (db *sqlDatabase) GetMailTemplateFile(ctx context.Context, id string) (*mod
 		return nil, err
 	}
 	return &f, nil
+}
+
+// GetCommittedMailTemplateFiles loads, with content, only the given files that
+// belong to the saved version of this tenant and mail. Unknown or draft ids are
+// left out; the caller decides whether that is an error.
+func (db *sqlDatabase) GetCommittedMailTemplateFiles(ctx context.Context, tenant, key string, ids []string) ([]model.MailTemplateFile, error) {
+	files := []model.MailTemplateFile{}
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if seen[id] || uuid.Parse(id) == nil {
+			continue
+		}
+		seen[id] = true
+		var f model.MailTemplateFile
+		err := db.db.GetContext(ctx, &f,
+			`SELECT `+mailTemplateFileColumns+`, content FROM base.mail_template_file
+			 WHERE id = $1 AND tenant = $2 AND mail_key = $3 AND committed`, id, tenant, key)
+		if errors.Is(err, dbsql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, f)
+	}
+	return files, nil
 }
 
 // InsertMailTemplateFile stores an upload as a draft after check accepted the

@@ -21,7 +21,7 @@ type storeStub struct {
 func (s *storeStub) GetMailTemplate(context.Context, string, string) (*model.MailTemplate, error) {
 	return s.template, nil
 }
-func (s *storeStub) ListMailTemplateFiles(context.Context, string, string, bool) ([]model.MailTemplateFile, error) {
+func (s *storeStub) GetCommittedMailTemplateFiles(context.Context, string, string, []string) ([]model.MailTemplateFile, error) {
 	return nil, nil
 }
 func (s *storeStub) SaveNotificationFromMap(_ map[string]interface{}, tenant string, _ model.NotificationType, _ model.NotificationProcess, _ string) error {

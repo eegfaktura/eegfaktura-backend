@@ -15,7 +15,7 @@ import (
 // Store is what sending a customised mail needs from the database.
 type Store interface {
 	GetMailTemplate(ctx context.Context, tenant, key string) (*model.MailTemplate, error)
-	ListMailTemplateFiles(ctx context.Context, tenant, key string, withContent bool) ([]model.MailTemplateFile, error)
+	GetCommittedMailTemplateFiles(ctx context.Context, tenant, key string, ids []string) ([]model.MailTemplateFile, error)
 	SaveNotificationFromMap(notificationValue map[string]interface{}, tenant string, notificationType model.NotificationType, process model.NotificationProcess, role string) error
 }
 
@@ -42,14 +42,17 @@ func SendStored(ctx context.Context, store Store, sendMail services.SendMailFunc
 		log.WithField("tenant", tenant).Errorf("mail template %s: tenant mismatch, using default", def.Key)
 		return false, nil
 	}
-	files, err := store.ListMailTemplateFiles(ctx, tenant, def.Key, true)
-	if err != nil {
-		notifyFallback(store, def, tenant, identifier, err)
-		return false, nil
-	}
+	// only the files the saved version references, and only committed ones
+	ids := ReferencedImages(t.BodyHtml)
 	attachmentId := ""
 	if t.AttachmentFileId != nil {
 		attachmentId = *t.AttachmentFileId
+		ids = append(ids, attachmentId)
+	}
+	files, err := store.GetCommittedMailTemplateFiles(ctx, tenant, def.Key, ids)
+	if err != nil {
+		notifyFallback(store, def, tenant, identifier, err)
+		return false, nil
 	}
 	r, err := Render(def, t.Subject, t.BodyHtml, attachmentId, data, files, ImagesInline)
 	if err != nil {
