@@ -3,6 +3,7 @@ package parser
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"html/template"
 	"io/fs"
@@ -18,6 +19,7 @@ import (
 	"github.com/gabriel-vasile/mimetype"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"gopkg.in/guregu/null.v4"
 )
 
 // ParseTemplate renders the HTML template named name from fsys with data.
@@ -60,6 +62,48 @@ func resolveTemplateSource(tenant, templateConfigName string) (fs.FS, string) {
 
 // SendActivationMailFromTemplate sends the consent-request or the zp-active mail (by template
 // config name). store holds the community's customised mails; nil sends the legacy template.
+// TenantTemplateActive reports whether a hand-made template of the community on
+// the data volume applies to a mail (used while it has no saved version).
+func TenantTemplateActive(tenant, templateConfigName string) bool {
+	_, err := os.Stat(filepath.Join(viper.GetString("file-content.templates"), tenant, "templates", templateConfigName))
+	return err == nil
+}
+
+// RenderLegacyPreview renders the template the legacy resolution would send
+// (tenant dir, global dir, embedded) with the sample member, images as data: URIs.
+func RenderLegacyPreview(tenant, templateConfigName string, eeg *model.Eeg, data *mailtemplate.Data) (string, error) {
+	tmplFS, _ := resolveTemplateSource(tenant, templateConfigName)
+	cfg, err := config.ReadActivationMailTemplateConfig(tmplFS, templateConfigName)
+	if err != nil {
+		return "", err
+	}
+	participant := &model.EegParticipant{EegParticipantBase: model.EegParticipantBase{
+		FirstName: data.FirstName, LastName: data.LastName, ParticipantNumber: null.StringFrom(data.Number)}}
+	templateData := struct {
+		Eeg            *model.Eeg
+		Participant    *model.EegParticipant
+		Meteringpoints []string
+		MeteringPoint  string
+		Direction      string
+		EndDate        string
+		Reason         string
+	}{eeg, participant, data.MeteringPoints, strings.Join(data.MeteringPoints, ", "), data.Direction, data.EndDate, data.Reason}
+	buf, err := ParseTemplate(tmplFS, cfg.TemplateFile, templateData)
+	if err != nil {
+		return "", err
+	}
+	out := buf.String()
+	for _, p := range cfg.InlinePictures {
+		content, err := fs.ReadFile(tmplFS, p.Filepath)
+		if err != nil {
+			continue
+		}
+		out = strings.ReplaceAll(out, "cid:"+p.ContentId,
+			"data:"+mimetype.Detect(content).String()+";base64,"+base64.StdEncoding.EncodeToString(content))
+	}
+	return out, nil
+}
+
 func SendActivationMailFromTemplate(sendMail services.SendMailFunc, store mailtemplate.Store,
 	tenant, subject string, eeg *model.Eeg, participant *model.EegParticipant, templateConfigName string) error {
 

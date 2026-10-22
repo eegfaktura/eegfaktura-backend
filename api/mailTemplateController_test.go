@@ -8,6 +8,8 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -16,6 +18,7 @@ import (
 	"at.ourproject/vfeeg-backend/public"
 	"at.ourproject/vfeeg-backend/services"
 	"github.com/gorilla/mux"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -128,18 +131,19 @@ func decode[T any](t *testing.T, w *httptest.ResponseRecorder) T {
 }
 
 type mtDTO struct {
-	Key              string  `json:"key"`
-	Subject          string  `json:"subject"`
-	BodyHtml         string  `json:"bodyHtml"`
-	Customized       bool    `json:"customized"`
-	Version          int     `json:"version"`
-	DefaultVersion   int     `json:"defaultVersion"`
-	DefaultChanged   bool    `json:"defaultChanged"`
-	DefaultSubject   string  `json:"defaultSubject"`
-	DefaultBodyHtml  string  `json:"defaultBodyHtml"`
-	AttachmentFileId *string `json:"attachmentFileId"`
-	UpdatedBy        *string
-	Placeholders     []struct {
+	Key                  string  `json:"key"`
+	Subject              string  `json:"subject"`
+	BodyHtml             string  `json:"bodyHtml"`
+	Customized           bool    `json:"customized"`
+	Version              int     `json:"version"`
+	DefaultVersion       int     `json:"defaultVersion"`
+	DefaultChanged       bool    `json:"defaultChanged"`
+	DefaultSubject       string  `json:"defaultSubject"`
+	DefaultBodyHtml      string  `json:"defaultBodyHtml"`
+	LegacyTemplateActive bool    `json:"legacyTemplateActive"`
+	AttachmentFileId     *string `json:"attachmentFileId"`
+	UpdatedBy            *string
+	Placeholders         []struct {
 		Key   string `json:"key"`
 		Block bool   `json:"block"`
 	} `json:"placeholders"`
@@ -274,6 +278,47 @@ func TestMailTemplates_HappyPath(t *testing.T) {
 	reset := decode[mtDTO](t, w)
 	assert.False(t, reset.Customized)
 	assert.Empty(t, reset.Files, "reset deletes the files")
+}
+
+// While a hand-made volume template applies, GET says so and the unchanged default previews that template.
+func TestMailTemplates_LegacyTemplateActive(t *testing.T) {
+	c := newMailTemplateClient(t)
+	vol := t.TempDir()
+	dir := filepath.Join(vol, mtTenant, "templates")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "activation-mail-template.toml"), []byte(`TemplateFile="t.html"
+InlinePictures = [ { Filepath="l.png", contentId="logo-1" } ]`), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "t.html"), []byte(`<html><body><p>Servus {{.Participant.FirstName}} von {{.Eeg.Name}}</p><img src="cid:logo-1"></body></html>`), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "l.png"), logoPNG(t), 0o644))
+	orig := viper.GetString("file-content.templates")
+	viper.Set("file-content.templates", vol)
+	t.Cleanup(func() { viper.Set("file-content.templates", orig) })
+
+	w := c.json("admin", mtTenant, "GET", "/eeg/mailtemplates/consent-request", nil)
+	def := decode[mtDTO](t, w)
+	assert.True(t, def.LegacyTemplateActive)
+	w = c.json("admin", mtTenant, "GET", "/eeg/mailtemplates/zp-active", nil)
+	assert.False(t, decode[mtDTO](t, w).LegacyTemplateActive, "no hand-made template for this mail")
+
+	w = c.json("admin", mtTenant, "POST", "/eeg/mailtemplates/consent-request/preview", map[string]interface{}{
+		"subject": def.DefaultSubject, "bodyHtml": def.DefaultBodyHtml})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	preview := decode[map[string]string](t, w)
+	assert.Contains(t, preview["html"], "<p>Servus Max von MAIL-TEST</p>")
+	assert.Contains(t, preview["html"], `src="data:image/png;base64,`)
+	assert.Equal(t, "Aktivierung im Serviceportal", preview["subject"])
+
+	// a changed text previews the new format
+	w = c.json("admin", mtTenant, "POST", "/eeg/mailtemplates/consent-request/preview", map[string]interface{}{
+		"subject": def.DefaultSubject, "bodyHtml": "<p>Neu</p>"})
+	assert.Contains(t, decode[map[string]string](t, w)["html"], "<p>Neu</p>")
+
+	// a saved version replaces the hand-made template
+	w = c.json("admin", mtTenant, "PUT", "/eeg/mailtemplates/consent-request", map[string]interface{}{
+		"subject": "S", "bodyHtml": "<p>x</p>", "version": 0})
+	require.Equal(t, http.StatusOK, w.Code)
+	w = c.json("admin", mtTenant, "GET", "/eeg/mailtemplates/consent-request", nil)
+	assert.False(t, decode[mtDTO](t, w).LegacyTemplateActive)
 }
 
 func TestMailTemplates_FileLifecycle(t *testing.T) {

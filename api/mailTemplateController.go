@@ -17,6 +17,7 @@ import (
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/mailtemplate"
 	"at.ourproject/vfeeg-backend/model"
+	"at.ourproject/vfeeg-backend/parser"
 	"at.ourproject/vfeeg-backend/public"
 	"at.ourproject/vfeeg-backend/services"
 	"github.com/gabriel-vasile/mimetype"
@@ -66,23 +67,25 @@ type mailTemplateSummary struct {
 }
 
 type mailTemplateDTO struct {
-	Key             string                     `json:"key"`
-	Name            string                     `json:"name"`
-	Description     string                     `json:"description"`
-	Subject         string                     `json:"subject"`
-	BodyHtml        string                     `json:"bodyHtml"`
-	Customized      bool                       `json:"customized"`
-	Version         int                        `json:"version"`
-	DefaultVersion  int                        `json:"defaultVersion"`
-	DefaultChanged  bool                       `json:"defaultChanged"`
-	DefaultSubject  string                     `json:"defaultSubject"`
-	DefaultBodyHtml string                     `json:"defaultBodyHtml"`
-	UpdatedAt       *time.Time                 `json:"updatedAt"`
-	UpdatedBy       *string                    `json:"updatedBy"`
-	AttachmentFile  *string                    `json:"attachmentFileId"`
-	Placeholders    []mailtemplate.Placeholder `json:"placeholders"`
-	Files           []model.MailTemplateFile   `json:"files"`
-	Limits          mailtemplate.Limits        `json:"limits"`
+	Key             string     `json:"key"`
+	Name            string     `json:"name"`
+	Description     string     `json:"description"`
+	Subject         string     `json:"subject"`
+	BodyHtml        string     `json:"bodyHtml"`
+	Customized      bool       `json:"customized"`
+	Version         int        `json:"version"`
+	DefaultVersion  int        `json:"defaultVersion"`
+	DefaultChanged  bool       `json:"defaultChanged"`
+	DefaultSubject  string     `json:"defaultSubject"`
+	DefaultBodyHtml string     `json:"defaultBodyHtml"`
+	UpdatedAt       *time.Time `json:"updatedAt"`
+	UpdatedBy       *string    `json:"updatedBy"`
+	AttachmentFile  *string    `json:"attachmentFileId"`
+	// LegacyTemplateActive: no saved version and a hand-made template on the volume applies
+	LegacyTemplateActive bool                       `json:"legacyTemplateActive"`
+	Placeholders         []mailtemplate.Placeholder `json:"placeholders"`
+	Files                []model.MailTemplateFile   `json:"files"`
+	Limits               mailtemplate.Limits        `json:"limits"`
 }
 
 type mailTemplateRequest struct {
@@ -225,7 +228,9 @@ func (h *MailTemplateHandler) get() middleware.JWTHandlerFunc {
 		if !ok {
 			return
 		}
-		respondWithJSON(w, http.StatusOK, dtoOf(def, t, files))
+		dto := dtoOf(def, t, files)
+		dto.LegacyTemplateActive = t == nil && parser.TenantTemplateActive(tenant, def.LegacyConfig)
+		respondWithJSON(w, http.StatusOK, dto)
 	}
 }
 
@@ -656,12 +661,46 @@ func (h *MailTemplateHandler) preview() middleware.JWTHandlerFunc {
 		if !ok {
 			return
 		}
+		if html, ok := h.legacyPreview(r, tenant, def, req); ok {
+			respondWithJSON(w, http.StatusOK, map[string]string{"subject": def.DefaultSubject, "html": html})
+			return
+		}
 		rendered, _, ok := h.render(w, r, tenant, def, req, mailtemplate.ImagesDataURI)
 		if !ok {
 			return
 		}
 		respondWithJSON(w, http.StatusOK, map[string]string{"subject": rendered.Subject, "html": rendered.Html})
 	}
+}
+
+// legacyPreview: while a hand-made volume template applies (no saved version),
+// the unchanged default in the editor previews that template, which is what
+// members get today (section H, legacyTemplateActive).
+func (h *MailTemplateHandler) legacyPreview(r *http.Request, tenant string, def *mailtemplate.Definition, req *mailTemplateRequest) (string, bool) {
+	if !parser.TenantTemplateActive(tenant, def.LegacyConfig) {
+		return "", false
+	}
+	subject, err := mailtemplate.SanitizeSubject(def, req.Subject)
+	if err != nil || subject != def.DefaultSubject {
+		return "", false
+	}
+	body, err := mailtemplate.SanitizeBody(def, req.BodyHtml, nil)
+	if err != nil || body != def.DefaultBodyHtml() {
+		return "", false
+	}
+	if t, err := h.db.GetMailTemplate(r.Context(), tenant, def.Key); err != nil || t != nil {
+		return "", false
+	}
+	eeg, err := h.db.GetEegById(r.Context(), tenant)
+	if err != nil || eeg == nil || !strings.EqualFold(eeg.Id, tenant) {
+		return "", false
+	}
+	html, err := parser.RenderLegacyPreview(tenant, def.LegacyConfig, eeg, mailtemplate.SampleData(eeg))
+	if err != nil {
+		log.WithField("tenant", tenant).WithError(err).Warn("mail template: legacy preview failed")
+		return "", false
+	}
+	return html, true
 }
 
 func (h *MailTemplateHandler) test() middleware.JWTHandlerFunc {
