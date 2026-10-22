@@ -125,6 +125,10 @@ func convert(fsys fs.FS, tenant string, def *mailtemplate.Definition) *Conversio
 		return c
 	}
 
+	c.checkActionsInAttributes(string(raw))
+	if c.Blocked() {
+		return c
+	}
 	text := c.convertActions(def, string(raw))
 	if c.Blocked() {
 		return c
@@ -159,6 +163,30 @@ func convert(fsys fs.FS, tenant string, def *mailtemplate.Definition) *Conversio
 	}
 	c.Body = clean
 	return c
+}
+
+// checkActionsInAttributes stops a template that uses a template expression
+// inside a tag (e.g. href="mailto:{{.Eeg.Contact.Email.String}}"): a
+// placeholder is an element and can never stand in an attribute.
+func (c *Conversion) checkActionsInAttributes(s string) {
+	z := html.NewTokenizer(strings.NewReader(s))
+	for {
+		switch z.Next() {
+		case html.ErrorToken:
+			return
+		case html.StartTagToken, html.SelfClosingTagToken, html.EndTagToken:
+			tok := z.Token()
+			for _, a := range tok.Attr {
+				if strings.Contains(a.Key, "{{") || strings.Contains(a.Val, "{{") || strings.Contains(a.Val, "}}") {
+					c.block("Template-Ausdruck in einem Attribut (<%s %s=%q>) lässt sich nicht als Platzhalter abbilden — Vorlage vorher von Hand anpassen",
+						tok.Data, a.Key, a.Val)
+				}
+			}
+			if strings.Contains(tok.Data, "{{") {
+				c.block("Template-Ausdruck in einem Tag-Namen (<%s>)", tok.Data)
+			}
+		}
+	}
 }
 
 // convertActions replaces the Go template actions by placeholders. Whatever it

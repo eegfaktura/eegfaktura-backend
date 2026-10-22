@@ -119,13 +119,23 @@ func TestConvert_UnmappableStops(t *testing.T) {
 		"contact person bare": `<p>{{.Eeg.ContactPerson.String}}</p>`,
 		"wrong mail key":      `<p>{{.Reason}}</p>`,
 		"unclosed":            `<p>{{.Participant.FirstName</p>`,
+		"in href":             `<p><a href="mailto:{{.Eeg.Contact.Email.String}}">Mail</a></p>`,
+		"in img src":          `<p>x</p><img src="https://x.example/{{.Eeg.Name}}.png">`,
+		"in style":            `<p style="color: {{.Eeg.Name}}">x</p>`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			c := ConvertTenant(templateFS(tpl), "TE000300")[0]
 			assert.True(t, c.Blocked(), name)
 			assert.Empty(t, c.Body)
+			assert.NotContains(t, findingTexts(c), "data-ph")
 		})
 	}
+}
+
+func TestConvert_ActionInAttributeIsNamed(t *testing.T) {
+	c := ConvertTenant(templateFS(`<p>Hallo {{.Participant.FirstName}}, <a href="mailto:{{.Eeg.Contact.Email.String}}">schreib uns</a></p>`), "TE000300")[0]
+	require.True(t, c.Blocked())
+	assert.Contains(t, findingTexts(c), `href="mailto:{{.Eeg.Contact.Email.String}}"`)
 }
 
 func TestConvert_Images(t *testing.T) {
