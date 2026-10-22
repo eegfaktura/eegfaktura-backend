@@ -235,6 +235,16 @@ func (d *Data) text(def *Definition, key string) (string, error) {
 		return d.Direction, nil
 	case "endDate":
 		return d.EndDate, nil
+	case "directionText":
+		if v := strings.TrimSpace(d.Direction); v != "" {
+			return "(" + v + ")", nil
+		}
+		return "", nil
+	case "endDateText":
+		if v := strings.TrimSpace(d.EndDate); v != "" {
+			return "ab dem " + v, nil
+		}
+		return "", nil
 	case "reason":
 		return d.Reason, nil
 	case "eeg.name":

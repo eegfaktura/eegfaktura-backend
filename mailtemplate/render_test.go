@@ -147,6 +147,24 @@ func TestRender_MissingValuesAreEmpty(t *testing.T) {
 	assert.NotContains(t, r.Html, "data-ph")
 }
 
+// Without direction or end date the zp-inactive default must not read "()" or "ab dem ".
+func TestRender_InactiveDefaultWithoutDirectionAndEndDate(t *testing.T) {
+	def := Lookup(KeyZpInactive)
+	r, err := Render(def, def.DefaultSubject, def.DefaultBody, &Data{FirstName: "Maria", MeteringPoints: []string{"AT1"},
+		Reason: "Weil.", Eeg: testEeg()}, nil, ImagesInline)
+	require.NoError(t, err)
+	text, _ := visible(t, r.Html)
+	assert.Contains(t, text, "dein Zählpunkt AT1 ist nicht mehr Teil der Energiegemeinschaft TE-EEG.")
+	assert.NotContains(t, text, "()")
+	assert.NotContains(t, text, "ab dem")
+
+	r, err = Render(def, def.DefaultSubject, def.DefaultBody, &Data{MeteringPoints: []string{"AT1"}, Direction: "Einspeisung",
+		Eeg: testEeg()}, nil, ImagesInline)
+	require.NoError(t, err)
+	text, _ = visible(t, r.Html)
+	assert.Contains(t, text, "dein Zählpunkt AT1 (Einspeisung) ist nicht mehr Teil")
+}
+
 func TestRender_ImagesAndAttachment(t *testing.T) {
 	def := Lookup(KeyZpActive)
 	png := []byte("\x89PNG\r\n\x1a\nfake")

@@ -84,13 +84,16 @@ var (
 	phGridOperator = Placeholder{Key: "gridOperator.name", Label: "Netzbetreiber"}
 	phDirection    = Placeholder{Key: "direction", Label: "Richtung (Bezug/Einspeisung)"}
 	phEndDate      = Placeholder{Key: "endDate", Label: "Enddatum"}
-	phReason       = Placeholder{Key: "reason", Label: "Grund"}
-	phEegName      = Placeholder{Key: "eeg.name", Label: "Name der EEG"}
-	phEegDesc      = Placeholder{Key: "eeg.description", Label: "Bezeichnung der EEG"}
-	phEegEmail     = Placeholder{Key: "eeg.email", Label: "E-Mail der EEG"}
-	phEegPhone     = Placeholder{Key: "eeg.phone", Label: "Telefon der EEG"}
-	phEegWebsite   = Placeholder{Key: "eeg.website", Label: "Website der EEG"}
-	phContactBlock = Placeholder{Key: "eeg.contactBlock", Label: "Kontaktblock der EEG", Block: true}
+	// composite placeholders: carry their own wording, empty when the value is missing
+	phDirectionText = Placeholder{Key: "directionText", Label: "(Richtung) – leer, wenn unbekannt"}
+	phEndDateText   = Placeholder{Key: "endDateText", Label: "ab dem Enddatum – leer, wenn unbekannt"}
+	phReason        = Placeholder{Key: "reason", Label: "Grund"}
+	phEegName       = Placeholder{Key: "eeg.name", Label: "Name der EEG"}
+	phEegDesc       = Placeholder{Key: "eeg.description", Label: "Bezeichnung der EEG"}
+	phEegEmail      = Placeholder{Key: "eeg.email", Label: "E-Mail der EEG"}
+	phEegPhone      = Placeholder{Key: "eeg.phone", Label: "Telefon der EEG"}
+	phEegWebsite    = Placeholder{Key: "eeg.website", Label: "Website der EEG"}
+	phContactBlock  = Placeholder{Key: "eeg.contactBlock", Label: "Kontaktblock der EEG", Block: true}
 )
 
 // defaultSignature is the end of every default text: greeting, the community's
@@ -139,13 +142,13 @@ var catalog = []Definition{
 		Key:         KeyZpInactive,
 		Name:        "Zählpunkt inaktiv",
 		Description: "Wird verschickt, wenn ein Zählpunkt nicht mehr Teil der Gemeinschaft ist (Datenfreigabe beendet oder Zählpunkt abgemeldet).",
-		Placeholders: []Placeholder{phFirstName, phLastName, phNumber, phMeter, phMeters, phDirection, phEndDate, phReason,
+		Placeholders: []Placeholder{phFirstName, phLastName, phNumber, phMeter, phMeters, phDirection, phEndDate, phDirectionText, phEndDateText, phReason,
 			phEegName, phEegDesc, phEegEmail, phEegPhone, phEegWebsite, phContactBlock},
 		Limits:         memberMailLimits,
 		DefaultVersion: 1,
 		DefaultSubject: "Dein Zählpunkt ist nicht mehr Teil der Energiegemeinschaft",
 		DefaultBody: `<p>Hallo <span data-ph="member.firstName">Vorname</span>,</p>
-<p>dein Zählpunkt <strong><span data-ph="meteringPoint">Zählpunkt</span></strong> (<span data-ph="direction">Richtung (Bezug/Einspeisung)</span>) ist ab dem <strong><span data-ph="endDate">Enddatum</span></strong> nicht mehr Teil der Energiegemeinschaft <span data-ph="eeg.name">Name der EEG</span>.</p>
+<p>dein Zählpunkt <strong><span data-ph="meteringPoint">Zählpunkt</span></strong> <span data-ph="directionText">(Richtung) – leer, wenn unbekannt</span> ist <strong><span data-ph="endDateText">ab dem Enddatum – leer, wenn unbekannt</span></strong> nicht mehr Teil der Energiegemeinschaft <span data-ph="eeg.name">Name der EEG</span>.</p>
 <p><span data-ph="reason">Grund</span></p>
 <p>Falls das nicht beabsichtigt war oder du Fragen hast, melde dich bitte bei deiner Energiegemeinschaft.</p>
 ` + defaultSignature,
