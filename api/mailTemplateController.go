@@ -93,6 +93,9 @@ type mailTemplateRequest struct {
 	Subject   string `json:"subject"`
 	BodyHtml  string `json:"bodyHtml"`
 	Version   int    `json:"version"`
+	// UseDefault (preview and test mail): render what the default sends today, i.e. the
+	// hand-made volume template while legacyTemplateActive.
+	UseDefault bool `json:"useDefault"`
 	// AttachmentFileId: the PDF; null = none. Preview and test mail without the field use the saved version's PDF.
 	AttachmentFileId json.RawMessage `json:"attachmentFileId"`
 }
@@ -649,46 +652,44 @@ func (h *MailTemplateHandler) preview() middleware.JWTHandlerFunc {
 		if !ok {
 			return
 		}
-		if html, ok := h.legacyPreview(r, tenant, def, req); ok {
-			respondWithJSON(w, http.StatusOK, map[string]string{"subject": def.DefaultSubject, "html": html})
-			return
-		}
-		rendered, _, ok := h.render(w, r, tenant, def, req, mailtemplate.ImagesDataURI)
+		rendered, _, ok := h.legacy(r, tenant, def, req, mailtemplate.ImagesDataURI)
 		if !ok {
-			return
+			if rendered, _, ok = h.render(w, r, tenant, def, req, mailtemplate.ImagesDataURI); !ok {
+				return
+			}
 		}
 		respondWithJSON(w, http.StatusOK, map[string]string{"subject": rendered.Subject, "html": rendered.Html})
 	}
 }
 
-// legacyPreview: while a hand-made volume template applies (no saved version),
-// the unchanged default in the editor previews that template, which is what
-// members get today (section H, legacyTemplateActive).
-func (h *MailTemplateHandler) legacyPreview(r *http.Request, tenant string, def *mailtemplate.Definition, req *mailTemplateRequest) (string, bool) {
+// legacy renders the hand-made volume template for preview and test mail when
+// it is what members get today and the editor shows the default unchanged.
+// Rule (section H, legacyTemplateActive): no saved version, a hand-made
+// template of the community on the volume, and either the request sets
+// useDefault or its subject and text equal the default after sanitising
+// (whitespace between elements ignored, see Definition.SameAsDefault).
+func (h *MailTemplateHandler) legacy(r *http.Request, tenant string, def *mailtemplate.Definition, req *mailTemplateRequest,
+	mode mailtemplate.ImageMode) (*mailtemplate.Rendered, *model.Eeg, bool) {
 	if !parser.TenantTemplateActive(tenant, def.LegacyConfig) {
-		return "", false
+		return nil, nil, false
 	}
-	subject, err := mailtemplate.SanitizeSubject(def, req.Subject)
-	if err != nil || subject != def.DefaultSubject {
-		return "", false
-	}
-	body, err := mailtemplate.SanitizeBody(def, req.BodyHtml, nil)
-	if err != nil || body != def.DefaultBodyHtml() {
-		return "", false
+	if !req.UseDefault && !def.SameAsDefault(req.Subject, req.BodyHtml) {
+		return nil, nil, false
 	}
 	if t, err := h.db.GetMailTemplate(r.Context(), tenant, def.Key); err != nil || t != nil {
-		return "", false
+		return nil, nil, false
 	}
 	eeg, err := h.db.GetEegById(r.Context(), tenant)
 	if err != nil || eeg == nil || !strings.EqualFold(eeg.Id, tenant) {
-		return "", false
+		return nil, nil, false
 	}
-	html, err := parser.RenderLegacyPreview(tenant, def.LegacyConfig, eeg, mailtemplate.SampleData(eeg))
+	rendered, err := parser.RenderLegacy(tenant, def.LegacyConfig, eeg, mailtemplate.SampleData(eeg), mode)
 	if err != nil {
-		log.WithField("tenant", tenant).WithError(err).Warn("mail template: legacy preview failed")
-		return "", false
+		log.WithField("tenant", tenant).WithError(err).Warn("mail template: legacy template can not be rendered")
+		return nil, nil, false
 	}
-	return html, true
+	rendered.Subject = def.DefaultSubject
+	return rendered, eeg, true
 }
 
 func (h *MailTemplateHandler) test() middleware.JWTHandlerFunc {
@@ -705,9 +706,12 @@ func (h *MailTemplateHandler) test() middleware.JWTHandlerFunc {
 			respondValidation(w, &mailtemplate.ValidationError{Field: "recipient", Message: "recipient muss me oder eeg sein."})
 			return
 		}
-		rendered, eeg, ok := h.render(w, r, tenant, def, req, mailtemplate.ImagesInline)
+		// test mail and preview agree: the hand-made template while it applies
+		rendered, eeg, ok := h.legacy(r, tenant, def, req, mailtemplate.ImagesInline)
 		if !ok {
-			return
+			if rendered, eeg, ok = h.render(w, r, tenant, def, req, mailtemplate.ImagesInline); !ok {
+				return
+			}
 		}
 		// the recipient is chosen by the service, never given by the browser
 		to := strings.TrimSpace(claims.Email)

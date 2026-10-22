@@ -342,3 +342,33 @@ func renderChildren(root *html.Node) (string, error) {
 	}
 	return buf.String(), nil
 }
+
+// canonicalBody renders sanitised HTML without whitespace-only text between
+// elements and with runs of whitespace collapsed, for comparisons.
+func canonicalBody(body string) string {
+	nodes, err := parseFragment(body)
+	if err != nil {
+		return body
+	}
+	root := wrap(nodes)
+	var walk func(n *html.Node)
+	walk = func(n *html.Node) {
+		for c := n.FirstChild; c != nil; {
+			next := c.NextSibling
+			if c.Type == html.TextNode {
+				c.Data = spaces.ReplaceAllString(c.Data, " ")
+				if strings.TrimSpace(c.Data) == "" {
+					n.RemoveChild(c)
+				}
+			}
+			walk(c)
+			c = next
+		}
+	}
+	walk(root)
+	out, err := renderChildren(root)
+	if err != nil {
+		return body
+	}
+	return out
+}

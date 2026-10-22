@@ -186,3 +186,13 @@ func TestPolicyFileIsTheSharedOne(t *testing.T) {
 	assert.Equal(t, 1, policy.Version)
 	assert.Equal(t, "noopener noreferrer", policy.LinkRel)
 }
+
+func TestSameAsDefault(t *testing.T) {
+	for _, def := range Catalog() {
+		def := def
+		assert.True(t, def.SameAsDefault(def.DefaultSubject, def.DefaultBody), def.Key)
+		assert.True(t, def.SameAsDefault(def.DefaultSubject, strings.ReplaceAll(def.DefaultBodyHtml(), "\n", "")), "editor serialisation without line breaks")
+		assert.False(t, def.SameAsDefault(def.DefaultSubject+"!", def.DefaultBody), "changed subject")
+		assert.False(t, def.SameAsDefault(def.DefaultSubject, def.DefaultBody+"<p>x</p>"), "changed text")
+	}
+}

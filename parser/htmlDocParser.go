@@ -67,13 +67,15 @@ func TenantTemplateActive(tenant, templateConfigName string) bool {
 	return err == nil
 }
 
-// RenderLegacyPreview renders the template the legacy resolution would send
-// (tenant dir, global dir, embedded) with the sample member, images as data: URIs.
-func RenderLegacyPreview(tenant, templateConfigName string, eeg *model.Eeg, data *mailtemplate.Data) (string, error) {
+// RenderLegacy renders the template the legacy resolution would send (tenant
+// dir, global dir, embedded) with the given member data: for the preview with
+// images as data: URIs, for a test mail with inline images and attachment as
+// the member gets them.
+func RenderLegacy(tenant, templateConfigName string, eeg *model.Eeg, data *mailtemplate.Data, mode mailtemplate.ImageMode) (*mailtemplate.Rendered, error) {
 	tmplFS, _ := resolveTemplateSource(tenant, templateConfigName)
 	cfg, err := config.ReadActivationMailTemplateConfig(tmplFS, templateConfigName)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	participant := &model.EegParticipant{EegParticipantBase: model.EegParticipantBase{
 		FirstName: data.FirstName, LastName: data.LastName, ParticipantNumber: null.StringFrom(data.Number)}}
@@ -88,7 +90,14 @@ func RenderLegacyPreview(tenant, templateConfigName string, eeg *model.Eeg, data
 	}{eeg, participant, data.MeteringPoints, strings.Join(data.MeteringPoints, ", "), data.Direction, data.EndDate, data.Reason}
 	buf, err := ParseTemplate(tmplFS, cfg.TemplateFile, templateData)
 	if err != nil {
-		return "", err
+		return nil, err
+	}
+	if mode == mailtemplate.ImagesInline {
+		return &mailtemplate.Rendered{
+			Html:       buf.String(),
+			Inline:     buildInlineContent(tmplFS, cfg.InlinePictures),
+			Attachment: buildAttachment(tmplFS, cfg.Attachment.Name, cfg.Attachment.Mime),
+		}, nil
 	}
 	out := buf.String()
 	for _, p := range cfg.InlinePictures {
@@ -99,7 +108,7 @@ func RenderLegacyPreview(tenant, templateConfigName string, eeg *model.Eeg, data
 		out = strings.ReplaceAll(out, "cid:"+p.ContentId,
 			"data:"+mimetype.Detect(content).String()+";base64,"+base64.StdEncoding.EncodeToString(content))
 	}
-	return out, nil
+	return &mailtemplate.Rendered{Html: out}, nil
 }
 
 // SendActivationMailFromTemplate sends the consent-request or the zp-active mail (by template

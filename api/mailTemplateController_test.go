@@ -308,6 +308,26 @@ InlinePictures = [ { Filepath="l.png", contentId="logo-1" } ]`), 0o644))
 	assert.Contains(t, preview["html"], `src="data:image/png;base64,`)
 	assert.Equal(t, "Aktivierung im Serviceportal", preview["subject"])
 
+	// the editor's own serialisation of the default (no line breaks) still counts as unchanged
+	compact := strings.ReplaceAll(def.DefaultBodyHtml, "\n", "")
+	w = c.json("admin", mtTenant, "POST", "/eeg/mailtemplates/consent-request/preview", map[string]interface{}{
+		"subject": " " + def.DefaultSubject + " ", "bodyHtml": compact})
+	assert.Contains(t, decode[map[string]string](t, w)["html"], "<p>Servus Max von MAIL-TEST</p>")
+	// useDefault asks for it explicitly
+	w = c.json("admin", mtTenant, "POST", "/eeg/mailtemplates/consent-request/preview", map[string]interface{}{
+		"subject": "x", "bodyHtml": "<p>x</p>", "useDefault": true})
+	assert.Contains(t, decode[map[string]string](t, w)["html"], "<p>Servus Max von MAIL-TEST</p>")
+
+	// the test mail sends the same hand-made template, with its inline image
+	w = c.json("admin", mtTenant, "POST", "/eeg/mailtemplates/consent-request/test", map[string]interface{}{
+		"recipient": "me", "subject": def.DefaultSubject, "bodyHtml": compact})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.Len(t, c.sent, 1)
+	assert.Equal(t, "[Test] Aktivierung im Serviceportal", c.sent[0].subject)
+	assert.Contains(t, c.sent[0].body, "<p>Servus Max von MAIL-TEST</p>")
+	assert.Contains(t, c.sent[0].body, `src="cid:logo-1"`)
+	assert.Equal(t, 1, c.sent[0].inline)
+
 	// a changed text previews the new format
 	w = c.json("admin", mtTenant, "POST", "/eeg/mailtemplates/consent-request/preview", map[string]interface{}{
 		"subject": def.DefaultSubject, "bodyHtml": "<p>Neu</p>"})

@@ -190,3 +190,20 @@ func (d *Definition) DefaultBodyHtml() string {
 	}
 	return body
 }
+
+// SameAsDefault reports whether an edited subject and body are the default of
+// the mail, independent of how an editor serialises it: both are sanitised and
+// compared without whitespace between elements and with runs of whitespace in
+// text collapsed. Used to show the hand-made volume template for the unchanged
+// default (legacyTemplateActive).
+func (d *Definition) SameAsDefault(subject, body string) bool {
+	s, err := SanitizeSubject(d, subject)
+	if err != nil || s != d.DefaultSubject {
+		return false
+	}
+	b, err := SanitizeBody(d, body, func(string) bool { return false })
+	if err != nil {
+		return false
+	}
+	return canonicalBody(b) == canonicalBody(d.DefaultBodyHtml())
+}
