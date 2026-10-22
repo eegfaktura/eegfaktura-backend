@@ -1,4 +1,4 @@
-h1:zh3J5uQUGPQGoB+7JhwVQ+llOCbZaVG8WmNiTZF9zxI=
+h1:6G+HczXTJ0MkHSvmyF7rpHGwiDpw4Pv++It13L3yW38=
 20250603103206_activeMeterView.down.sql h1:V5EKxvxAuaSdnRVLU0e20eVgGYLR4ZSBvPnukIHpiRo=
 20250603103206_activeMeterView.up.sql h1:YVfOs7bUwB2hqp/abjEjnItPfcCpAc5nx3K1smC21fY=
 20250603150318_create_views.down.sql h1:ZmbHQkMP7FyWQUiPU7qpyaodv6j1cy55/IaOJeiPlag=
@@ -17,3 +17,5 @@ h1:zh3J5uQUGPQGoB+7JhwVQ+llOCbZaVG8WmNiTZF9zxI=
 20250907104917_add_bank_purpose.up.sql h1:wDkEJClNTRzEy1GnMBtk6CBydDIuHVx7SSgaE/48R+4=
 20260711120000_zvt_time_tariff.down.sql h1:D1MzCfMFpcDb1xAgECyp5lXbsI/dqOxvJ4wi8LRGHrQ=
 20260711120000_zvt_time_tariff.up.sql h1:6LBI9YEbiToYmRPjfrwGoj7B5K66QMJhJwxs1eTm3Zw=
+20261022120000_mail_templates.down.sql h1:vo4eQOVOWo5KytUCo0+vgwJ30Xf1jWjaJcsFGfu9sk4=
+20261022120000_mail_templates.up.sql h1:6G+HczXTJ0MkHSvmyF7rpHGwiDpw4Pv++It13L3yW38=
