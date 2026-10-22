@@ -118,15 +118,31 @@ func TestMailTemplateDao(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, deleted, "a file is only deleted for its own tenant")
 
-	// default change notice: claimed once
+	// default change notice: notification and claim in one transaction, once
 	_, err = testDB.DbInstance.Exec(`UPDATE base.mail_template SET default_version = 0, notified_default_version = 0 WHERE tenant = $1 AND mail_key = $2`, tenant, key)
 	require.NoError(t, err)
-	claimed, err := db.ClaimMailTemplateDefaultNotices(ctx, key, 1)
+	countNotices := func() int {
+		var n int
+		require.NoError(t, testDB.DbInstance.Get(&n, `SELECT count(*) FROM base.notification WHERE tenant = $1 AND notification::text LIKE '%I_MAIL_TEMPLATE_DEFAULT%'`, tenant))
+		return n
+	}
+	msg := func(string) map[string]interface{} {
+		return map[string]interface{}{"type": "Mail", "code": "I_MAIL_TEMPLATE_DEFAULT"}
+	}
+	// a notification that can not be written leaves the row unclaimed
+	_, err = db.NotifyMailTemplateDefaultChange(ctx, key, 1, func(string) map[string]interface{} {
+		return map[string]interface{}{"bad": func() {}}
+	})
+	assert.Error(t, err)
+	assert.Equal(t, 0, countNotices())
+	claimed, err := db.NotifyMailTemplateDefaultChange(ctx, key, 1, msg)
 	require.NoError(t, err)
 	assert.Contains(t, claimed, tenant)
-	claimed, err = db.ClaimMailTemplateDefaultNotices(ctx, key, 1)
+	assert.Equal(t, 1, countNotices())
+	claimed, err = db.NotifyMailTemplateDefaultChange(ctx, key, 1, msg)
 	require.NoError(t, err)
 	assert.NotContains(t, claimed, tenant)
+	assert.Equal(t, 1, countNotices())
 
 	require.NoError(t, db.DeleteMailTemplate(ctx, tenant, key))
 	none, err = db.GetMailTemplate(ctx, tenant, key)

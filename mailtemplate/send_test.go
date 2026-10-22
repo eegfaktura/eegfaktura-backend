@@ -34,6 +34,7 @@ type fakeStore struct {
 	loadErr   error
 	notices   []notice
 	claimed   map[string][]string
+	noticeErr error
 }
 
 func (s *fakeStore) GetMailTemplate(_ context.Context, tenant, key string) (*model.MailTemplate, error) {
@@ -62,7 +63,14 @@ func (s *fakeStore) SaveNotificationFromMap(v map[string]interface{}, tenant str
 	return nil
 }
 
-func (s *fakeStore) ClaimMailTemplateDefaultNotices(_ context.Context, key string, _ int) ([]string, error) {
+func (s *fakeStore) NotifyMailTemplateDefaultChange(_ context.Context, key string, _ int, notification func(string) map[string]interface{}) ([]string, error) {
+	if s.noticeErr != nil {
+		return nil, s.noticeErr
+	}
+	for _, tenant := range s.claimed[key] {
+		b, _ := json.Marshal(notification(tenant))
+		s.notices = append(s.notices, notice{tenant, model.N_TYPE_NOTIFICATION, "ADMIN", string(b)})
+	}
 	return s.claimed[key], nil
 }
 
@@ -160,4 +168,7 @@ func TestNotifyDefaultChanges(t *testing.T) {
 	assert.Equal(t, "TE000300", store.notices[0].tenant)
 	assert.Equal(t, model.N_TYPE_NOTIFICATION, store.notices[0].typ)
 	assert.Contains(t, store.notices[0].message, "Freigabe-Aufforderung")
+
+	// a failing store is logged, not fatal
+	NotifyDefaultChanges(context.Background(), &fakeStore{noticeErr: errors.New("db down")})
 }

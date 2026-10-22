@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	dbsql "database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -23,7 +24,7 @@ type MailTemplateRepository interface {
 	GetCommittedMailTemplateFiles(ctx context.Context, tenant, key string, ids []string) ([]model.MailTemplateFile, error)
 	InsertMailTemplateFile(ctx context.Context, f *model.MailTemplateFile, check func(existing []model.MailTemplateFile) error) error
 	DeleteMailTemplateFile(ctx context.Context, tenant, key, id string) (bool, error)
-	ClaimMailTemplateDefaultNotices(ctx context.Context, key string, defaultVersion int) ([]string, error)
+	NotifyMailTemplateDefaultChange(ctx context.Context, key string, defaultVersion int, notification func(tenant string) map[string]interface{}) ([]string, error)
 }
 
 // MailTemplateVersionError is returned when a mail template was changed since
@@ -274,14 +275,33 @@ func (db *sqlDatabase) DeleteMailTemplateFile(ctx context.Context, tenant, key, 
 	return n > 0, err
 }
 
-// ClaimMailTemplateDefaultNotices marks the customised mails whose default
-// changed since they were saved as notified and returns their tenants. Each
-// row is returned once, also when several replicas start at the same time.
-func (db *sqlDatabase) ClaimMailTemplateDefaultNotices(ctx context.Context, key string, defaultVersion int) ([]string, error) {
+// NotifyMailTemplateDefaultChange writes one notification per community whose
+// customised mail is based on an older default and marks it as notified, in
+// one transaction: a failed notification leaves the row unclaimed, so the next
+// start tries again; a second replica starting at the same time waits for the
+// row lock and then finds nothing left.
+func (db *sqlDatabase) NotifyMailTemplateDefaultChange(ctx context.Context, key string, defaultVersion int,
+	notification func(tenant string) map[string]interface{}) ([]string, error) {
+	tx, err := db.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
 	tenants := []string{}
-	err := db.db.SelectContext(ctx, &tenants,
+	if err = tx.SelectContext(ctx, &tenants,
 		`UPDATE base.mail_template SET notified_default_version = $2
 		 WHERE mail_key = $1 AND default_version < $2 AND notified_default_version < $2
-		 RETURNING tenant`, key, defaultVersion)
-	return tenants, err
+		 RETURNING tenant`, key, defaultVersion); err != nil {
+		return nil, err
+	}
+	for _, tenant := range tenants {
+		msg, err := json.Marshal(notification(tenant))
+		if err != nil {
+			return nil, err
+		}
+		if err = createNotification(tx, tenant, string(msg), model.N_TYPE_NOTIFICATION, model.N_PROCESS_EDA_PROCESS, "ADMIN"); err != nil {
+			return nil, err
+		}
+	}
+	return tenants, tx.Commit()
 }

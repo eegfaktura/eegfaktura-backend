@@ -75,26 +75,28 @@ func notifyFallback(store Store, def *Definition, tenant, identifier string, cau
 
 // NoticeStore is what the default-change notice needs from the database.
 type NoticeStore interface {
-	ClaimMailTemplateDefaultNotices(ctx context.Context, key string, defaultVersion int) ([]string, error)
-	SaveNotificationFromMap(notificationValue map[string]interface{}, tenant string, notificationType model.NotificationType, process model.NotificationProcess, role string) error
+	NotifyMailTemplateDefaultChange(ctx context.Context, key string, defaultVersion int, notification func(tenant string) map[string]interface{}) ([]string, error)
 }
 
 // NotifyDefaultChanges tells each community once that the default of a mail it
-// customised has changed (concept G.2). Claiming the rows first makes a second
-// replica starting at the same time skip them.
+// customised has changed (concept G.2). Notification and "notified" mark are
+// written together; on an error nothing is marked and the next start retries.
 func NotifyDefaultChanges(ctx context.Context, store NoticeStore) {
 	for _, def := range Catalog() {
-		tenants, err := store.ClaimMailTemplateDefaultNotices(ctx, def.Key, def.DefaultVersion)
-		if err != nil {
-			log.WithError(err).Errorf("mail template %s: default change notice failed", def.Key)
-			continue
-		}
-		for _, tenant := range tenants {
-			msg := fmt.Sprintf("Der Standardtext der Mail „%s“ wurde geändert. Ihre angepasste Fassung wird weiter verwendet; den neuen Standard sehen Sie unter Einstellungen → E-Mail-Texte.", def.Name)
-			_ = store.SaveNotificationFromMap(database.CreateNotificationMessageFromLog(&model.Log{
+		def := def
+		msg := fmt.Sprintf("Der Standardtext der Mail „%s“ wurde geändert. Ihre angepasste Fassung wird weiter verwendet; den neuen Standard sehen Sie unter Einstellungen → E-Mail-Texte.", def.Name)
+		tenants, err := store.NotifyMailTemplateDefaultChange(ctx, def.Key, def.DefaultVersion, func(string) map[string]interface{} {
+			return database.CreateNotificationMessageFromLog(&model.Log{
 				Operation: "Mail",
 				Messages:  []*model.LogMessage{model.NewLogMessage("INFO", def.Key, "I_MAIL_TEMPLATE_DEFAULT", msg)},
-			}), tenant, model.N_TYPE_NOTIFICATION, model.N_PROCESS_EDA_PROCESS, "ADMIN")
+			})
+		})
+		if err != nil {
+			log.WithError(err).Errorf("mail template %s: default change notice failed, retried on the next start", def.Key)
+			continue
+		}
+		if len(tenants) > 0 {
+			log.Infof("mail template %s: default change notice for %d communities", def.Key, len(tenants))
 		}
 	}
 }
