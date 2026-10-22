@@ -43,8 +43,8 @@ func SanitizeBody(def *Definition, in string, fileOK FileCheck) (string, error) 
 	if err != nil {
 		return "", &ValidationError{Field: "bodyHtml", Message: "Der Text ist kein gültiges HTML."}
 	}
-	s := &sanitizer{def: def, fileOK: fileOK, field: "bodyHtml"}
 	root := wrap(nodes)
+	s := &sanitizer{def: def, fileOK: fileOK, field: "bodyHtml", root: root}
 	if err := s.clean(root); err != nil {
 		return "", err
 	}
@@ -99,6 +99,7 @@ type sanitizer struct {
 	def    *Definition
 	fileOK FileCheck
 	field  string
+	root   *html.Node
 }
 
 // clean applies the per-element rules of the policy to the children of n.
@@ -179,6 +180,16 @@ func (s *sanitizer) cleanElement(el *html.Node) (elementAction, error) {
 			ph := s.def.Placeholder(a.Val)
 			if ph == nil {
 				return keep, &ValidationError{Field: s.field, Message: "Unbekannter Platzhalter: " + a.Val}
+			}
+			// a block (several lines) stands on its own, never inside a paragraph, list or placeholder
+			if ph.Block && el.Parent != s.root {
+				return keep, &ValidationError{Field: s.field, Message: "Der Baustein „" + ph.Label + "“ muss als eigener Absatz stehen, nicht in einem Absatz, einer Liste oder einem Zitat."}
+			}
+			// blocks are <div data-ph>, single values <span data-ph>
+			if ph.Block {
+				el.Data, el.DataAtom = "div", atom.Div
+			} else {
+				el.Data, el.DataAtom = "span", atom.Span
 			}
 			// the content of a placeholder is its label, never EEG text
 			for el.FirstChild != nil {

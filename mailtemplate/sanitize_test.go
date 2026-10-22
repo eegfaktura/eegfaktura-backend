@@ -86,6 +86,26 @@ func TestSanitizeBody_SharedCases(t *testing.T) {
 	t.Run("span and div without data-ph unwrapped", func(t *testing.T) {
 		assert.Equal(t, `<p>a <strong>b</strong> c</p>`, sanitizeOK(t, `<div><p>a <span style="color:red"><strong>b</strong></span> c</p></div>`))
 	})
+	t.Run("block placeholder only at top level", func(t *testing.T) {
+		// the HTML parser closes a paragraph before a div, so this one stands on its own
+		assert.Equal(t, `<p>x </p><div data-ph="eeg.contactBlock">Kontaktblock der EEG</div>`,
+			sanitizeOK(t, `<p>x <div data-ph="eeg.contactBlock">y</div>`))
+		// a span with a block key at top level becomes a div, an inline key in a div a span
+		out := sanitizeOK(t, `<span data-ph="meteringPoints">x</span><p>a <b><div data-ph="eeg.name">x</div></b></p>`)
+		assert.Contains(t, out, `<div data-ph="meteringPoints">Zählpunkte (Liste)</div>`)
+		assert.Contains(t, out, `<span data-ph="eeg.name">Name der EEG</span>`)
+		assert.NotContains(t, out, `<div data-ph="eeg.name"`)
+		for _, in := range []string{
+			`<p>Hallo <span data-ph="eeg.contactBlock">x</span></p>`,
+			`<ul><li><div data-ph="meteringPoints">x</div></li></ul>`,
+			`<blockquote><div data-ph="eeg.contactBlock">x</div></blockquote>`,
+			`<h1><span data-ph="meteringPoints">x</span></h1>`,
+		} {
+			_, err := SanitizeBody(Lookup(KeyConsentRequest), in, ownFiles)
+			var verr *ValidationError
+			assert.True(t, errors.As(err, &verr), in)
+		}
+	})
 	t.Run("unknown placeholder rejected", func(t *testing.T) {
 		_, err := SanitizeBody(Lookup(KeyConsentRequest), `<p><span data-ph="member.iban">IBAN</span></p>`, ownFiles)
 		var verr *ValidationError

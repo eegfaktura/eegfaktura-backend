@@ -340,6 +340,7 @@ func TestMailTemplates_Validation(t *testing.T) {
 		"empty subject":          {map[string]interface{}{"subject": " ", "bodyHtml": `<p>x</p>`}, "subject"},
 		"unknown subject token":  {map[string]interface{}{"subject": "Hallo {member.iban}", "bodyHtml": `<p>x</p>`}, "subject"},
 		"block in subject":       {map[string]interface{}{"subject": "{eeg.contactBlock}", "bodyHtml": `<p>x</p>`}, "subject"},
+		"block in paragraph":     {map[string]interface{}{"subject": "S", "bodyHtml": `<p>Gruß <span data-ph="eeg.contactBlock">x</span></p>`}, "bodyHtml"},
 		"subject too long":       {map[string]interface{}{"subject": strings.Repeat("x", 201), "bodyHtml": `<p>x</p>`}, "subject"},
 		"body too large":         {map[string]interface{}{"subject": "S", "bodyHtml": "<p>" + strings.Repeat("x", 100*1024) + "</p>"}, "bodyHtml"},
 		"negative version":       {map[string]interface{}{"subject": "S", "bodyHtml": `<p>x</p>`, "version": -1}, "version"},
