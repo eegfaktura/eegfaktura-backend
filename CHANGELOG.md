@@ -20,11 +20,12 @@ this changelog highlights the changes relevant for overview and operations.
 - **JWT library: `github.com/golang-jwt/jwt` v3.2.2+incompatible → `github.com/golang-jwt/jwt/v5` v5.3.1**
   (platform#191). v3 is unmaintained (GO-2025-3553, no fix in v3). The library only decodes the token claims;
   token validation (signature, algorithms, `iss`, `exp`, `nbf`) is done by go-oidc and is unchanged. Two
-  differences from the claim decoding: a token with `aud` as an array and a fractional `exp` are now accepted
-  (v3 rejected both with 401). Keycloak issues integer `exp`; the realm deliberately has no audience mapper on the
-  app client because of the array limitation, which no longer applies. The unused `jwt.TimeFunc` override is
-  removed (nothing called the v3 validation). New regression tests cover the validation path without a live
-  Keycloak.
+  differences from the claim decoding: a token with `aud` as an array and a fractional `exp` now decode and reach
+  the tenant and admin checks. v3 failed to decode them: 401 on the bearer paths (`Protect`, `GQLProtect`,
+  `ConditionProtect`), 403 on `ProtectApi` (Basic auth). Keycloak issues integer `exp`; the realm deliberately has
+  no audience mapper on the app client because of the array limitation, which no longer applies. The unused
+  `jwt.TimeFunc` override is removed (nothing called the v3 validation). New regression tests cover the
+  validation paths without a live Keycloak.
 
 ## [1.6.0] – 2026-10-21
 
