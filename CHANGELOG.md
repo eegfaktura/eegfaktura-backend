@@ -17,6 +17,11 @@ this changelog highlights the changes relevant for overview and operations.
   admins. ABLEHNUNG_ECON/ECOF is unchanged. Metering points that received 172 before stay as they are.
 
 ### Security
+- **Bearer tokens: RS256 only** (platform#191). Both go-oidc verifiers (app verifier for `Protect`/`GQLProtect`/
+  `ConditionProtect`, api verifier for `ProtectApi`) took the allowed signing algorithms from the Keycloak
+  discovery, so tokens signed with RS384/RS512/PS*/ES*/EdDSA under a realm key were accepted (HS* and `none` were
+  already rejected). They now accept RS256 only, as required. The Keycloak realms sign with one RS256 key, so
+  logins are not affected.
 - **JWT library: `github.com/golang-jwt/jwt` v3.2.2+incompatible → `github.com/golang-jwt/jwt/v5` v5.3.1**
   (platform#191). v3 is unmaintained (GO-2025-3553, no fix in v3). The library only decodes the token claims;
   token validation (signature, algorithms, `iss`, `exp`, `nbf`) is done by go-oidc and is unchanged. Two
