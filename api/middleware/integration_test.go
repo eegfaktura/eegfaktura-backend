@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -105,4 +106,27 @@ func TestConditionProtect_RoutesToAdminOrUser(t *testing.T) {
 	h(rw2, req)
 	require.True(t, userCalled)
 	require.False(t, adminCalled)
+}
+
+func TestGQLProtect_InvalidToken_DoesNotLeakVerifierError(t *testing.T) {
+	orig := VerifyTokenClaims
+	defer func() { VerifyTokenClaims = orig }()
+
+	const verifierErr = "oidc: id token signed with unsupported algorithm, expected [\"RS256\"] got \"HS256\""
+	VerifyTokenClaims = func(ctx context.Context, token string) (*PlatformClaims, error) {
+		return nil, errors.New(verifierErr)
+	}
+
+	req := httptest.NewRequest("POST", "/query", nil)
+	req.Header.Set("Authorization", BEARER_SCHEMA+"token")
+	req.Header.Set("tenant", "TE100100")
+
+	rw := httptest.NewRecorder()
+	GQLProtect(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})).ServeHTTP(rw, req)
+
+	require.Equal(t, http.StatusUnauthorized, rw.Code)
+	require.NotContains(t, rw.Body.String(), "oidc")
+	require.NotContains(t, rw.Body.String(), "algorithm")
 }
