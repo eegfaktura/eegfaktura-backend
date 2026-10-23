@@ -47,6 +47,13 @@ this changelog highlights the changes relevant for overview and operations.
 - The gRPC call to eda-xp for a mail with inline images and attachment gets 30 s instead of 5 s when its files
   exceed 256 KB (a customised mail may carry up to 6 MB); smaller mails keep 5 s.
 
+### Security
+- **`/query` no longer returns the token verifier's error text.** A request to the GraphQL endpoint with an
+  invalid or expired token got the verifier message in the 401 body (e.g. `oidc: id token signed with
+  unsupported algorithm …`). The body is now empty, as on the JWT-protected REST endpoints; the message stays in the log.
+- **Unauthenticated `GET /master/test` removed.** The route had no auth check and only printed „TestApi“ to
+  stdout; nothing calls it. `GET /master/test` now answers 404.
+
 ### Fixed
 - Error notifications of a failed member mail (consent request / metering point active) and of a failed metering
   point list mail were saved under the community id (ecId) instead of the tenant and never reached the community's
