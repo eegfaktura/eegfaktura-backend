@@ -11,9 +11,9 @@ this changelog highlights the changes relevant for overview and operations.
 ### Security
 - **`/query` no longer returns the token verifier's error text.** A request to the GraphQL endpoint with an
   invalid or expired token got the verifier message in the 401 body (e.g. `oidc: id token signed with
-  unsupported algorithm …`). The body is now empty, as on the REST endpoints; the message stays in the log.
+  unsupported algorithm …`). The body is now empty, as on the JWT-protected REST endpoints; the message stays in the log.
 - **Unauthenticated `GET /master/test` removed.** The route had no auth check and only printed „TestApi“ to
-  stdout; nothing calls it. It now answers 404.
+  stdout; nothing calls it. `GET /master/test` now answers 404.
 
 ### Fixed
 - **EDA: ZUSTIMMUNG_ECON/ECOF with code 172 sets the metering point to INVALID again** (platform#180). Code 172

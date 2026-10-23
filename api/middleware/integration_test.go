@@ -127,6 +127,5 @@ func TestGQLProtect_InvalidToken_DoesNotLeakVerifierError(t *testing.T) {
 	})).ServeHTTP(rw, req)
 
 	require.Equal(t, http.StatusUnauthorized, rw.Code)
-	require.NotContains(t, rw.Body.String(), "oidc")
-	require.NotContains(t, rw.Body.String(), "algorithm")
+	require.Empty(t, rw.Body.String())
 }
