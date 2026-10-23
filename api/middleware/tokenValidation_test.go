@@ -183,8 +183,9 @@ func TestTokenValidation_Expiry(t *testing.T) {
 		{"expires in 3 seconds", time.Now().Add(3 * time.Second).Unix(), true},
 		{"no exp", nil, false},
 		{"exp 0", 0, false},
-		// Claim decoding into PlatformClaims (int64 exp) rejects a fractional exp.
-		{"exp fractional", float64(time.Now().Add(time.Minute).Unix()) + 0.5, false},
+		// Accepted since jwt/v5 (NumericDate); v3 (int64 exp) rejected it.
+		// Keycloak always issues integer exp.
+		{"exp fractional", float64(time.Now().Add(time.Minute).Unix()) + 0.5, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -291,8 +292,9 @@ func TestTokenValidation_Audience(t *testing.T) {
 		{"string", "account", true},
 		{"other client", "some-other-client", true},
 		{"absent", nil, true},
-		// Claim decoding into PlatformClaims (string aud) rejects an array.
-		{"array", []string{"account", "app-client"}, false},
+		// Accepted since jwt/v5 (ClaimStrings); v3 (string aud) rejected it,
+		// which is why the realm has no audience mapper on the app client.
+		{"array", []string{"account", "app-client"}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
