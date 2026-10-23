@@ -17,14 +17,18 @@ this changelog highlights the changes relevant for overview and operations.
   admins. ABLEHNUNG_ECON/ECOF is unchanged. Metering points that received 172 before stay as they are.
 
 ### Security
-- **Bearer tokens: RS256 only** (platform#191). Both go-oidc verifiers (app verifier for `Protect`/`GQLProtect`/
-  `ConditionProtect`, api verifier for `ProtectApi`) took the allowed signing algorithms from the Keycloak
-  discovery, so tokens signed with RS384/RS512/PS*/ES*/EdDSA under a realm key were accepted (HS* and `none` were
-  already rejected). They now accept RS256 only, as required. The Keycloak realms sign with one RS256 key, so
-  logins are not affected.
+- **Bearer tokens: RS256 only** (platform#191). Both go-oidc verifiers took the allowed signing algorithms from
+  the Keycloak discovery (HS* and `none` were already dropped); they now accept RS256 only, as required.
+  - App verifier (`Protect`, `GQLProtect`, `ConditionProtect`): a client-supplied bearer token signed with
+    RS384/RS512/PS*/ES*/EdDSA under a realm key was accepted; it is now rejected (401).
+  - API verifier (`ProtectApi`): it only checks the ID token the backend fetches itself via password grant, so a
+    client cannot choose its algorithm. Effect: if the ID-token signature algorithm of the api client in
+    Keycloak were ever set to something other than RS256, every `ProtectApi` call would fail with 403.
+  - The Keycloak realms sign with one RS256 key, so logins are not affected.
 - **JWT library: `github.com/golang-jwt/jwt` v3.2.2+incompatible → `github.com/golang-jwt/jwt/v5` v5.3.1**
   (platform#191). v3 is unmaintained (GO-2025-3553, no fix in v3). The library only decodes the token claims;
-  token validation (signature, algorithms, `iss`, `exp`, `nbf`) is done by go-oidc and is unchanged. Two
+  token validation (signature, `iss`, `exp`, `nbf`) is done by go-oidc and is unchanged by this entry (for the
+  allowed algorithms see "RS256 only" above). Two
   differences from the claim decoding: a token with `aud` as an array and a fractional `exp` now decode and reach
   the tenant and admin checks. v3 failed to decode them: 401 on the bearer paths (`Protect`, `GQLProtect`,
   `ConditionProtect`), 403 on `ProtectApi` (Basic auth). Keycloak issues integer `exp`; the realm deliberately has
