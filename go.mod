@@ -11,7 +11,7 @@ require (
 	github.com/doug-martin/goqu/v9 v9.19.0
 	github.com/eclipse/paho.mqtt.golang v1.5.1
 	github.com/gabriel-vasile/mimetype v1.4.13
-	github.com/golang-jwt/jwt v3.2.2+incompatible
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/gorilla/handlers v1.5.2
 	github.com/gorilla/mux v1.8.1
