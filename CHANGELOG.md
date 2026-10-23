@@ -8,6 +8,12 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Changed
+- **Go 1.26.10** (platform#180). Both `Dockerfile` stages (`golang:1.26.10`) and CI (`GO_VERSION`) move from 1.26.9 to
+  1.26.10 (released 2026-10-19). It fixes the last standard library finding of govulncheck, GO-2026-6809 (`crypto/x509`
+  distrusts compromised intermediate certificates; reached through the outgoing HTTPS calls). A patch release:
+  `go.mod` (`go 1.26.0`), language version, GODEBUG defaults and garbage collector are unchanged.
+
 ### Fixed
 - **EDA: ZUSTIMMUNG_ECON/ECOF with code 172 sets the metering point to INVALID again** (platform#180). Code 172
   („Kunde hat Datenfreigabe abgelehnt“) had an empty `case` since 2025-09-22: the line for 173 was inserted between
