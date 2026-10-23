@@ -23,6 +23,9 @@ this changelog highlights the changes relevant for overview and operations.
   the body again, as introduced on 2024-12-09: process state INVALID, status code 172, a notification for the
   admins. ABLEHNUNG_ECON/ECOF is unchanged. Metering points that received 172 before stay as they are.
 
+### CI
+- `rolling-release.yml`: no image build on a draft pull request — it runs when the pull request is marked ready for review (`ready_for_review`) and on every later push to it; `pr-checks.yml` still checks drafts. Pushes, tags and the deploy dispatch are unchanged.
+
 ## [1.6.0] – 2026-10-21
 
 ### Added
