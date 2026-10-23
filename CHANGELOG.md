@@ -8,6 +8,12 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Changed
+- Dependabot (Docker base images): no more major updates (legacy system, replaced by v3 in the medium term; majors
+  only for security reasons, decision 23.10.2026), patch and minor updates come in one weekly grouped PR, new versions
+  only after a 7-day cooldown. `golang` stays on 1.26 (1.27 is a minor for Dependabot). Security updates for the
+  language ecosystems are unaffected.
+
 ### Fixed
 - **EDA: ZUSTIMMUNG_ECON/ECOF with code 172 sets the metering point to INVALID again** (platform#180). Code 172
   („Kunde hat Datenfreigabe abgelehnt“) had an empty `case` since 2025-09-22: the line for 173 was inserted between
