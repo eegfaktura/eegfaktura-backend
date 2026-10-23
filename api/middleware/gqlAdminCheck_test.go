@@ -60,11 +60,11 @@ const (
 
 func TestGQLAdminCheck_NonAdminQueryIsLoggedAndPasses(t *testing.T) {
 	code, hits := runGQL(t, &PlatformClaims{
-		Tenants:        []string{"TE100100"},
-		Username:       "member@example.org",
-		Email:          "member@example.org",
-		AccessGroups:   AccessGroups{"/EEG_USER"},
-		Authorized:     "some-client",
+		Tenants:          []string{"TE100100"},
+		Username:         "member@example.org",
+		Email:            "member@example.org",
+		AccessGroups:     AccessGroups{"/EEG_USER"},
+		Authorized:       "some-client",
 		RegisteredClaims: jwt.RegisteredClaims{Subject: "sub-123"},
 	}, gqlQuery)
 
@@ -89,8 +89,8 @@ func TestGQLAdminCheck_NonAdminQueryIsLoggedAndPasses(t *testing.T) {
 
 func TestGQLAdminCheck_NonAdminMutationIsLogged(t *testing.T) {
 	code, hits := runGQL(t, &PlatformClaims{
-		Tenants:        []string{"TE100100"},
-		Authorized:     "x",
+		Tenants:          []string{"TE100100"},
+		Authorized:       "x",
 		RegisteredClaims: jwt.RegisteredClaims{Subject: "sub-x"},
 	}, gqlMutation)
 
