@@ -114,7 +114,7 @@ func InitKeycloak() {
 		logrus.Errorf("E: %v", err)
 		panic(err)
 	}
-	verifier = provider.Verifier(&oidc.Config{ClientID: clientIDApp, SkipClientIDCheck: true})
+	verifier = provider.Verifier(&oidc.Config{ClientID: clientIDApp, SkipClientIDCheck: true, SupportedSigningAlgs: []string{oidc.RS256}})
 }
 
 func readKeycloakConfig() (map[string]*keycloakConfig, error) {
@@ -163,7 +163,7 @@ func NewKeycloakClient(issuer, clientID, clientSecret, issuerUrl string, client 
 	if err != nil {
 		return nil, err
 	}
-	kc.verifier = kc.oidc.Verifier(&oidc.Config{ClientID: clientID, SkipClientIDCheck: true})
+	kc.verifier = kc.oidc.Verifier(&oidc.Config{ClientID: clientID, SkipClientIDCheck: true, SupportedSigningAlgs: []string{oidc.RS256}})
 	return kc, nil
 }
 

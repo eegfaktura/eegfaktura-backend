@@ -3,14 +3,19 @@ package middleware
 // Regression tests for the bearer-token validation of the real production
 // path (platform#191): InitKeycloak builds the go-oidc verifier against a
 // local OIDC provider (discovery + JWKS from httptest), tokens are signed in
-// the test with a generated RSA key. No live Keycloak is needed.
+// the test with a generated RSA key (realm key) or EC key (second JWKS key,
+// for ES256). No live Keycloak is needed.
 //
 // The tests were written against golang-jwt v3 and kept for v5. They differ
 // in exactly two documented cases, both from claim decoding (v5 decodes
 // more): a fractional exp and aud as array are accepted since v5.
+// backend#99 restricts both verifiers to RS256: RS512/PS256/ES256, accepted
+// before, are rejected since then.
 
 import (
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/rsa"
@@ -37,12 +42,14 @@ import (
 const (
 	tvRealm = "test"
 	tvKid   = "test-kid"
+	tvKidEC = "test-kid-ec"
 )
 
 var (
 	tvOnce     sync.Once
 	tvSetupErr error
 	tvKey      *rsa.PrivateKey
+	tvECKey    *ecdsa.PrivateKey
 	tvIssuer   string
 
 	// tvPasswordGrantIDToken is the id_token the fake token endpoint returns
@@ -53,8 +60,9 @@ var (
 
 // tvSetup starts the fake provider and runs the real InitKeycloak once per
 // test binary. The provider advertises the same id_token signing algorithms
-// as Keycloak 26 (incl. HS* and RS512), so the verifier gets the same
-// algorithm list as in production.
+// as Keycloak 26 (incl. HS*, PS*, ES* and RS512); the JWKS holds the RSA
+// key plus an EC key, so PS/ES/RS512 tokens are valid apart from the
+// algorithm.
 func tvSetup(t *testing.T) {
 	t.Helper()
 	tvOnce.Do(func() { tvSetupErr = tvInit() })
@@ -78,6 +86,10 @@ func tvInit() (err error) {
 	if err != nil {
 		return err
 	}
+	tvECKey, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return err
+	}
 	mux := http.NewServeMux()
 	srv := httptest.NewServer(mux) // lives for the whole test binary
 	tvIssuer = srv.URL + "/realms/" + tvRealm
@@ -95,10 +107,15 @@ func tvInit() (err error) {
 	})
 	mux.HandleFunc("/realms/"+tvRealm+"/protocol/openid-connect/certs", func(w http.ResponseWriter, r *http.Request) {
 		pub := tvKey.PublicKey
+		ec := tvECKey.PublicKey
 		_ = json.NewEncoder(w).Encode(map[string]any{"keys": []map[string]string{{
 			"kid": tvKid, "kty": "RSA", "alg": "RS256", "use": "sig",
 			"n": b64(pub.N.Bytes()),
 			"e": b64(big.NewInt(int64(pub.E)).Bytes()),
+		}, {
+			"kid": tvKidEC, "kty": "EC", "alg": "ES256", "use": "sig", "crv": "P-256",
+			"x": b64(ec.X.FillBytes(make([]byte, 32))),
+			"y": b64(ec.Y.FillBytes(make([]byte, 32))),
 		}}})
 	})
 	mux.HandleFunc("/realms/"+tvRealm+"/protocol/openid-connect/token", func(w http.ResponseWriter, r *http.Request) {
@@ -153,23 +170,39 @@ func tvClaims() map[string]any {
 	}
 }
 
-// tvSign builds a compact JWS. alg selects the signature: RS256/RS512 with
-// key, HS256 with secret, none without signature.
-func tvSign(t *testing.T, alg string, key *rsa.PrivateKey, secret []byte, claims map[string]any) string {
+// tvSign builds a compact JWS. alg selects the signature: RS256/RS512/PS256
+// with an RSA key, ES256 with an EC key, HS256 with secret, none without
+// signature. The kid follows the key type (RSA or EC key of the JWKS).
+func tvSign(t *testing.T, alg string, key crypto.Signer, secret []byte, claims map[string]any) string {
 	t.Helper()
-	h, err := json.Marshal(map[string]string{"alg": alg, "typ": "JWT", "kid": tvKid})
+	kid := tvKid
+	if _, ok := key.(*ecdsa.PrivateKey); ok {
+		kid = tvKidEC
+	}
+	h, err := json.Marshal(map[string]string{"alg": alg, "typ": "JWT", "kid": kid})
 	require.NoError(t, err)
 	p, err := json.Marshal(claims)
 	require.NoError(t, err)
 	input := b64(h) + "." + b64(p)
+	d256 := sha256.Sum256([]byte(input))
 	var sig []byte
 	switch alg {
 	case "RS256":
-		d := sha256.Sum256([]byte(input))
-		sig, err = rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, d[:])
+		sig, err = key.Sign(rand.Reader, d256[:], crypto.SHA256)
 	case "RS512":
 		d := sha512.Sum512([]byte(input))
-		sig, err = rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA512, d[:])
+		sig, err = key.Sign(rand.Reader, d[:], crypto.SHA512)
+	case "PS256":
+		sig, err = key.Sign(rand.Reader, d256[:], &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash, Hash: crypto.SHA256})
+	case "ES256":
+		// JWS wants r||s, not the ASN.1 form of crypto.Signer.
+		ecKey, ok := key.(*ecdsa.PrivateKey)
+		require.True(t, ok, "ES256 needs an EC key")
+		var r, s *big.Int
+		r, s, err = ecdsa.Sign(rand.Reader, ecKey, d256[:])
+		if err == nil {
+			sig = append(r.FillBytes(make([]byte, 32)), s.FillBytes(make([]byte, 32))...)
+		}
 	case "HS256":
 		m := hmac.New(sha256.New, secret)
 		m.Write([]byte(input))
@@ -284,15 +317,40 @@ func TestTokenValidation_HS256WithPublicKeyRejected(t *testing.T) {
 	}
 }
 
-// RS512 with the realm key is accepted today: go-oidc takes the algorithms
-// from the provider discovery (Keycloak advertises RS512) and drops only the
-// HMAC ones. This pins a known gap against the "RS256 only" rule of
-// CLAUDE.md (Authentication) so a library change does not alter it
-// silently; the gap is closed by backend#99, which replaces this test.
-func TestTokenValidation_RS512WithRealmKeyAccepted(t *testing.T) {
+// Only RS256 is accepted (CLAUDE.md, Authentication): both go-oidc
+// verifiers are restricted via SupportedSigningAlgs, although the discovery
+// advertises more algorithms. The tokens are valid apart from the algorithm
+// (realm RSA key, EC key in the JWKS); the error must be go-jose's algorithm
+// check, so a broken fixture cannot make a case pass.
+func TestTokenValidation_OnlyRS256Accepted(t *testing.T) {
 	tvSetup(t)
-	_, err := tvVerify(t, tvSign(t, "RS512", tvKey, nil, tvClaims()))
-	require.NoError(t, err)
+	const algErr = "unexpected signature algorithm"
+	cases := []struct {
+		alg    string
+		key    crypto.Signer
+		accept bool
+	}{
+		{"RS256", tvKey, true},
+		{"RS512", tvKey, false},
+		{"PS256", tvKey, false},
+		{"ES256", tvECKey, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.alg, func(t *testing.T) {
+			token := tvSign(t, tc.alg, tc.key, nil, tvClaims())
+			// app verifier (Protect, GQLProtect, ConditionProtect)
+			_, err := tvVerify(t, token)
+			// api verifier (ProtectApi, id token of the password grant)
+			_, errAPI := kcClientAPI.VerifyToken(token)
+			if tc.accept {
+				require.NoError(t, err)
+				require.NoError(t, errAPI)
+			} else {
+				require.ErrorContains(t, err, algErr)
+				require.ErrorContains(t, errAPI, algErr)
+			}
+		})
+	}
 }
 
 func TestTokenValidation_WrongIssuerRejected(t *testing.T) {
