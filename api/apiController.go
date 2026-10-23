@@ -19,7 +19,6 @@ func InitApiRouter(r *mux.Router, db database.Database) *mux.Router {
 
 	s.HandleFunc("/updatepartfact", middleware.ProtectApi(h.updateParticipantFactorAPI())).Methods("POST")
 	s.HandleFunc("/masterdata", middleware.ProtectApi(h.fetchMasterDataAPI())).Methods("GET")
-	s.HandleFunc("/test", h.testApi).Methods("GET")
 	return r
 }
 
@@ -29,11 +28,6 @@ type ApiHandler struct {
 
 func NewApiHandler(db database.Database) *ApiHandler {
 	return &ApiHandler{db: db}
-}
-
-func (h *ApiHandler) testApi(w http.ResponseWriter, r *http.Request) {
-	println("TestApi")
-	return
 }
 
 func (h *ApiHandler) updateParticipantFactorAPI() middleware.JWTHandlerFunc {
