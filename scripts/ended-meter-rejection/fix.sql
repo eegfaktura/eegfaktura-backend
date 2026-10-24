@@ -1,7 +1,8 @@
 -- One-time cleanup (konzept-zaehlpunkt-ausblenden.md, part 2): a rejection no longer undoes a
 -- participation. Current entries (flag 1) with process state INVALID/REJECTED get
 --   status INACTIVE with activesince and inactivesince (any code)      -> process state INACTIVE
---   status ACTIVE with statusCode 172, 173, 183, 188 (request-level)    -> process state ACTIVE
+--   status ACTIVE, INVALID with statusCode 172, 173, 183, 188           -> process state ACTIVE
+--   (REJECTED is left alone: an abort keeps an old code, so the code says nothing there)
 -- (keep the code list in sync with check.sql and model.REJECTED_KEEP_ACTIVE_CODES)
 -- The rejected state goes to last_process_state; statusCode, status and dates stay.
 --
@@ -27,7 +28,7 @@ WITH changed AS (
   WHERE flag = 1
     AND process_state IN ('INVALID', 'REJECTED')
     AND last_process_state IS NULL
-    AND ((status = 'ACTIVE' AND "statusCode" IN (172, 173, 183, 188))
+    AND ((status = 'ACTIVE' AND process_state = 'INVALID' AND "statusCode" IN (172, 173, 183, 188))
          OR (status = 'INACTIVE' AND inactivesince IS NOT NULL AND activesince IS NOT NULL))
   RETURNING tenant, status)
 SELECT count(*) AS geaendert,

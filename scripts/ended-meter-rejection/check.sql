@@ -4,10 +4,11 @@
 -- 1) One row per tenant plus a total row (tenant NULL):
 --   anzahl       rows fix.sql changes = beendet + aktiv; the total row is the "expected" value for fix.sql
 --   beendet      status INACTIVE with activesince and inactivesince (any code)     -> fix.sql: INACTIVE
---   aktiv        status ACTIVE with statusCode 172, 173, 183, 188 (request-level)  -> fix.sql: ACTIVE
+--   aktiv        status ACTIVE, INVALID with statusCode 172, 173, 183, 188         -> fix.sql: ACTIVE
 --   tenants      tenants with such rows
 --   ohne_datum   status INACTIVE without activesince or inactivesince: reported only, left alone
---   aktiv_andere status ACTIVE with another code (56, 57, 185, …): reported only, stays INVALID/REJECTED
+--   aktiv_andere status ACTIVE with another code (56, 57, 185, …) or REJECTED (e.g. an abort, which keeps an
+--                old code): reported only, stays INVALID/REJECTED
 --   beispiele    up to five changed rows per tenant (metering point, status, process state, code, inactivesince)
 -- 2) Counts per variant and statusCode.
 -- Keep the code list in sync with model.REJECTED_KEEP_ACTIVE_CODES.
@@ -16,7 +17,7 @@ WITH r AS (
          CASE
            WHEN m.status = 'INACTIVE' AND m.inactivesince IS NOT NULL AND m.activesince IS NOT NULL THEN 'beendet'
            WHEN m.status = 'INACTIVE' THEN 'ohne_datum'
-           WHEN m."statusCode" IN (172, 173, 183, 188) THEN 'aktiv'
+           WHEN m.process_state = 'INVALID' AND m."statusCode" IN (172, 173, 183, 188) THEN 'aktiv'
            ELSE 'aktiv_andere'
          END AS variante
   FROM base.meteringpoint m
@@ -41,7 +42,7 @@ ORDER BY r.tenant IS NULL DESC, anzahl DESC, r.tenant;
 SELECT CASE
          WHEN m.status = 'INACTIVE' AND m.inactivesince IS NOT NULL AND m.activesince IS NOT NULL THEN 'beendet'
          WHEN m.status = 'INACTIVE' THEN 'ohne_datum'
-         WHEN m."statusCode" IN (172, 173, 183, 188) THEN 'aktiv'
+         WHEN m.process_state = 'INVALID' AND m."statusCode" IN (172, 173, 183, 188) THEN 'aktiv'
          ELSE 'aktiv_andere'
        END AS variante,
        m."statusCode", count(*) AS anzahl

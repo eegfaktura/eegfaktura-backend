@@ -291,8 +291,9 @@ func TestEndedMeterRejection_revokeByConsentEndsInactive(t *testing.T) {
 	assert.False(t, r.LastProcessState.Valid)
 }
 
-// Re-review backend#107 (4): an applied rejection leaves no stale last_process_state, and a rejection
-// without code (ABBRUCH) clears statusCode, so an old 188 cannot make an abort look request-level.
+// Re-review backend#107 (4): an applied rejection leaves no stale last_process_state. A rejection
+// without code (ABBRUCH) keeps the old statusCode (web shows it); the cleanup takes only INVALID as
+// the active variant, so an abort (REJECTED) with an old 188 is not counted there.
 func TestEndedMeterRejection_appliedRejectionClearsStaleValues(t *testing.T) {
 	ctx := context.Background()
 	db, err := GetTestDB(ctx, testDB)
@@ -313,7 +314,7 @@ func TestEndedMeterRejection_appliedRejectionClearsStaleValues(t *testing.T) {
 		r := readEndedRejectRow(t, testDB.DbInstance, tenant, m)
 		assert.Equal(t, "REJECTED", r.ProcessState, m)
 		assert.False(t, r.LastProcessState.Valid, "no stale last_process_state: %s", m)
-		assert.False(t, r.StatusCode.Valid, "abort without code clears statusCode: %s", m)
+		assert.Equal(t, int64(188), r.StatusCode.Int64, "abort without code keeps the old statusCode: %s", m)
 	}
 
 	code57 := int16(57)

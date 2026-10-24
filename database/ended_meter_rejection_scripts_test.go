@@ -108,6 +108,7 @@ func TestEndedMeterRejectionScripts(t *testing.T) {
 		endedNoDate    = "AT0030000000000000000000990019004"
 		activeRejected = "AT0030000000000000000000990019005"
 		activeOther    = "AT0030000000000000000000990019006"
+		activeAbort    = "AT0030000000000000000000990019008"
 		inactiveNever  = "AT0030000000000000000000990019007"
 	)
 	insertEndedRejectFixtureIn(t, dbx, tenant, map[string][3]string{
@@ -115,8 +116,10 @@ func TestEndedMeterRejectionScripts(t *testing.T) {
 		endedRejected:  {"INACTIVE", "REJECTED", "2025-01-22"},
 		neverActive:    {"INIT", "INVALID", ""},
 		endedNoDate:    {"INACTIVE", "INVALID", ""},
-		activeRejected: {"ACTIVE", "REJECTED", "2999-12-31"},
+		activeRejected: {"ACTIVE", "INVALID", "2999-12-31"},
 		activeOther:    {"ACTIVE", "INVALID", "2999-12-31"},
+		// an abort (REJECTED) after an old 188: not request-level, reported as aktiv_andere only
+		activeAbort: {"ACTIVE", "REJECTED", "2999-12-31"},
 		inactiveNever:  {"INACTIVE", "INVALID", "2025-01-22"},
 	})
 	_, err = dbx.Exec(`UPDATE base.meteringpoint SET activesince = NULL WHERE tenant = $1 AND metering_point_id = $2`,
@@ -124,12 +127,13 @@ func TestEndedMeterRejectionScripts(t *testing.T) {
 	require.NoError(t, err)
 	// active variant: only request-level codes (188) are cleaned up; 57 concerns the metering point
 	_, err = dbx.Exec(`UPDATE base.meteringpoint SET "statusCode" = CASE metering_point_id
-		WHEN $2 THEN 188 WHEN $3 THEN 57 ELSE 57 END WHERE tenant = $1`, tenant, activeRejected, activeOther)
+		WHEN $2 THEN 188 WHEN $3 THEN 57 WHEN $4 THEN 188 ELSE 57 END WHERE tenant = $1`,
+		tenant, activeRejected, activeOther, activeAbort)
 	require.NoError(t, err)
 	row := func(meter string) endedRejectRow { return readEndedRejectRow(t, dbx, tenant, meter) }
 
 	total, own := checkTotals(t, dbx, tenant)
-	assert.Equal(t, map[string]int64{"anzahl": 3, "beendet": 2, "aktiv": 1, "ohne_datum": 2, "aktiv_andere": 1, "tenants": 1}, own)
+	assert.Equal(t, map[string]int64{"anzahl": 3, "beendet": 2, "aktiv": 1, "ohne_datum": 2, "aktiv_andere": 2, "tenants": 1}, own)
 	assert.Equal(t, own["anzahl"], total["anzahl"], "isolated database: only this test's rows")
 	expected := total["anzahl"]
 
@@ -139,7 +143,7 @@ func TestEndedMeterRejectionScripts(t *testing.T) {
 	code, out = run("fix.sql", "expected="+itoa(expected+1))
 	assert.NotEqual(t, 0, code, out)
 	assert.Equal(t, "INVALID", row(endedInvalid).ProcessState)
-	assert.Equal(t, "REJECTED", row(activeRejected).ProcessState)
+	assert.Equal(t, "INVALID", row(activeRejected).ProcessState)
 
 	code, out = run("fix.sql", "expected="+itoa(expected))
 	require.Equal(t, 0, code, out)
@@ -154,7 +158,8 @@ func TestEndedMeterRejectionScripts(t *testing.T) {
 	assert.Equal(t, "REJECTED", r.LastProcessState.String)
 	r = row(activeRejected)
 	assert.Equal(t, "ACTIVE", r.ProcessState)
-	assert.Equal(t, "REJECTED", r.LastProcessState.String)
+	assert.Equal(t, "INVALID", r.LastProcessState.String)
+	assert.Equal(t, "REJECTED", row(activeAbort).ProcessState, "active + REJECTED (abort): not touched")
 	assert.Equal(t, "INVALID", row(neverActive).ProcessState, "never-active meter is not touched")
 	assert.Equal(t, "test", row(neverActive).ModifiedBy.String)
 	assert.Equal(t, "INVALID", row(endedNoDate).ProcessState, "no end date: not touched")
@@ -184,7 +189,7 @@ func TestEndedMeterRejectionScripts(t *testing.T) {
 	r = row(endedInvalid)
 	assert.Equal(t, "INVALID", r.ProcessState)
 	assert.False(t, r.LastProcessState.Valid)
-	assert.Equal(t, "REJECTED", row(activeRejected).ProcessState)
+	assert.Equal(t, "INVALID", row(activeRejected).ProcessState)
 	var historyState string
 	require.NoError(t, dbx.Get(&historyState, `SELECT process_state FROM base.meteringpoint
 		WHERE tenant = $1 AND metering_point_id = $2 AND flag = 0`, tenant, endedRejected))
