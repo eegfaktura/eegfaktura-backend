@@ -528,8 +528,7 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 				var merged []energyRequest
 				for _, c := range parts {
 					n := len(merged)
-					if n > 0 && !util.TruncateToStartOfDay(time.UnixMilli(c.from)).After(
-						util.TruncateToStartOfDay(time.UnixMilli(merged[n-1].to)).AddDate(0, 0, 1)) {
+					if n > 0 && energyrequest.Touch(merged[n-1].to, c.from) {
 						merged[n-1].to = max(merged[n-1].to, c.to)
 						// sent with the current entry, else the later one (BEG: its grid operator is the receiver)
 						if merged[n-1].meter.State.Flag != model.F_ASSIGNED {

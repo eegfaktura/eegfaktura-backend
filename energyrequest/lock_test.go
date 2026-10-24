@@ -106,3 +106,14 @@ func TestRun_SkipUntil(t *testing.T) {
 	assert.Equal(t, []Skipped{{MeteringPoint: "ZP1", Reason: ReasonAlreadyRequested, Until: 42},
 		{MeteringPoint: "ZP2", Reason: ReasonComplete}}, r.Skipped)
 }
+
+// Touch: the periods overlap or the second starts on the day after the first ends (summer time included)
+func TestTouch(t *testing.T) {
+	at := func(m time.Month, d, h, min int) int64 { return time.Date(2025, m, d, h, min, 0, 0, time.Local).UnixMilli() }
+	assert.True(t, Touch(at(6, 15, 23, 45), at(6, 16, 0, 0)), "next day")
+	assert.True(t, Touch(at(6, 15, 23, 45), at(6, 10, 0, 0)), "overlap")
+	assert.False(t, Touch(at(6, 15, 23, 45), at(6, 17, 0, 0)), "a free day between")
+	assert.True(t, Touch(at(3, 29, 23, 45), at(3, 30, 0, 0)), "summer time starts on the next day")
+	assert.True(t, Touch(at(3, 30, 23, 45), at(3, 31, 0, 0)), "after the summer time day")
+	assert.False(t, Touch(at(3, 29, 23, 45), at(3, 31, 0, 0)))
+}
