@@ -57,6 +57,34 @@ func TestArchiveTariff_inUse(t *testing.T) {
 	t.Run("member tariff in use", func(t *testing.T) { assertInUse(t, participantTariff) })
 	t.Run("metering point tariff in use", func(t *testing.T) { assertInUse(t, meterTariff) })
 
+	// Decision 24.10.2026 (#106): only entries whose tariff can still be changed count. Every member row can be
+	// edited (PUT /participant has no status guard), so members count in every status; of the metering points only
+	// the current entry (flag 1, any status), not the moved (0) or archived (2) history rows.
+	t.Run("active and archived members block", func(t *testing.T) {
+		for _, st := range []string{"ACTIVE", "ARCHIVED"} {
+			tariff := newTariff(t, "Mitglied "+st)
+			exec(t, `INSERT INTO base.participant (id, tenant, firstname, lastname, status, "createdBy", "lastModifiedBy", "tariffId")
+				VALUES (uuid_generate_v4(), $1, 'Ta', $2, $2, 'test', 'test', $3)`, tenant, st, tariff)
+			assertInUse(t, tariff)
+		}
+	})
+
+	t.Run("current metering point of any status blocks", func(t *testing.T) {
+		tariff := newTariff(t, "Zaehlpunkt aktiv")
+		exec(t, `INSERT INTO base.meteringpoint (metering_point_id, participant_id, tenant, status, tariff_id, flag)
+			VALUES ('AT0030000000000000000000000417011', $1, $2, 'ACTIVE', $3, 1)`, partId, tenant, tariff)
+		assertInUse(t, tariff)
+	})
+
+	t.Run("moved and archived metering point rows do not block", func(t *testing.T) {
+		tariff := newTariff(t, "Zaehlpunkt Historie")
+		exec(t, `INSERT INTO base.meteringpoint (metering_point_id, participant_id, tenant, status, tariff_id, flag)
+			VALUES ('AT0030000000000000000000000417020', $1, $2, 'ACTIVE', $3, 0),
+			       ('AT0030000000000000000000000417022', $1, $2, 'INACTIVE', $3, 2)`, partId, tenant, tariff)
+		require.NoError(t, db.ArchiveTariff(tenant, tariff))
+		assert.Equal(t, "ARCHIVED", status(t, tariff))
+	})
+
 	t.Run("unused tariff is archived", func(t *testing.T) {
 		require.NoError(t, db.ArchiveTariff(tenant, unused))
 		assert.Equal(t, "ARCHIVED", status(t, unused))

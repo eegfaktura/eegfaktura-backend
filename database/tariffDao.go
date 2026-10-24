@@ -144,17 +144,21 @@ func GetTariffNameMap(db *sqlx.DB, tenant string) (map[string]string, error) {
 	return tariffMap, nil
 }
 
-// archiveTariff archives all versions of a tariff of the tenant, unless a member or a metering point
-// of the tenant references it (any status): then ErrTariffUtilized (4002). Check and archive are one
-// UPDATE; an assignment committed at the same moment is not prevented, and the paths that assign a
-// tariff to a member or metering point do not check its status (known gap). 0 updated rows are told
-// apart by a follow-up read: the tariff exists → in use, otherwise ErrUpdateTariff "unknown tariff".
+// archiveTariff archives all versions of a tariff of the tenant, unless an entry whose tariff can still be
+// changed references it: then ErrTariffUtilized (4002). Decision 24.10.2026 (#106): members of the tenant in
+// every status (every member row can be edited, PUT /participant has no status guard), metering points only as
+// the current entry (flag = F_ASSIGNED, any status); moved (0) and archived (2) history rows do not block, as
+// they would block forever. Check and archive are one UPDATE; an assignment committed at the same moment is
+// not prevented, and the paths that assign a tariff to a member or metering point do not check its status
+// (known gap). 0 updated rows are told apart by a follow-up read: the tariff exists → in use, otherwise
+// ErrUpdateTariff "unknown tariff".
 func archiveTariff(db *sqlx.DB, tenant string, id string) error {
 	// todo: use goqu for sql statement creation
 	res, err := db.Exec(`UPDATE base.tariff SET status = 'ARCHIVED', "lastModifiedDate" = 'now()'
 		WHERE tenant = $1 AND id = $2
 		AND NOT EXISTS (SELECT 1 FROM base.participant WHERE tenant = $1 AND "tariffId" = $2)
-		AND NOT EXISTS (SELECT 1 FROM base.meteringpoint WHERE tenant = $1 AND tariff_id = $2)`, tenant, id)
+		AND NOT EXISTS (SELECT 1 FROM base.meteringpoint WHERE tenant = $1 AND tariff_id = $2 AND flag = $3)`,
+		tenant, id, model.F_ASSIGNED)
 	if err != nil {
 		return model.ErrUpdateTariff(err)
 	}
