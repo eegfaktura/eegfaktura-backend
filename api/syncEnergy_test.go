@@ -222,3 +222,20 @@ func TestSyncEnergy_runPeriodIsTheRequestedSpan(t *testing.T) {
 	assert.Equal(t, start(2025, 11, 3), run.From)
 	assert.Equal(t, end(2025, 11, 12), run.To)
 }
+
+// a metering point in meteringPoints and in complete: meteringPoints wins
+func TestSyncEnergy_meteringPointsBeforeComplete(t *testing.T) {
+	body := fmt.Sprintf(`{"meteringPoints": [{"meter": %q, "direction": "CONSUMPTION"}], "from": %d, "to": %d, "complete": [%q, %q]}`,
+		zp15, start(2025, 12, 1), start(2025, 12, 31), zp15, zp14)
+	var resp syncResponse
+	_, sent, _ := syncEnergy(t, body, &resp)
+	assert.Equal(t, []sentRequest{{meter: zp15, from: start(2025, 12, 1), to: end(2025, 12, 31)}}, sent)
+	assert.Equal(t, []energyrequest.Skipped{{MeteringPoint: zp14, Reason: energyrequest.ReasonComplete}}, resp.Skipped)
+
+	_, sent, _ = syncEnergy(t, body, &resp)
+	assert.Empty(t, sent)
+	require.Len(t, resp.Skipped, 2)
+	assert.Equal(t, energyrequest.ReasonComplete, resp.Skipped[0].Reason)
+	assert.Equal(t, zp15, resp.Skipped[1].MeteringPoint)
+	assert.Equal(t, energyrequest.ReasonAlreadyRequested, resp.Skipped[1].Reason, "its own reason, not COMPLETE")
+}

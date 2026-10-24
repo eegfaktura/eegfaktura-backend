@@ -441,8 +441,11 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 			// platform#173: record the run (requested and skipped metering points) before sending, so the answers
 			// can be summarised
 			run := energyrequest.NewRun(eeg.CommunityId, fromDate, toDate)
+			// meteringPoints wins: a metering point listed there too is requested, locked or skipped for its own reason
 			for _, c := range request.Complete {
-				run.Skip(c, energyrequest.ReasonComplete)
+				if _, listed := periods[c]; !listed {
+					run.Skip(c, energyrequest.ReasonComplete)
+				}
 			}
 			type energyRequest struct {
 				meter    *model.MeteringPoint
