@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"at.ourproject/vfeeg-backend/energyrequest"
 	"at.ourproject/vfeeg-backend/model"
@@ -15,6 +16,7 @@ type EnergyRequestRepository interface {
 	EnergyRequestLowerBound(ctx context.Context) (int64, error)
 	EnergyRequestRowsSince(ctx context.Context, fromId int64) ([]energyrequest.Row, error)
 	TenantsByEcId(ctx context.Context, ecId string) ([]string, error)
+	EnergyRequestTenantRows(ctx context.Context, tenant string, window time.Duration) ([]energyrequest.Row, map[string]bool, error)
 	CloseEnergyRequest(ctx context.Context, tenant string, runRowId int64, summary energyrequest.Summary) (bool, error)
 }
 
@@ -66,6 +68,38 @@ func (db *sqlDatabase) TenantsByEcId(ctx context.Context, ecId string) ([]string
 	tenants := []string{}
 	err := db.db.SelectContext(ctx, &tenants, `SELECT tenant FROM base.eeg WHERE "communityId" = $1`, ecId)
 	return tenants, err
+}
+
+// EnergyRequestTenantRows returns the run rows of tenant from the last window and, from the oldest of them on, the
+// answers and summaries stored under the tenants of its community id; and these tenants (tenant included). The
+// lower id bound is the newest row older than the window: the primary key is read backwards up to it, so only the
+// rows of the window are scanned (date grows with id; both are set on insert).
+func (db *sqlDatabase) EnergyRequestTenantRows(ctx context.Context, tenant string, window time.Duration) ([]energyrequest.Row, map[string]bool, error) {
+	list := []string{}
+	if err := db.db.SelectContext(ctx, &list, `SELECT tenant FROM base.eeg
+		WHERE "communityId" = (SELECT "communityId" FROM base.eeg WHERE tenant = $1)`, tenant); err != nil {
+		return nil, nil, err
+	}
+	tenants := map[string]bool{tenant: true}
+	for _, t := range list {
+		tenants[t] = true
+	}
+
+	rows := []energyrequest.Row{}
+	err := db.db.SelectContext(ctx, &rows, `WITH b AS (SELECT COALESCE((SELECT id FROM base.notification
+			WHERE date <= (now() AT TIME ZONE 'utc') - make_interval(secs => $1) ORDER BY id DESC LIMIT 1), 0) AS id),
+		r AS (SELECT min(id) AS id FROM base.notification
+			WHERE id > (SELECT id FROM b) AND process = $2 AND type = $3 AND tenant = $4)
+		SELECT id, tenant, process, type, notification::text AS notification
+		FROM base.notification
+		WHERE id >= (SELECT id FROM r) AND ((process = $2 AND type = $3 AND tenant = $4)
+		   OR (process = $5 AND notification->>'type' IN ('ANTWORT_PT', 'ABLEHNUNG_PT', $6)
+		       AND (tenant = $4 OR tenant IN (SELECT tenant FROM base.eeg
+		           WHERE "communityId" = (SELECT "communityId" FROM base.eeg WHERE tenant = $4)))))
+		ORDER BY id`,
+		window.Seconds(), model.N_PROCESS_ENERGY_REQUEST, energyrequest.RowTypeRun, tenant,
+		model.N_PROCESS_EDA_PROCESS, energyrequest.SummaryType)
+	return rows, tenants, err
 }
 
 // CloseEnergyRequest writes the summary of the run in row runRowId, unless one was written already. Check and insert

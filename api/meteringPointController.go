@@ -401,6 +401,17 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 				respondWith(w, http.StatusInternalServerError, tenant, err)
 				return
 			}
+			// lock: a metering point requested in the last hour for an overlapping period and not rejected is
+			// skipped. Lock check and saving the run are serialised per tenant.
+			unlock := energyrequest.LockTenant(tenant)
+			lockRows, lockTenants, err := h.db.EnergyRequestTenantRows(r.Context(), tenant, energyrequest.LockWindow)
+			if err != nil {
+				unlock()
+				log.WithField("tenant", tenant).WithError(err).Error("failed to request metering point values.")
+				respondWith(w, http.StatusInternalServerError, tenant, err)
+				return
+			}
+			locks := energyrequest.NewLocks(lockRows, tenant, lockTenants, time.Now())
 			// platform#173: record the run (requested and skipped metering points) before sending, so the answers
 			// can be summarised
 			run := energyrequest.NewRun(eeg.CommunityId, fromDate, toDate)
@@ -432,10 +443,15 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 
 				from := util.MaxTimeStamp(_activeSince, fromDate)
 				to := util.MinTimeStamp(_inactiveSince, toDate)
+				if until := locks.Until(m.MeteringPoint, from, to); until > 0 {
+					run.SkipUntil(m.MeteringPoint, energyrequest.ReasonAlreadyRequested, until)
+					continue
+				}
 				run.Add(m.MeteringPoint, from, to)
 				send = append(send, energyRequest{meter: m, from: from, to: to})
 			}
 			energyrequest.Save(r.Context(), h.db, tenant, requested, run)
+			unlock()
 
 			for _, s := range send {
 				m, from, to := s.meter, s.from, s.to

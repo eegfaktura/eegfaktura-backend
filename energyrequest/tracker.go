@@ -59,6 +59,11 @@ func (r *Run) Add(meter string, from, to int64) {
 // Skip records a metering point that is not requested, unless it is requested for another participation. Of
 // several participations, the reason of the assigned one counts: NOT_ASSIGNED (an ended participation) gives way.
 func (r *Run) Skip(meter, reason string) {
+	r.SkipUntil(meter, reason, 0)
+}
+
+// SkipUntil is Skip with the time (ms) from which the metering point is free again (reason ALREADY_REQUESTED).
+func (r *Run) SkipUntil(meter, reason string, until int64) {
 	for _, m := range r.Meters {
 		if m.MeteringPoint == meter {
 			return
@@ -68,11 +73,12 @@ func (r *Run) Skip(meter, reason string) {
 		if s.MeteringPoint == meter {
 			if s.Reason == ReasonNotAssigned {
 				r.Skipped[i].Reason = reason
+				r.Skipped[i].Until = until
 			}
 			return
 		}
 	}
-	r.Skipped = append(r.Skipped, Skipped{MeteringPoint: meter, Reason: reason})
+	r.Skipped = append(r.Skipped, Skipped{MeteringPoint: meter, Reason: reason, Until: until})
 }
 
 func (r *Run) dropSkipped(meter string) {
