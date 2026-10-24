@@ -1,7 +1,17 @@
--- Undo fix.sql: rows the cleanup changed and nobody changed since (modifiedBy still
--- 'cleanup-2026-10-24') get their rejected process state back; last_process_state is cleared.
--- Rows changed later (e.g. a new registration) keep their newer state.
--- The script does not commit. It returns "geaendert" and "tenants": check, then COMMIT or ROLLBACK.
+-- Undo fix.sql: current entries (flag 1) the cleanup changed and nobody changed since (modifiedBy
+-- still 'cleanup-2026-10-24') get their rejected process state back; last_process_state is cleared.
+-- Entries changed later (e.g. a new registration, or flag 0 after a re-registration elsewhere) keep
+-- their newer state.
+--
+-- Self-guarding like fix.sql; expected = the count of the query in the README ("Undo"):
+--   pgz eegfaktura -v expected=<anzahl> < rollback.sql
+\set ON_ERROR_STOP on
+\if :{?expected}
+\else
+  \echo 'ABBRUCH: -v expected=<anzahl> fehlt. Nichts geaendert.'
+  SELECT 1/0 AS expected_fehlt;
+\endif
+
 BEGIN;
 
 WITH restored AS (
@@ -12,9 +22,17 @@ WITH restored AS (
       "modifiedBy"       = 'rollback-cleanup-2026-10-24'
   WHERE flag = 1
     AND "modifiedBy" = 'cleanup-2026-10-24'
-    AND process_state = 'INACTIVE'
+    AND process_state IN ('INACTIVE', 'ACTIVE')
     AND last_process_state IN ('INVALID', 'REJECTED')
   RETURNING tenant)
-SELECT count(*) AS geaendert, count(DISTINCT tenant) AS tenants FROM restored;
+SELECT count(*) AS geaendert, count(DISTINCT tenant) AS tenants FROM restored \gset
 
--- COMMIT;   or   ROLLBACK;
+\echo 'zurueckgesetzt' :geaendert 'in' :tenants 'Tenants, erwartet' :expected
+SELECT (:geaendert = :expected) AS anzahl_ok \gset
+\if :anzahl_ok
+  COMMIT;
+  \echo 'COMMIT: Rollback gespeichert.'
+\else
+  \echo 'ABBRUCH: Anzahl weicht ab, nichts gespeichert.'
+  SELECT 1/0 AS anzahl_weicht_ab;
+\endif
