@@ -51,11 +51,6 @@ func ownerChange(t *testing.T, meter, since, oldUntil, newSince string, flag int
 	}
 }
 
-// utcDay is the start of a stored activesince/inactivesince date as the handler reads it (UTC midnight)
-func utcDay(y int, m time.Month, d int) int64 {
-	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC).UnixMilli()
-}
-
 func syncBody(meter string, from, to int64) string {
 	return fmt.Sprintf(`{"meteringPoints": [{"meter": %q, "direction": "CONSUMPTION"}], "from": %d, "to": %d}`,
 		meter, from, to)
@@ -74,7 +69,9 @@ func TestSyncEnergy_ownerChangeContiguous(t *testing.T) {
 	assert.Equal(t, []energyrequest.MeterRange{{MeteringPoint: zp, From: start(2025, 6, 5), To: end(2025, 6, 20)}}, run.Meters)
 }
 
-// a gap between the owners (old until 02.09., new from 06.09.): two requests, the run records the covering span
+// a gap between the owners (old until 02.09., new from 06.09.): two requests, the run records the covering span. An
+// ended entry is requested up to the end of its last day (inactivesince is its last active day), a new one from the
+// start of its first day (local time)
 func TestSyncEnergy_ownerChangeWithGap(t *testing.T) {
 	const zp = "AT0030000000000000000000000953091"
 	ownerChange(t, zp, "2025-01-01", "2025-09-02", "2025-09-06", 0)
@@ -82,8 +79,8 @@ func TestSyncEnergy_ownerChangeWithGap(t *testing.T) {
 	code, sent, run := syncEnergy(t, syncBody(zp, start(2025, 9, 1), start(2025, 9, 10)))
 	assert.Equal(t, http.StatusOK, code)
 	assert.ElementsMatch(t, []sentRequest{
-		{meter: zp, from: start(2025, 9, 1), to: utcDay(2025, 9, 2)},
-		{meter: zp, from: utcDay(2025, 9, 6), to: end(2025, 9, 10)},
+		{meter: zp, from: start(2025, 9, 1), to: end(2025, 9, 2)},
+		{meter: zp, from: start(2025, 9, 6), to: end(2025, 9, 10)},
 	}, sent)
 	assert.Equal(t, []energyrequest.MeterRange{{MeteringPoint: zp, From: start(2025, 9, 1), To: end(2025, 9, 10)}}, run.Meters)
 
@@ -91,6 +88,15 @@ func TestSyncEnergy_ownerChangeWithGap(t *testing.T) {
 	code, sent, _ = syncEnergy(t, syncBody(zp, start(2025, 9, 1), start(2025, 9, 10)))
 	assert.Equal(t, http.StatusOK, code)
 	assert.Empty(t, sent)
+}
+
+// an entry that ends on the day summer time starts (30.03.2025) is requested up to that day's last quarter hour
+func TestSyncEnergy_ownerChangeEndsOnDstDay(t *testing.T) {
+	const zp = "AT0030000000000000000000000953096"
+	ownerChange(t, zp, "2025-01-01", "2025-03-30", "2025-04-05", 0)
+
+	_, sent, _ := syncEnergy(t, syncBody(zp, start(2025, 3, 25), start(2025, 4, 2)))
+	assert.Equal(t, []sentRequest{{meter: zp, from: start(2025, 3, 25), to: end(2025, 3, 30)}}, sent)
 }
 
 // a request only in the old member's period is sent (before: skipped as NOT_ACTIVE_IN_PERIOD)
@@ -122,15 +128,15 @@ func TestSyncEnergy_ownerChangePartLocked(t *testing.T) {
 	require.Len(t, sent, 1)
 	var resp syncResponse
 	_, sent, run := syncEnergy(t, syncBody(oldLocked, start(2025, 6, 5), start(2025, 6, 20)), &resp)
-	assert.Equal(t, []sentRequest{{meter: oldLocked, from: utcDay(2025, 6, 16), to: end(2025, 6, 20)}}, sent)
+	assert.Equal(t, []sentRequest{{meter: oldLocked, from: start(2025, 6, 16), to: end(2025, 6, 20)}}, sent)
 	assert.Equal(t, syncResponse{Requested: 1, Skipped: []energyrequest.Skipped{}}, resp)
-	assert.Equal(t, []energyrequest.MeterRange{{MeteringPoint: oldLocked, From: utcDay(2025, 6, 16), To: end(2025, 6, 20)}}, run.Meters)
+	assert.Equal(t, []energyrequest.MeterRange{{MeteringPoint: oldLocked, From: start(2025, 6, 16), To: end(2025, 6, 20)}}, run.Meters)
 
 	// the new part was requested: only the old part is sent
 	_, sent, first := syncEnergy(t, syncBody(newLocked, start(2025, 6, 16), start(2025, 6, 20)))
 	require.Len(t, sent, 1)
 	_, sent, _ = syncEnergy(t, syncBody(newLocked, start(2025, 6, 5), start(2025, 6, 20)))
-	assert.Equal(t, []sentRequest{{meter: newLocked, from: start(2025, 6, 5), to: utcDay(2025, 6, 15)}}, sent)
+	assert.Equal(t, []sentRequest{{meter: newLocked, from: start(2025, 6, 5), to: end(2025, 6, 15)}}, sent)
 
 	// locked in the new member's period, the old entry not active there: the answer says locked
 	until := time.UnixMilli(first.CreatedAt).Add(energyrequest.LockWindow).UnixMilli()

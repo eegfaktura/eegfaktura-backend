@@ -461,8 +461,11 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 					continue
 				}
 
-				_activeSince := m.State.ActiveSince.Date.Unix() * 1000
-				_inactiveSince := m.State.InactiveSince.Date.Unix() * 1000
+				// whole days in local time, like the request period: inactivesince is the last active day, so it is
+				// requested up to its end (before: UTC midnight, which left out the last day)
+				since, until := m.State.ActiveSince.Date, m.State.InactiveSince.Date
+				_activeSince := time.Date(since.Year(), since.Month(), since.Day(), 0, 0, 0, 0, time.Local).UnixMilli()
+				_inactiveSince := util.TruncateToEndOfDay(time.Date(until.Year(), until.Month(), until.Day(), 0, 0, 0, 0, time.Local)).UnixMilli()
 
 				p, ok := periods[m.MeteringPoint]
 				if !ok {

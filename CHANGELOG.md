@@ -107,6 +107,14 @@ this changelog highlights the changes relevant for overview and operations.
   change date sent the request for the new member's part twice to the grid operator. Now every entry carries its
   own period and flag, and the request is sent once. Metering points with one entry return the same as before
   (the old member's part is now requested too, see Changed).
+- **Energy data request: an ended entry gets its full last day.** `syncenergy` cut the requested period at the
+  entry's `inactivesince` as UTC midnight (e.g. 31.05. 02:00 local), so the last active day was mostly not requested
+  from the grid operator; `activesince` started at UTC midnight (01:00 / 02:00 local). `inactivesince` is the last
+  active day (energystore and billing count it as a whole day): the period now ends at 23:45 local time of that day
+  and starts at 00:00 local time of `activesince`, as the request period itself (summer time included). Affects every
+  metering point whose active period starts or ends inside the requested period (single entries too, e.g. a
+  metering point that left the community); one with an open end is unchanged. Pre-existing; with the old member's
+  part now requested (see Changed) it reaches the grid operators on every owner change.
 
 ### CI
 - `rolling-release.yml`: no image build on a draft pull request — it runs when the pull request is marked ready for review (`ready_for_review`) and on every later push to it; `pr-checks.yml` still checks drafts. Pushes, tags and the deploy dispatch are unchanged.
