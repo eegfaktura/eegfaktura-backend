@@ -112,6 +112,11 @@ type answer struct {
 // An answer belongs to the run when it comes after the run and before the next run of the same community with that
 // metering point. A metering point without an answer in that range and with a later run counts as requested again.
 func Evaluate(run Run, runRowId int64, rows []Row, tenants map[string]bool, now time.Time) (Summary, bool) {
+	return evaluate(run, attribute(run, runRowId, rows, tenants), now)
+}
+
+// evaluate is Evaluate on the attributed answers.
+func evaluate(run Run, a attribution, now time.Time) (Summary, bool) {
 	s := Summary{Type: SummaryType, RunId: run.RunId, From: run.From, To: run.To, Requested: len(run.Meters),
 		Accepted: []MeterRange{}, Rejected: []Rejected{}, NoAnswer: []string{}, Skipped: run.Skipped,
 		Superseded: []string{}}
@@ -119,7 +124,6 @@ func Evaluate(run Run, runRowId int64, rows []Row, tenants map[string]bool, now 
 		s.Skipped = []Skipped{}
 	}
 
-	a := attribute(run, runRowId, rows, tenants)
 	for _, m := range run.Meters {
 		belonging, superseded := a.belonging(m.MeteringPoint)
 		var answered, accepted bool
