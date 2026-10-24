@@ -35,6 +35,9 @@ this changelog highlights the changes relevant for overview and operations.
     (`syncMeteringPoint`) only checks for a 2xx answer and does not read the body, so older web versions keep working.
     A request with only `complete` (every metering point complete) is accepted (nothing stored); before, a request without
     metering points got `500` („no Meter selected“), which it still gets without `complete`.
+  - **A run that cannot be stored is not sent:** if the run row cannot be written (database error), nothing goes to
+    the grid operator and the request gets `500` (error code `5100`, as a failed send); it can be repeated at once.
+    Before, the requests went out without a run, so nothing locked or summarised them.
   - `skipped[]` entries in the run row and in `ZUSAMMENFASSUNG_PT` gain the optional field `until`.
   - **Notification list (admins):** each open run with a summary (two or more metering points, younger than 24 h,
     not yet summarised) is listed as one entry shaped like a stored `ZUSAMMENFASSUNG_PT` (type `MESSAGE`, process
@@ -44,7 +47,8 @@ this changelog highlights the changes relevant for overview and operations.
     answers are listed again as before. Single requests are unchanged. The rows behind it are kept for 15 s per
     backend instance (cleared when the instance writes a run or a summary; new answers show after 15 s at the
     latest, so an answer arriving within these 15 s can show once as a single entry before it moves into the live
-    entry). If they cannot be read, the list comes without live entries instead of failing.
+    entry). If they cannot be read, the list comes without live entries instead of failing. For a tenant without a
+    run younger than 24 h only a short probe runs, the rows are not read.
   - **Answers are attributed by period** (summary, lock and live entry alike). Answers carry no period and no
     reference to the request, so per metering point: a later run supersedes an earlier request only for a period
     sharing a day (before: any later run with that metering point, which marked e.g. a May request as „requested
