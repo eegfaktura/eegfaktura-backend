@@ -6,8 +6,6 @@
 package energyrequest
 
 import (
-	"encoding/json"
-	"sort"
 	"time"
 
 	"github.com/jmoiron/sqlx/types"
@@ -105,27 +103,12 @@ type answer struct {
 	ResponseCodes  []string `json:"responseCodes"`
 }
 
-// Evaluate computes the summary of the run in row runRowId. rows are all relevant rows (ascending id), the earlier
-// runs that can still take answers included; tenants are the tenants of the run's community: the answers are stored
+// Evaluate computes the summary of the run in row runRowId. rows are all relevant rows (ascending id), the run row
+// and the earlier runs that can still take answers included; tenants are the tenants of the run's community: the answers are stored
 // under one of them (a GEA can share the community id). done is true when every metering point has an answer or the
 // deadline has passed. Which answer belongs to which run: see attribute.
 func Evaluate(run Run, runRowId int64, rows []Row, tenants map[string]bool, now time.Time) (Summary, bool) {
-	return evaluate(run, runRowId, attribute(run.EcId, withRun(rows, run, runRowId), tenants), now)
-}
-
-// withRun returns rows with the run in row runRowId, added in id order when rows lack it.
-func withRun(rows []Row, run Run, runRowId int64) []Row {
-	i := sort.Search(len(rows), func(i int) bool { return rows[i].Id >= runRowId })
-	if i < len(rows) && rows[i].Id == runRowId {
-		return rows
-	}
-	msg, err := json.Marshal(run)
-	if err != nil {
-		return rows
-	}
-	out := make([]Row, 0, len(rows)+1)
-	out = append(append(append(out, rows[:i]...), Row{Id: runRowId, Type: RowTypeRun, Message: msg}), rows[i:]...)
-	return out
+	return evaluate(run, runRowId, attribute(run.EcId, rows, tenants), now)
 }
 
 // evaluate is Evaluate on the attributed answers.
