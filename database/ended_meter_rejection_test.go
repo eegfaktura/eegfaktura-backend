@@ -244,11 +244,13 @@ func TestEndedMeterRejectionScripts(t *testing.T) {
 		endedInvalid  = "AT0030000000000000000000990019001"
 		endedRejected = "AT0030000000000000000000990019002"
 		neverActive   = "AT0030000000000000000000990019003"
+		endedNoDate   = "AT0030000000000000000000990019004"
 	)
 	insertEndedRejectFixture(t, tenant, map[string][3]string{
 		endedInvalid:  {"INACTIVE", "INVALID", "2025-01-22"},
 		endedRejected: {"INACTIVE", "REJECTED", "2025-01-22"},
 		neverActive:   {"INIT", "INVALID", ""},
+		endedNoDate:   {"INACTIVE", "INVALID", ""},
 	})
 
 	// the scripts work on all tenants: run them in one transaction and roll it back, so the
@@ -266,21 +268,24 @@ func TestEndedMeterRejectionScripts(t *testing.T) {
 	stripTx := func(s string) string {
 		return regexp.MustCompile(`(?m)^BEGIN;$`).ReplaceAllString(s, "")
 	}
-	countFor := func() int {
+	// check.sql: "anzahl" = rows fix.sql changes, "ohne_datum" = ended without inactivesince (reported only)
+	counts := func() (anzahl, ohneDatum int) {
 		rows, err := tx.Queryx(script("check.sql"))
 		require.NoError(t, err)
 		defer rows.Close()
-		n := 0
 		for rows.Next() {
 			r := map[string]interface{}{}
 			require.NoError(t, rows.MapScan(r))
 			if r["tenant"] == tenant {
-				n = int(r["anzahl"].(int64))
+				anzahl, ohneDatum = int(r["anzahl"].(int64)), int(r["ohne_datum"].(int64))
 			}
 		}
-		return n
+		return
 	}
+	countFor := func() int { n, _ := counts(); return n }
+	_, noDate := counts()
 	assert.Equal(t, 2, countFor())
+	assert.Equal(t, 1, noDate)
 
 	// fix.sql reports how many rows it changed (the operator compares it with check.sql)
 	fix := stripTx(script("fix.sql"))
@@ -302,6 +307,7 @@ func TestEndedMeterRejectionScripts(t *testing.T) {
 	r = readEndedRejectRow(t, tx, tenant, neverActive)
 	assert.Equal(t, "INVALID", r.ProcessState, "never-active meter is not touched")
 	assert.Equal(t, "test", r.ModifiedBy.String)
+	assert.Equal(t, "INVALID", readEndedRejectRow(t, tx, tenant, endedNoDate).ProcessState, "no end date: not touched")
 
 	// a second run changes nothing
 	assert.Equal(t, 0, changed(fix))
