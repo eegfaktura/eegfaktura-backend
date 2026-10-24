@@ -123,13 +123,16 @@ this changelog highlights the changes relevant for overview and operations.
     (`model.REJECTED_KEEP_ACTIVE_CODES`: 172/173 consent refused / not answered, 183 allocation keys > 100 %, 188
     participation factor > 100 %): stays `ACTIVE`; `INIT`/`PENDING`/`APPROVED` left by the rejected request go back
     to `ACTIVE`, `REVOKED` and other states stay. This includes ZUSTIMMUNG with 172/173 for an active metering point
-    (platform#180 below sets `INVALID` for one still in registration). If the message also has a code about the
-    metering point (e.g. ABLEHNUNG with [188, 57]), that code is stored and the entry gets `INVALID`/`REJECTED` as
-    before, so the admin sees the inconsistency; the same for any other code (56, 57, 185, 104, 159, …);
+    (platform#180 below sets `INVALID` for one still in registration). For ABLEHNUNG the rule needs all deciding
+    codes to be such codes: if the message also has a code about the metering point that the old logic considered
+    (e.g. [188, 57]), that code is stored and the entry gets `INVALID`/`REJECTED` as before, so the admin sees the
+    inconsistency; a code the old logic ignored (e.g. 82 in [172, 82]) changes nothing, 172 stays stored.
+    ZUSTIMMUNG and ANTWORT keep their existing single-code logic. Any other code (56, 57, 185, 104, 159, …) gives
+    `INVALID`/`REJECTED` as before;
   - where the state is kept, `last_process_state` holds the rejected state and `statusCode` the code; `activesince`
     is not touched;
   - never-active (`INIT`) entries get `INVALID`/`REJECTED` as before. An applied rejection clears
-    `last_process_state`, and a rejection without code (ABBRUCH) clears `statusCode` (no stale 188).
+    `last_process_state`; a rejection without code (ABBRUCH) keeps the stored `statusCode` as before.
 
   The notification for the admins is unchanged. **Visible change:** a fresh rejection of such a metering point is
   shown only in the messages (Nachrichten); the metering point keeps its inactive/active card in web, without the
@@ -148,8 +151,11 @@ this changelog highlights the changes relevant for overview and operations.
   - **Operator, after deploying (prod and pilot):** clean up the existing cases once with
     `scripts/ended-meter-rejection/` (README there): `pgz <ns> < check.sql` (read only; counts per variant and code,
     and the variants left alone: `ohne_datum`, `aktiv_andere`), `pgz <ns> -v expected=<anzahl> < fix.sql` (commits
-    only if exactly that many rows changed), `rollback.sql` the same way to undo. Prod at 24.10.2026: about 377 ended
-    entries in about 100 tenants; active with codes 188/173 about 53.
+    only if exactly that many rows changed), `rollback.sql` the same way to undo. The active variant covers only
+    `ACTIVE` + `INVALID` with code 172/173/183/188 (an abort gives `REJECTED` and keeps an old code, so it is only
+    reported); an optional read-only query in the README lists these with their latest EDA message. Rough size,
+    counted on 24.10.2026 before the `activesince` condition: about 377 ended entries in about 100 tenants, about 53
+    active ones (188/173). `expected` always comes from `check.sql`, never from these numbers.
 - **Restoring the process state after code 86 no longer logs an error on success.**
   `restoreMeteringPointProcessState` always returned an error value (also without a database error), so every
   rejection with code 86 logged „can not restore MeteringPointProcessState“. The update itself ran; only the log
