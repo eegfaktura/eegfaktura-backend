@@ -144,41 +144,36 @@ func GetTariffNameMap(db *sqlx.DB, tenant string) (map[string]string, error) {
 	return tariffMap, nil
 }
 
-// archiveTariff archives all versions of a tariff of the tenant. A tariff that a member or a metering
-// point of the tenant still references (any status) is not archived: ErrTariffUtilized (4002).
-// Check and update run in one transaction.
-func archiveTariff(db *sqlx.DB, tenant string, id string) (err error) {
-	tx, err := db.Beginx()
-	if err != nil {
-		return model.ErrOpenTx(err)
-	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		} else {
-			err = tx.Commit()
-		}
-	}()
-
-	var inUse bool
-	err = tx.Get(&inUse, `SELECT EXISTS (SELECT 1 FROM base.participant WHERE tenant = $1 AND "tariffId" = $2)
-		OR EXISTS (SELECT 1 FROM base.meteringpoint WHERE tenant = $1 AND tariff_id = $2)`, tenant, id)
-	if err != nil {
-		return model.ErrGetTariff(err)
-	}
-	if inUse {
-		return model.ErrTariffUtilized(ErrTariffUtilized)
-	}
-
+// archiveTariff archives all versions of a tariff of the tenant, unless a member or a metering point
+// of the tenant references it (any status): then ErrTariffUtilized (4002). Check and archive are one
+// UPDATE; an assignment committed at the same moment is not prevented, and the paths that assign a
+// tariff to a member or metering point do not check its status (known gap). 0 updated rows are told
+// apart by a follow-up read: the tariff exists → in use, otherwise ErrUpdateTariff "unknown tariff".
+func archiveTariff(db *sqlx.DB, tenant string, id string) error {
 	// todo: use goqu for sql statement creation
-	res, err := tx.Exec("UPDATE base.tariff SET status = 'ARCHIVED', \"lastModifiedDate\" = 'now()' WHERE tenant = $1 AND id = $2", tenant, id)
+	res, err := db.Exec(`UPDATE base.tariff SET status = 'ARCHIVED', "lastModifiedDate" = 'now()'
+		WHERE tenant = $1 AND id = $2
+		AND NOT EXISTS (SELECT 1 FROM base.participant WHERE tenant = $1 AND "tariffId" = $2)
+		AND NOT EXISTS (SELECT 1 FROM base.meteringpoint WHERE tenant = $1 AND tariff_id = $2)`, tenant, id)
 	if err != nil {
 		return model.ErrUpdateTariff(err)
 	}
-	if n, err := res.RowsAffected(); err != nil || n == 0 {
-		return model.ErrUpdateTariff(errors.New("unknown tariff"))
+	n, err := res.RowsAffected()
+	if err != nil {
+		return model.ErrUpdateTariff(err)
 	}
-	return nil
+	if n > 0 {
+		return nil
+	}
+
+	var exists bool
+	if err = db.Get(&exists, `SELECT EXISTS (SELECT 1 FROM base.tariff WHERE tenant = $1 AND id = $2)`, tenant, id); err != nil {
+		return model.ErrGetTariff(err)
+	}
+	if exists {
+		return model.ErrTariffUtilized(ErrTariffUtilized)
+	}
+	return model.ErrUpdateTariff(errors.New("unknown tariff"))
 }
 
 func AddTariff(db *sqlx.DB, tenant, user string, tariff *model.Tariff) error {

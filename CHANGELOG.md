@@ -84,10 +84,12 @@ this changelog highlights the changes relevant for overview and operations.
 - **Archiving a tariff that is still in use is refused** (`DELETE /eeg/tariff/{id}`). The check in `archiveTariff`
   only failed on a database error and ignored the rows it found, so a tariff still assigned to a member
   (`participant.tariffId`) or a metering point (`meteringpoint.tariff_id`) was archived. Now the tariff stays as it is
-  and the call answers `400` with code `4002` („Tariff is currently used“). Members and metering points of the
-  tenant count in every status; check and archive run in one transaction. The member check is now tenant-scoped like
-  the metering point check. An unknown tariff id, or one of another community, now answers `400` with code `4001`
-  („unknown tariff“, as when saving a tariff) instead of `202`. eegfaktura-web checks this client-side as well (web#191).
+  and the call answers `400` with code `4002` („Tariff is currently used“). Members and metering points of the tenant
+  count in every status; check and archive are one `UPDATE`. Not prevented: an assignment committed at the same
+  moment, and saving a member or metering point does not check the tariff's status (known gap). The member check is
+  now tenant-scoped like the metering point check. An unknown tariff id, or one of another community, now answers
+  `400` with code `4001` („unknown tariff“, as when saving a tariff) instead of `202`. eegfaktura-web checks this
+  client-side as well (web#191).
 
 ### CI
 - `rolling-release.yml`: no image build on a draft pull request — it runs when the pull request is marked ready for review (`ready_for_review`) and on every later push to it; `pr-checks.yml` still checks drafts. Pushes, tags and the deploy dispatch are unchanged.
