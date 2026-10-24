@@ -2,6 +2,8 @@ package parser
 
 import (
 	"bytes"
+	"context"
+	"encoding/base64"
 	"errors"
 	"html/template"
 	"io/fs"
@@ -10,12 +12,14 @@ import (
 	"strings"
 
 	"at.ourproject/vfeeg-backend/config"
+	"at.ourproject/vfeeg-backend/mailtemplate"
 	"at.ourproject/vfeeg-backend/model"
 	"at.ourproject/vfeeg-backend/public"
 	"at.ourproject/vfeeg-backend/services"
 	"github.com/gabriel-vasile/mimetype"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"gopkg.in/guregu/null.v4"
 )
 
 // ParseTemplate renders the HTML template named name from fsys with data.
@@ -56,12 +60,69 @@ func resolveTemplateSource(tenant, templateConfigName string) (fs.FS, string) {
 	return embedded, "embedded"
 }
 
-func SendActivationMailFromTemplate(sendMail services.SendMailFunc,
+// TenantTemplateActive reports whether a hand-made template of the community on
+// the data volume applies to a mail (used while it has no saved version).
+func TenantTemplateActive(tenant, templateConfigName string) bool {
+	_, err := os.Stat(filepath.Join(viper.GetString("file-content.templates"), tenant, "templates", templateConfigName))
+	return err == nil
+}
+
+// RenderLegacy renders the template the legacy resolution would send (tenant
+// dir, global dir, embedded) with the given member data: for the preview with
+// images as data: URIs, for a test mail with inline images and attachment as
+// the member gets them.
+func RenderLegacy(tenant, templateConfigName string, eeg *model.Eeg, data *mailtemplate.Data, mode mailtemplate.ImageMode) (*mailtemplate.Rendered, error) {
+	tmplFS, _ := resolveTemplateSource(tenant, templateConfigName)
+	cfg, err := config.ReadActivationMailTemplateConfig(tmplFS, templateConfigName)
+	if err != nil {
+		return nil, err
+	}
+	participant := &model.EegParticipant{EegParticipantBase: model.EegParticipantBase{
+		FirstName: data.FirstName, LastName: data.LastName, ParticipantNumber: null.StringFrom(data.Number)}}
+	templateData := struct {
+		Eeg            *model.Eeg
+		Participant    *model.EegParticipant
+		Meteringpoints []string
+		MeteringPoint  string
+		Direction      string
+		EndDate        string
+		Reason         string
+	}{eeg, participant, data.MeteringPoints, strings.Join(data.MeteringPoints, ", "), data.Direction, data.EndDate, data.Reason}
+	buf, err := ParseTemplate(tmplFS, cfg.TemplateFile, templateData)
+	if err != nil {
+		return nil, err
+	}
+	if mode == mailtemplate.ImagesInline {
+		return &mailtemplate.Rendered{
+			Html:       buf.String(),
+			Inline:     buildInlineContent(tmplFS, cfg.InlinePictures),
+			Attachment: buildAttachment(tmplFS, cfg.Attachment.Name, cfg.Attachment.Mime),
+		}, nil
+	}
+	out := buf.String()
+	for _, p := range cfg.InlinePictures {
+		content, err := fs.ReadFile(tmplFS, p.Filepath)
+		if err != nil {
+			continue
+		}
+		out = strings.ReplaceAll(out, "cid:"+p.ContentId,
+			"data:"+mimetype.Detect(content).String()+";base64,"+base64.StdEncoding.EncodeToString(content))
+	}
+	return &mailtemplate.Rendered{Html: out}, nil
+}
+
+// SendActivationMailFromTemplate sends the consent-request or the zp-active mail (by template
+// config name). store holds the community's customised mails; nil sends the legacy template.
+func SendActivationMailFromTemplate(sendMail services.SendMailFunc, store mailtemplate.Store,
 	tenant, subject string, eeg *model.Eeg, participant *model.EegParticipant, templateConfigName string) error {
 
 	meterIds := []string{}
+	gridOperator := ""
 	for i := range participant.MeteringPoint {
 		meterIds = append(meterIds, participant.MeteringPoint[i].MeteringPoint)
+		if gridOperator == "" {
+			gridOperator = participant.MeteringPoint[i].GridOperatorName.String
+		}
 	}
 	templateData := struct {
 		Eeg            *model.Eeg
@@ -70,14 +131,37 @@ func SendActivationMailFromTemplate(sendMail services.SendMailFunc,
 		MeteringPoint  string
 	}{eeg, participant, meterIds, strings.Join(meterIds, ", ")}
 
-	return sendTemplateMail(sendMail, tenant, subject, templateConfigName, eeg, participant, templateData)
+	mailData := memberMailData(eeg, participant)
+	mailData.MeteringPoints = meterIds
+	mailData.GridOperator = gridOperator
+	return sendTemplateMail(sendMail, store, tenant, subject, templateConfigName, eeg, participant, templateData, mailData)
 }
 
-// sendTemplateMail renders a member mail from a template config (tenant dir, global dir, embedded
-// default) and sends it to the participant with the community in Cc. A participant without an
-// e-mail address is skipped. Shared by the activation and the inactive mail.
-func sendTemplateMail(sendMail services.SendMailFunc, tenant, subject, templateConfigName string,
-	eeg *model.Eeg, participant *model.EegParticipant, data interface{}) error {
+// memberMailData returns the placeholder values of a member mail.
+func memberMailData(eeg *model.Eeg, participant *model.EegParticipant) *mailtemplate.Data {
+	return &mailtemplate.Data{
+		FirstName: participant.FirstName,
+		LastName:  participant.LastName,
+		Number:    participant.ParticipantNumber.String,
+		Eeg:       eeg,
+	}
+}
+
+// sendTemplateMail sends a member mail to the participant with the community in Cc: the
+// community's customised version when it has one (store), else the legacy template config
+// (tenant dir, global dir, embedded default). A participant without an e-mail address is
+// skipped. Shared by the activation and the inactive mail.
+func sendTemplateMail(sendMail services.SendMailFunc, store mailtemplate.Store, tenant, subject, templateConfigName string,
+	eeg *model.Eeg, participant *model.EegParticipant, data interface{}, mailData *mailtemplate.Data) error {
+
+	if store != nil && participant.Contact.Email.Valid && strings.TrimSpace(participant.Contact.Email.String) != "" {
+		handled, err := mailtemplate.SendStored(context.Background(), store, sendMail,
+			mailtemplate.LookupByLegacyConfig(templateConfigName), tenant, participant.Contact.Email.String,
+			eeg.Email.Ptr(), mailData, strings.Join(mailData.MeteringPoints, ", "))
+		if handled {
+			return err
+		}
+	}
 
 	tmplFS, source := resolveTemplateSource(tenant, templateConfigName)
 	templateConfig, err := config.ReadActivationMailTemplateConfig(tmplFS, templateConfigName)

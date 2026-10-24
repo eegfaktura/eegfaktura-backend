@@ -257,6 +257,109 @@ table "gridoperators" {
     columns = [column.id, column.name]
   }
 }
+table "mail_template" {
+  schema = schema.base
+  column "tenant" {
+    null = false
+    type = text
+  }
+  column "mail_key" {
+    null = false
+    type = text
+  }
+  column "subject" {
+    null = false
+    type = text
+  }
+  column "body_html" {
+    null = false
+    type = text
+  }
+  column "version" {
+    null    = false
+    type    = integer
+    default = 1
+  }
+  column "default_version" {
+    null = false
+    type = integer
+  }
+  column "notified_default_version" {
+    null    = false
+    type    = integer
+    default = 0
+  }
+  column "updated_at" {
+    null    = false
+    type    = timestamptz
+    default = sql("now()")
+  }
+  column "updated_by" {
+    null = false
+    type = text
+  }
+  column "attachment_file_id" {
+    null = true
+    type = uuid
+  }
+  primary_key "mail_template_pk" {
+    columns = [column.tenant, column.mail_key]
+  }
+}
+table "mail_template_file" {
+  schema = schema.base
+  column "id" {
+    null = false
+    type = uuid
+  }
+  column "tenant" {
+    null = false
+    type = text
+  }
+  column "mail_key" {
+    null = false
+    type = text
+  }
+  column "kind" {
+    null = false
+    type = text
+  }
+  column "filename" {
+    null = false
+    type = text
+  }
+  column "mime_type" {
+    null = false
+    type = text
+  }
+  column "size" {
+    null = false
+    type = bigint
+  }
+  column "content" {
+    null = false
+    type = bytea
+  }
+  column "created_at" {
+    null    = false
+    type    = timestamptz
+    default = sql("now()")
+  }
+  column "committed" {
+    null    = false
+    type    = boolean
+    default = false
+  }
+  primary_key {
+    columns = [column.id]
+  }
+  index "idx_mail_template_file_tenant_key" {
+    columns = [column.tenant, column.mail_key]
+  }
+  check "mail_template_file_kind_check" {
+    expr = "(kind = ANY (ARRAY['image'::text, 'attachment'::text]))"
+  }
+}
 table "metering_partition_factor" {
   schema = schema.base
   column "metering_point_id" {

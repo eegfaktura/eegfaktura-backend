@@ -8,6 +8,45 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Added
+- **Editable member mail texts** (konzept-mail-texte-editierbar.md): a community customises subject and text of
+  the three member mails `consent-request` (Freigabe-Aufforderung), `zp-active` and `zp-inactive`. New REST API
+  under `/eeg/mailtemplates` (EEG_ADMIN, tenant header): catalog, read, save (`version`, 409 on a stale version),
+  reset, image/PDF upload (type checked on the content: PNG/JPEG ≤ 1 MB, max. 10; one PDF ≤ 3 MB; all files
+  ≤ 6 MB), preview (sample member, real community data) and test mail (to the login's e-mail or the community
+  address, no Cc, subject prefixed `[Test] `).
+  Uploads are drafts and are never sent; saving (`attachmentFileId` names the PDF) makes the used files part of the
+  version, deletes files the version no longer uses and drafts older than 24 h; a file the saved version uses can
+  not be deleted (409); an image the text references must exist when saving (400 otherwise).
+  `legacyTemplateActive` tells the editor that a hand-made volume template still applies; preview and test mail
+  of the unchanged default (compared after sanitising) or with `useDefault: true` then use that template.
+  Texts are sanitised with bluemonday driven by `mailtemplate/mail-html-policy.json`, tested against the case list
+  `mailtemplate/mail-html-policy-cases.json` (both shared with eegfaktura-billing). Placeholders are
+  `<span|div data-ph>` in the text (blocks only at top level) and `{key}` in the subject (only the catalog key
+  syntax; `{EEG}` stays text); they are replaced as escaped values, never through a template engine. "{{" in
+  text is written as "{<!-- -->{" (client-side template engines); link URLs are kept as written.
+  `eeg.contactBlock` shows name, contact person, address, phone, e-mail and website of the community, each only
+  when present (decision G.1; today's signature has no contact person). zp-inactive also has
+  `directionText`/`endDateText`, which carry their own wording and are empty without a value.
+  Sending: a stored version of the tenant goes first (only its committed, referenced files; images inline as
+  `cid:`, optional PDF, size checked before eda-xp); otherwise the existing resolution (volume per tenant → volume
+  global → embedded) is unchanged. A stored version that can not be rendered (including a missing image) sends
+  that default and an error notification to the community (validation/size text or a generic sentence; details only
+  in the log). On startup, communities whose customised mail is based on an older default get one notification
+  (written together with its "notified" mark).
+  Migrations `20261022120000_mail_templates` (two new tables) and `20261023120000_mail_template_file_drafts`
+  (`committed`, `attachment_file_id`), both additive with down; `schema.sql`, `schema.hcl` updated, `atlas.sum`
+  regenerated with `atlas migrate hash` (it was hashed over CRLF files before and did not validate).
+- **`cmd/mailtemplate-import`**: one-off operator tool that converts the hand-made mail templates of a volume copy
+  (`<TENANT>/templates`) into the new format and imports them through the REST API (dry run, `-test-mail eeg`).
+  Unmappable template expressions (also inside attributes) stop the import of that tenant; `-overwrite` replaces a
+  saved version only by the save itself. See `cmd/mailtemplate-import/README.md`.
+
+### Changed
+- The mail send log line no longer contains the subject (a customised subject can contain member data).
+- The gRPC call to eda-xp for a mail with inline images and attachment gets 30 s instead of 5 s when its files
+  exceed 256 KB (a customised mail may carry up to 6 MB); smaller mails keep 5 s.
+
 ### Security
 - **`/query` no longer returns the token verifier's error text.** A request to the GraphQL endpoint with an
   invalid or expired token got the verifier message in the 401 body (e.g. `oidc: id token signed with
@@ -16,6 +55,9 @@ this changelog highlights the changes relevant for overview and operations.
   stdout; nothing calls it. `GET /master/test` now answers 404.
 
 ### Fixed
+- Error notifications of a failed member mail (consent request / metering point active) and of a failed metering
+  point list mail were saved under the community id (ecId) instead of the tenant and never reached the community's
+  admins. They are saved under the tenant now.
 - **EDA: ZUSTIMMUNG_ECON/ECOF with code 172 sets the metering point to INVALID again** (platform#180). Code 172
   („Kunde hat Datenfreigabe abgelehnt“) had an empty `case` since 2025-09-22: the line for 173 was inserted between
   the label and the body of 172, and Go has no fallthrough. A consent message with 172 only went to the history; the

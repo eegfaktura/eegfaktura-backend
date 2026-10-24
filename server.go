@@ -20,6 +20,7 @@ import (
 	"at.ourproject/vfeeg-backend/energyrequest"
 	"at.ourproject/vfeeg-backend/graph"
 	"at.ourproject/vfeeg-backend/graph/generated"
+	"at.ourproject/vfeeg-backend/mailtemplate"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
 	"at.ourproject/vfeeg-backend/services"
 	"github.com/99designs/gqlgen/graphql/handler"
@@ -168,6 +169,7 @@ func StartServer(db database.Database) {
 
 	ctx := context.Background()
 
+	mailtemplate.NotifyDefaultChanges(ctx, db)
 	eda.InitEdaSubscription(ctx)
 	energyrequest.Start(ctx, db)
 	mqttclient.InitErrorSubscriptions()
