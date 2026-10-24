@@ -10,7 +10,8 @@ WITH restored AS (
       last_process_state = NULL,
       "modifiedAt"       = now(),
       "modifiedBy"       = 'rollback-cleanup-2026-10-24'
-  WHERE "modifiedBy" = 'cleanup-2026-10-24'
+  WHERE flag = 1
+    AND "modifiedBy" = 'cleanup-2026-10-24'
     AND process_state = 'INACTIVE'
     AND last_process_state IN ('INVALID', 'REJECTED')
   RETURNING tenant)

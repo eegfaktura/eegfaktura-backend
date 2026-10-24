@@ -314,11 +314,17 @@ func TestEndedMeterRejectionScripts(t *testing.T) {
 	r = readEndedRejectRow(t, tx, tenant, endedInvalid)
 	assert.Equal(t, "INVALID", r.LastProcessState.String)
 
-	assert.GreaterOrEqual(t, changed(stripTx(script("rollback.sql"))), 2)
+	// an entry that became history meanwhile (flag 0, e.g. re-registered at another member) is not rolled back
+	_, err = tx.Exec(`UPDATE base.meteringpoint SET flag = 0 WHERE tenant = $1 AND metering_point_id = $2`, tenant, endedRejected)
+	require.NoError(t, err)
+
+	assert.GreaterOrEqual(t, changed(stripTx(script("rollback.sql"))), 1)
 	r = readEndedRejectRow(t, tx, tenant, endedInvalid)
 	assert.Equal(t, "INVALID", r.ProcessState)
 	assert.False(t, r.LastProcessState.Valid)
-	r = readEndedRejectRow(t, tx, tenant, endedRejected)
-	assert.Equal(t, "REJECTED", r.ProcessState)
-	assert.Equal(t, 2, countFor())
+	var historyState string
+	require.NoError(t, tx.Get(&historyState, `SELECT process_state FROM base.meteringpoint
+		WHERE tenant = $1 AND metering_point_id = $2 AND flag = 0`, tenant, endedRejected))
+	assert.Equal(t, "INACTIVE", historyState)
+	assert.Equal(t, 1, countFor())
 }
