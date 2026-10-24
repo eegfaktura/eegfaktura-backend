@@ -36,7 +36,8 @@ func TestEnergyRequestLiveEntry(t *testing.T) {
 	run := energyrequest.NewRun(ecId, from, to)
 	run.Add(zp1, from, to)
 	run.Add(zp2, from, to)
-	energyrequest.Save(ctx, db, tenant, []string{zp1, zp2}, run)
+	_, err = energyrequest.Save(ctx, db, tenant, []string{zp1, zp2}, run)
+	require.NoError(t, err)
 	require.NoError(t, db.SaveNotification(tenant, model.EBMS_ZP_RES, []string{zp1}, []string{}, model.CR_REQ_PT))
 	require.NoError(t, db.SaveNotification(tenant, model.EBMS_ZP_RES, []string{zp9}, []string{}, model.CR_REQ_PT))
 

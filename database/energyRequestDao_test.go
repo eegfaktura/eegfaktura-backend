@@ -39,8 +39,9 @@ func TestEnergyRequestSummary(t *testing.T) {
 	run.Add("AT0099990000000000000000000173001", from, to)
 	run.Add("AT0099990000000000000000000173002", from, to)
 	run.Skip("AT0099990000000000000000000173003", energyrequest.ReasonNotActiveInPeriod)
-	energyrequest.Save(ctx, db, "TE000173", []string{"AT0099990000000000000000000173001",
+	_, err = energyrequest.Save(ctx, db, "TE000173", []string{"AT0099990000000000000000000173001",
 		"AT0099990000000000000000000173002", "AT0099990000000000000000000173003"}, run)
+	require.NoError(t, err)
 
 	// answers as the CR_REQ_PT handler stores them, under the tenant GetEegByEcId returns
 	require.NoError(t, db.SaveNotification("TE000174", model.EBMS_ZP_RES, []string{"AT0099990000000000000000000173001"}, []string{}, model.CR_REQ_PT))
@@ -101,7 +102,8 @@ func TestEnergyRequestSummary_singleMeter(t *testing.T) {
 	require.NoError(t, err)
 	run := energyrequest.NewRun("AT00999900000TC000175000000000001", 1, 2)
 	run.Add("AT0099990000000000000000000175001", 1, 2)
-	energyrequest.Save(ctx, db, "TE000175", []string{"AT0099990000000000000000000175001"}, run)
+	_, err = energyrequest.Save(ctx, db, "TE000175", []string{"AT0099990000000000000000000175001"}, run)
+	require.NoError(t, err)
 
 	// stored as a boundary for older runs, but never summarised
 	rows, err := db.EnergyRequestRows(ctx, []string{"TE000175"})

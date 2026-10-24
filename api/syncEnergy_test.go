@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/energyrequest"
 	"at.ourproject/vfeeg-backend/model"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
@@ -47,7 +48,13 @@ type syncResponse struct {
 // sent via MQTT and the run stored last; the response body goes to resp.
 func syncEnergy(t *testing.T, body string, resp ...*syncResponse) (int, []sentRequest, energyrequest.Run) {
 	t.Helper()
-	h := newTestMeteringHandler(t)
+	return syncEnergyWith(t, newTestMeteringHandler(t).db, body, resp...)
+}
+
+// syncEnergyWith is syncEnergy on db.
+func syncEnergyWith(t *testing.T, db database.Database, body string, resp ...*syncResponse) (int, []sentRequest, energyrequest.Run) {
+	t.Helper()
+	h := NewMeteringHandler(db)
 	orig := mqttclient.RequestingEnergyData
 	t.Cleanup(func() { mqttclient.RequestingEnergyData = orig })
 	var sent []sentRequest
@@ -238,4 +245,26 @@ func TestSyncEnergy_meteringPointsBeforeComplete(t *testing.T) {
 	assert.Equal(t, energyrequest.ReasonComplete, resp.Skipped[0].Reason)
 	assert.Equal(t, zp15, resp.Skipped[1].MeteringPoint)
 	assert.Equal(t, energyrequest.ReasonAlreadyRequested, resp.Skipped[1].Reason, "its own reason, not COMPLETE")
+}
+
+// failingRunStore cannot store a run.
+type failingRunStore struct{ database.Database }
+
+func (failingRunStore) SaveEnergyRequestRow(context.Context, string, string, interface{}) (int64, error) {
+	return 0, errors.New("database not reachable")
+}
+
+// a run that cannot be stored is not sent: without it nothing locks the metering points or summarises the answers
+func TestSyncEnergy_runNotStoredIsNotSent(t *testing.T) {
+	body := fmt.Sprintf(`{"meteringPoints": [{"meter": %q, "direction": "CONSUMPTION"}, {"meter": %q, "direction": "CONSUMPTION"}], "from": %d, "to": %d}`,
+		zp15, zp16, start(2026, 1, 1), start(2026, 1, 31))
+	before := lastRun(t)
+	code, sent, run := syncEnergyWith(t, failingRunStore{newTestMeteringHandler(t).db}, body)
+	assert.Equal(t, http.StatusInternalServerError, code)
+	assert.Empty(t, sent)
+	assert.Equal(t, before.RunId, run.RunId)
+
+	code, sent, _ = syncEnergy(t, body)
+	assert.Equal(t, http.StatusOK, code)
+	assert.Len(t, sent, 2, "not locked: sent on the next request")
 }

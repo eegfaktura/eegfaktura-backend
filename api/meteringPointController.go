@@ -490,9 +490,17 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 			if perMeter || request.From == 0 {
 				run.FitPeriod() // the summary shows the period actually requested
 			}
-			// the run is stored before sending, so every answer comes after it; a failed send is taken out again below
-			runRowId := energyrequest.Save(r.Context(), h.db, tenant, requested, run)
+			// the run is stored before sending, so every answer comes after it; a failed send is taken out again below.
+			// Detached: a client that gives up after the lock check must not leave the run unstored
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Second)
+			runRowId, err := energyrequest.Save(ctx, h.db, tenant, requested, run)
+			cancel()
 			unlock()
+			if err != nil {
+				log.WithField("tenant", tenant).WithError(err).Error("failed to request metering point values: cannot save run")
+				respondWith(w, http.StatusInternalServerError, tenant, model.ErrRequestEnergyData(err))
+				return
+			}
 
 			var sent []energyrequest.MeterRange
 			for _, s := range send {

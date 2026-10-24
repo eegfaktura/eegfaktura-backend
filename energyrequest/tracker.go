@@ -111,8 +111,9 @@ func (r *Run) dropSkipped(meter string) {
 // Save stores the run before the requests are sent, so every answer has a higher row id. A run that sends nothing
 // (everything skipped) is not stored: the caller reports the skipped metering points. A request with fewer than two
 // metering points gets no summary; it is still stored when it sends a request, so its answer is not counted for an
-// older open run. It returns the row id (0 when not stored). Errors are logged: the request itself goes on.
-func Save(ctx context.Context, store Store, tenant string, requested []string, r *Run) int64 {
+// older open run. It returns the row id (0 when not stored). A run that cannot be stored must not be sent: nothing
+// would lock its metering points or summarise its answers.
+func Save(ctx context.Context, store Store, tenant string, requested []string, r *Run) (int64, error) {
 	distinct := map[string]bool{}
 	for _, m := range requested {
 		if !distinct[m] {
@@ -121,18 +122,13 @@ func Save(ctx context.Context, store Store, tenant string, requested []string, r
 		}
 	}
 	if len(r.Meters) == 0 {
-		return 0
+		return 0, nil
 	}
 	if len(distinct) < 2 {
 		r.NoSummary = true
 	}
 	r.CreatedAt = time.Now().UnixMilli()
-	id, err := store.SaveEnergyRequestRow(ctx, tenant, RowTypeRun, r)
-	if err != nil {
-		logrus.WithField("tenant", tenant).WithError(err).Error("energy request summary: cannot save run")
-		return 0
-	}
-	return id
+	return store.SaveEnergyRequestRow(ctx, tenant, RowTypeRun, r)
 }
 
 // KeepSent reduces the run stored by Save in row rowId to the requests that were sent, after a send failed: each

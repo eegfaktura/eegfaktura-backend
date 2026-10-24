@@ -43,15 +43,18 @@ func TestEnergyRequestCheckLiveAndLockAgree(t *testing.T) {
 	// supersedes R2's) and ZP3
 	r1 := energyrequest.NewRun(ecId, mayFrom, mayTo)
 	r1.Add(zp1, mayFrom, mayTo)
-	energyrequest.Save(ctx, db, tenantA, []string{zp1}, r1)
+	_, err = energyrequest.Save(ctx, db, tenantA, []string{zp1}, r1)
+	require.NoError(t, err)
 	r2 := energyrequest.NewRun(ecId, aprFrom, aprTo)
 	r2.Add(zp1, aprFrom, aprTo)
 	r2.Add(zp2, aprFrom, aprTo)
-	energyrequest.Save(ctx, db, tenantB, []string{zp1, zp2}, r2)
+	_, err = energyrequest.Save(ctx, db, tenantB, []string{zp1, zp2}, r2)
+	require.NoError(t, err)
 	r3 := energyrequest.NewRun(ecId, aprFrom, aprTo)
 	r3.Add(zp2, aprFrom, aprTo)
 	r3.Add(zp3, aprFrom, aprTo)
-	energyrequest.Save(ctx, db, tenantA, []string{zp2, zp3}, r3)
+	_, err = energyrequest.Save(ctx, db, tenantA, []string{zp2, zp3}, r3)
+	require.NoError(t, err)
 
 	// the answers are stored under one tenant of the community
 	require.NoError(t, db.SaveNotification(tenantA, model.EBMS_ZP_RES, []string{zp1}, []string{}, model.CR_REQ_PT))
