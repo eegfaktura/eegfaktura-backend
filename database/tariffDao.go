@@ -171,9 +171,12 @@ func archiveTariff(db *sqlx.DB, tenant string, id string) (err error) {
 	}
 
 	// todo: use goqu for sql statement creation
-	_, err = tx.Exec("UPDATE base.tariff SET status = 'ARCHIVED', \"lastModifiedDate\" = 'now()' WHERE tenant = $1 AND id = $2", tenant, id)
+	res, err := tx.Exec("UPDATE base.tariff SET status = 'ARCHIVED', \"lastModifiedDate\" = 'now()' WHERE tenant = $1 AND id = $2", tenant, id)
 	if err != nil {
 		return model.ErrUpdateTariff(err)
+	}
+	if n, err := res.RowsAffected(); err != nil || n == 0 {
+		return model.ErrUpdateTariff(errors.New("unknown tariff"))
 	}
 	return nil
 }

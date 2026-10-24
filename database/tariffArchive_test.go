@@ -72,4 +72,28 @@ func TestArchiveTariff_inUse(t *testing.T) {
 		require.NoError(t, db.ArchiveTariff(tenant, other))
 		assert.Equal(t, "ARCHIVED", status(t, other))
 	})
+
+	t.Run("unknown tariff is not found", func(t *testing.T) {
+		assertUnknown(t, db.ArchiveTariff(tenant, "a4170000-0000-0000-0000-0000000000ff"))
+	})
+
+	t.Run("tariff of another tenant is not found and stays", func(t *testing.T) {
+		foreign := model.Tariff{Name: "fremder Tarif", Type: "EEG", BillingPeriod: "monthly"}
+		require.NoError(t, db.AddTariff("TE000418", "test", &foreign))
+		t.Cleanup(func() {
+			_, _ = testDB.DbInstance.Exec(`DELETE FROM base.tariff WHERE tenant = 'TE000418'`)
+		})
+		assertUnknown(t, db.ArchiveTariff(tenant, foreign.Id.String()))
+		var s string
+		require.NoError(t, testDB.DbInstance.Get(&s, `SELECT DISTINCT COALESCE(status, '') FROM base.tariff WHERE tenant = 'TE000418' AND id = $1`, foreign.Id.String()))
+		assert.NotEqual(t, "ARCHIVED", s)
+	})
+}
+
+// An unknown tariff id (or one of another tenant) answers like AddTariff does: ErrUpdateTariff (4001).
+func assertUnknown(t *testing.T, err error) {
+	var ve *model.VfeegError
+	require.True(t, errors.As(err, &ve), "want a VfeegError, got %v", err)
+	assert.Equal(t, 4001, ve.Code)
+	assert.EqualError(t, ve, "unknown tariff")
 }
