@@ -637,8 +637,9 @@ func restoreMeteringPointProcessState(ctx context.Context, db *sqlx.DB, tenant, 
 	_, err = db.Exec(sql)
 	if err != nil {
 		log.WithField("SQL", "UPDATE").Errorf("Stmt: %v", sql)
+		return model.ErrStatusMeter(err)
 	}
-	return model.ErrStatusMeter(err)
+	return nil
 }
 
 // MeteringPointsSetStatus The MeteringPointSetStatus method handles only ECON or ECOF messages.

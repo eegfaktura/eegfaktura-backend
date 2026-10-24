@@ -110,6 +110,10 @@ this changelog highlights the changes relevant for overview and operations.
   stdout; nothing calls it. `GET /master/test` now answers 404.
 
 ### Fixed
+- **Restoring the process state after code 86 no longer logs an error on success.**
+  `restoreMeteringPointProcessState` always returned an error value (also without a database error), so every
+  rejection with code 86 logged „can not restore MeteringPointProcessState“. The update itself ran; only the log
+  changes.
 - **EDA: ZUSTIMMUNG_ECON/ECOF with code 172 sets the metering point to INVALID again** (platform#180). Code 172
   („Kunde hat Datenfreigabe abgelehnt“) had an empty `case` since 2025-09-22: the line for 173 was inserted between
   the label and the body of 172, and Go has no fallthrough. A consent message with 172 only went to the history; the
