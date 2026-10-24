@@ -119,10 +119,11 @@ this changelog highlights the changes relevant for overview and operations.
   - status `INACTIVE` with `inactivesince` (ended): process state stays `INACTIVE`, whatever the code;
   - status `ACTIVE` with a code that concerns the request, not the metering point (`model.REJECTED_KEEP_ACTIVE_CODES`:
     172/173 consent refused / not answered, 183 allocation keys > 100 %, 188 participation factor > 100 %): process
-    state stays `ACTIVE`. This includes ZUSTIMMUNG with 172/173 for an active metering point (platform#180 below
+    state unchanged (usually `ACTIVE`; `REVOKED`, `PENDING` … stay what they were). This includes ZUSTIMMUNG with 172/173 for an active metering point (platform#180 below
     sets `INVALID` for one still in registration). Other codes on an `ACTIVE` entry (56, 57, 185, 104, 159, …) set
     `INVALID`/`REJECTED` as before, so the admin sees the inconsistency;
   - `last_process_state` keeps the rejected state, `statusCode` the code; `activesince` is not touched;
+    the cleanup sets the active variant to `ACTIVE` only where it is `INVALID`/`REJECTED` today;
   - never-active (`INIT`) entries, and `INACTIVE` without `inactivesince`, get `INVALID`/`REJECTED` as before.
 
   The notification for the admins is unchanged. **Visible change:** a fresh rejection of such a metering point is

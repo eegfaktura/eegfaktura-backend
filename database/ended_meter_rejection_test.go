@@ -75,6 +75,7 @@ func TestMeteringPointsSetStatus_endedMeterRejection(t *testing.T) {
 		active        = "AT0030000000000000000000990018004"
 		endedNoDate   = "AT0030000000000000000000990018005"
 		active188     = "AT0030000000000000000000990018006"
+		activePending = "AT0030000000000000000000990018007"
 	)
 	insertEndedRejectFixture(t, tenant, map[string][3]string{
 		endedInvalid:  {"INACTIVE", "INIT", "2025-01-22"},
@@ -83,10 +84,11 @@ func TestMeteringPointsSetStatus_endedMeterRejection(t *testing.T) {
 		active:        {"ACTIVE", "ACTIVE", "2999-12-31"},
 		endedNoDate:   {"INACTIVE", "INIT", ""},
 		active188:     {"ACTIVE", "ACTIVE", "2999-12-31"},
+		activePending: {"ACTIVE", "PENDING", "2999-12-31"},
 	})
 
 	code57, code99, code188 := int16(57), int16(99), int16(188)
-	require.NoError(t, db.MeteringPointsSetStatus(ctx, tenant, model.INVALID, &code188, []string{active188}, nil, nil))
+	require.NoError(t, db.MeteringPointsSetStatus(ctx, tenant, model.INVALID, &code188, []string{active188, activePending}, nil, nil))
 	require.NoError(t, db.MeteringPointsSetStatus(ctx, tenant, model.INVALID, &code57,
 		[]string{endedInvalid, neverActive, active, endedNoDate}, nil, nil))
 	require.NoError(t, db.MeteringPointsSetStatus(ctx, tenant, model.REJECTED, &code99,
@@ -125,6 +127,12 @@ func TestMeteringPointsSetStatus_endedMeterRejection(t *testing.T) {
 	// a restore after code 86 keeps it ACTIVE (the stored rejection is not restored)
 	require.NoError(t, db.RestoreMeteringPointProcessState(ctx, tenant, active188))
 	assert.Equal(t, "ACTIVE", readEndedRejectRow(t, testDB.DbInstance, tenant, active188).ProcessState)
+
+	// the process state of an ACTIVE row is left as it is (a process in flight stays), the rejection is saved
+	r = readEndedRejectRow(t, testDB.DbInstance, tenant, activePending)
+	assert.Equal(t, "PENDING", r.ProcessState, "active meter + 188: process state unchanged")
+	assert.Equal(t, "INVALID", r.LastProcessState.String)
+	assert.Equal(t, int64(188), r.StatusCode.Int64)
 
 	// a code about the metering point itself (57 not supplied) shows the inconsistency: INVALID as before
 	r = readEndedRejectRow(t, testDB.DbInstance, tenant, active)

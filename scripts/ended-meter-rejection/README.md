@@ -5,7 +5,8 @@ Since this release the backend no longer lets a rejection from the grid operator
 
 - a current entry (`flag = 1`) whose participation has ended (status `INACTIVE`, `inactivesince` set) stays at
   process state `INACTIVE`, whatever the code;
-- an `ACTIVE` entry stays `ACTIVE` when the code concerns the request, not the metering point: 172/173 (consent
+- an `ACTIVE` entry keeps its process state (usually `ACTIVE`) when the code concerns the request, not the
+  metering point: 172/173 (consent
   refused / not answered), 183 (allocation keys > 100 %), 188 (participation factor > 100 %)
   (`model.REJECTED_KEEP_ACTIVE_CODES`). Other codes (56, 57, 185, …) still set `INVALID`/`REJECTED`.
 
