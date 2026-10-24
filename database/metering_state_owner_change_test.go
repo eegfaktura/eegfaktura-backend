@@ -13,7 +13,8 @@ import (
 
 // After an owner change a metering point has two entries in a community: the old member's moved entry
 // (flag 0, INACTIVE) and the new member's current entry (flag 1). Every entry must carry its own period —
-// the energy data request (syncenergy) sent the new member's period twice and the old member's not at all.
+// the energy data request (syncenergy) sent the new member's period twice. (The old member's part is still not
+// requested: syncenergy skips the moved entry.)
 func TestFindMeteringByIdAndState_ownPeriodPerParticipant(t *testing.T) {
 	ctx := context.Background()
 	db, err := GetTestDB(ctx, testDB)
@@ -22,7 +23,9 @@ func TestFindMeteringByIdAndState_ownPeriodPerParticipant(t *testing.T) {
 	const tenant, meter = "TE000017", "AT0020000000000000000000100129468"
 	const oldOwner, newOwner = "b1180000-0000-0000-0000-000000000001", "b1180000-0000-0000-0000-000000000002"
 	t.Cleanup(func() {
-		_, _ = testDB.DbInstance.Exec(`DELETE FROM base.participant WHERE id IN ($1, $2)`, oldOwner, newOwner)
+		// cascades to the metering point and partition factor rows; TE000017 is shared with other tests
+		_, err := testDB.DbInstance.Exec(`DELETE FROM base.participant WHERE id IN ($1, $2)`, oldOwner, newOwner)
+		assert.NoError(t, err)
 	})
 	exec := func(q string, args ...interface{}) {
 		_, err := testDB.DbInstance.Exec(q, args...)
@@ -91,5 +94,11 @@ func TestFindMeteringByIdAndState_ownPeriodPerParticipant(t *testing.T) {
 		ms, err := db.FindActiveMeteringByIds(ctx, tenant, []string{meter})
 		require.NoError(t, err)
 		assertOwnPeriods(t, ms, newOwner)
+	})
+	t.Run("status INACTIVE (FindInactiveMeteringById) does not find the moved entry", func(t *testing.T) {
+		// the filter means the entry's own flag: the moved entry (flag 0) is not current, the current one is ACTIVE
+		ms, err := db.FindInactiveMeteringById(ctx, tenant, meter)
+		require.NoError(t, err)
+		assertOwnPeriods(t, ms)
 	})
 }
