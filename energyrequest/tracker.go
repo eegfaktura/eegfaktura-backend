@@ -153,20 +153,11 @@ func Check(ctx context.Context, store Store, now time.Time) error {
 		return err
 	}
 
-	closed := map[string]bool{}
+	closed := summaries(rows)
 	var maxId int64
 	for _, r := range rows {
 		if r.Id > maxId {
 			maxId = r.Id
-		}
-		if r.Type == messageRow {
-			var s struct {
-				Type  string `json:"type"`
-				RunId string `json:"runId"`
-			}
-			if json.Unmarshal(r.Message, &s) == nil && s.Type == SummaryType {
-				closed[s.RunId] = true
-			}
 		}
 	}
 
@@ -183,7 +174,7 @@ func Check(ctx context.Context, store Store, now time.Time) error {
 			continue
 		}
 		var run Run
-		if err := json.Unmarshal(r.Message, &run); err != nil || closed[run.RunId] || run.NoSummary {
+		if err := json.Unmarshal(r.Message, &run); err != nil || closed[run.RunId] != 0 || run.NoSummary {
 			continue
 		}
 		tenants, ok := tenantsByEcId[run.EcId]

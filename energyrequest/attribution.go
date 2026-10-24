@@ -42,7 +42,6 @@ type attribution map[requestKey]*request
 func attribute(ecId string, rows []Row, tenants map[string]bool) attribution {
 	a := attribution{}
 	byMeter := map[string][]*request{}
-	summaries := map[string]int64{}
 	runIds := map[int64]string{}
 	var answers []idAnswer
 	for _, r := range rows {
@@ -65,24 +64,14 @@ func attribute(ecId string, rows []Row, tenants map[string]bool) attribution {
 			}
 		case r.Type == messageRow && tenants[r.Tenant]:
 			var ans answer
-			if json.Unmarshal(r.Message, &ans) != nil {
-				continue
-			}
-			if ans.Type == answerAccepted || ans.Type == answerRejected {
+			if json.Unmarshal(r.Message, &ans) == nil && (ans.Type == answerAccepted || ans.Type == answerRejected) {
 				answers = append(answers, idAnswer{id: r.Id, answer: ans})
-				continue
-			}
-			var s struct {
-				Type  string `json:"type"`
-				RunId string `json:"runId"`
-			}
-			if json.Unmarshal(r.Message, &s) == nil && s.Type == SummaryType {
-				summaries[s.RunId] = r.Id
 			}
 		}
 	}
+	stored := summaries(rows)
 	for _, req := range a {
-		if id, ok := summaries[runIds[req.rowId]]; ok {
+		if id, ok := stored[runIds[req.rowId]]; ok {
 			req.closed = id
 		}
 	}
@@ -118,6 +107,24 @@ func (a attribution) belonging(runRowId int64, meter string) ([]idAnswer, bool) 
 		return nil, false
 	}
 	return req.answers, req.end != math.MaxInt64
+}
+
+// summaries returns the row id of each stored summary in rows, by run id.
+func summaries(rows []Row) map[string]int64 {
+	ids := map[string]int64{}
+	for _, r := range rows {
+		if r.Type != messageRow {
+			continue
+		}
+		var s struct {
+			Type  string `json:"type"`
+			RunId string `json:"runId"`
+		}
+		if json.Unmarshal(r.Message, &s) == nil && s.Type == SummaryType {
+			ids[s.RunId] = r.Id
+		}
+	}
+	return ids
 }
 
 // lastRejected tells whether the latest of the answers is a rejection.

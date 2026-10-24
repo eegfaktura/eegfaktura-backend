@@ -17,19 +17,7 @@ type LiveEntry struct {
 // returns their live entries and the ids of the answers that belong to them. A run is open while it has a summary
 // (not NoSummary), no summary was written yet and it is younger than Deadline. tenants are as in Evaluate.
 func Live(rows []Row, tenant string, tenants map[string]bool, now time.Time) ([]LiveEntry, map[int64]bool) {
-	closed := map[string]bool{}
-	for _, r := range rows {
-		if r.Type != messageRow {
-			continue
-		}
-		var s struct {
-			Type  string `json:"type"`
-			RunId string `json:"runId"`
-		}
-		if json.Unmarshal(r.Message, &s) == nil && s.Type == SummaryType {
-			closed[s.RunId] = true
-		}
-	}
+	closed := summaries(rows)
 
 	entries := []LiveEntry{}
 	hidden := map[int64]bool{}
@@ -39,7 +27,7 @@ func Live(rows []Row, tenant string, tenants map[string]bool, now time.Time) ([]
 			continue
 		}
 		var run Run
-		if json.Unmarshal(r.Message, &run) != nil || run.NoSummary || closed[run.RunId] ||
+		if json.Unmarshal(r.Message, &run) != nil || run.NoSummary || closed[run.RunId] != 0 ||
 			now.Sub(time.UnixMilli(run.CreatedAt)) >= Deadline {
 			continue
 		}
