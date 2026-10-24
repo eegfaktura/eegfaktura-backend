@@ -75,8 +75,8 @@ func TestEvaluate_rowsBeforeTheRunAndOfOtherTenantsDoNotCount(t *testing.T) {
 func TestEvaluate_gemeinschaftWithSeveralTenants(t *testing.T) {
 	// a GEA: the answer was stored under another tenant of the same community id
 	run := testRun("ZP1", "ZP2")
-	rows := []Row{answerRow(t, 11, "GC100019-002", answerRejected, "ZP1", "56")}
-	s, _ := Evaluate(run, 10, withRun(rows, run, 10), map[string]bool{"GC100019-001": true, "GC100019-002": true}, created)
+	rows := []Row{row(t, 10, "GC100019-001", RowTypeRun, run), answerRow(t, 11, "GC100019-002", answerRejected, "ZP1", "56")}
+	s, _ := Evaluate(run, 10, rows, map[string]bool{"GC100019-001": true, "GC100019-002": true}, created)
 	assert.Len(t, s.Rejected, 1)
 }
 
@@ -163,6 +163,6 @@ func withRun(rows []Row, run Run, runRowId int64) []Row {
 		return rows
 	}
 	out := make([]Row, 0, len(rows)+1)
-	out = append(append(append(out, rows[:i]...), Row{Id: runRowId, Type: RowTypeRun, Message: msg}), rows[i:]...)
+	out = append(append(append(out, rows[:i]...), Row{Id: runRowId, Tenant: "RC100100", Type: RowTypeRun, Message: msg}), rows[i:]...)
 	return out
 }

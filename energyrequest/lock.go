@@ -27,6 +27,7 @@ type Locks map[string][]lock
 func NewLocks(rows []Row, tenant string, tenants map[string]bool, now time.Time) Locks {
 	locks := Locks{}
 	attributions := map[string]attribution{}
+	var closed map[string]int64
 	for _, r := range rows {
 		if r.Type != RowTypeRun || !strings.EqualFold(r.Tenant, tenant) {
 			continue
@@ -41,7 +42,10 @@ func NewLocks(rows []Row, tenant string, tenants map[string]bool, now time.Time)
 		}
 		a, ok := attributions[strings.ToUpper(run.EcId)]
 		if !ok {
-			a = attribute(run.EcId, rows, tenants)
+			if closed == nil {
+				closed = summaries(rows)
+			}
+			a = attribute(run.EcId, rows, tenants, closed)
 			attributions[strings.ToUpper(run.EcId)] = a
 		}
 		for _, m := range run.Meters {

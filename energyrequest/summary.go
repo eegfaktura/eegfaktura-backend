@@ -108,7 +108,7 @@ type answer struct {
 // under one of them (a GEA can share the community id). done is true when every metering point has an answer or the
 // deadline has passed. Which answer belongs to which run: see attribute.
 func Evaluate(run Run, runRowId int64, rows []Row, tenants map[string]bool, now time.Time) (Summary, bool) {
-	return evaluate(run, runRowId, attribute(run.EcId, rows, tenants), now)
+	return evaluate(run, runRowId, attribute(run.EcId, rows, tenants, summaries(rows)), now)
 }
 
 // evaluate is Evaluate on the attributed answers.

@@ -213,7 +213,7 @@ func Check(ctx context.Context, store Store, now time.Time) error {
 				tenants[t] = true
 			}
 			tenantsByEcId[ecId] = tenants
-			attributions[ecId] = attribute(run.EcId, rows, tenants)
+			attributions[ecId] = attribute(run.EcId, rows, tenants, closed)
 		}
 
 		summary, done := evaluate(run, r.Id, attributions[ecId], now)

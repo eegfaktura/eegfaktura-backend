@@ -38,13 +38,17 @@ type attribution map[requestKey]*request
 //     counts). The grid operator answers each request once, in order as a rule: two runs for different periods
 //     (e.g. May, then April) each take one answer, the first answer the older run.
 //
-// tenants are the tenants the answers are stored under (see Evaluate).
-func attribute(ecId string, rows []Row, tenants map[string]bool) attribution {
+// tenants are the tenants of the community: its runs and answers are stored under them (see Evaluate); closed is
+// summaries(rows), parsed once by the caller.
+func attribute(ecId string, rows []Row, tenants map[string]bool, closed map[string]int64) attribution {
 	a := attribution{}
 	byMeter := map[string][]*request{}
 	runIds := map[int64]string{}
 	var answers []idAnswer
 	for _, r := range rows {
+		if !tenants[r.Tenant] {
+			continue // another community: not parsed
+		}
 		switch {
 		case r.Type == RowTypeRun:
 			var run Run
@@ -62,16 +66,15 @@ func attribute(ecId string, rows []Row, tenants map[string]bool) attribution {
 				byMeter[m.MeteringPoint] = append(byMeter[m.MeteringPoint], req)
 				a[requestKey{rowId: r.Id, meter: m.MeteringPoint}] = req
 			}
-		case r.Type == messageRow && tenants[r.Tenant]:
+		case r.Type == messageRow:
 			var ans answer
 			if json.Unmarshal(r.Message, &ans) == nil && (ans.Type == answerAccepted || ans.Type == answerRejected) {
 				answers = append(answers, idAnswer{id: r.Id, answer: ans})
 			}
 		}
 	}
-	stored := summaries(rows)
 	for _, req := range a {
-		if id, ok := stored[runIds[req.rowId]]; ok {
+		if id, ok := closed[runIds[req.rowId]]; ok {
 			req.closed = id
 		}
 	}

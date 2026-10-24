@@ -33,7 +33,7 @@ func Live(rows []Row, tenant string, tenants map[string]bool, now time.Time) ([]
 		}
 		a, ok := attributions[strings.ToUpper(run.EcId)]
 		if !ok {
-			a = attribute(run.EcId, rows, tenants)
+			a = attribute(run.EcId, rows, tenants, closed)
 			attributions[strings.ToUpper(run.EcId)] = a
 		}
 		s, _ := evaluate(run, r.Id, a, now)
