@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -513,7 +514,10 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 						unsent = append(unsent, m)
 					}
 				}
-				energyrequest.Unsent(r.Context(), h.db, runRowId, run, unsent)
+				// detached: a client that gives up must not leave unsent metering points locked
+				ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Second)
+				energyrequest.Unsent(ctx, h.db, runRowId, run, unsent)
+				cancel()
 				log.WithField("tenant", tenant).Errorf("failed to request metering point values. Err: %v", errorList)
 				respondWith(w, http.StatusInternalServerError, tenant, model.ErrRequestEnergyData(errors.New(strings.Join(errorList, "; "))))
 				return
