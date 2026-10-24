@@ -268,3 +268,31 @@ func TestSyncEnergy_runNotStoredIsNotSent(t *testing.T) {
 	assert.Equal(t, http.StatusOK, code)
 	assert.Len(t, sent, 2, "not locked: sent on the next request")
 }
+
+// failingRowStore cannot read the energy request rows.
+type failingRowStore struct{ database.Database }
+
+func (failingRowStore) EnergyRequestCommunity(context.Context, string) ([]energyrequest.Row, map[string]bool, error) {
+	return nil, nil, errors.New("database not reachable")
+}
+
+// the lock reads the rows only when a metering point can be sent: nothing to send, nothing read
+func TestSyncEnergy_nothingToSendReadsNoRows(t *testing.T) {
+	db := failingRowStore{newTestMeteringHandler(t).db}
+	body := fmt.Sprintf(`{"meteringPoints": [{"meter": %q, "direction": "CONSUMPTION"}], "from": %d, "to": %d, "complete": [%q]}`,
+		zp14, start(2026, 2, 1), start(2026, 2, 28), zp15)
+	var resp syncResponse
+	code, sent, _ := syncEnergyWith(t, db, body, &resp)
+	assert.Equal(t, http.StatusOK, code)
+	assert.Empty(t, sent)
+	assert.Equal(t, syncResponse{Requested: 0, Skipped: []energyrequest.Skipped{
+		{MeteringPoint: zp15, Reason: energyrequest.ReasonComplete},
+		{MeteringPoint: zp14, Reason: energyrequest.ReasonNotActiveInPeriod}}}, resp)
+
+	// a metering point that can be sent needs the rows
+	body = fmt.Sprintf(`{"meteringPoints": [{"meter": %q, "direction": "CONSUMPTION"}], "from": %d, "to": %d}`,
+		zp16, start(2026, 2, 1), start(2026, 2, 28))
+	code, sent, _ = syncEnergyWith(t, db, body)
+	assert.Equal(t, http.StatusInternalServerError, code)
+	assert.Empty(t, sent)
+}

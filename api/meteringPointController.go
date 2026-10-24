@@ -428,17 +428,6 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 				respondWith(w, http.StatusInternalServerError, tenant, err)
 				return
 			}
-			// lock: a metering point requested in the last hour for an overlapping period and not rejected is
-			// skipped. Lock check and saving the run are serialised per tenant.
-			unlock := energyrequest.LockTenant(tenant)
-			lockRows, lockTenants, err := h.db.EnergyRequestCommunity(r.Context(), tenant)
-			if err != nil {
-				unlock()
-				log.WithField("tenant", tenant).WithError(err).Error("failed to request metering point values.")
-				respondWith(w, http.StatusInternalServerError, tenant, err)
-				return
-			}
-			locks := energyrequest.NewLocks(lockRows, tenant, lockTenants, time.Now())
 			// platform#173: record the run (requested and skipped metering points) before sending, so the answers
 			// can be summarised
 			run := energyrequest.NewRun(eeg.CommunityId, fromDate, toDate)
@@ -448,21 +437,24 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 					run.Skip(c, energyrequest.ReasonComplete)
 				}
 			}
+			// the static checks first: the lock is taken and the rows are read only when a metering point is left
 			type energyRequest struct {
 				meter    *model.MeteringPoint
 				from, to int64
+				skip     string // the reason of a static check, empty for a candidate
 			}
-			var send []energyRequest
+			var checked []energyRequest
+			candidates := 0
 			for _, m := range meters {
 				switch {
 				case m.Status == model.S_INIT:
-					run.Skip(m.MeteringPoint, energyrequest.ReasonNotRegistered)
+					checked = append(checked, energyRequest{meter: m, skip: energyrequest.ReasonNotRegistered})
 					continue
 				case m.State.Flag != model.F_ASSIGNED:
-					run.Skip(m.MeteringPoint, energyrequest.ReasonNotAssigned)
+					checked = append(checked, energyRequest{meter: m, skip: energyrequest.ReasonNotAssigned})
 					continue
 				case !m.State.ActiveSince.Valid || !m.State.InactiveSince.Valid:
-					run.Skip(m.MeteringPoint, energyrequest.ReasonNoActivePeriod)
+					checked = append(checked, energyRequest{meter: m, skip: energyrequest.ReasonNoActivePeriod})
 					continue
 				}
 
@@ -474,18 +466,44 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 					p = period{from: fromDate, to: toDate}
 				}
 				if _activeSince > p.to || _inactiveSince < p.from {
-					run.Skip(m.MeteringPoint, energyrequest.ReasonNotActiveInPeriod)
+					checked = append(checked, energyRequest{meter: m, skip: energyrequest.ReasonNotActiveInPeriod})
 					continue
 				}
 
 				from := util.MaxTimeStamp(_activeSince, p.from)
 				to := util.MinTimeStamp(_inactiveSince, p.to)
-				if until := locks.Until(m.MeteringPoint, from, to); until > 0 {
+				checked = append(checked, energyRequest{meter: m, from: from, to: to})
+				candidates++
+			}
+			// lock: a metering point requested in the last hour for an overlapping period and not rejected is
+			// skipped. Lock check and saving the run are serialised per tenant.
+			unlock := func() {}
+			locks := energyrequest.Locks{}
+			if candidates > 0 {
+				unlock = energyrequest.LockTenant(tenant)
+				lockRows, lockTenants, err := h.db.EnergyRequestCommunity(r.Context(), tenant)
+				if err != nil {
+					unlock()
+					log.WithField("tenant", tenant).WithError(err).Error("failed to request metering point values.")
+					respondWith(w, http.StatusInternalServerError, tenant, err)
+					return
+				}
+				locks = energyrequest.NewLocks(lockRows, tenant, lockTenants, time.Now())
+			}
+			// in the order of the metering points, as Skip and Add decide between several participations by order
+			var send []energyRequest
+			for _, c := range checked {
+				m := c.meter
+				if c.skip != "" {
+					run.Skip(m.MeteringPoint, c.skip)
+					continue
+				}
+				if until := locks.Until(m.MeteringPoint, c.from, c.to); until > 0 {
 					run.SkipUntil(m.MeteringPoint, energyrequest.ReasonAlreadyRequested, until)
 					continue
 				}
-				run.Add(m.MeteringPoint, from, to)
-				send = append(send, energyRequest{meter: m, from: from, to: to})
+				run.Add(m.MeteringPoint, c.from, c.to)
+				send = append(send, c)
 			}
 			if perMeter || request.From == 0 {
 				run.FitPeriod() // the summary shows the period actually requested
