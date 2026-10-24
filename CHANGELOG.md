@@ -79,6 +79,10 @@ this changelog highlights the changes relevant for overview and operations.
   - The 1 h lock is checked per part: a part requested within the hour is skipped, the other part is sent. The run
     records one period per metering point, the span of the sent parts (as for several participations before), so
     with a gap the days between the owners are locked too (no entry is active there, so none would be sent).
+    A part is skipped whole when the lock shares at least one day with it, as for every metering point since the
+    lock was introduced (no trimming): when the old member's last day is the new member's first day and only the
+    new part was requested, a request over both parts sends nothing for the old part either until the lock ends
+    (at most 1 h, the answer says `ALREADY_REQUESTED` with `until`).
   - Skipped reason with several entries: the old member's entry outside the period (`NOT_ACTIVE_IN_PERIOD`) gives
     way to the new member's reason (e.g. `ALREADY_REQUESTED`), as `NOT_ASSIGNED` did before.
   - Open: whether the grid operators answer a request for the old member's period (whose consent has ended) is not
