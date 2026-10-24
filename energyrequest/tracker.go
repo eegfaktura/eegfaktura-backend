@@ -21,6 +21,8 @@ const LookBack = Deadline + time.Hour
 // Store is the part of the database the summary needs (implemented by database.Database).
 type Store interface {
 	SaveEnergyRequestRow(ctx context.Context, tenant, rowType string, value interface{}) (int64, error)
+	UpdateEnergyRequestRow(ctx context.Context, id int64, value interface{}) error
+	DeleteEnergyRequestRow(ctx context.Context, id int64) error
 	// EnergyRequestRows returns the run rows, answers and summaries of the last LookBack (ascending id), of the given
 	// tenants or of all tenants (nil).
 	EnergyRequestRows(ctx context.Context, tenants []string) ([]Row, error)
@@ -93,8 +95,8 @@ func (r *Run) dropSkipped(meter string) {
 // Save stores the run before the requests are sent, so every answer has a higher row id. A run that sends nothing
 // (everything skipped) is not stored: the caller reports the skipped metering points. A request with fewer than two
 // metering points gets no summary; it is still stored when it sends a request, so its answer is not counted for an
-// older open run. Errors are logged: the request itself goes on.
-func Save(ctx context.Context, store Store, tenant string, requested []string, r *Run) {
+// older open run. It returns the row id (0 when not stored). Errors are logged: the request itself goes on.
+func Save(ctx context.Context, store Store, tenant string, requested []string, r *Run) int64 {
 	distinct := map[string]bool{}
 	for _, m := range requested {
 		if !distinct[m] {
@@ -103,14 +105,45 @@ func Save(ctx context.Context, store Store, tenant string, requested []string, r
 		}
 	}
 	if len(r.Meters) == 0 {
-		return
+		return 0
 	}
 	if len(distinct) < 2 {
 		r.NoSummary = true
 	}
 	r.CreatedAt = time.Now().UnixMilli()
-	if _, err := store.SaveEnergyRequestRow(ctx, tenant, RowTypeRun, r); err != nil {
+	id, err := store.SaveEnergyRequestRow(ctx, tenant, RowTypeRun, r)
+	if err != nil {
 		logrus.WithField("tenant", tenant).WithError(err).Error("energy request summary: cannot save run")
+		return 0
+	}
+	return id
+}
+
+// Unsent takes the metering points whose request could not be sent out of the run stored by Save in row rowId, so
+// they are not locked and not summarised; a run without a sent metering point is deleted. Errors are logged.
+func Unsent(ctx context.Context, store Store, rowId int64, r *Run, meters []string) {
+	if rowId == 0 || len(meters) == 0 {
+		return
+	}
+	drop := map[string]bool{}
+	for _, m := range meters {
+		drop[m] = true
+	}
+	kept := r.Meters[:0]
+	for _, m := range r.Meters {
+		if !drop[m.MeteringPoint] {
+			kept = append(kept, m)
+		}
+	}
+	r.Meters = kept
+	var err error
+	if len(r.Meters) == 0 {
+		err = store.DeleteEnergyRequestRow(ctx, rowId)
+	} else {
+		err = store.UpdateEnergyRequestRow(ctx, rowId, r)
+	}
+	if err != nil {
+		logrus.WithError(err).Error("energy request summary: cannot take unsent metering points out of the run")
 	}
 }
 

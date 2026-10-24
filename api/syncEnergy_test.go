@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -25,6 +26,12 @@ const (
 	zp16 = "AT0030000000000000000000000953016"
 )
 
+// lastBody is the response body of the last syncEnergy call.
+var lastBody string
+
+// failSend lets the MQTT mock of syncEnergy fail for these metering points.
+var failSend = map[string]bool{}
+
 type sentRequest struct {
 	meter    string
 	from, to int64
@@ -45,12 +52,16 @@ func syncEnergy(t *testing.T, body string, resp ...*syncResponse) (int, []sentRe
 	t.Cleanup(func() { mqttclient.RequestingEnergyData = orig })
 	var sent []sentRequest
 	mqttclient.RequestingEnergyData = func(eeg *model.Eeg, meter *model.MeteringPoint, fromDate, toDate int64) error {
+		if failSend[meter.MeteringPoint] {
+			return errors.New("broker not reachable")
+		}
 		sent = append(sent, sentRequest{meter: meter.MeteringPoint, from: fromDate, to: toDate})
 		return nil
 	}
 	req, _ := http.NewRequest("POST", "/meteringpoint/syncenergy", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	h.requestMeteringPointValues()(w, req, nil, "TE001006")
+	lastBody = w.Body.String()
 	if w.Code == http.StatusOK {
 		var got syncResponse
 		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
@@ -168,4 +179,33 @@ func TestSyncEnergy_allComplete(t *testing.T) {
 		{MeteringPoint: zp16, Reason: energyrequest.ReasonComplete}}
 	assert.Equal(t, syncResponse{Requested: 0, Skipped: want}, resp)
 	assert.Equal(t, before.RunId, run.RunId, "no run stored")
+}
+
+// a request that could not be sent is not locked: it can be sent again at once; only the sent ones are locked.
+func TestSyncEnergy_failedSendIsNotLocked(t *testing.T) {
+	t.Cleanup(func() { failSend = map[string]bool{} })
+	body := fmt.Sprintf(`{"meteringPoints": [{"meter": %q, "direction": "CONSUMPTION"}, {"meter": %q, "direction": "CONSUMPTION"}], "from": %d, "to": %d}`,
+		zp15, zp16, start(2025, 10, 1), start(2025, 10, 31))
+	before := lastRun(t)
+
+	failSend = map[string]bool{zp15: true, zp16: true}
+	code, sent, run := syncEnergy(t, body)
+	assert.Equal(t, http.StatusInternalServerError, code)
+	assert.Empty(t, sent)
+	assert.Contains(t, lastBody, zp15, "the 500 lists the failures as before")
+	assert.Contains(t, lastBody, zp16)
+	assert.Equal(t, before.RunId, run.RunId, "nothing sent: the run is deleted")
+
+	failSend = map[string]bool{zp15: true}
+	code, sent, run = syncEnergy(t, body)
+	assert.Equal(t, http.StatusInternalServerError, code)
+	assert.Equal(t, []sentRequest{{meter: zp16, from: start(2025, 10, 1), to: end(2025, 10, 31)}}, sent)
+	assert.Equal(t, []energyrequest.MeterRange{{MeteringPoint: zp16, From: start(2025, 10, 1), To: end(2025, 10, 31)}}, run.Meters,
+		"only the sent metering point stays in the run")
+
+	failSend = map[string]bool{}
+	code, sent, _ = syncEnergy(t, body)
+	assert.Equal(t, http.StatusOK, code)
+	assert.Equal(t, []sentRequest{{meter: zp15, from: start(2025, 10, 1), to: end(2025, 10, 31)}}, sent,
+		"the failed one is sent again, the sent one is locked")
 }

@@ -15,6 +15,8 @@ import (
 // reads are id ranges on the primary key, the table has no other index.
 type EnergyRequestRepository interface {
 	SaveEnergyRequestRow(ctx context.Context, tenant, rowType string, value interface{}) (int64, error)
+	UpdateEnergyRequestRow(ctx context.Context, id int64, value interface{}) error
+	DeleteEnergyRequestRow(ctx context.Context, id int64) error
 	EnergyRequestRows(ctx context.Context, tenants []string) ([]energyrequest.Row, error)
 	EnergyRequestCommunity(ctx context.Context, tenant string) ([]energyrequest.Row, map[string]bool, error)
 	TenantsByEcId(ctx context.Context, ecId string) ([]string, error)
@@ -76,6 +78,26 @@ func (db *sqlDatabase) SaveEnergyRequestRow(ctx context.Context, tenant, rowType
 		VALUES ($1, $2, $3, 'ADMIN', $4, now() AT TIME ZONE 'utc') RETURNING id`,
 		tenant, string(msg), rowType, model.N_PROCESS_ENERGY_REQUEST)
 	return id, err
+}
+
+// UpdateEnergyRequestRow replaces the content of a hidden row.
+func (db *sqlDatabase) UpdateEnergyRequestRow(ctx context.Context, id int64, value interface{}) error {
+	msg, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	defer clearCommunityCache()
+	_, err = db.db.ExecContext(ctx, `UPDATE base.notification SET notification = $1 WHERE id = $2 AND process = $3`,
+		string(msg), id, model.N_PROCESS_ENERGY_REQUEST)
+	return err
+}
+
+// DeleteEnergyRequestRow deletes a hidden row.
+func (db *sqlDatabase) DeleteEnergyRequestRow(ctx context.Context, id int64) error {
+	defer clearCommunityCache()
+	_, err := db.db.ExecContext(ctx, `DELETE FROM base.notification WHERE id = $1 AND process = $2`,
+		id, model.N_PROCESS_ENERGY_REQUEST)
+	return err
 }
 
 // EnergyRequestRows returns the rows every evaluation needs from energyrequest.LookBack on (ascending id): the hidden

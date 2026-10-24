@@ -481,18 +481,31 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 				run.Add(m.MeteringPoint, from, to)
 				send = append(send, energyRequest{meter: m, from: from, to: to})
 			}
-			energyrequest.Save(r.Context(), h.db, tenant, requested, run)
+			// the run is stored before sending, so every answer comes after it; a failed send is taken out again below
+			runRowId := energyrequest.Save(r.Context(), h.db, tenant, requested, run)
 			unlock()
 
+			failed, sent := map[string]bool{}, map[string]bool{}
 			for _, s := range send {
 				m, from, to := s.meter, s.from, s.to
 				if err = mqttclient.RequestingEnergyData(eeg, m, from, to); err != nil {
 					log.WithField("tenant", tenant).Errorf("request Metering values %v (%s - %s)", m,
-						time.UnixMilli(from).String(), time.UnixMilli(toDate).String())
+						time.UnixMilli(from).String(), time.UnixMilli(to).String())
 					errorList = append(errorList, fmt.Sprintf("%s: %s", m.MeteringPoint, err.Error()))
+					failed[m.MeteringPoint] = true
+				} else {
+					sent[m.MeteringPoint] = true
 				}
 			}
 			if errorList != nil && len(errorList) > 0 {
+				// not sent for any participation: not locked, not summarised
+				var unsent []string
+				for m := range failed {
+					if !sent[m] {
+						unsent = append(unsent, m)
+					}
+				}
+				energyrequest.Unsent(r.Context(), h.db, runRowId, run, unsent)
 				log.WithField("tenant", tenant).Errorf("failed to request metering point values. Err: %v", errorList)
 				respondWith(w, http.StatusInternalServerError, tenant, model.ErrRequestEnergyData(errors.New(strings.Join(errorList, "; "))))
 				return
