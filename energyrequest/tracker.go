@@ -74,7 +74,9 @@ func (r *Run) FitPeriod() {
 }
 
 // Skip records a metering point that is not requested, unless it is requested for another participation. Of
-// several participations, the reason of the assigned one counts: NOT_ASSIGNED (an ended participation) gives way.
+// several participations (owner change), the reason of the one that tells most counts: NOT_ASSIGNED (an archived
+// participation) gives way to every other reason, NOT_ACTIVE_IN_PERIOD (e.g. the old member's entry outside its
+// period) to every reason but NOT_ASSIGNED; between other reasons the first counts.
 func (r *Run) Skip(meter, reason string) {
 	r.SkipUntil(meter, reason, 0)
 }
@@ -88,7 +90,7 @@ func (r *Run) SkipUntil(meter, reason string, until int64) {
 	}
 	for i, s := range r.Skipped {
 		if s.MeteringPoint == meter {
-			if s.Reason == ReasonNotAssigned {
+			if weakness(s.Reason) > weakness(reason) {
 				r.Skipped[i].Reason = reason
 				r.Skipped[i].Until = until
 			}
@@ -96,6 +98,20 @@ func (r *Run) SkipUntil(meter, reason string, until int64) {
 		}
 	}
 	r.Skipped = append(r.Skipped, Skipped{MeteringPoint: meter, Reason: reason, Until: until})
+}
+
+// weakness ranks the reasons of several participations for SkipUntil: the higher, the sooner it gives way.
+// NOT_FOUND (Save, for the metering points not found at all) never replaces a reason.
+func weakness(reason string) int {
+	switch reason {
+	case ReasonNotFound:
+		return 3
+	case ReasonNotAssigned:
+		return 2
+	case ReasonNotActiveInPeriod:
+		return 1
+	}
+	return 0
 }
 
 func (r *Run) dropSkipped(meter string) {

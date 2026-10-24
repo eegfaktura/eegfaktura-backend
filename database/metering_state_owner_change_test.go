@@ -13,8 +13,8 @@ import (
 
 // After an owner change a metering point has two entries in a community: the old member's moved entry
 // (flag 0, INACTIVE) and the new member's current entry (flag 1). Every entry must carry its own period —
-// the energy data request (syncenergy) sent the new member's period twice. (The old member's part is still not
-// requested: syncenergy skips the moved entry.)
+// the energy data request (syncenergy) sent the new member's period twice. (syncenergy requests each entry's part,
+// the old member's too: api/syncEnergy_ownerChange_test.go.)
 func TestFindMeteringByIdAndState_ownPeriodPerParticipant(t *testing.T) {
 	ctx := context.Background()
 	db, err := GetTestDB(ctx, testDB)

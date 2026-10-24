@@ -67,6 +67,25 @@ this changelog highlights the changes relevant for overview and operations.
   - **Deploy order:** backend first is safe; web shows the new reasons and the live entry only with its matching
     release.
 
+### Changed
+- **Energy data request after an owner change: the old member's part is requested too** (decision of 2026-10-24:
+  the billing needs all current data, and the old member's data cannot be got later). **Behaviour towards the grid
+  operators changes.** Before, `syncenergy` skipped the old member's moved entry (flag 0, reason `NOT_ASSIGNED`)
+  and requested only the new member's part. Now every entry of the metering point is requested for its part of the
+  period (cut to its own active period); an archived entry (flag 2) is still skipped (`NOT_ASSIGNED`).
+  - Parts that overlap or touch (old until 15.06., new from 16.06.) go out as **one** ANFORDERUNG_PT over both parts;
+    a gap between the owners (old until 02.09., new from 06.09.) gives **two** requests, one per part. No period is
+    sent twice. A request only in the old member's period is sent (before: skipped as `NOT_ACTIVE_IN_PERIOD`).
+  - The 1 h lock is checked per part: a part requested within the hour is skipped, the other part is sent. The run
+    records one period per metering point, the span of the sent parts (as for several participations before), so
+    with a gap the days between the owners are locked too (no entry is active there, so none would be sent).
+  - Skipped reason with several entries: the old member's entry outside the period (`NOT_ACTIVE_IN_PERIOD`) gives
+    way to the new member's reason (e.g. `ALREADY_REQUESTED`), as `NOT_ASSIGNED` did before.
+  - Open: whether the grid operators answer a request for the old member's period (whose consent has ended) is not
+    verified in production yet. With two requests for one metering point in a run, the latest answer counts for
+    the summary and the lock (a rejection of one part frees the whole span), and the summary can be written after
+    the first of the two answers (the second one is then listed as a single answer).
+
 ### Security
 - **`/query` no longer returns the token verifier's error text.** A request to the GraphQL endpoint with an
   invalid or expired token got the verifier message in the 401 body (e.g. `oidc: id token signed with
@@ -86,8 +105,8 @@ this changelog highlights the changes relevant for overview and operations.
   request and the master data for energystore joined the period only by metering point number, so
   both entries got the new member's period (or every combination of both). Effect: an energy data request over the
   change date sent the request for the new member's part twice to the grid operator. Now every entry carries its
-  own period and flag, and the request is sent once. Unchanged: the old member's part is still not requested (the
-  moved entry is skipped as before), and metering points with one entry return the same as before.
+  own period and flag, and the request is sent once. Metering points with one entry return the same as before
+  (the old member's part is now requested too, see Changed).
 
 ### CI
 - `rolling-release.yml`: no image build on a draft pull request — it runs when the pull request is marked ready for review (`ready_for_review`) and on every later push to it; `pr-checks.yml` still checks drafts. Pushes, tags and the deploy dispatch are unchanged.
