@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -450,7 +451,9 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 				case m.Status == model.S_INIT:
 					checked = append(checked, energyRequest{meter: m, skip: energyrequest.ReasonNotRegistered})
 					continue
-				case m.State.Flag != model.F_ASSIGNED:
+				// the old member's entry after an owner change (moved) is requested for its own period too (user
+				// decision 2026-10-24: the billing needs all current data); an archived entry is not
+				case m.State.Flag != model.F_ASSIGNED && m.State.Flag != model.F_MOVED:
 					checked = append(checked, energyRequest{meter: m, skip: energyrequest.ReasonNotAssigned})
 					continue
 				case !m.State.ActiveSince.Valid || !m.State.InactiveSince.Valid:
@@ -458,8 +461,11 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 					continue
 				}
 
-				_activeSince := m.State.ActiveSince.Date.Unix() * 1000
-				_inactiveSince := m.State.InactiveSince.Date.Unix() * 1000
+				// whole days in local time, like the request period: inactivesince is the last active day, so it is
+				// requested up to its end (before: UTC midnight, which left out the last day)
+				since, until := m.State.ActiveSince.Date, m.State.InactiveSince.Date
+				_activeSince := time.Date(since.Year(), since.Month(), since.Day(), 0, 0, 0, 0, time.Local).UnixMilli()
+				_inactiveSince := util.TruncateToEndOfDay(time.Date(until.Year(), until.Month(), until.Day(), 0, 0, 0, 0, time.Local)).UnixMilli()
 
 				p, ok := periods[m.MeteringPoint]
 				if !ok {
@@ -490,8 +496,9 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 				}
 				locks = energyrequest.NewLocks(lockRows, tenant, lockTenants, time.Now())
 			}
-			// in the order of the metering points, as Skip and Add decide between several participations by order
-			var send []energyRequest
+			// in the order of the metering points, as Skip decides between several participations by order. The lock
+			// is checked per participation: of an owner change, a part requested within the hour is not sent again
+			var free []energyRequest
 			for _, c := range checked {
 				m := c.meter
 				if c.skip != "" {
@@ -502,8 +509,36 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 					run.SkipUntil(m.MeteringPoint, energyrequest.ReasonAlreadyRequested, until)
 					continue
 				}
-				run.Add(m.MeteringPoint, c.from, c.to)
-				send = append(send, c)
+				free = append(free, c)
+			}
+			// one request per metering point and merged period: parts of several participations that overlap or touch
+			// go out once (day-granular: to is the end or an inactive date of a day). The run records the span (Add merges)
+			byMeter := map[string][]energyRequest{}
+			var order []string
+			for _, c := range free {
+				if _, ok := byMeter[c.meter.MeteringPoint]; !ok {
+					order = append(order, c.meter.MeteringPoint)
+				}
+				byMeter[c.meter.MeteringPoint] = append(byMeter[c.meter.MeteringPoint], c)
+			}
+			var send []energyRequest
+			for _, mp := range order {
+				parts := byMeter[mp]
+				sort.Slice(parts, func(i, j int) bool { return parts[i].from < parts[j].from })
+				var merged []energyRequest
+				for _, c := range parts {
+					n := len(merged)
+					if n > 0 && !util.TruncateToStartOfDay(time.UnixMilli(c.from)).After(
+						util.TruncateToStartOfDay(time.UnixMilli(merged[n-1].to)).AddDate(0, 0, 1)) {
+						merged[n-1].to = max(merged[n-1].to, c.to)
+						continue
+					}
+					merged = append(merged, c)
+				}
+				for _, c := range merged {
+					run.Add(mp, c.from, c.to)
+					send = append(send, c)
+				}
 			}
 			if perMeter || request.From == 0 {
 				run.FitPeriod() // the summary shows the period actually requested

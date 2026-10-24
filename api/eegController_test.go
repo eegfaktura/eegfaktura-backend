@@ -27,7 +27,7 @@ func TestMain(m *testing.M) {
 	//testDB = database.SetupTestDatabase()
 	//defer testDB.TearDown()
 
-	testDB := database.SetupTestDatabase()
+	testDB = database.SetupTestDatabase()
 	db, err := database.GetTestDB(context.Background(), testDB)
 	if err != nil {
 		panic(err)
