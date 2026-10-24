@@ -8,6 +8,65 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Added
+- **Energy data requests: per-meter periods, lock against double requests, live status in Messages**
+  (`konzept-smart-nachfordern.md`). Contract change with **eegfaktura-web** (caller of `POST /meteringpoint/syncenergy`
+  and `GET /eeg/notifications/{id}`); the request additions are optional, older web versions keep working.
+  - `syncenergy`: each entry of `meteringPoints` takes optional `from`/`to` (ms, like the request's own). Set, they
+    are the period of that metering point (cut to start/end of day and to its active period as before); missing, the
+    request period applies. An optional top-level `complete: [string]` lists metering points web found complete:
+    they are not requested and appear in the run/summary as skipped with reason `COMPLETE`; a metering point also
+    listed in `meteringPoints` is handled by that entry (requested, or skipped for its own reason). With periods per
+    metering point, or without a request period, the run (and so summary and live entry) carries the span of the
+    requested metering points as its period.
+  - **Lock (1 hour):** a metering point requested by a run of the same tenant in the last hour for a period sharing
+    at least one day, and not rejected (`ABLEHNUNG_PT`) there, is not requested again: skipped with reason
+    `ALREADY_REQUESTED` and `until` (ms, run creation + 1 h). Single and bulk requests alike; no override. A rejected
+    metering point is free at once. GEA tenants are locked separately. A metering point whose request could not be
+    sent (MQTT error, answer `500`) is taken out of the run again and is not locked; of a metering point with several
+    participations only the span of the sent ones stays.
+  - **A request that sends nothing stores no run** (everything skipped: locked, complete, not registered, …): no
+    live entry and no summary; the response body reports the skipped metering points. Before, a request for two or
+    more metering points that were all skipped got a summary with 0 requested.
+  - **Response: `200` with a body instead of `204`** (online community):
+    `{"requested": <metering points requested from the grid operator>, "skipped": [{"meteringPoint", "reason",
+    "until"?}]}`, the skipped entries the run records (`COMPLETE`, `ALREADY_REQUESTED`, `NOT_REGISTERED`, …), also for
+    a single request that is locked. Error status codes are unchanged; an offline community still gets `204`. Web
+    (`syncMeteringPoint`) only checks for a 2xx answer and does not read the body, so older web versions keep working.
+    A request with only `complete` (every metering point complete) is accepted (nothing stored); before, a request without
+    metering points got `500` („no Meter selected“), which it still gets without `complete`.
+  - **A run that cannot be stored is not sent:** if the run row cannot be written (database error), nothing goes to
+    the grid operator and the request gets `500` (error code `5100`, as a failed send); it can be repeated at once.
+    Before, the requests went out without a run, so nothing locked or summarised them. (Rare: if the row is written
+    but the answer is lost, the metering points stay locked for the hour although nothing was sent.) The lock and
+    the stored requests are only read when at least one metering point can be sent: a request where every metering
+    point is complete or skipped for another reason answers `200` even when that read would fail.
+  - `skipped[]` entries in the run row and in `ZUSAMMENFASSUNG_PT` gain the optional field `until`.
+  - **Notification list (admins):** each open run with a summary (two or more metering points, younger than 24 h,
+    not yet summarised) is listed as one entry shaped like a stored `ZUSAMMENFASSUNG_PT` (type `MESSAGE`, process
+    `EDA_PROCESS`), computed at request time, with `live: true` in the message, the run's row id as `id` and its
+    creation time as `date`; it is ordered by id like the other entries. The `ANTWORT_PT` / `ABLEHNUNG_PT` of such a
+    run are left out of the list. Once the stored summary is written it replaces the live entry, and the single
+    answers are listed again as before. Single requests are unchanged. The rows behind it are kept for 15 s per
+    backend instance (cleared when the instance writes a run or a summary; new answers show after 15 s at the
+    latest, so an answer arriving within these 15 s can show once as a single entry before it moves into the live
+    entry). If they cannot be read, the list comes without live entries instead of failing. For a tenant without a
+    run younger than 24 h only a short probe runs, the rows are not read.
+  - **Answers are attributed by period** (summary, lock and live entry alike). Answers carry no period and no
+    reference to the request, so per metering point: a later run supersedes an earlier request only for a period
+    sharing a day (before: any later run with that metering point, which marked e.g. a May request as „requested
+    again“ after an April request and gave it all answers); within its range an answer goes to the oldest request
+    without an answer, else to the newest. A rejection frees the period of the request it belongs to.
+  - **One row set for summary, lock and live entry:** all three read the run rows and summaries of the last 49 hours
+    (2 x deadline + 1 h) and the answers from the oldest of these runs on, of the tenants of the community id, and
+    attribute them alike; an answer to an open run keeps its owner in the set even if that run is older than the
+    deadline. The 5-minute check reads this window on every run (before: from the oldest open bulk run on, which left
+    out single requests after a restart and could disagree with the live entry and the lock). After a long outage
+    a request is now still summarised up to about a day after its deadline (before: about an hour).
+  - No schema change: the notification JSON is extended additively; old runs have no `until`.
+  - **Deploy order:** backend first is safe; web shows the new reasons and the live entry only with its matching
+    release.
+
 ### Security
 - **`/query` no longer returns the token verifier's error text.** A request to the GraphQL endpoint with an
   invalid or expired token got the verifier message in the 401 body (e.g. `oidc: id token signed with

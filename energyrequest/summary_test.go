@@ -2,6 +2,7 @@ package energyrequest
 
 import (
 	"encoding/json"
+	"sort"
 	"testing"
 	"time"
 
@@ -45,7 +46,7 @@ func TestEvaluate_allStates(t *testing.T) {
 		// ZP3: no answer
 	}
 
-	s, done := Evaluate(run, 10, rows, tenants, created.Add(time.Hour))
+	s, done := Evaluate(run, 10, withRun(rows, run, 10), tenants, created.Add(time.Hour))
 	assert.False(t, done, "a missing answer keeps the run open")
 	assert.Equal(t, 3, s.Requested)
 	assert.Equal(t, []MeterRange{{MeteringPoint: "ZP1", From: sepFrom, To: sepTo}}, s.Accepted)
@@ -53,11 +54,11 @@ func TestEvaluate_allStates(t *testing.T) {
 	assert.Equal(t, []string{"ZP3"}, s.NoAnswer)
 	assert.Equal(t, run.Skipped, s.Skipped)
 
-	_, done = Evaluate(run, 10, rows, tenants, created.Add(Deadline))
+	_, done = Evaluate(run, 10, withRun(rows, run, 10), tenants, created.Add(Deadline))
 	assert.True(t, done, "closed at the deadline")
 
 	rows = append(rows, answerRow(t, 13, "RC100100", answerAccepted, "ZP3"))
-	_, done = Evaluate(run, 10, rows, tenants, created.Add(time.Hour))
+	_, done = Evaluate(run, 10, withRun(rows, run, 10), tenants, created.Add(time.Hour))
 	assert.True(t, done, "closed as soon as every metering point has an answer")
 }
 
@@ -67,14 +68,14 @@ func TestEvaluate_rowsBeforeTheRunAndOfOtherTenantsDoNotCount(t *testing.T) {
 		answerRow(t, 9, "RC100100", answerRejected, "ZP1", "56"),  // before the run
 		answerRow(t, 11, "RC999999", answerRejected, "ZP2", "56"), // other tenant
 	}
-	s, _ := Evaluate(run, 10, rows, tenants, created)
+	s, _ := Evaluate(run, 10, withRun(rows, run, 10), tenants, created)
 	assert.Equal(t, []string{"ZP1", "ZP2"}, s.NoAnswer)
 }
 
 func TestEvaluate_gemeinschaftWithSeveralTenants(t *testing.T) {
 	// a GEA: the answer was stored under another tenant of the same community id
 	run := testRun("ZP1", "ZP2")
-	rows := []Row{answerRow(t, 11, "GC100019-002", answerRejected, "ZP1", "56")}
+	rows := []Row{row(t, 10, "GC100019-001", RowTypeRun, run), answerRow(t, 11, "GC100019-002", answerRejected, "ZP1", "56")}
 	s, _ := Evaluate(run, 10, rows, map[string]bool{"GC100019-001": true, "GC100019-002": true}, created)
 	assert.Len(t, s.Rejected, 1)
 }
@@ -86,12 +87,12 @@ func TestEvaluate_laterRunSupersedes(t *testing.T) {
 		row(t, 20, "RC100100", RowTypeRun, later),
 		answerRow(t, 21, "RC100100", answerRejected, "ZP2", "56"), // belongs to the later run
 	}
-	s, _ := Evaluate(run, 10, rows, tenants, created)
+	s, _ := Evaluate(run, 10, withRun(rows, run, 10), tenants, created)
 	assert.Equal(t, []string{"ZP2"}, s.Superseded)
 	assert.Equal(t, []string{"ZP1"}, s.NoAnswer)
 	assert.Empty(t, s.Rejected)
 
-	s, _ = Evaluate(later, 20, rows, tenants, created)
+	s, _ = Evaluate(later, 20, withRun(rows, later, 20), tenants, created)
 	assert.Len(t, s.Rejected, 1)
 }
 
@@ -103,7 +104,7 @@ func TestEvaluate_answerBeforeALaterRunStays(t *testing.T) {
 		row(t, 20, "RC100100", RowTypeRun, later),
 		answerRow(t, 21, "RC100100", answerRejected, "ZP1", "86"), // belongs to the later run
 	}
-	s, _ := Evaluate(run, 10, rows, tenants, created)
+	s, _ := Evaluate(run, 10, withRun(rows, run, 10), tenants, created)
 	assert.Equal(t, []MeterRange{{MeteringPoint: "ZP1", From: sepFrom, To: sepTo}}, s.Accepted)
 	assert.Empty(t, s.Superseded)
 	assert.Empty(t, s.Rejected)
@@ -118,7 +119,7 @@ func TestEvaluate_singleMeterRequestTakesItsAnswer(t *testing.T) {
 		row(t, 20, "RC100100", RowTypeRun, single),
 		answerRow(t, 21, "RC100100", answerRejected, "ZP2", "86"),
 	}
-	s, _ := Evaluate(run, 10, rows, tenants, created)
+	s, _ := Evaluate(run, 10, withRun(rows, run, 10), tenants, created)
 	assert.Equal(t, []string{"ZP2"}, s.Superseded)
 	assert.Empty(t, s.Rejected)
 }
@@ -129,7 +130,7 @@ func TestEvaluate_latestAnswerWins(t *testing.T) {
 		answerRow(t, 11, "RC100100", answerAccepted, "ZP1"),
 		answerRow(t, 12, "RC100100", answerRejected, "ZP1", "86"),
 	}
-	s, _ := Evaluate(run, 10, rows, tenants, created)
+	s, _ := Evaluate(run, 10, withRun(rows, run, 10), tenants, created)
 	assert.Len(t, s.Rejected, 1)
 	assert.Empty(t, s.Accepted)
 }
@@ -149,4 +150,19 @@ func TestRun_AddAndSkip(t *testing.T) {
 	assert.Equal(t, []MeterRange{{MeteringPoint: "ZP1", From: sepFrom, To: sepTo}}, r.Meters)
 	assert.Equal(t, []Skipped{{MeteringPoint: "ZP2", Reason: ReasonNotRegistered},
 		{MeteringPoint: "ZP3", Reason: ReasonNoActivePeriod}}, r.Skipped)
+}
+
+// withRun returns rows with the run in row runRowId, added in id order when rows lack it (Evaluate needs the run row).
+func withRun(rows []Row, run Run, runRowId int64) []Row {
+	i := sort.Search(len(rows), func(i int) bool { return rows[i].Id >= runRowId })
+	if i < len(rows) && rows[i].Id == runRowId {
+		return rows
+	}
+	msg, err := json.Marshal(run)
+	if err != nil {
+		return rows
+	}
+	out := make([]Row, 0, len(rows)+1)
+	out = append(append(append(out, rows[:i]...), Row{Id: runRowId, Tenant: "RC100100", Type: RowTypeRun, Message: msg}), rows[i:]...)
+	return out
 }

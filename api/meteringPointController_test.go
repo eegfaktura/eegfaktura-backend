@@ -49,7 +49,9 @@ func TestRequestMeteringPointValues(t *testing.T) {
 				},
 			},
 			check: func(t *testing.T, recorder *httptest.ResponseRecorder) {
-				assert.Equal(t, http.StatusNoContent, recorder.Code)
+				assert.Equal(t, http.StatusOK, recorder.Code)
+				// the old request shape gets the answer body: nothing requested, the unknown metering point skipped
+				assert.JSONEq(t, `{"requested": 0, "skipped": [{"meteringPoint": "AT000000000000000000001", "reason": "NOT_FOUND"}]}`, recorder.Body.String())
 			},
 		},
 		{
@@ -68,7 +70,7 @@ func TestRequestMeteringPointValues(t *testing.T) {
 			wantCalls: 1,
 			check: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				fmt.Printf("recorder: %v\n", recorder)
-				assert.Equal(t, http.StatusNoContent, recorder.Code)
+				assert.Equal(t, http.StatusOK, recorder.Code)
 			},
 		},
 	}
