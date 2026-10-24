@@ -80,7 +80,8 @@ func TestEnergyRequestLiveEntry(t *testing.T) {
 		assert.NotEqual(t, runRowId, n.Id)
 	}
 
-	// the energy request rows cannot be read (here: cancelled context): the plain list, nothing hidden
+	// the energy request rows cannot be read (here: cancelled context, not cached): the plain list, nothing hidden
+	clearCommunityCache()
 	cancelled, cancel := context.WithCancel(ctx)
 	cancel()
 	list, err = db.GetNotification(cancelled, tenant, 0, true)
@@ -103,4 +104,29 @@ func TestEnergyRequestLiveEntry(t *testing.T) {
 	for _, n := range list {
 		assert.NotEqual(t, runRowId, n.Id)
 	}
+}
+
+// the list keeps the community rows for communityCacheTTL; writing a run clears them, so the lock and a new live
+// entry are not delayed by this instance's cache
+func TestEnergyRequestCommunityCache(t *testing.T) {
+	ctx := context.Background()
+	db, err := GetDB(ctx)
+	require.NoError(t, err)
+	clearCommunityCache()
+
+	const tenant = "TE000179" // no base.eeg row needed: an own tenant without community
+	_, err = db.GetNotification(ctx, tenant, 0, true)
+	require.NoError(t, err)
+	communityCache.Lock()
+	_, cached := communityCache.entries[tenant]
+	communityCache.Unlock()
+	assert.True(t, cached)
+
+	single := energyrequest.NewRun("AT00999900000TC000179000000000001", 1, 2)
+	single.NoSummary = true
+	_, err = db.SaveEnergyRequestRow(ctx, tenant, energyrequest.RowTypeRun, single)
+	require.NoError(t, err)
+	communityCache.Lock()
+	assert.Empty(t, communityCache.entries)
+	communityCache.Unlock()
 }

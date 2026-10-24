@@ -3,6 +3,8 @@ package database
 import (
 	"context"
 	"encoding/json"
+	"sync"
+	"time"
 
 	"at.ourproject/vfeeg-backend/energyrequest"
 	"at.ourproject/vfeeg-backend/model"
@@ -19,6 +21,46 @@ type EnergyRequestRepository interface {
 	CloseEnergyRequest(ctx context.Context, tenant string, runRowId int64, summary energyrequest.Summary) (bool, error)
 }
 
+// communityCacheTTL is how long the notification list keeps the energy request rows of a tenant's community.
+const communityCacheTTL = 15 * time.Second
+
+// communityCache keeps EnergyRequestCommunity for the notification list, per tenant and per instance: web polls the
+// list while a live entry is shown. It is cleared when this instance writes or changes a run or writes a summary;
+// answers arriving meanwhile show up after communityCacheTTL at the latest. The lock reads uncached.
+var communityCache = struct {
+	sync.Mutex
+	entries map[string]communityRows
+}{entries: map[string]communityRows{}}
+
+type communityRows struct {
+	at      time.Time
+	rows    []energyrequest.Row
+	tenants map[string]bool
+}
+
+func (db *sqlDatabase) energyRequestCommunityCached(ctx context.Context, tenant string) ([]energyrequest.Row, map[string]bool, error) {
+	communityCache.Lock()
+	e, ok := communityCache.entries[tenant]
+	communityCache.Unlock()
+	if ok && time.Since(e.at) < communityCacheTTL {
+		return e.rows, e.tenants, nil
+	}
+	rows, tenants, err := db.EnergyRequestCommunity(ctx, tenant)
+	if err != nil {
+		return nil, nil, err
+	}
+	communityCache.Lock()
+	communityCache.entries[tenant] = communityRows{at: time.Now(), rows: rows, tenants: tenants}
+	communityCache.Unlock()
+	return rows, tenants, nil
+}
+
+func clearCommunityCache() {
+	communityCache.Lock()
+	communityCache.entries = map[string]communityRows{}
+	communityCache.Unlock()
+}
+
 // energyRequestLock serialises closing runs (pg_advisory_xact_lock), so a summary is written once.
 const energyRequestLock = 173173
 
@@ -28,6 +70,7 @@ func (db *sqlDatabase) SaveEnergyRequestRow(ctx context.Context, tenant, rowType
 	if err != nil {
 		return 0, err
 	}
+	defer clearCommunityCache()
 	var id int64
 	err = db.db.GetContext(ctx, &id, `INSERT INTO base.notification (tenant, notification, type, role, process, date)
 		VALUES ($1, $2, $3, 'ADMIN', $4, now() AT TIME ZONE 'utc') RETURNING id`,
@@ -116,6 +159,7 @@ func (db *sqlDatabase) CloseEnergyRequest(ctx context.Context, tenant string, ru
 	if exists {
 		return false, tx.Commit()
 	}
+	defer clearCommunityCache()
 	if _, err = tx.ExecContext(ctx, `INSERT INTO base.notification (tenant, notification, type, role, process, date)
 		VALUES ($1, $2, $3, 'ADMIN', $4, now() AT TIME ZONE 'utc')`,
 		tenant, string(msg), model.N_TYPE_MESSAGE, model.N_PROCESS_EDA_PROCESS); err != nil {

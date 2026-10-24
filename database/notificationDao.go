@@ -63,7 +63,7 @@ func (db *sqlDatabase) GetNotification(ctx context.Context, tenant string, start
 	if !isAdmin {
 		return getNotification(db.db, tenant, start, isAdmin, nil)
 	}
-	rows, tenants, err := db.EnergyRequestCommunity(ctx, tenant)
+	rows, tenants, err := db.energyRequestCommunityCached(ctx, tenant)
 	if err != nil {
 		logrus.WithField("tenant", tenant).WithError(err).Warn("notifications: no live energy request entries")
 		return getNotification(db.db, tenant, start, isAdmin, nil)
