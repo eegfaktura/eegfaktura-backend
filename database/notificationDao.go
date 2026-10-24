@@ -23,7 +23,7 @@ type NotificationRepository interface {
 	SaveNotificationFromMap(notificationValue map[string]interface{}, tenant string, notificationType model.NotificationType, process model.NotificationProcess, role string) error
 	SaveHistory(tenant string, code model.EbMsMessageType, conversationId, role, dir string, protocol model.EdaProtocol, msg interface{}) error
 	FetchEdaHistory(tenant, protocol string, start, end int64, pageSize uint) (interface{}, error)
-	GetNotification(tenant string, start int64, isAdmin bool) ([]model.EegNotification, error)
+	GetNotification(ctx context.Context, tenant string, start int64, isAdmin bool) ([]model.EegNotification, error)
 }
 
 func (db *sqlDatabase) SaveNotification(tenant string, code model.EbMsMessageType, meters []string, errCodes []string, protocol model.EdaProtocol) error {
@@ -58,13 +58,15 @@ const notificationPageSize = 30
 // GetNotification lists the newest notifications of tenant after id start. For admins, an open energy request run
 // with a summary is listed as a live entry (the current summary with live: true, at the run's row id and creation
 // time) and its answers are left out; they are listed again once the stored summary has replaced the live entry.
-func (db *sqlDatabase) GetNotification(tenant string, start int64, isAdmin bool) ([]model.EegNotification, error) {
+// When the energy request rows cannot be read, the list comes without live entries (logged).
+func (db *sqlDatabase) GetNotification(ctx context.Context, tenant string, start int64, isAdmin bool) ([]model.EegNotification, error) {
 	if !isAdmin {
 		return getNotification(db.db, tenant, start, isAdmin, nil)
 	}
-	rows, tenants, err := db.EnergyRequestCommunity(context.Background(), tenant)
+	rows, tenants, err := db.EnergyRequestCommunity(ctx, tenant)
 	if err != nil {
-		return nil, err
+		logrus.WithField("tenant", tenant).WithError(err).Warn("notifications: no live energy request entries")
+		return getNotification(db.db, tenant, start, isAdmin, nil)
 	}
 	live, hidden := energyrequest.Live(rows, tenant, tenants, time.Now())
 	n, err := getNotification(db.db, tenant, start, isAdmin, hidden)

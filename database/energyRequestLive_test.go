@@ -47,7 +47,7 @@ func TestEnergyRequestLiveEntry(t *testing.T) {
 	runRowId := rows[1].Id
 	assert.Equal(t, energyrequest.RowTypeRun, rows[1].Type)
 
-	list, err := db.GetNotification(tenant, 0, true)
+	list, err := db.GetNotification(ctx, tenant, 0, true)
 	require.NoError(t, err)
 	require.Len(t, list, 3, "answer to zp9 after the run, the live entry, answer to zp9 before the run")
 	assert.Greater(t, list[0].Id, runRowId)
@@ -66,16 +66,26 @@ func TestEnergyRequestLiveEntry(t *testing.T) {
 	assert.Equal(t, []string{zp2}, s.NoAnswer)
 
 	// paging: only entries after start
-	list, err = db.GetNotification(tenant, runRowId, true)
+	list, err = db.GetNotification(ctx, tenant, runRowId, true)
 	require.NoError(t, err)
 	assert.Len(t, list, 1)
 
 	// no live entry for users (only ADMIN rows) and for other tenants
-	list, err = db.GetNotification(tenant, 0, false)
+	list, err = db.GetNotification(ctx, tenant, 0, false)
 	require.NoError(t, err)
 	assert.Empty(t, list)
-	list, err = db.GetNotification("TE000004", 0, true)
+	list, err = db.GetNotification(ctx, "TE000004", 0, true)
 	require.NoError(t, err)
+	for _, n := range list {
+		assert.NotEqual(t, runRowId, n.Id)
+	}
+
+	// the energy request rows cannot be read (here: cancelled context): the plain list, nothing hidden
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	list, err = db.GetNotification(cancelled, tenant, 0, true)
+	require.NoError(t, err)
+	require.Len(t, list, 3, "the three answers, no live entry")
 	for _, n := range list {
 		assert.NotEqual(t, runRowId, n.Id)
 	}
@@ -83,7 +93,7 @@ func TestEnergyRequestLiveEntry(t *testing.T) {
 	// closed: the stored summary instead of the live entry, the answers are listed again
 	require.NoError(t, db.SaveNotification(tenant, model.EBMS_ZP_REJ, []string{zp2}, []string{"86"}, model.CR_REQ_PT))
 	require.NoError(t, energyrequest.Check(ctx, db, time.Now()))
-	list, err = db.GetNotification(tenant, 0, true)
+	list, err = db.GetNotification(ctx, tenant, 0, true)
 	require.NoError(t, err)
 	require.Len(t, list, 5, "summary, answer zp2, answer zp9, answer zp1, answer zp9")
 	s = energyrequest.Summary{}

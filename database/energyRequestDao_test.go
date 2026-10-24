@@ -66,7 +66,7 @@ func TestEnergyRequestSummary(t *testing.T) {
 	require.NoError(t, energyrequest.Check(ctx, db, time.Now()))
 
 	// the hidden rows are not listed in Messages, the summary is
-	list, err := db.GetNotification("TE000173", 0, true)
+	list, err := db.GetNotification(ctx, "TE000173", 0, true)
 	require.NoError(t, err)
 	require.Len(t, list, 1)
 	assert.Equal(t, model.N_PROCESS_EDA_PROCESS, list[0].Process)
@@ -89,7 +89,7 @@ func TestEnergyRequestSummary(t *testing.T) {
 	written, err := db.CloseEnergyRequest(ctx, "TE000173", runRowId, s)
 	require.NoError(t, err)
 	assert.False(t, written)
-	list, err = db.GetNotification("TE000173", 0, true)
+	list, err = db.GetNotification(ctx, "TE000173", 0, true)
 	require.NoError(t, err)
 	assert.Len(t, list, 1)
 }
@@ -118,7 +118,7 @@ func TestEnergyRequestSummary_singleMeter(t *testing.T) {
 	assert.Equal(t, 1, stored)
 
 	require.NoError(t, energyrequest.Check(ctx, db, time.Now().Add(energyrequest.Deadline)))
-	list, err := db.GetNotification("TE000175", 0, true)
+	list, err := db.GetNotification(ctx, "TE000175", 0, true)
 	require.NoError(t, err)
 	assert.Empty(t, list)
 }
