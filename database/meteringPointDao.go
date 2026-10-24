@@ -627,7 +627,11 @@ func archiveMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, participantI
 func restoreMeteringPointProcessState(ctx context.Context, db *sqlx.DB, tenant, meterId string) error {
 
 	sql, _, err := pgDialect.Update(TABLE_METERINGPOINT).
-		Set(goqu.Record{"process_state": goqu.COALESCE(goqu.C("last_process_state"), goqu.C("process_state"))}).
+		Set(goqu.Record{"process_state": goqu.Case().
+			// an ended participation was INACTIVE before the registration attempt; last_process_state
+			// holds an earlier rejection there (endedParticipation), not the state to go back to
+			When(endedParticipation(), string(model.INACTIVE)).
+			Else(goqu.COALESCE(goqu.C("last_process_state"), goqu.C("process_state")))}).
 		Where(goqu.Ex{"tenant": tenant, "metering_point_id": meterId, "flag": model.F_ASSIGNED}).ToSQL()
 
 	if err != nil {
@@ -640,6 +644,12 @@ func restoreMeteringPointProcessState(ctx context.Context, db *sqlx.DB, tenant, 
 		return model.ErrStatusMeter(err)
 	}
 	return nil
+}
+
+// endedParticipation matches a metering point whose participation has ended (status INACTIVE with
+// an end date). A rejected re-registration leaves it INACTIVE (konzept-zaehlpunkt-ausblenden.md, part 2).
+func endedParticipation() exp.Expression {
+	return goqu.And(goqu.C("status").Eq(string(model.S_INACTIVE)), goqu.C("inactivesince").IsNotNull())
 }
 
 // MeteringPointsSetStatus The MeteringPointSetStatus method handles only ECON or ECOF messages.
@@ -660,6 +670,14 @@ func meteringPointsSetStatus(ctx context.Context, db *sqlx.DB, tenant string, pr
 		"process_state": setStatus(processState),
 		"modifiedAt":    civil.Now(),
 		"modifiedBy":    "EVU",
+	}
+
+	// A rejected re-registration of an ended metering point keeps it INACTIVE; the rejected state
+	// goes to last_process_state, the code to statusCode, the notification is written as before.
+	// Never-active (INIT) and ACTIVE metering points take the rejected state as before.
+	if processState == model.INVALID || processState == model.REJECTED {
+		updateRecord["process_state"] = goqu.Case().When(endedParticipation(), string(model.INACTIVE)).Else(goqu.V(processState))
+		updateRecord["last_process_state"] = goqu.Case().When(endedParticipation(), string(processState)).Else(goqu.C("last_process_state"))
 	}
 
 	if processState == model.INIT {
