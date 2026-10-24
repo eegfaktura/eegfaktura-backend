@@ -116,33 +116,40 @@ this changelog highlights the changes relevant for overview and operations.
   `INACTIVE`. web then showed it in every period at the top of the problem cases, and it could not be deleted (it has
   energy data and invoices). Now an answer that sets `INVALID` or `REJECTED` (rejection, refused or missing consent,
   answer codes 182/183, abort) for a current entry (`flag = 1`):
-  - status `INACTIVE` with `inactivesince` (ended): process state stays `INACTIVE`, whatever the code;
-  - status `ACTIVE` with a code that concerns the request, not the metering point (`model.REJECTED_KEEP_ACTIVE_CODES`:
-    172/173 consent refused / not answered, 183 allocation keys > 100 %, 188 participation factor > 100 %): process
-    state unchanged (usually `ACTIVE`; `REVOKED`, `PENDING` … stay what they were). This includes ZUSTIMMUNG with 172/173 for an active metering point (platform#180 below
-    sets `INVALID` for one still in registration). Other codes on an `ACTIVE` entry (56, 57, 185, 104, 159, …) set
-    `INVALID`/`REJECTED` as before, so the admin sees the inconsistency;
-  - `last_process_state` keeps the rejected state, `statusCode` the code; `activesince` is not touched;
-    the cleanup sets the active variant to `ACTIVE` only where it is `INVALID`/`REJECTED` today;
-  - never-active (`INIT`) entries, and `INACTIVE` without `inactivesince`, get `INVALID`/`REJECTED` as before.
+  - **ended** (status `INACTIVE` with `activesince` and `inactivesince`): process state stays `INACTIVE`, whatever
+    the code. Without `activesince` the entry never took part (e.g. revoked via CCMS before activation) and gets
+    `INVALID`/`REJECTED` as before;
+  - **active** (status `ACTIVE`) and **all** codes of the message concern the request, not the metering point
+    (`model.REJECTED_KEEP_ACTIVE_CODES`: 172/173 consent refused / not answered, 183 allocation keys > 100 %, 188
+    participation factor > 100 %): stays `ACTIVE`; `INIT`/`PENDING`/`APPROVED` left by the rejected request go back
+    to `ACTIVE`, `REVOKED` and other states stay. This includes ZUSTIMMUNG with 172/173 for an active metering point
+    (platform#180 below sets `INVALID` for one still in registration). If the message also has a code about the
+    metering point (e.g. ABLEHNUNG with [188, 57]), that code is stored and the entry gets `INVALID`/`REJECTED` as
+    before, so the admin sees the inconsistency; the same for any other code (56, 57, 185, 104, 159, …);
+  - where the state is kept, `last_process_state` holds the rejected state and `statusCode` the code; `activesince`
+    is not touched;
+  - never-active (`INIT`) entries get `INVALID`/`REJECTED` as before. An applied rejection clears
+    `last_process_state`, and a rejection without code (ABBRUCH) clears `statusCode` (no stale 188).
 
   The notification for the admins is unchanged. **Visible change:** a fresh rejection of such a metering point is
   shown only in the messages (Nachrichten); the metering point keeps its inactive/active card in web, without the
   `INVALID` card and code, and is no longer among the problem cases. The Excel master data export shows
   `INACTIVE`/`ACTIVE` instead of `INVALID`/`REJECTED` in „ZP-Status“.
-  - **Revocation:** AUFHEBUNG_CCMI/CCMC (`meteringPointRevokeByConsentId`) of an entry that still carries
-    `INVALID`/`REJECTED` ends it at `INACTIVE` (the rejection goes to `last_process_state`) instead of
-    `INACTIVE` + `INVALID`. Never-active entries as before; the „no longer part of the community“ mail still follows
-    the status only.
+  - **Revocation:** AUFHEBUNG_CCMI/CCMC (`meteringPointRevokeByConsentId`) of an entry that ends there (status not
+    `INIT`, `activesince` and end date set) and still carries `INVALID`/`REJECTED` ends it at `INACTIVE` (the
+    rejection goes to `last_process_state`) instead of `INACTIVE` + `INVALID`. This also applies to history entries
+    (`flag = 0`) that the revocation matches by consent id, consistent with the current entry. Never-active entries
+    as before; the „no longer part of the community“ mail still follows the status only.
   - **Restore after code 86** (competing processes): an ended entry at `INIT` goes back to `INACTIVE`; every other
-    state stays (a registration in flight, an active metering point). `last_process_state` is not used for it any more
-    (it was never written before, so this was a no-op).
+    state stays. An ended entry rejected with 86 while its re-registration is `PENDING` therefore stays `PENDING`: 86
+    reports a competing process at the grid operator, and we cannot tell whether it is our own. `last_process_state`
+    is not used for the restore any more (it was never written before, so this was a no-op).
   - `last_process_state` is cleared by every other status message (a new registration attempt or its result).
   - **Operator, after deploying (prod and pilot):** clean up the existing cases once with
-    `scripts/ended-meter-rejection/` (README there): `check.sql` (read only; counts per variant, per code, and the
-    variants left alone: `ohne_datum`, `aktiv_andere`), `pgz <ns> -v expected=<anzahl> < fix.sql` (commits only if
-    exactly that many rows changed), `rollback.sql` the same way to undo. Prod at 24.10.2026: about 377 ended entries
-    in about 100 tenants; active with codes 188/173 about 53.
+    `scripts/ended-meter-rejection/` (README there): `pgz <ns> < check.sql` (read only; counts per variant and code,
+    and the variants left alone: `ohne_datum`, `aktiv_andere`), `pgz <ns> -v expected=<anzahl> < fix.sql` (commits
+    only if exactly that many rows changed), `rollback.sql` the same way to undo. Prod at 24.10.2026: about 377 ended
+    entries in about 100 tenants; active with codes 188/173 about 53.
 - **Restoring the process state after code 86 no longer logs an error on success.**
   `restoreMeteringPointProcessState` always returned an error value (also without a database error), so every
   rejection with code 86 logged „can not restore MeteringPointProcessState“. The update itself ran; only the log

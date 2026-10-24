@@ -3,12 +3,12 @@
 Since this release the backend no longer lets a rejection from the grid operator undo a participation
 (`konzept-zaehlpunkt-ausblenden.md`, part 2):
 
-- a current entry (`flag = 1`) whose participation has ended (status `INACTIVE`, `inactivesince` set) stays at
-  process state `INACTIVE`, whatever the code;
-- an `ACTIVE` entry keeps its process state (usually `ACTIVE`) when the code concerns the request, not the
-  metering point: 172/173 (consent
+- a current entry (`flag = 1`) whose participation has ended (status `INACTIVE`, `activesince` and
+  `inactivesince` set) stays at process state `INACTIVE`, whatever the code;
+- an `ACTIVE` entry stays `ACTIVE` when all codes concern the request, not the metering point: 172/173 (consent
   refused / not answered), 183 (allocation keys > 100 %), 188 (participation factor > 100 %)
-  (`model.REJECTED_KEEP_ACTIVE_CODES`). Other codes (56, 57, 185, …) still set `INVALID`/`REJECTED`.
+  (`model.REJECTED_KEEP_ACTIVE_CODES`); `REVOKED` and other non-registration states stay. Other codes (56, 57,
+  185, …) still set `INVALID`/`REJECTED`.
 
 The rejected state goes to `last_process_state`, the code stays in `statusCode`. Before, such entries got
 `INVALID` or `REJECTED`, and web showed them in every period among the problem cases.
@@ -29,10 +29,10 @@ First result: one row per tenant and a total row (`tenant` empty):
 | column | meaning |
 |---|---|
 | `anzahl` | rows `fix.sql` changes (`beendet` + `aktiv`) — **the total row's value is `expected`** |
-| `beendet` | status `INACTIVE` with `inactivesince`, any code → `INACTIVE` |
+| `beendet` | status `INACTIVE` with `activesince` and `inactivesince`, any code → `INACTIVE` |
 | `aktiv` | status `ACTIVE`, code 172/173/183/188 → `ACTIVE` |
 | `tenants` | tenants with such rows |
-| `ohne_datum` | status `INACTIVE` without `inactivesince`: reported only, left alone (no end date, the participation period is unclear; clarify with the community) |
+| `ohne_datum` | status `INACTIVE` without `activesince` or `inactivesince`: reported only, left alone (never active, or the participation period is unclear; clarify with the community — a never-active entry can be removed with part 1 of the concept) |
 | `aktiv_andere` | status `ACTIVE` with another code (56, 57, 185, …): reported only, stays `INVALID`/`REJECTED` (the metering point itself is in question; clarify with the community) |
 | `beispiele` | up to five changed rows per tenant |
 
