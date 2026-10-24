@@ -21,10 +21,11 @@ type Locks map[string][]lock
 
 // NewLocks collects the locks of tenant from rows (ascending id): its run rows and the answers after them, as
 // database.EnergyRequestTenantRows returns them. tenants are the tenants the answers are stored under (see Evaluate).
-// A run locks each of its metering points for LockWindow from its creation, unless the latest answer that belongs to
-// the run (the same attribution as in Evaluate) is a rejection.
+// A run locks each of its metering points for its period for LockWindow from its creation, unless the latest answer
+// that belongs to the run for that metering point (the same attribution as in Evaluate) is a rejection.
 func NewLocks(rows []Row, tenant string, tenants map[string]bool, now time.Time) Locks {
 	locks := Locks{}
+	attributions := map[string]attribution{}
 	for _, r := range rows {
 		if r.Type != RowTypeRun || !strings.EqualFold(r.Tenant, tenant) {
 			continue
@@ -37,9 +38,13 @@ func NewLocks(rows []Row, tenant string, tenants map[string]bool, now time.Time)
 		if now.UnixMilli() >= until {
 			continue
 		}
-		a := attribute(run, r.Id, rows, tenants)
+		a, ok := attributions[strings.ToUpper(run.EcId)]
+		if !ok {
+			a = attribute(run.EcId, rows, tenants)
+			attributions[strings.ToUpper(run.EcId)] = a
+		}
 		for _, m := range run.Meters {
-			if answers, _ := a.belonging(m.MeteringPoint); lastRejected(answers) {
+			if answers, _ := a.belonging(r.Id, m.MeteringPoint); lastRejected(answers) {
 				continue
 			}
 			locks[m.MeteringPoint] = append(locks[m.MeteringPoint], lock{from: m.From, to: m.To, until: until})
@@ -53,11 +58,16 @@ func NewLocks(rows []Row, tenant string, tenants map[string]bool, now time.Time)
 func (l Locks) Until(meter string, from, to int64) int64 {
 	var until int64
 	for _, k := range l[meter] {
-		if day(k.from) <= day(to) && day(from) <= day(k.to) && k.until > until {
+		if overlaps(k.from, k.to, from, to) && k.until > until {
 			until = k.until
 		}
 	}
 	return until
+}
+
+// overlaps tells whether two day-granular periods share a day.
+func overlaps(fromA, toA, fromB, toB int64) bool {
+	return day(fromA) <= day(toB) && day(fromB) <= day(toA)
 }
 
 // day is the local calendar day of ms as yyyymmdd, as the handler builds the periods in time.Local.

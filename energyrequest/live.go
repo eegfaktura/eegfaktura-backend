@@ -33,6 +33,7 @@ func Live(rows []Row, tenant string, tenants map[string]bool, now time.Time) ([]
 
 	entries := []LiveEntry{}
 	hidden := map[int64]bool{}
+	attributions := map[string]attribution{}
 	for _, r := range rows {
 		if r.Type != RowTypeRun || !strings.EqualFold(r.Tenant, tenant) {
 			continue
@@ -42,12 +43,16 @@ func Live(rows []Row, tenant string, tenants map[string]bool, now time.Time) ([]
 			now.Sub(time.UnixMilli(run.CreatedAt)) >= Deadline {
 			continue
 		}
-		a := attribute(run, r.Id, rows, tenants)
-		s, _ := evaluate(run, a, now)
+		a, ok := attributions[strings.ToUpper(run.EcId)]
+		if !ok {
+			a = attribute(run.EcId, rows, tenants)
+			attributions[strings.ToUpper(run.EcId)] = a
+		}
+		s, _ := evaluate(run, r.Id, a, now)
 		s.Live = true
 		entries = append(entries, LiveEntry{RowId: r.Id, CreatedAt: run.CreatedAt, Summary: s})
 		for _, m := range run.Meters {
-			answers, _ := a.belonging(m.MeteringPoint)
+			answers, _ := a.belonging(r.Id, m.MeteringPoint)
 			for _, ans := range answers {
 				hidden[ans.id] = true
 			}

@@ -7,7 +7,7 @@ package energyrequest
 
 import (
 	"encoding/json"
-	"strings"
+	"sort"
 	"time"
 
 	"github.com/jmoiron/sqlx/types"
@@ -105,18 +105,31 @@ type answer struct {
 	ResponseCodes  []string `json:"responseCodes"`
 }
 
-// Evaluate computes the summary of the run in row runRowId. rows are all relevant rows from runRowId on (ascending
-// id); tenants are the tenants of the run's community: the answers are stored under one of them (a GEA can share the
-// community id). done is true when every metering point has an answer or the deadline has passed.
-//
-// An answer belongs to the run when it comes after the run and before the next run of the same community with that
-// metering point. A metering point without an answer in that range and with a later run counts as requested again.
+// Evaluate computes the summary of the run in row runRowId. rows are all relevant rows (ascending id), the earlier
+// runs that can still take answers included; tenants are the tenants of the run's community: the answers are stored
+// under one of them (a GEA can share the community id). done is true when every metering point has an answer or the
+// deadline has passed. Which answer belongs to which run: see attribute.
 func Evaluate(run Run, runRowId int64, rows []Row, tenants map[string]bool, now time.Time) (Summary, bool) {
-	return evaluate(run, attribute(run, runRowId, rows, tenants), now)
+	return evaluate(run, runRowId, attribute(run.EcId, withRun(rows, run, runRowId), tenants), now)
+}
+
+// withRun returns rows with the run in row runRowId, added in id order when rows lack it.
+func withRun(rows []Row, run Run, runRowId int64) []Row {
+	i := sort.Search(len(rows), func(i int) bool { return rows[i].Id >= runRowId })
+	if i < len(rows) && rows[i].Id == runRowId {
+		return rows
+	}
+	msg, err := json.Marshal(run)
+	if err != nil {
+		return rows
+	}
+	out := make([]Row, 0, len(rows)+1)
+	out = append(append(append(out, rows[:i]...), Row{Id: runRowId, Type: RowTypeRun, Message: msg}), rows[i:]...)
+	return out
 }
 
 // evaluate is Evaluate on the attributed answers.
-func evaluate(run Run, a attribution, now time.Time) (Summary, bool) {
+func evaluate(run Run, runRowId int64, a attribution, now time.Time) (Summary, bool) {
 	s := Summary{Type: SummaryType, RunId: run.RunId, From: run.From, To: run.To, Requested: len(run.Meters),
 		Accepted: []MeterRange{}, Rejected: []Rejected{}, NoAnswer: []string{}, Skipped: run.Skipped,
 		Superseded: []string{}}
@@ -125,7 +138,7 @@ func evaluate(run Run, a attribution, now time.Time) (Summary, bool) {
 	}
 
 	for _, m := range run.Meters {
-		belonging, superseded := a.belonging(m.MeteringPoint)
+		belonging, superseded := a.belonging(runRowId, m.MeteringPoint)
 		var answered, accepted bool
 		var rejected []string
 		for _, ans := range belonging {
@@ -153,65 +166,4 @@ func evaluate(run Run, a attribution, now time.Time) (Summary, bool) {
 		}
 	}
 	return s, len(s.NoAnswer) == 0 || now.Sub(time.UnixMilli(run.CreatedAt)) >= Deadline
-}
-
-type idAnswer struct {
-	id     int64
-	answer answer
-}
-
-// attribution is the answers per metering point after a run (ascending id) and the first later run of the same
-// community per metering point.
-type attribution struct {
-	answers map[string][]idAnswer
-	nextRun map[string]int64
-}
-
-// attribute parses every row once for the run in row runRowId (see Evaluate for the arguments).
-func attribute(run Run, runRowId int64, rows []Row, tenants map[string]bool) attribution {
-	a := attribution{answers: map[string][]idAnswer{}, nextRun: map[string]int64{}}
-	for _, r := range rows {
-		if r.Id <= runRowId {
-			continue
-		}
-		switch {
-		case r.Type == RowTypeRun:
-			var later Run
-			if json.Unmarshal(r.Message, &later) != nil || !strings.EqualFold(later.EcId, run.EcId) {
-				continue
-			}
-			for _, m := range later.Meters {
-				if _, ok := a.nextRun[m.MeteringPoint]; !ok {
-					a.nextRun[m.MeteringPoint] = r.Id
-				}
-			}
-		case r.Type == messageRow && tenants[r.Tenant]:
-			var ans answer
-			if json.Unmarshal(r.Message, &ans) != nil || (ans.Type != answerAccepted && ans.Type != answerRejected) {
-				continue
-			}
-			for _, m := range ans.MeteringPoints {
-				a.answers[m] = append(a.answers[m], idAnswer{id: r.Id, answer: ans})
-			}
-		}
-	}
-	return a
-}
-
-// belonging returns the answers for meter that belong to the run (ascending id), and whether a later run of the
-// community requests meter again.
-func (a attribution) belonging(meter string) ([]idAnswer, bool) {
-	upper, superseded := a.nextRun[meter]
-	answers := a.answers[meter]
-	for i, ans := range answers {
-		if superseded && ans.id > upper {
-			return answers[:i], true
-		}
-	}
-	return answers, superseded
-}
-
-// lastRejected tells whether the latest of the answers is a rejection.
-func lastRejected(answers []idAnswer) bool {
-	return len(answers) > 0 && answers[len(answers)-1].answer.Type == answerRejected
 }
