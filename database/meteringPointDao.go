@@ -628,9 +628,11 @@ func restoreMeteringPointProcessState(ctx context.Context, db *sqlx.DB, tenant, 
 
 	sql, _, err := pgDialect.Update(TABLE_METERINGPOINT).
 		Set(goqu.Record{"process_state": goqu.Case().
-			// an ended participation was INACTIVE before the registration attempt; last_process_state
-			// holds an earlier rejection there (endedParticipation), not the state to go back to
-			When(endedParticipation(), string(model.INACTIVE)).
+			// an ended participation was INACTIVE before the competing attempt (INIT); a registration
+			// in flight (PENDING, APPROVED, …) stays. last_process_state holds an earlier rejection
+			// there (endedParticipation), never the state to go back to.
+			When(goqu.And(endedParticipation(), goqu.C("process_state").Eq(string(model.INIT))), string(model.INACTIVE)).
+			When(endedParticipation(), goqu.C("process_state")).
 			Else(goqu.COALESCE(goqu.C("last_process_state"), goqu.C("process_state")))}).
 		Where(goqu.Ex{"tenant": tenant, "metering_point_id": meterId, "flag": model.F_ASSIGNED}).ToSQL()
 

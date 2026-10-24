@@ -157,6 +157,34 @@ func TestEndedMeterRejection_reRegisteredActiveIgnoresOldRejection(t *testing.T)
 	assert.Equal(t, "ACTIVE", readEndedRejectRow(t, testDB.DbInstance, tenant, meter).ProcessState)
 }
 
+// Review backend#107: the restore after code 86 sets an ended meter back to INACTIVE only when the
+// competing attempt left it at INIT; a re-registration in flight (PENDING/APPROVED) stays, and a
+// stored rejection is never taken for an ended meter.
+func TestEndedMeterRejection_restoreKeepsRegistrationInFlight(t *testing.T) {
+	ctx := context.Background()
+	db, err := GetTestDB(ctx, testDB)
+	require.NoError(t, err)
+
+	const tenant = "TE000021"
+	const pending, approved, initial = "AT0030000000000000000000990021001", "AT0030000000000000000000990021002",
+		"AT0030000000000000000000990021003"
+	insertEndedRejectFixture(t, tenant, map[string][3]string{
+		pending:  {"INACTIVE", "PENDING", "2025-01-22"},
+		approved: {"INACTIVE", "APPROVED", "2025-01-22"},
+		initial:  {"INACTIVE", "INIT", "2025-01-22"},
+	})
+	// a stale rejection must not be restored
+	_, err = testDB.DbInstance.Exec(`UPDATE base.meteringpoint SET last_process_state = 'INVALID' WHERE tenant = $1`, tenant)
+	require.NoError(t, err)
+
+	for _, m := range []string{pending, approved, initial} {
+		require.NoError(t, db.RestoreMeteringPointProcessState(ctx, tenant, m))
+	}
+	assert.Equal(t, "PENDING", readEndedRejectRow(t, testDB.DbInstance, tenant, pending).ProcessState)
+	assert.Equal(t, "APPROVED", readEndedRejectRow(t, testDB.DbInstance, tenant, approved).ProcessState)
+	assert.Equal(t, "INACTIVE", readEndedRejectRow(t, testDB.DbInstance, tenant, initial).ProcessState)
+}
+
 // scripts/ended-meter-rejection/: check.sql lists, fix.sql moves existing ended + rejected rows to
 // INACTIVE (re-run changes nothing), rollback.sql restores them.
 func TestEndedMeterRejectionScripts(t *testing.T) {
