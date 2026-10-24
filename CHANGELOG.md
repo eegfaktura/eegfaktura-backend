@@ -72,7 +72,15 @@ this changelog highlights the changes relevant for overview and operations.
   the billing needs all current data, and the old member's data cannot be got later). **Behaviour towards the grid
   operators changes.** Before, `syncenergy` skipped the old member's moved entry (flag 0, reason `NOT_ASSIGNED`)
   and requested only the new member's part. Now every entry of the metering point is requested for its part of the
-  period (cut to its own active period); an archived entry (flag 2) is still skipped (`NOT_ASSIGNED`).
+  period (cut to its own active period); an archived entry (flag 2) is still skipped (`NOT_ASSIGNED`). Note: when
+  an archived metering point is registered again, `saveMeteringPoint` sets its earlier INACTIVE entries to flag 0, so
+  their periods are requested too; only archived entries of metering points that never came back stay skipped.
+  - Grid operator side (ebUtilities process CR_REQ_PT, https://www.ebutilities.at/prozesse/503, PDF:
+    https://www.ebutilities.at/api/export/pdf/processes/503): the grid operator checks „ob der Zählpunkt durch den
+    Anforderer im Anforderungszeitraum beliefert wird“ (rejection 55/94). The requester is the community, so the old
+    member's period qualifies while the metering point belonged to the community.
+  - A merged request goes out with the current entry (flag 1), else the later part's; for BEG its grid operator is
+    the receiver.
   - Parts that overlap or touch (old until 15.06., new from 16.06.) go out as **one** ANFORDERUNG_PT over both parts;
     a gap between the owners (old until 02.09., new from 06.09.) gives **two** requests, one per part. No period is
     sent twice. A request only in the old member's period is sent (before: skipped as `NOT_ACTIVE_IN_PERIOD`).
@@ -83,12 +91,16 @@ this changelog highlights the changes relevant for overview and operations.
     lock was introduced (no trimming): when the old member's last day is the new member's first day and only the
     new part was requested, a request over both parts sends nothing for the old part either until the lock ends
     (at most 1 h, the answer says `ALREADY_REQUESTED` with `until`).
-  - Skipped reason with several entries: the old member's entry outside the period (`NOT_ACTIVE_IN_PERIOD`) gives
-    way to the new member's reason (e.g. `ALREADY_REQUESTED`), as `NOT_ASSIGNED` did before.
+  - Skipped reason with several entries: independent of their order, the reason that tells most counts
+    (`ALREADY_REQUESTED` before `NOT_REGISTERED`, `NO_ACTIVE_PERIOD`, `NOT_ACTIVE_IN_PERIOD`, `NOT_ASSIGNED`); locked
+    for two entries, the later `until`. The old member's entry outside the period gives way to the new member's
+    reason, as `NOT_ASSIGNED` did before.
   - Open: whether the grid operators answer a request for the old member's period (whose consent has ended) is not
-    verified in production yet. With two requests for one metering point in a run, the latest answer counts for
-    the summary and the lock (a rejection of one part frees the whole span), and the summary can be written after
-    the first of the two answers (the second one is then listed as a single answer).
+    verified in production yet (the spec above says it should be accepted). Known limit with a gap (two requests
+    for one metering point in a run): the latest answer counts for the summary and the lock, so a rejection of one
+    part frees the lock for the whole span and the summary can show the metering point as rejected although the
+    other part was accepted; the summary can also be written after the first of the two answers (the second one is
+    then listed as a single answer).
 
 ### Security
 - **`/query` no longer returns the token verifier's error text.** A request to the GraphQL endpoint with an
@@ -117,8 +129,9 @@ this changelog highlights the changes relevant for overview and operations.
   active day (energystore and billing count it as a whole day): the period now ends at 23:45 local time of that day
   and starts at 00:00 local time of `activesince`, as the request period itself (summer time included). Affects every
   metering point whose active period starts or ends inside the requested period (single entries too, e.g. a
-  metering point that left the community); one with an open end is unchanged. Pre-existing; with the old member's
-  part now requested (see Changed) it reaches the grid operators on every owner change.
+  metering point that left the community); one with an open end is unchanged — to be confirmed by the user, as it
+  changes what goes to the grid operators for all such entries. Pre-existing; with the old member's part now
+  requested (see Changed) it reaches the grid operators on every owner change.
 
 ### CI
 - `rolling-release.yml`: no image build on a draft pull request — it runs when the pull request is marked ready for review (`ready_for_review`) and on every later push to it; `pr-checks.yml` still checks drafts. Pushes, tags and the deploy dispatch are unchanged.
