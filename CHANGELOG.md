@@ -37,7 +37,10 @@ this changelog highlights the changes relevant for overview and operations.
     metering points got `500` („no Meter selected“), which it still gets without `complete`.
   - **A run that cannot be stored is not sent:** if the run row cannot be written (database error), nothing goes to
     the grid operator and the request gets `500` (error code `5100`, as a failed send); it can be repeated at once.
-    Before, the requests went out without a run, so nothing locked or summarised them.
+    Before, the requests went out without a run, so nothing locked or summarised them. (Rare: if the row is written
+    but the answer is lost, the metering points stay locked for the hour although nothing was sent.) The lock and
+    the stored requests are only read when at least one metering point can be sent: a request where every metering
+    point is complete or skipped for another reason answers `200` even when that read would fail.
   - `skipped[]` entries in the run row and in `ZUSAMMENFASSUNG_PT` gain the optional field `until`.
   - **Notification list (admins):** each open run with a summary (two or more metering points, younger than 24 h,
     not yet summarised) is listed as one entry shaped like a stored `ZUSAMMENFASSUNG_PT` (type `MESSAGE`, process

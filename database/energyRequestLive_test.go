@@ -178,6 +178,10 @@ func TestEnergyRequestRunProbe(t *testing.T) {
 	single.NoSummary = true
 	id, err := db.SaveEnergyRequestRow(ctx, tenant, energyrequest.RowTypeRun, single)
 	require.NoError(t, err)
+	t.Cleanup(func() { // a young run left behind would fail the first assertion of every later run for 24 h
+		_, err := testDB.DbInstance.Exec(`DELETE FROM base.notification WHERE id = $1`, id)
+		assert.NoError(t, err)
+	})
 	found, err = db.(*sqlDatabase).hasEnergyRequestRun(ctx, tenant)
 	require.NoError(t, err)
 	assert.True(t, found)
