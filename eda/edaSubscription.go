@@ -290,12 +290,12 @@ func protocolEcReqOnlHandler(ctx context.Context, msg model.SubscribeMessage) {
 			statusCode = &codes[0]
 		} else if codesContains(REJECTED_INVALID_CODES, codes) {
 			status = model.INVALID
-			c := rejectionCode(intersectCodes(REJECTED_INVALID_CODES, codes), codes)
+			c := rejectionCode(intersectCodes(REJECTED_INVALID_CODES, codes))
 			statusCode = &c
 		} else {
 			status = model.REJECTED
 			if len(codes) > 0 {
-				c := rejectionCode(codes, codes)
+				c := rejectionCode(codes)
 				statusCode = &c
 			}
 		}

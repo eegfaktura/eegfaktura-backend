@@ -120,20 +120,15 @@ func codesContains(expected, codes []int16) bool {
 	return len(intersectCodes(expected, codes)) > 0
 }
 
-// rejectionCode picks the code stored for a rejection: the first candidate as before, but when it is
-// one of model.REJECTED_KEEP_ACTIVE_CODES and the message also has a code about the metering point
-// itself, that code wins (first from candidates, then from all codes). The DAO keeps an ACTIVE
-// metering point ACTIVE by the stored code, so this holds only when ALL codes concern the request.
-func rejectionCode(candidates, codes []int16) int16 {
-	keep := func(c int16) bool { return slices.Contains(model.REJECTED_KEEP_ACTIVE_CODES, c) }
-	if !keep(candidates[0]) {
-		return candidates[0]
-	}
-	for _, list := range [][]int16{candidates, codes} {
-		for _, c := range list {
-			if !keep(c) {
-				return c
-			}
+// rejectionCode picks the code stored for an ABLEHNUNG: the first candidate as before, but when it is
+// one of model.REJECTED_KEEP_ACTIVE_CODES and another candidate concerns the metering point itself,
+// that one wins. The DAO keeps an ACTIVE metering point ACTIVE by the stored code, so this holds only
+// when all candidate codes concern the request. Candidates are the codes the old logic considered
+// (INVALID: the REJECTED_INVALID_CODES intersection, REJECTED: all codes), so web keeps a known reason.
+func rejectionCode(candidates []int16) int16 {
+	for _, c := range candidates {
+		if !slices.Contains(model.REJECTED_KEEP_ACTIVE_CODES, c) {
+			return c
 		}
 	}
 	return candidates[0]
