@@ -908,10 +908,18 @@ func meteringPointRevokeByConsentId(ctx context.Context, db *sqlx.DB, receiver s
 			return nil, err
 		}
 
+		// An entry that ends here (status not INIT, end date set) while it carries a rejection goes to
+		// INACTIVE like a rejected re-registration of an ended entry; the rejection goes to
+		// last_process_state (konzept-zaehlpunkt-ausblenden.md, part 2).
+		endsRejected := goqu.And(goqu.C("status").Neq("INIT"), goqu.C("inactivesince").IsNotNull(),
+			goqu.C("process_state").In(string(model.INVALID), string(model.REJECTED)))
 		_, err = tx.Update(TABLE_METERINGPOINT).
 			Set(goqu.Record{
 				"process_state": goqu.Case().
-					When(goqu.C("process_state").Eq("ACTIVE"), model.INACTIVE).Else(goqu.C("process_state")),
+					When(goqu.C("process_state").Eq("ACTIVE"), model.INACTIVE).
+					When(endsRejected, model.INACTIVE).Else(goqu.C("process_state")),
+				"last_process_state": goqu.Case().
+					When(endsRejected, goqu.C("process_state")).Else(goqu.C("last_process_state")),
 				"status": goqu.Case().
 					When(goqu.C("status").Eq("INIT"), model.S_INIT).Else(model.S_INACTIVE),
 				"modifiedAt":    civil.Now(),

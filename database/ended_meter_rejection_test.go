@@ -185,6 +185,54 @@ func TestEndedMeterRejection_restoreKeepsRegistrationInFlight(t *testing.T) {
 	assert.Equal(t, "INACTIVE", readEndedRejectRow(t, testDB.DbInstance, tenant, initial).ProcessState)
 }
 
+// Review backend#107: a revocation (AUFHEBUNG_CCMI/CCMC) of an entry that still carries a rejection
+// ends it INACTIVE like the rule above, instead of producing the INACTIVE + INVALID state the
+// cleanup fixes. WasActive (the mail) still follows the status only.
+func TestEndedMeterRejection_revokeByConsentEndsInactive(t *testing.T) {
+	ctx := context.Background()
+	db, err := GetTestDB(ctx, testDB)
+	require.NoError(t, err)
+
+	const tenant = "TE000022"
+	const activeInvalid, neverActive = "AT0030000000000000000000990022001", "AT0030000000000000000000990022002"
+	_, err = testDB.DbInstance.Exec(`INSERT INTO base.eeg
+		(tenant, name, description, "rcNumber", area, gridoperator_code, gridoperator_name, "communityId",
+		 street, "streetNumber", city, zip, email)
+		VALUES ($1, 'ENDED-REJECT', 'Ended-Reject-Test', $2, 'LOCAL', 'AT003000', 'Netz OÖ',
+		 'AT00300000000TC000022000000000001', 'Weg', '1', 'Linz', '4020', 'ended-reject@example.org')
+		ON CONFLICT (tenant) DO NOTHING`, tenant, tenant)
+	require.NoError(t, err)
+	t.Cleanup(func() { removeTestTenant(t, tenant) })
+	insertEndedRejectFixture(t, tenant, map[string][3]string{
+		activeInvalid: {"ACTIVE", "INVALID", "2999-12-31"},
+		neverActive:   {"INIT", "REJECTED", ""},
+	})
+	_, err = testDB.DbInstance.Exec(`UPDATE base.meteringpoint SET consent_id = 'C-' || right(metering_point_id, 3)
+		WHERE tenant = $1`, tenant)
+	require.NoError(t, err)
+
+	end := civil.DateFor(2026, 10, 1)
+	consent := "C-001"
+	revoked, err := db.MeteringPointRevokeByConsentId(ctx, "", &consent, activeInvalid, end)
+	require.NoError(t, err)
+	require.Len(t, revoked, 1)
+	assert.True(t, revoked[0].WasActive)
+	r := readEndedRejectRow(t, testDB.DbInstance, tenant, activeInvalid)
+	assert.Equal(t, "INACTIVE", r.Status)
+	assert.Equal(t, "INACTIVE", r.ProcessState)
+	assert.Equal(t, "INVALID", r.LastProcessState.String)
+
+	consent = "C-002"
+	revoked, err = db.MeteringPointRevokeByConsentId(ctx, "", &consent, neverActive, end)
+	require.NoError(t, err)
+	require.Len(t, revoked, 1)
+	assert.False(t, revoked[0].WasActive)
+	r = readEndedRejectRow(t, testDB.DbInstance, tenant, neverActive)
+	assert.Equal(t, "INIT", r.Status)
+	assert.Equal(t, "REJECTED", r.ProcessState, "never-active entry: as before")
+	assert.False(t, r.LastProcessState.Valid)
+}
+
 // scripts/ended-meter-rejection/: check.sql lists, fix.sql moves existing ended + rejected rows to
 // INACTIVE (re-run changes nothing), rollback.sql restores them.
 func TestEndedMeterRejectionScripts(t *testing.T) {
