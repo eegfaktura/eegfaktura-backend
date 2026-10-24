@@ -8,6 +8,30 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Added
+- **Energy data requests: per-meter periods, lock against double requests, live status in Messages**
+  (`konzept-smart-nachfordern.md`). Contract change with **eegfaktura-web** (caller of `POST /meteringpoint/syncenergy`
+  and `GET /eeg/notifications/{id}`); all additions are optional, older web versions keep working.
+  - `syncenergy`: each entry of `meteringPoints` takes optional `from`/`to` (ms, like the request's own). Set, they
+    are the period of that metering point (cut to start/end of day and to its active period as before); missing, the
+    request period applies. An optional top-level `complete: [string]` lists metering points web found complete:
+    they are not requested and appear in the run/summary as skipped with reason `COMPLETE`.
+  - **Lock (1 hour):** a metering point requested by a run of the same tenant in the last hour for a period sharing
+    at least one day, and not rejected (`ABLEHNUNG_PT`) there, is not requested again: skipped with reason
+    `ALREADY_REQUESTED` and `until` (ms, run creation + 1 h). Single and bulk requests alike; no override. A rejected
+    metering point is free at once. GEA tenants are locked separately. If everything is skipped the run is still
+    stored (bulk requests) and the answer stays `204`.
+  - `skipped[]` entries in the run row and in `ZUSAMMENFASSUNG_PT` gain the optional field `until`.
+  - **Notification list (admins):** each open run with a summary (two or more metering points, younger than 24 h,
+    not yet summarised) is listed as one entry shaped like a stored `ZUSAMMENFASSUNG_PT` (type `MESSAGE`, process
+    `EDA_PROCESS`), computed at request time, with `live: true` in the message, the run's row id as `id` and its
+    creation time as `date`; it is ordered by id like the other entries. The `ANTWORT_PT` / `ABLEHNUNG_PT` of such a
+    run are left out of the list. Once the stored summary is written it replaces the live entry, and the single
+    answers are listed again as before. Single requests are unchanged.
+  - No schema change: the notification JSON is extended additively; old runs have no `until`.
+  - **Deploy order:** backend first is safe; web shows the new reasons and the live entry only with its matching
+    release.
+
 ### Security
 - **`/query` no longer returns the token verifier's error text.** A request to the GraphQL endpoint with an
   invalid or expired token got the verifier message in the 401 body (e.g. `oidc: id token signed with
