@@ -134,20 +134,26 @@ func Save(ctx context.Context, store Store, tenant string, requested []string, r
 	return id
 }
 
-// Unsent takes the metering points whose request could not be sent out of the run stored by Save in row rowId, so
-// they are not locked and not summarised; a run without a sent metering point is deleted. Errors are logged.
-func Unsent(ctx context.Context, store Store, rowId int64, r *Run, meters []string) {
-	if rowId == 0 || len(meters) == 0 {
+// KeepSent reduces the run stored by Save in row rowId to the requests that were sent, after a send failed: each
+// metering point to the span of its sent participations (Add merged them), without one it is taken out. What was not
+// sent is not locked and not summarised; a run without a sent request is deleted. Errors are logged.
+//
+// A failed participation between two sent ones of the same metering point stays inside the span.
+func KeepSent(ctx context.Context, store Store, rowId int64, r *Run, sent []MeterRange) {
+	if rowId == 0 {
 		return
 	}
-	drop := map[string]bool{}
-	for _, m := range meters {
-		drop[m] = true
+	spans := map[string]MeterRange{}
+	for _, s := range sent {
+		if span, ok := spans[s.MeteringPoint]; ok {
+			s.From, s.To = min(s.From, span.From), max(s.To, span.To)
+		}
+		spans[s.MeteringPoint] = s
 	}
 	kept := r.Meters[:0]
 	for _, m := range r.Meters {
-		if !drop[m.MeteringPoint] {
-			kept = append(kept, m)
+		if span, ok := spans[m.MeteringPoint]; ok {
+			kept = append(kept, span)
 		}
 	}
 	r.Meters = kept
