@@ -62,10 +62,10 @@ func syncEnergy(t *testing.T, body string, resp ...*syncResponse) (int, []sentRe
 	return w.Code, sent, lastRun(t)
 }
 
-// lastRun returns the run of TE001006 stored last within the lock window.
+// lastRun returns the run of TE001006 stored last.
 func lastRun(t *testing.T) energyrequest.Run {
 	t.Helper()
-	rows, _, err := newTestMeteringHandler(t).db.EnergyRequestTenantRows(context.Background(), "TE001006", energyrequest.LockWindow)
+	rows, _, err := newTestMeteringHandler(t).db.EnergyRequestCommunity(context.Background(), "TE001006")
 	require.NoError(t, err)
 	var last energyrequest.Run
 	for _, r := range rows {

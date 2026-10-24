@@ -19,7 +19,7 @@ type lock struct {
 // and the time (ms) they are free again.
 type Locks map[string][]lock
 
-// NewLocks collects the locks of tenant from rows (ascending id): its run rows and the answers after them, as
+// NewLocks collects the locks of tenant from rows (ascending id): the run rows and answers of its community, as
 // database.EnergyRequestTenantRows returns them. tenants are the tenants the answers are stored under (see Evaluate).
 // A run locks each of its metering points for its period for LockWindow from its creation, unless the latest answer
 // that belongs to the run for that metering point (the same attribution as in Evaluate) is a rejection.

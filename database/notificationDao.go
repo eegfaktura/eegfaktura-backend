@@ -62,7 +62,7 @@ func (db *sqlDatabase) GetNotification(tenant string, start int64, isAdmin bool)
 	if !isAdmin {
 		return getNotification(db.db, tenant, start, isAdmin, nil)
 	}
-	rows, tenants, err := db.EnergyRequestTenantRows(context.Background(), tenant, energyrequest.Deadline)
+	rows, tenants, err := db.EnergyRequestCommunity(context.Background(), tenant)
 	if err != nil {
 		return nil, err
 	}

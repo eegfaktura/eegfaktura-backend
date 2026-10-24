@@ -46,9 +46,7 @@ func TestEnergyRequestSummary(t *testing.T) {
 	require.NoError(t, db.SaveNotification("TE000174", model.EBMS_ZP_RES, []string{"AT0099990000000000000000000173001"}, []string{}, model.CR_REQ_PT))
 	require.NoError(t, db.SaveNotification("TE000174", model.EBMS_ZP_REJ, []string{"AT0099990000000000000000000173002"}, []string{"Zählpunkt nicht gefunden"}, model.CR_REQ_PT))
 
-	lowerBound, err := db.EnergyRequestLowerBound(ctx)
-	require.NoError(t, err)
-	rows, err := db.EnergyRequestRowsSince(ctx, lowerBound)
+	rows, err := db.EnergyRequestRows(ctx, nil)
 	require.NoError(t, err)
 	// only this test's rows: other tests leave rows in the shared database
 	var runs, answers int
@@ -101,15 +99,12 @@ func TestEnergyRequestSummary_singleMeter(t *testing.T) {
 	ctx := context.Background()
 	db, err := GetDB(ctx)
 	require.NoError(t, err)
-	before, err := db.EnergyRequestLowerBound(ctx)
-	require.NoError(t, err)
-
 	run := energyrequest.NewRun("AT00999900000TC000175000000000001", 1, 2)
 	run.Add("AT0099990000000000000000000175001", 1, 2)
 	energyrequest.Save(ctx, db, "TE000175", []string{"AT0099990000000000000000000175001"}, run)
 
 	// stored as a boundary for older runs, but never summarised
-	rows, err := db.EnergyRequestRowsSince(ctx, before)
+	rows, err := db.EnergyRequestRows(ctx, []string{"TE000175"})
 	require.NoError(t, err)
 	var stored int
 	for _, r := range rows {

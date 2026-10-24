@@ -94,3 +94,16 @@ func TestLocks_rejectionFreesItsPeriod(t *testing.T) {
 	assert.Equal(t, created.Add(time.Minute+LockWindow).UnixMilli(), locks.Until("ZP1", aprFrom, aprTo))
 	assert.NotZero(t, locks.Until("ZP2", mayFrom, mayTo))
 }
+
+// the lock reads the rows of LookBack, not only of LockWindow: a late answer to an older run of another period is
+// attributed to that run and does not free the recent one
+func TestLocks_lateRejectionOfAnOlderRun(t *testing.T) {
+	rows := []Row{
+		row(t, 10, "RC100100", RowTypeRun, periodRun(created.Add(-3*time.Hour), mayFrom, mayTo, "ZP1")),
+		row(t, 20, "RC100100", RowTypeRun, periodRun(created.Add(-30*time.Minute), aprFrom, aprTo, "ZP1")),
+		answerRow(t, 30, "RC100100", answerRejected, "ZP1", "86"),
+	}
+	locks := NewLocks(rows, "RC100100", tenants, created)
+	assert.Equal(t, created.Add(30*time.Minute).UnixMilli(), locks.Until("ZP1", aprFrom, aprTo))
+	assert.Zero(t, locks.Until("ZP1", mayFrom, mayTo), "the May run is older than the lock window")
+}

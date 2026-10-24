@@ -428,7 +428,7 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 			// lock: a metering point requested in the last hour for an overlapping period and not rejected is
 			// skipped. Lock check and saving the run are serialised per tenant.
 			unlock := energyrequest.LockTenant(tenant)
-			lockRows, lockTenants, err := h.db.EnergyRequestTenantRows(r.Context(), tenant, energyrequest.LockWindow)
+			lockRows, lockTenants, err := h.db.EnergyRequestCommunity(r.Context(), tenant)
 			if err != nil {
 				unlock()
 				log.WithField("tenant", tenant).WithError(err).Error("failed to request metering point values.")

@@ -3,20 +3,19 @@ package database
 import (
 	"context"
 	"encoding/json"
-	"time"
 
 	"at.ourproject/vfeeg-backend/energyrequest"
 	"at.ourproject/vfeeg-backend/model"
+	"github.com/jmoiron/sqlx"
 )
 
 // EnergyRequestRepository keeps the energy request summary (platform#173) in base.notification: no own tables. All
 // reads are id ranges on the primary key, the table has no other index.
 type EnergyRequestRepository interface {
 	SaveEnergyRequestRow(ctx context.Context, tenant, rowType string, value interface{}) (int64, error)
-	EnergyRequestLowerBound(ctx context.Context) (int64, error)
-	EnergyRequestRowsSince(ctx context.Context, fromId int64) ([]energyrequest.Row, error)
+	EnergyRequestRows(ctx context.Context, tenants []string) ([]energyrequest.Row, error)
+	EnergyRequestCommunity(ctx context.Context, tenant string) ([]energyrequest.Row, map[string]bool, error)
 	TenantsByEcId(ctx context.Context, ecId string) ([]string, error)
-	EnergyRequestTenantRows(ctx context.Context, tenant string, window time.Duration) ([]energyrequest.Row, map[string]bool, error)
 	CloseEnergyRequest(ctx context.Context, tenant string, runRowId int64, summary energyrequest.Summary) (bool, error)
 }
 
@@ -36,45 +35,38 @@ func (db *sqlDatabase) SaveEnergyRequestRow(ctx context.Context, tenant, rowType
 	return id, err
 }
 
-// EnergyRequestLowerBound returns the id of the oldest run that can still be open (younger than the deadline plus a
-// margin), or the next id when there is none. It only looks at the newest 500,000 rows (about 13 days at 37,000 rows
-// a day in prod, 20.10.2026), so the primary key bounds the scan.
-func (db *sqlDatabase) EnergyRequestLowerBound(ctx context.Context) (int64, error) {
-	var id int64
-	err := db.db.GetContext(ctx, &id, `WITH m AS (SELECT COALESCE(max(id), 0) AS max_id FROM base.notification)
-		SELECT COALESCE(min(n.id), (SELECT max_id FROM m) + 1) FROM base.notification n
-		WHERE n.id > (SELECT max_id FROM m) - 500000 AND n.process = $1 AND n.type = $2
-		  AND n.date > (now() AT TIME ZONE 'utc') - interval '25 hours'
-		  AND COALESCE(n.notification->>'noSummary', 'false') <> 'true'`,
-		model.N_PROCESS_ENERGY_REQUEST, energyrequest.RowTypeRun)
-	return id, err
-}
-
-// EnergyRequestRowsSince returns the rows the evaluation needs from fromId on: the hidden run rows and the answers
-// (ANTWORT_PT, ABLEHNUNG_PT) and summaries among the EDA notifications.
-func (db *sqlDatabase) EnergyRequestRowsSince(ctx context.Context, fromId int64) ([]energyrequest.Row, error) {
-	rows := []energyrequest.Row{}
-	err := db.db.SelectContext(ctx, &rows, `SELECT id, tenant, process, type, notification::text AS notification
+// EnergyRequestRows returns the rows every evaluation needs from energyrequest.LookBack on (ascending id): the hidden
+// run rows and the answers (ANTWORT_PT, ABLEHNUNG_PT) and summaries among the EDA notifications; of the given tenants,
+// or of all tenants for nil. The lower id bound is the newest row older than LookBack: the primary key is read
+// backwards up to it, so only the rows of that window are scanned (date grows with id; both are set on insert).
+func (db *sqlDatabase) EnergyRequestRows(ctx context.Context, tenants []string) ([]energyrequest.Row, error) {
+	query := `WITH b AS (SELECT COALESCE((SELECT id FROM base.notification
+			WHERE date <= (now() AT TIME ZONE 'utc') - make_interval(secs => ?) ORDER BY id DESC LIMIT 1), 0) AS id)
+		SELECT id, tenant, process, type, notification::text AS notification
 		FROM base.notification
-		WHERE id >= $1 AND (process = $2
-		   OR (process = $3 AND notification->>'type' IN ('ANTWORT_PT', 'ABLEHNUNG_PT', $4)))
-		ORDER BY id`,
-		fromId, model.N_PROCESS_ENERGY_REQUEST, model.N_PROCESS_EDA_PROCESS, energyrequest.SummaryType)
+		WHERE id > (SELECT id FROM b) AND ((process = ? AND type = ?)
+		   OR (process = ? AND notification->>'type' IN ('ANTWORT_PT', 'ABLEHNUNG_PT', ?)))`
+	args := []interface{}{energyrequest.LookBack.Seconds(), model.N_PROCESS_ENERGY_REQUEST, energyrequest.RowTypeRun,
+		model.N_PROCESS_EDA_PROCESS, energyrequest.SummaryType}
+	if tenants != nil {
+		if len(tenants) == 0 {
+			return []energyrequest.Row{}, nil
+		}
+		query += ` AND tenant IN (?)`
+		args = append(args, tenants)
+	}
+	query, args, err := sqlx.In(query+` ORDER BY id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	rows := []energyrequest.Row{}
+	err = db.db.SelectContext(ctx, &rows, db.db.Rebind(query), args...)
 	return rows, err
 }
 
-// TenantsByEcId returns the tenants of a community id (several for a GEA).
-func (db *sqlDatabase) TenantsByEcId(ctx context.Context, ecId string) ([]string, error) {
-	tenants := []string{}
-	err := db.db.SelectContext(ctx, &tenants, `SELECT tenant FROM base.eeg WHERE "communityId" = $1`, ecId)
-	return tenants, err
-}
-
-// EnergyRequestTenantRows returns the run rows of tenant from the last window and, from the oldest of them on, the
-// answers and summaries stored under the tenants of its community id; and these tenants (tenant included). The
-// lower id bound is the newest row older than the window: the primary key is read backwards up to it, so only the
-// rows of the window are scanned (date grows with id; both are set on insert).
-func (db *sqlDatabase) EnergyRequestTenantRows(ctx context.Context, tenant string, window time.Duration) ([]energyrequest.Row, map[string]bool, error) {
+// EnergyRequestCommunity returns the rows of EnergyRequestRows for the tenants of tenant's community id (several for
+// a GEA), and these tenants (tenant included).
+func (db *sqlDatabase) EnergyRequestCommunity(ctx context.Context, tenant string) ([]energyrequest.Row, map[string]bool, error) {
 	list := []string{}
 	if err := db.db.SelectContext(ctx, &list, `SELECT tenant FROM base.eeg
 		WHERE "communityId" = (SELECT "communityId" FROM base.eeg WHERE tenant = $1)`, tenant); err != nil {
@@ -84,22 +76,19 @@ func (db *sqlDatabase) EnergyRequestTenantRows(ctx context.Context, tenant strin
 	for _, t := range list {
 		tenants[t] = true
 	}
-
-	rows := []energyrequest.Row{}
-	err := db.db.SelectContext(ctx, &rows, `WITH b AS (SELECT COALESCE((SELECT id FROM base.notification
-			WHERE date <= (now() AT TIME ZONE 'utc') - make_interval(secs => $1) ORDER BY id DESC LIMIT 1), 0) AS id),
-		r AS (SELECT min(id) AS id FROM base.notification
-			WHERE id > (SELECT id FROM b) AND process = $2 AND type = $3 AND tenant = $4)
-		SELECT id, tenant, process, type, notification::text AS notification
-		FROM base.notification
-		WHERE id >= (SELECT id FROM r) AND ((process = $2 AND type = $3 AND tenant = $4)
-		   OR (process = $5 AND notification->>'type' IN ('ANTWORT_PT', 'ABLEHNUNG_PT', $6)
-		       AND (tenant = $4 OR tenant IN (SELECT tenant FROM base.eeg
-		           WHERE "communityId" = (SELECT "communityId" FROM base.eeg WHERE tenant = $4)))))
-		ORDER BY id`,
-		window.Seconds(), model.N_PROCESS_ENERGY_REQUEST, energyrequest.RowTypeRun, tenant,
-		model.N_PROCESS_EDA_PROCESS, energyrequest.SummaryType)
+	list = list[:0]
+	for t := range tenants {
+		list = append(list, t)
+	}
+	rows, err := db.EnergyRequestRows(ctx, list)
 	return rows, tenants, err
+}
+
+// TenantsByEcId returns the tenants of a community id (several for a GEA).
+func (db *sqlDatabase) TenantsByEcId(ctx context.Context, ecId string) ([]string, error) {
+	tenants := []string{}
+	err := db.db.SelectContext(ctx, &tenants, `SELECT tenant FROM base.eeg WHERE "communityId" = $1`, ecId)
+	return tenants, err
 }
 
 // CloseEnergyRequest writes the summary of the run in row runRowId, unless one was written already. Check and insert

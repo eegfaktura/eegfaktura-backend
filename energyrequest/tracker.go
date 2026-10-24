@@ -3,6 +3,7 @@ package energyrequest
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,24 +14,22 @@ import (
 // CheckInterval is how often open runs are evaluated.
 const CheckInterval = 5 * time.Minute
 
-// readAgainMargin is how many rows below the last row read the next check starts when no run is open.
-const readAgainMargin = 1000
+// LookBack is how far back every evaluation (Check, lock, live entry) reads: the runs that can still be open, plus a
+// margin for a check after a restart. All three read the rows from the same bound, so they attribute alike.
+const LookBack = Deadline + time.Hour
 
 // Store is the part of the database the summary needs (implemented by database.Database).
 type Store interface {
 	SaveEnergyRequestRow(ctx context.Context, tenant, rowType string, value interface{}) (int64, error)
-	EnergyRequestLowerBound(ctx context.Context) (int64, error)
-	EnergyRequestRowsSince(ctx context.Context, fromId int64) ([]Row, error)
+	// EnergyRequestRows returns the run rows, answers and summaries of the last LookBack (ascending id), of the given
+	// tenants or of all tenants (nil).
+	EnergyRequestRows(ctx context.Context, tenants []string) ([]Row, error)
 	TenantsByEcId(ctx context.Context, ecId string) ([]string, error)
 	CloseEnergyRequest(ctx context.Context, tenant string, runRowId int64, summary Summary) (bool, error)
 }
 
-// lowerBound is the only state in memory: the row id the next check starts reading from (0 = not known yet, after
-// a start). It is derived from the database on every check.
-var lowerBound struct {
-	sync.Mutex
-	id int64
-}
+// checkMu keeps checks of this instance from overlapping.
+var checkMu sync.Mutex
 
 // NewRun starts collecting a run for a request of the community ecId for the period from..to.
 func NewRun(ecId string, from, to int64) *Run {
@@ -133,42 +132,21 @@ func Start(ctx context.Context, store Store) {
 	}()
 }
 
-// Check evaluates the open runs and writes the summaries of the finished ones. It reads from the oldest open run on
-// (found once after a start), so each check reads at most about a day of rows while a run is open.
+// Check evaluates the open runs and writes the summaries of the finished ones. It reads the rows of the last LookBack
+// of all tenants and attributes the answers per community, as the lock and the live entry do on the rows of one
+// community.
 func Check(ctx context.Context, store Store, now time.Time) error {
-	lowerBound.Lock()
-	defer lowerBound.Unlock()
+	checkMu.Lock()
+	defer checkMu.Unlock()
 
-	from := lowerBound.id
-	if from == 0 {
-		lb, err := store.EnergyRequestLowerBound(ctx)
-		if err != nil {
-			return err
-		}
-		from = lb
-	}
-
-	rows, err := store.EnergyRequestRowsSince(ctx, from)
+	rows, err := store.EnergyRequestRows(ctx, nil)
 	if err != nil {
 		return err
 	}
 
 	closed := summaries(rows)
-	var maxId int64
-	for _, r := range rows {
-		if r.Id > maxId {
-			maxId = r.Id
-		}
-	}
-
-	// next start: the oldest run still open, else shortly before the last row read. Serial ids are not committed in
-	// id order: a run row can become visible after a row with a higher id, so a margin is read again (a closed run
-	// read again is recognised by its summary, which always has a higher id).
-	next := from
-	if maxId-readAgainMargin > from {
-		next = maxId - readAgainMargin
-	}
 	tenantsByEcId := map[string]map[string]bool{}
+	attributions := map[string]attribution{}
 	for _, r := range rows {
 		if r.Type != RowTypeRun {
 			continue
@@ -177,7 +155,8 @@ func Check(ctx context.Context, store Store, now time.Time) error {
 		if err := json.Unmarshal(r.Message, &run); err != nil || closed[run.RunId] != 0 || run.NoSummary {
 			continue
 		}
-		tenants, ok := tenantsByEcId[run.EcId]
+		ecId := strings.ToUpper(run.EcId)
+		tenants, ok := tenantsByEcId[ecId]
 		if !ok {
 			list, err := store.TenantsByEcId(ctx, run.EcId)
 			if err != nil {
@@ -187,20 +166,17 @@ func Check(ctx context.Context, store Store, now time.Time) error {
 			for _, t := range list {
 				tenants[t] = true
 			}
-			tenantsByEcId[run.EcId] = tenants
+			tenantsByEcId[ecId] = tenants
+			attributions[ecId] = attribute(run.EcId, rows, tenants)
 		}
 
-		summary, done := Evaluate(run, r.Id, rows, tenants, now)
+		summary, done := evaluate(run, r.Id, attributions[ecId], now)
 		if !done {
-			if r.Id < next {
-				next = r.Id
-			}
 			continue
 		}
 		if _, err := store.CloseEnergyRequest(ctx, r.Tenant, r.Id, summary); err != nil {
 			return err
 		}
 	}
-	lowerBound.id = next
 	return nil
 }

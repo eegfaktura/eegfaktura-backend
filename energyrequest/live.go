@@ -13,7 +13,7 @@ type LiveEntry struct {
 	Summary   Summary
 }
 
-// Live evaluates the open runs of tenant in rows (ascending id, as database.EnergyRequestTenantRows returns them) and
+// Live evaluates the open runs of tenant in rows (ascending id, as database.EnergyRequestCommunity returns them) and
 // returns their live entries and the ids of the answers that belong to them. A run is open while it has a summary
 // (not NoSummary), no summary was written yet and it is younger than Deadline. tenants are as in Evaluate.
 func Live(rows []Row, tenant string, tenants map[string]bool, now time.Time) ([]LiveEntry, map[int64]bool) {
