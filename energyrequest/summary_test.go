@@ -171,6 +171,26 @@ func TestRun_SkipReasonOfSeveralParticipations(t *testing.T) {
 		{MeteringPoint: "ZP4", Reason: ReasonNotActiveInPeriod}}, r.Skipped)
 }
 
+// the reason of several participations does not depend on their order; locked twice: the later until counts
+func TestRun_SkipReasonIndependentOfOrder(t *testing.T) {
+	reasons := []struct {
+		reason string
+		until  int64
+	}{{ReasonAlreadyRequested, 42}, {ReasonNotRegistered, 0}, {ReasonNoActivePeriod, 0},
+		{ReasonAlreadyRequested, 99}, {ReasonNotActiveInPeriod, 0}, {ReasonNotAssigned, 0}}
+	for _, order := range [][]int{{0, 1, 2, 3, 4, 5}, {5, 4, 3, 2, 1, 0}, {2, 3, 1, 0, 5, 4}} {
+		r := NewRun("EC", sepFrom, sepTo)
+		for _, i := range order {
+			r.SkipUntil("ZP1", reasons[i].reason, reasons[i].until)
+		}
+		assert.Equal(t, []Skipped{{MeteringPoint: "ZP1", Reason: ReasonAlreadyRequested, Until: 99}}, r.Skipped, "order %v", order)
+	}
+	r := NewRun("EC", sepFrom, sepTo)
+	r.Skip("ZP1", ReasonNoActivePeriod)
+	r.Skip("ZP1", ReasonNotRegistered)
+	assert.Equal(t, ReasonNotRegistered, r.Skipped[0].Reason)
+}
+
 // withRun returns rows with the run in row runRowId, added in id order when rows lack it (Evaluate needs the run row).
 func withRun(rows []Row, run Run, runRowId int64) []Row {
 	i := sort.Search(len(rows), func(i int) bool { return rows[i].Id >= runRowId })

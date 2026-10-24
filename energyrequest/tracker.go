@@ -74,9 +74,8 @@ func (r *Run) FitPeriod() {
 }
 
 // Skip records a metering point that is not requested, unless it is requested for another participation. Of
-// several participations (owner change), the reason of the one that tells most counts: NOT_ASSIGNED (an archived
-// participation) gives way to every other reason, NOT_ACTIVE_IN_PERIOD (e.g. the old member's entry outside its
-// period) to every reason but NOT_ASSIGNED; between other reasons the first counts.
+// several participations (owner change), the reason that tells most counts, whatever the order of the entries (see
+// weakness); a metering point locked for two of them reports the later until.
 func (r *Run) Skip(meter, reason string) {
 	r.SkipUntil(meter, reason, 0)
 }
@@ -90,8 +89,11 @@ func (r *Run) SkipUntil(meter, reason string, until int64) {
 	}
 	for i, s := range r.Skipped {
 		if s.MeteringPoint == meter {
-			if weakness(s.Reason) > weakness(reason) {
+			switch {
+			case weakness(s.Reason) > weakness(reason):
 				r.Skipped[i].Reason = reason
+				r.Skipped[i].Until = until
+			case s.Reason == reason && until > s.Until:
 				r.Skipped[i].Until = until
 			}
 			return
@@ -100,16 +102,26 @@ func (r *Run) SkipUntil(meter, reason string, until int64) {
 	r.Skipped = append(r.Skipped, Skipped{MeteringPoint: meter, Reason: reason, Until: until})
 }
 
-// weakness ranks the reasons of several participations for SkipUntil: the higher, the sooner it gives way.
-// NOT_FOUND (Save, for the metering points not found at all) never replaces a reason.
+// weakness ranks the reasons of several participations for SkipUntil: the higher, the sooner it gives way. A locked
+// participation (ALREADY_REQUESTED) tells most; NOT_ASSIGNED (archived) and NOT_ACTIVE_IN_PERIOD (e.g. the old
+// member's entry outside its period) least. NOT_FOUND (Save, for the metering points not found at all) never
+// replaces a reason. COMPLETE is recorded only for metering points not in meteringPoints.
 func weakness(reason string) int {
 	switch reason {
-	case ReasonNotFound:
-		return 3
-	case ReasonNotAssigned:
-		return 2
-	case ReasonNotActiveInPeriod:
+	case ReasonComplete:
+		return 0
+	case ReasonAlreadyRequested:
 		return 1
+	case ReasonNotRegistered:
+		return 2
+	case ReasonNoActivePeriod:
+		return 3
+	case ReasonNotActiveInPeriod:
+		return 4
+	case ReasonNotAssigned:
+		return 5
+	case ReasonNotFound:
+		return 6
 	}
 	return 0
 }
