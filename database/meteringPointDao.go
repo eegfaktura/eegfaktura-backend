@@ -675,9 +675,12 @@ func meteringPointsSetStatus(ctx context.Context, db *sqlx.DB, tenant string, pr
 	// A rejected re-registration of an ended metering point keeps it INACTIVE; the rejected state
 	// goes to last_process_state, the code to statusCode, the notification is written as before.
 	// Never-active (INIT) and ACTIVE metering points take the rejected state as before.
+	// Any other message starts or ends a registration: the saved rejection no longer applies.
 	if processState == model.INVALID || processState == model.REJECTED {
 		updateRecord["process_state"] = goqu.Case().When(endedParticipation(), string(model.INACTIVE)).Else(goqu.V(processState))
 		updateRecord["last_process_state"] = goqu.Case().When(endedParticipation(), string(processState)).Else(goqu.C("last_process_state"))
+	} else {
+		updateRecord["last_process_state"] = nil
 	}
 
 	if processState == model.INIT {

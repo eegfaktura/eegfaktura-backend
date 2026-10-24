@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"at.ourproject/vfeeg-backend/model"
+	"github.com/jjeffery/civil"
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -129,6 +130,31 @@ func TestMeteringPointsSetStatus_endedMeterRejection(t *testing.T) {
 	require.NoError(t, db.MeteringPointsSetStatus(ctx, tenant, model.PENDING, nil, []string{endedRejected}, nil, nil))
 	r = readEndedRejectRow(t, testDB.DbInstance, tenant, endedRejected)
 	assert.Equal(t, "PENDING", r.ProcessState)
+}
+
+// Review backend#107: a successful re-registration clears last_process_state, so a later restore
+// after code 86 does not set the now ACTIVE meter back to the old rejection.
+func TestEndedMeterRejection_reRegisteredActiveIgnoresOldRejection(t *testing.T) {
+	ctx := context.Background()
+	db, err := GetTestDB(ctx, testDB)
+	require.NoError(t, err)
+
+	const tenant, meter = "TE000020", "AT0030000000000000000000990020001"
+	insertEndedRejectFixture(t, tenant, map[string][3]string{meter: {"INACTIVE", "INIT", "2025-01-22"}})
+
+	code57 := int16(57)
+	require.NoError(t, db.MeteringPointsSetStatus(ctx, tenant, model.INVALID, &code57, []string{meter}, nil, nil))
+	require.Equal(t, "INVALID", readEndedRejectRow(t, testDB.DbInstance, tenant, meter).LastProcessState.String)
+
+	require.NoError(t, db.MeteringPointsSetStatus(ctx, tenant, model.INIT, nil, []string{meter}, nil, nil))
+	today := civil.Today()
+	require.NoError(t, db.MeteringPointsSetStatus(ctx, tenant, model.ACTIVE, nil, []string{meter}, &today, nil))
+	r := readEndedRejectRow(t, testDB.DbInstance, tenant, meter)
+	require.Equal(t, "ACTIVE", r.ProcessState)
+	assert.False(t, r.LastProcessState.Valid, "the old rejection is cleared")
+
+	require.NoError(t, db.RestoreMeteringPointProcessState(ctx, tenant, meter))
+	assert.Equal(t, "ACTIVE", readEndedRejectRow(t, testDB.DbInstance, tenant, meter).ProcessState)
 }
 
 // scripts/ended-meter-rejection/: check.sql lists, fix.sql moves existing ended + rejected rows to
