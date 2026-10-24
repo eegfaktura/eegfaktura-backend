@@ -81,6 +81,12 @@ this changelog highlights the changes relevant for overview and operations.
   metering point stayed in its state (usually PENDING) and the community got no notification. 172 and 173 now share
   the body again, as introduced on 2024-12-09: process state INVALID, status code 172, a notification for the
   admins. ABLEHNUNG_ECON/ECOF is unchanged. Metering points that received 172 before stay as they are.
+- **Archiving a tariff that is still in use is refused** (`DELETE /eeg/tariff/{id}`). The check in `archiveTariff`
+  only failed on a database error and ignored the rows it found, so a tariff still assigned to a member
+  (`participant.tariffId`) or a metering point (`meteringpoint.tariff_id`) was archived. Now the tariff stays as it is
+  and the call answers `400` with code `4002` („Tariff is currently used“). Members and metering points of the
+  tenant count in every status; check and archive run in one transaction. The member check is now tenant-scoped like
+  the metering point check. eegfaktura-web checks this client-side as well (web#191).
 
 ### CI
 - `rolling-release.yml`: no image build on a draft pull request — it runs when the pull request is marked ready for review (`ready_for_review`) and on every later push to it; `pr-checks.yml` still checks drafts. Pushes, tags and the deploy dispatch are unchanged.

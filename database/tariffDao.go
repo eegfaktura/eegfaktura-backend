@@ -144,33 +144,34 @@ func GetTariffNameMap(db *sqlx.DB, tenant string) (map[string]string, error) {
 	return tariffMap, nil
 }
 
-func archiveTariff(db *sqlx.DB, tenant string, id string) error {
-	stmt, _, err := pgDialect.Select("id").From("base.participant").Where(goqu.Ex{"tariffId": id}).ToSQL()
+// archiveTariff archives all versions of a tariff of the tenant. A tariff that a member or a metering
+// point of the tenant still references (any status) is not archived: ErrTariffUtilized (4002).
+// Check and update run in one transaction.
+func archiveTariff(db *sqlx.DB, tenant string, id string) (err error) {
+	tx, err := db.Beginx()
+	if err != nil {
+		return model.ErrOpenTx(err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		} else {
+			err = tx.Commit()
+		}
+	}()
+
+	var inUse bool
+	err = tx.Get(&inUse, `SELECT EXISTS (SELECT 1 FROM base.participant WHERE tenant = $1 AND "tariffId" = $2)
+		OR EXISTS (SELECT 1 FROM base.meteringpoint WHERE tenant = $1 AND tariff_id = $2)`, tenant, id)
 	if err != nil {
 		return model.ErrGetTariff(err)
 	}
-	rows, err := db.Query(stmt)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+	if inUse {
 		return model.ErrTariffUtilized(ErrTariffUtilized)
-	}
-	if rows != nil {
-		_ = rows.Close()
-	}
-
-	stmt, _, err = pgDialect.Select("metering_point_id").From("base.meteringpoint").Where(goqu.Ex{"tariff_id": id, "tenant": tenant}).ToSQL()
-	if err != nil {
-		return err
-	}
-	rows, err = db.Query(stmt)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return model.ErrTariffUtilized(ErrTariffUtilized)
-	}
-	if rows != nil {
-		_ = rows.Close()
 	}
 
 	// todo: use goqu for sql statement creation
-	_, err = db.Exec("UPDATE base.tariff SET status = 'ARCHIVED', \"lastModifiedDate\" = 'now()' WHERE tenant = $1 AND id = $2", tenant, id)
+	_, err = tx.Exec("UPDATE base.tariff SET status = 'ARCHIVED', \"lastModifiedDate\" = 'now()' WHERE tenant = $1 AND id = $2", tenant, id)
 	if err != nil {
 		return model.ErrUpdateTariff(err)
 	}
