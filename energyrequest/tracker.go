@@ -74,7 +74,8 @@ func (r *Run) FitPeriod() {
 }
 
 // Skip records a metering point that is not requested, unless it is requested for another participation. Of
-// several participations, the reason of the assigned one counts: NOT_ASSIGNED (an ended participation) gives way.
+// several participations (owner change), the reason that tells most counts, whatever the order of the entries (see
+// weakness); a metering point locked for two of them reports the later until.
 func (r *Run) Skip(meter, reason string) {
 	r.SkipUntil(meter, reason, 0)
 }
@@ -88,14 +89,39 @@ func (r *Run) SkipUntil(meter, reason string, until int64) {
 	}
 	for i, s := range r.Skipped {
 		if s.MeteringPoint == meter {
-			if s.Reason == ReasonNotAssigned {
+			switch {
+			case weakness(s.Reason) > weakness(reason):
 				r.Skipped[i].Reason = reason
+				r.Skipped[i].Until = until
+			case s.Reason == reason && until > s.Until:
 				r.Skipped[i].Until = until
 			}
 			return
 		}
 	}
 	r.Skipped = append(r.Skipped, Skipped{MeteringPoint: meter, Reason: reason, Until: until})
+}
+
+// weakness ranks the reasons of several participations for SkipUntil: the higher, the sooner it gives way. A locked
+// participation (ALREADY_REQUESTED) tells most; NOT_ASSIGNED (archived) and NOT_ACTIVE_IN_PERIOD (e.g. the old
+// member's entry outside its period) least. NOT_FOUND (Save, for the metering points not found at all) never
+// replaces a reason, nor does an unknown one. COMPLETE is recorded only for metering points not in meteringPoints.
+func weakness(reason string) int {
+	switch reason {
+	case ReasonComplete:
+		return 0
+	case ReasonAlreadyRequested:
+		return 1
+	case ReasonNotRegistered:
+		return 2
+	case ReasonNoActivePeriod:
+		return 3
+	case ReasonNotActiveInPeriod:
+		return 4
+	case ReasonNotAssigned:
+		return 5
+	}
+	return 6 // NOT_FOUND and unknown reasons
 }
 
 func (r *Run) dropSkipped(meter string) {

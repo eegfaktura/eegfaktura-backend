@@ -12,7 +12,6 @@ import (
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
-	"github.com/jjeffery/civil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -56,14 +55,15 @@ func TestRequestMeteringPointValues(t *testing.T) {
 		},
 		{
 			// The requested period starts before the metering point is active
-			// (fixture: activesince 2024-01-01), so the request starts at activation.
+			// (fixture: activesince 2024-01-01), so the request starts at activation: the start of that day in local
+			// time (before: UTC midnight, 01:00 local).
 			name: "Update EEG - sepp",
 			args: args{
 				tenant:  "TE001006",
 				request: fmt.Sprintf(`{"meteringPoints": [{"meter": "AT0030000000000000000000000953013", "direction": "CONSUMPTION"}], "from": %d, "to": 23423434243234234}`, time.Date(2023, time.Month(11), 1, 0, 0, 0, 0, time.Local).UnixMilli()),
 				mqttReqFunc: func(eeg *model.Eeg, meter *model.MeteringPoint, fromDate, toDate int64) error {
 					fmt.Printf("FromDate %s\n", time.UnixMilli(fromDate).String())
-					assert.Equal(t, civil.DateFor(2024, 1, 1).Unix()*1000, fromDate)
+					assert.Equal(t, time.Date(2024, 1, 1, 0, 0, 0, 0, time.Local).UnixMilli(), fromDate)
 					return nil
 				},
 			},

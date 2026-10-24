@@ -152,6 +152,56 @@ func TestRun_AddAndSkip(t *testing.T) {
 		{MeteringPoint: "ZP3", Reason: ReasonNoActivePeriod}}, r.Skipped)
 }
 
+// owner change: the old member's entry outside its period gives way to the new member's reason, an archived entry
+// to both, in either order; NOT_FOUND never replaces a reason
+func TestRun_SkipReasonOfSeveralParticipations(t *testing.T) {
+	r := NewRun("EC", sepFrom, sepTo)
+	r.Skip("ZP1", ReasonNotActiveInPeriod)
+	r.SkipUntil("ZP1", ReasonAlreadyRequested, 42)
+	r.SkipUntil("ZP2", ReasonAlreadyRequested, 42)
+	r.Skip("ZP2", ReasonNotActiveInPeriod)
+	r.Skip("ZP3", ReasonNotActiveInPeriod)
+	r.Skip("ZP3", ReasonNotAssigned)
+	r.Skip("ZP4", ReasonNotAssigned)
+	r.Skip("ZP4", ReasonNotActiveInPeriod)
+	r.Skip("ZP4", ReasonNotFound)
+	assert.Equal(t, []Skipped{{MeteringPoint: "ZP1", Reason: ReasonAlreadyRequested, Until: 42},
+		{MeteringPoint: "ZP2", Reason: ReasonAlreadyRequested, Until: 42},
+		{MeteringPoint: "ZP3", Reason: ReasonNotActiveInPeriod},
+		{MeteringPoint: "ZP4", Reason: ReasonNotActiveInPeriod}}, r.Skipped)
+}
+
+// the reason of several participations does not depend on their order; locked twice: the later until counts
+func TestRun_SkipReasonIndependentOfOrder(t *testing.T) {
+	reasons := []struct {
+		reason string
+		until  int64
+	}{{ReasonAlreadyRequested, 42}, {ReasonNotRegistered, 0}, {ReasonNoActivePeriod, 0},
+		{ReasonAlreadyRequested, 99}, {ReasonNotActiveInPeriod, 0}, {ReasonNotAssigned, 0}}
+	for _, order := range [][]int{{0, 1, 2, 3, 4, 5}, {5, 4, 3, 2, 1, 0}, {2, 3, 1, 0, 5, 4}} {
+		r := NewRun("EC", sepFrom, sepTo)
+		for _, i := range order {
+			r.SkipUntil("ZP1", reasons[i].reason, reasons[i].until)
+		}
+		assert.Equal(t, []Skipped{{MeteringPoint: "ZP1", Reason: ReasonAlreadyRequested, Until: 99}}, r.Skipped, "order %v", order)
+	}
+	r := NewRun("EC", sepFrom, sepTo)
+	r.Skip("ZP1", ReasonNoActivePeriod)
+	r.Skip("ZP1", ReasonNotRegistered)
+	assert.Equal(t, ReasonNotRegistered, r.Skipped[0].Reason)
+}
+
+// an unknown reason never replaces a known one, and a known one replaces it
+func TestRun_SkipUnknownReasonIsWeakest(t *testing.T) {
+	r := NewRun("EC", sepFrom, sepTo)
+	r.Skip("ZP1", ReasonNotAssigned)
+	r.Skip("ZP1", "NOT_A_REASON")
+	r.Skip("ZP2", "NOT_A_REASON")
+	r.Skip("ZP2", ReasonNotAssigned)
+	assert.Equal(t, []Skipped{{MeteringPoint: "ZP1", Reason: ReasonNotAssigned},
+		{MeteringPoint: "ZP2", Reason: ReasonNotAssigned}}, r.Skipped)
+}
+
 // withRun returns rows with the run in row runRowId, added in id order when rows lack it (Evaluate needs the run row).
 func withRun(rows []Row, run Run, runRowId int64) []Row {
 	i := sort.Search(len(rows), func(i int) bool { return rows[i].Id >= runRowId })

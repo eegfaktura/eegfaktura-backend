@@ -75,6 +75,13 @@ func overlaps(fromA, toA, fromB, toB int64) bool {
 	return day(fromA) <= day(toB) && day(fromB) <= day(toA)
 }
 
+// Touch tells whether a day-granular period starting at from follows one ending at to without a free day between
+// them: they overlap, or from is on the day after to (the handler merges such parts into one request).
+func Touch(to, from int64) bool {
+	y, m, d := time.UnixMilli(to).AddDate(0, 0, 1).Date()
+	return day(from) <= y*10000+int(m)*100+d
+}
+
 // day is the local calendar day of ms as yyyymmdd, as the handler builds the periods in time.Local.
 func day(ms int64) int {
 	y, m, d := time.UnixMilli(ms).Date()
