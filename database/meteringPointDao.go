@@ -628,12 +628,11 @@ func restoreMeteringPointProcessState(ctx context.Context, db *sqlx.DB, tenant, 
 
 	sql, _, err := pgDialect.Update(TABLE_METERINGPOINT).
 		Set(goqu.Record{"process_state": goqu.Case().
-			// an ended participation was INACTIVE before the competing attempt (INIT); a registration
-			// in flight (PENDING, APPROVED, …) stays. last_process_state holds an earlier rejection
-			// there (endedParticipation), never the state to go back to.
+			// an ended participation was INACTIVE before the competing attempt (INIT); everything else
+			// stays (a registration in flight, an active metering point). last_process_state only holds
+			// a rejection that was not applied (meteringPointsSetStatus), never a state to go back to.
 			When(goqu.And(endedParticipation(), goqu.C("process_state").Eq(string(model.INIT))), string(model.INACTIVE)).
-			When(endedParticipation(), goqu.C("process_state")).
-			Else(goqu.COALESCE(goqu.C("last_process_state"), goqu.C("process_state")))}).
+			Else(goqu.C("process_state"))}).
 		Where(goqu.Ex{"tenant": tenant, "metering_point_id": meterId, "flag": model.F_ASSIGNED}).ToSQL()
 
 	if err != nil {
@@ -652,6 +651,12 @@ func restoreMeteringPointProcessState(ctx context.Context, db *sqlx.DB, tenant, 
 // an end date). A rejected re-registration leaves it INACTIVE (konzept-zaehlpunkt-ausblenden.md, part 2).
 func endedParticipation() exp.Expression {
 	return goqu.And(goqu.C("status").Eq(string(model.S_INACTIVE)), goqu.C("inactivesince").IsNotNull())
+}
+
+// activeParticipation matches a metering point that takes part (status ACTIVE). A rejection leaves
+// it ACTIVE (decision 24.10.2026).
+func activeParticipation() exp.Expression {
+	return goqu.C("status").Eq(string(model.S_ACTIVE))
 }
 
 // MeteringPointsSetStatus The MeteringPointSetStatus method handles only ECON or ECOF messages.
@@ -674,13 +679,18 @@ func meteringPointsSetStatus(ctx context.Context, db *sqlx.DB, tenant string, pr
 		"modifiedBy":    "EVU",
 	}
 
-	// A rejected re-registration of an ended metering point keeps it INACTIVE; the rejected state
-	// goes to last_process_state, the code to statusCode, the notification is written as before.
-	// Never-active (INIT) and ACTIVE metering points take the rejected state as before.
+	// A rejection does not undo a participation: an ended metering point stays INACTIVE, an active
+	// one ACTIVE. The rejected state goes to last_process_state, the code to statusCode, the
+	// notification is written as before. Never-active (INIT) metering points take the rejected state.
 	// Any other message starts or ends a registration: the saved rejection no longer applies.
 	if processState == model.INVALID || processState == model.REJECTED {
-		updateRecord["process_state"] = goqu.Case().When(endedParticipation(), string(model.INACTIVE)).Else(goqu.V(processState))
-		updateRecord["last_process_state"] = goqu.Case().When(endedParticipation(), string(processState)).Else(goqu.C("last_process_state"))
+		updateRecord["process_state"] = goqu.Case().
+			When(endedParticipation(), string(model.INACTIVE)).
+			When(activeParticipation(), string(model.ACTIVE)).
+			Else(goqu.V(processState))
+		updateRecord["last_process_state"] = goqu.Case().
+			When(goqu.Or(endedParticipation(), activeParticipation()), string(processState)).
+			Else(goqu.C("last_process_state"))
 	} else {
 		updateRecord["last_process_state"] = nil
 	}

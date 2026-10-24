@@ -14,10 +14,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// konzept-zaehlpunkt-ausblenden.md, part 2: a rejected RE-registration of a metering point whose
-// participation has ended keeps the process state INACTIVE; the rejected state goes to
-// last_process_state, the code to statusCode. Never-active (INIT) and ACTIVE rows keep today's
-// behaviour.
+// konzept-zaehlpunkt-ausblenden.md, part 2: a rejection of a metering point whose participation has
+// ended keeps the process state INACTIVE, one of an ACTIVE metering point keeps it ACTIVE (decision
+// 24.10.2026); the rejected state goes to last_process_state, the code to statusCode. Never-active
+// (INIT) rows take the rejected state as before.
 
 const endedRejectParticipant = "b1180000-0000-0000-0000-000000000001"
 
@@ -27,6 +27,7 @@ type endedRejectRow struct {
 	Status           string         `db:"status"`
 	StatusCode       sql.NullInt64  `db:"statusCode"`
 	ModifiedBy       sql.NullString `db:"modifiedBy"`
+	ActiveSince      sql.NullTime   `db:"activesince"`
 }
 
 func insertEndedRejectFixture(t *testing.T, tenant string, rows map[string][3]string) {
@@ -57,7 +58,7 @@ func readEndedRejectRow(t *testing.T, q interface {
 }, tenant, meter string) endedRejectRow {
 	t.Helper()
 	var r endedRejectRow
-	require.NoError(t, q.QueryRowx(`SELECT process_state, last_process_state, status, "statusCode", "modifiedBy"
+	require.NoError(t, q.QueryRowx(`SELECT process_state, last_process_state, status, "statusCode", "modifiedBy", activesince
 		FROM base.meteringpoint WHERE tenant = $1 AND metering_point_id = $2 AND flag = 1`, tenant, meter).StructScan(&r))
 	return r
 }
@@ -111,11 +112,16 @@ func TestMeteringPointsSetStatus_endedMeterRejection(t *testing.T) {
 	assert.Equal(t, "INVALID", r.ProcessState, "INACTIVE without inactivesince: as before")
 	assert.False(t, r.LastProcessState.Valid)
 
-	// an ACTIVE row keeps today's behaviour (the state follows the message, status stays ACTIVE)
+	// an ACTIVE row stays ACTIVE (decision 24.10.2026); activesince is not touched
 	r = readEndedRejectRow(t, testDB.DbInstance, tenant, active)
-	assert.Equal(t, "INVALID", r.ProcessState)
-	assert.False(t, r.LastProcessState.Valid)
+	assert.Equal(t, "ACTIVE", r.ProcessState, "active meter stays ACTIVE")
+	assert.Equal(t, "INVALID", r.LastProcessState.String)
 	assert.Equal(t, "ACTIVE", r.Status)
+	assert.Equal(t, int64(57), r.StatusCode.Int64)
+	assert.Equal(t, "2024-03-06", r.ActiveSince.Time.Format("2006-01-02"))
+	// a restore after code 86 keeps it ACTIVE (the stored rejection is not restored)
+	require.NoError(t, db.RestoreMeteringPointProcessState(ctx, tenant, active))
+	assert.Equal(t, "ACTIVE", readEndedRejectRow(t, testDB.DbInstance, tenant, active).ProcessState)
 
 	// a later rejection with COMPETING_PROCESSES restores the state before the registration attempt:
 	// an ended meter goes back to INACTIVE, not to the stored rejection
@@ -152,6 +158,8 @@ func TestEndedMeterRejection_reRegisteredActiveIgnoresOldRejection(t *testing.T)
 	r := readEndedRejectRow(t, testDB.DbInstance, tenant, meter)
 	require.Equal(t, "ACTIVE", r.ProcessState)
 	assert.False(t, r.LastProcessState.Valid, "the old rejection is cleared")
+	// as on the "already assigned" path (code ZP_ALREADY_ASSIGNED → ACTIVE): activesince stays (COALESCE)
+	assert.Equal(t, "2024-03-06", r.ActiveSince.Time.Format("2006-01-02"))
 
 	require.NoError(t, db.RestoreMeteringPointProcessState(ctx, tenant, meter))
 	assert.Equal(t, "ACTIVE", readEndedRejectRow(t, testDB.DbInstance, tenant, meter).ProcessState)
