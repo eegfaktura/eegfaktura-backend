@@ -57,6 +57,19 @@ func (r *Run) Add(meter string, from, to int64) {
 	r.Meters = append(r.Meters, MeterRange{MeteringPoint: meter, From: from, To: to})
 }
 
+// FitPeriod sets the period of the run to the span of its requested metering points (for requests with a period per
+// metering point). A run without requested metering points keeps its period.
+func (r *Run) FitPeriod() {
+	for i, m := range r.Meters {
+		if i == 0 || m.From < r.From {
+			r.From = m.From
+		}
+		if i == 0 || m.To > r.To {
+			r.To = m.To
+		}
+	}
+}
+
 // Skip records a metering point that is not requested, unless it is requested for another participation. Of
 // several participations, the reason of the assigned one counts: NOT_ASSIGNED (an ended participation) gives way.
 func (r *Run) Skip(meter, reason string) {

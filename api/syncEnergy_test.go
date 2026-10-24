@@ -209,3 +209,16 @@ func TestSyncEnergy_failedSendIsNotLocked(t *testing.T) {
 	assert.Equal(t, []sentRequest{{meter: zp15, from: start(2025, 10, 1), to: end(2025, 10, 31)}}, sent,
 		"the failed one is sent again, the sent one is locked")
 }
+
+// with periods per metering point (here without a request period) the run carries the span actually requested
+func TestSyncEnergy_runPeriodIsTheRequestedSpan(t *testing.T) {
+	body := fmt.Sprintf(`{"meteringPoints": [
+		{"meter": %q, "direction": "CONSUMPTION", "from": %d, "to": %d},
+		{"meter": %q, "direction": "CONSUMPTION", "from": %d, "to": %d}], "from": 0, "to": 0}`,
+		zp15, start(2025, 11, 3), start(2025, 11, 5), zp16, start(2025, 11, 10), start(2025, 11, 12))
+	code, sent, run := syncEnergy(t, body)
+	assert.Equal(t, http.StatusOK, code)
+	assert.Len(t, sent, 2)
+	assert.Equal(t, start(2025, 11, 3), run.From)
+	assert.Equal(t, end(2025, 11, 12), run.To)
+}

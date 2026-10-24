@@ -389,8 +389,10 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 		type period struct{ from, to int64 }
 		periods := map[string]period{}
 		var meters []string
+		perMeter := false
 		for _, m := range request.MeteringPoints {
 			meters = append(meters, m.Meter)
+			perMeter = perMeter || m.From != nil || m.To != nil
 			p := period{from: fromDate, to: toDate}
 			if m.From != nil {
 				p.from = util.TruncateToStartOfDay(time.UnixMilli(*m.From)).UnixMilli()
@@ -480,6 +482,9 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 				}
 				run.Add(m.MeteringPoint, from, to)
 				send = append(send, energyRequest{meter: m, from: from, to: to})
+			}
+			if perMeter || request.From == 0 {
+				run.FitPeriod() // the summary shows the period actually requested
 			}
 			// the run is stored before sending, so every answer comes after it; a failed send is taken out again below
 			runRowId := energyrequest.Save(r.Context(), h.db, tenant, requested, run)
