@@ -81,6 +81,13 @@ this changelog highlights the changes relevant for overview and operations.
   metering point stayed in its state (usually PENDING) and the community got no notification. 172 and 173 now share
   the body again, as introduced on 2024-12-09: process state INVALID, status code 172, a notification for the
   admins. ABLEHNUNG_ECON/ECOF is unchanged. Metering points that received 172 before stay as they are.
+- **Metering points with an owner change: each entry keeps its own period again.** After an owner change a
+  metering point has two entries in the community (old member, new member). The lookup behind the energy data
+  request, the revocation and the master data for energystore joined the period only by metering point number, so
+  both entries got the new member's period (or every combination of both). Effect: an energy data request over the
+  change date sent the request for the new member's part twice to the grid operator. Now every entry carries its
+  own period and flag, and the request is sent once. Unchanged: the old member's part is still not requested (the
+  moved entry is skipped as before), and metering points with one entry return the same as before.
 
 ### CI
 - `rolling-release.yml`: no image build on a draft pull request — it runs when the pull request is marked ready for review (`ready_for_review`) and on every later push to it; `pr-checks.yml` still checks drafts. Pushes, tags and the deploy dispatch are unchanged.

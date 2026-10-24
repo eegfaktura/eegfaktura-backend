@@ -1082,7 +1082,8 @@ func findMeteringByIdAndState(ctx context.Context, db *sqlx.DB, tenant string, m
 			goqu.C("activesince"),
 			goqu.C("inactivesince"),
 			goqu.C("flag"),
-			goqu.C("metering_point_id").As("mid")).
+			goqu.C("metering_point_id").As("mid"),
+			goqu.C("participant_id").As("mid_pid")).
 		Where(goqu.C("tenant").Eq(tenant))
 
 	partFactStmt := pgDialect.From(TABLE_PARTITION_FACT_VIEW).
@@ -1102,6 +1103,7 @@ func findMeteringByIdAndState(ctx context.Context, db *sqlx.DB, tenant string, m
 		"metering_point_id": goqu.Op{"in": meterIds},
 		"tenant":            tenant,
 		"mid":               goqu.C("metering_point_id"),
+		"mid_pid":           goqu.C("participant_id"), // the entry's own period, not the other owner's (owner change)
 		"mpfmid":            goqu.C("metering_point_id"),
 		"mpfpid":            goqu.C("participant_id"),
 	}
