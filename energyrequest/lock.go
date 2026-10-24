@@ -20,7 +20,8 @@ type lock struct {
 type Locks map[string][]lock
 
 // NewLocks collects the locks of tenant from rows (ascending id): the run rows and answers of its community, as
-// database.EnergyRequestTenantRows returns them. tenants are the tenants the answers are stored under (see Evaluate).
+// database.EnergyRequestCommunity returns them: the last LookBack, not only LockWindow, so the answers are attributed
+// as in Check. tenants are the tenants the answers are stored under (see Evaluate).
 // A run locks each of its metering points for its period for LockWindow from its creation, unless the latest answer
 // that belongs to the run for that metering point (the same attribution as in Evaluate) is a rejection.
 func NewLocks(rows []Row, tenant string, tenants map[string]bool, now time.Time) Locks {
