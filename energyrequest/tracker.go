@@ -91,9 +91,10 @@ func (r *Run) dropSkipped(meter string) {
 	r.Skipped = kept
 }
 
-// Save stores the run before the requests are sent, so every answer has a higher row id. A request with fewer than
-// two metering points gets no summary; it is still stored when it sends a request, so its answer is not counted for
-// an older open run. Errors are logged: the request itself goes on.
+// Save stores the run before the requests are sent, so every answer has a higher row id. A run that sends nothing
+// (everything skipped) is not stored: the caller reports the skipped metering points. A request with fewer than two
+// metering points gets no summary; it is still stored when it sends a request, so its answer is not counted for an
+// older open run. Errors are logged: the request itself goes on.
 func Save(ctx context.Context, store Store, tenant string, requested []string, r *Run) {
 	distinct := map[string]bool{}
 	for _, m := range requested {
@@ -102,10 +103,10 @@ func Save(ctx context.Context, store Store, tenant string, requested []string, r
 			r.Skip(m, ReasonNotFound) // no-op for metering points that were found (requested or skipped)
 		}
 	}
+	if len(r.Meters) == 0 {
+		return
+	}
 	if len(distinct) < 2 {
-		if len(r.Meters) == 0 {
-			return
-		}
 		r.NoSummary = true
 	}
 	r.CreatedAt = time.Now().UnixMilli()

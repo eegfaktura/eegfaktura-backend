@@ -59,7 +59,13 @@ func syncEnergy(t *testing.T, body string, resp ...*syncResponse) (int, []sentRe
 		}
 	}
 
-	rows, _, err := h.db.EnergyRequestTenantRows(context.Background(), "TE001006", energyrequest.LockWindow)
+	return w.Code, sent, lastRun(t)
+}
+
+// lastRun returns the run of TE001006 stored last within the lock window.
+func lastRun(t *testing.T) energyrequest.Run {
+	t.Helper()
+	rows, _, err := newTestMeteringHandler(t).db.EnergyRequestTenantRows(context.Background(), "TE001006", energyrequest.LockWindow)
 	require.NoError(t, err)
 	var last energyrequest.Run
 	for _, r := range rows {
@@ -68,7 +74,7 @@ func syncEnergy(t *testing.T, body string, resp ...*syncResponse) (int, []sentRe
 			require.NoError(t, json.Unmarshal(r.Message, &last))
 		}
 	}
-	return w.Code, sent, last
+	return last
 }
 
 func start(y int, m time.Month, d int) int64 {
@@ -99,20 +105,18 @@ func TestSyncEnergy_periodsCompleteAndLock(t *testing.T) {
 	assert.Equal(t, []energyrequest.Skipped{{MeteringPoint: zp14, Reason: energyrequest.ReasonComplete}}, first.Skipped)
 	assert.False(t, first.NoSummary, "complete metering points count for the summary")
 
-	// the same request again within the hour: nothing is sent, the run says why
+	// the same request again within the hour: nothing is sent, the answer says why
 	code, sent, second := syncEnergy(t, body, &resp)
 	assert.Equal(t, http.StatusOK, code)
 	assert.Empty(t, sent)
 	assert.Equal(t, 0, resp.Requested)
-	assert.Equal(t, second.Skipped, resp.Skipped)
 	until := time.UnixMilli(first.CreatedAt).Add(energyrequest.LockWindow).UnixMilli()
-	assert.NotEqual(t, first.RunId, second.RunId, "a run where everything is skipped is stored too")
-	assert.Empty(t, second.Meters)
 	assert.ElementsMatch(t, []energyrequest.Skipped{
 		{MeteringPoint: zp14, Reason: energyrequest.ReasonComplete},
 		{MeteringPoint: zp15, Reason: energyrequest.ReasonAlreadyRequested, Until: until},
 		{MeteringPoint: zp16, Reason: energyrequest.ReasonAlreadyRequested, Until: until},
-	}, second.Skipped)
+	}, resp.Skipped)
+	assert.Equal(t, first.RunId, second.RunId, "a run that sends nothing is not stored")
 
 	// a rejected metering point is free at once
 	h := newTestMeteringHandler(t)
@@ -151,10 +155,11 @@ func TestSyncEnergy_withoutNewFieldsAsBefore(t *testing.T) {
 	assert.Empty(t, run.Skipped)
 }
 
-// web found every metering point complete: nothing is requested, the run and the answer say so.
+// web found every metering point complete: nothing is requested and no run is stored, the answer says so.
 func TestSyncEnergy_allComplete(t *testing.T) {
 	body := fmt.Sprintf(`{"meteringPoints": [], "from": %d, "to": %d, "complete": [%q, %q]}`,
 		start(2025, 8, 1), start(2025, 8, 31), zp15, zp16)
+	before := lastRun(t)
 	var resp syncResponse
 	code, sent, run := syncEnergy(t, body, &resp)
 	assert.Equal(t, http.StatusOK, code)
@@ -162,6 +167,5 @@ func TestSyncEnergy_allComplete(t *testing.T) {
 	want := []energyrequest.Skipped{{MeteringPoint: zp15, Reason: energyrequest.ReasonComplete},
 		{MeteringPoint: zp16, Reason: energyrequest.ReasonComplete}}
 	assert.Equal(t, syncResponse{Requested: 0, Skipped: want}, resp)
-	assert.Equal(t, want, run.Skipped, "stored, so the summary shows it")
-	assert.Empty(t, run.Meters)
+	assert.Equal(t, before.RunId, run.RunId, "no run stored")
 }

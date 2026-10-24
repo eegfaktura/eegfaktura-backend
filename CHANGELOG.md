@@ -19,14 +19,16 @@ this changelog highlights the changes relevant for overview and operations.
   - **Lock (1 hour):** a metering point requested by a run of the same tenant in the last hour for a period sharing
     at least one day, and not rejected (`ABLEHNUNG_PT`) there, is not requested again: skipped with reason
     `ALREADY_REQUESTED` and `until` (ms, run creation + 1 h). Single and bulk requests alike; no override. A rejected
-    metering point is free at once. GEA tenants are locked separately. If everything is skipped the run is still
-    stored (bulk requests).
+    metering point is free at once. GEA tenants are locked separately.
+  - **A request that sends nothing stores no run** (everything skipped: locked, complete, not registered, …): no
+    live entry and no summary; the response body reports the skipped metering points. Before, a request for two or
+    more metering points that were all skipped got a summary with 0 requested.
   - **Response: `200` with a body instead of `204`** (online community):
     `{"requested": <metering points requested from the grid operator>, "skipped": [{"meteringPoint", "reason",
     "until"?}]}`, the skipped entries the run records (`COMPLETE`, `ALREADY_REQUESTED`, `NOT_REGISTERED`, …), also for
     a single request that is locked. Error status codes are unchanged; an offline community still gets `204`. Web
     (`syncMeteringPoint`) only checks for a 2xx answer and does not read the body, so older web versions keep working.
-    A request with only `complete` (every metering point complete) is accepted and stored; before, a request without
+    A request with only `complete` (every metering point complete) is accepted (nothing stored); before, a request without
     metering points got `500` („no Meter selected“), which it still gets without `complete`.
   - `skipped[]` entries in the run row and in `ZUSAMMENFASSUNG_PT` gain the optional field `until`.
   - **Notification list (admins):** each open run with a summary (two or more metering points, younger than 24 h,
@@ -35,6 +37,11 @@ this changelog highlights the changes relevant for overview and operations.
     creation time as `date`; it is ordered by id like the other entries. The `ANTWORT_PT` / `ABLEHNUNG_PT` of such a
     run are left out of the list. Once the stored summary is written it replaces the live entry, and the single
     answers are listed again as before. Single requests are unchanged.
+  - **Answers are attributed by period** (summary, lock and live entry alike). Answers carry no period and no
+    reference to the request, so per metering point: a later run supersedes an earlier request only for a period
+    sharing a day (before: any later run with that metering point, which marked e.g. a May request as „requested
+    again“ after an April request and gave it all answers); within its range an answer goes to the oldest request
+    without an answer, else to the newest. A rejection frees the period of the request it belongs to.
   - No schema change: the notification JSON is extended additively; old runs have no `until`.
   - **Deploy order:** backend first is safe; web shows the new reasons and the live entry only with its matching
     release.
