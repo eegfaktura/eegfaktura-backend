@@ -62,6 +62,7 @@ func (r *Run) Add(meter string, from, to int64) {
 // FitPeriod sets the period of the run to the span of its requested metering points (for requests with a period per
 // metering point). A run without requested metering points keeps its period.
 func (r *Run) FitPeriod() {
+	r.fitted = true
 	for i, m := range r.Meters {
 		if i == 0 || m.From < r.From {
 			r.From = m.From
@@ -157,6 +158,9 @@ func KeepSent(ctx context.Context, store Store, rowId int64, r *Run, sent []Mete
 		}
 	}
 	r.Meters = kept
+	if r.fitted {
+		r.FitPeriod()
+	}
 	var err error
 	if len(r.Meters) == 0 {
 		err = store.DeleteEnergyRequestRow(ctx, rowId)

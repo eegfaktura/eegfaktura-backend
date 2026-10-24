@@ -63,6 +63,8 @@ type Run struct {
 	// NoSummary marks a request for a single metering point: it gets no summary, but its answers belong to it and
 	// not to an older open run with that metering point
 	NoSummary bool `json:"noSummary,omitempty"`
+	// fitted: the period is the span of the requested metering points (FitPeriod), kept so by KeepSent
+	fitted bool
 }
 
 type Rejected struct {
