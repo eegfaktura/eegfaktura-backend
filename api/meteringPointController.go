@@ -404,7 +404,8 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 			periods[m.Meter] = p
 		}
 
-		if meters == nil {
+		// a request where web found every metering point complete has only complete
+		if meters == nil && len(request.Complete) == 0 {
 			log.WithField("tenant", tenant).Errorf("Request meter values - no Meter selected")
 			respondWith(w, http.StatusInternalServerError, tenant, model.Wrap(errors.New("no Meter selected"), 3100))
 			return
@@ -413,7 +414,12 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 		if eeg.Online {
 			var errorList []string
 			requested := append(append([]string{}, meters...), request.Complete...)
-			meters, err := h.db.FindMeteringByIds(r.Context(), tenant, meters)
+			// no ids would find every metering point of the tenant
+			var found []*model.MeteringPoint
+			if len(meters) > 0 {
+				found, err = h.db.FindMeteringByIds(r.Context(), tenant, meters)
+			}
+			meters := found
 			if err != nil {
 				log.WithField("tenant", tenant).WithError(err).Error("failed to request metering point values.")
 				respondWith(w, http.StatusInternalServerError, tenant, err)
@@ -491,6 +497,12 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 				respondWith(w, http.StatusInternalServerError, tenant, model.ErrRequestEnergyData(errors.New(strings.Join(errorList, "; "))))
 				return
 			}
+			// the metering points requested from the grid operator and the skipped ones with their reason
+			respondWithData(w, http.StatusOK, struct {
+				Requested int                     `json:"requested"`
+				Skipped   []energyrequest.Skipped `json:"skipped"`
+			}{Requested: len(run.Meters), Skipped: run.Skipped})
+			return
 		}
 		respondWithStatus(w, http.StatusNoContent)
 	}

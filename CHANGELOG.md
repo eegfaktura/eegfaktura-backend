@@ -11,7 +11,7 @@ this changelog highlights the changes relevant for overview and operations.
 ### Added
 - **Energy data requests: per-meter periods, lock against double requests, live status in Messages**
   (`konzept-smart-nachfordern.md`). Contract change with **eegfaktura-web** (caller of `POST /meteringpoint/syncenergy`
-  and `GET /eeg/notifications/{id}`); all additions are optional, older web versions keep working.
+  and `GET /eeg/notifications/{id}`); the request additions are optional, older web versions keep working.
   - `syncenergy`: each entry of `meteringPoints` takes optional `from`/`to` (ms, like the request's own). Set, they
     are the period of that metering point (cut to start/end of day and to its active period as before); missing, the
     request period applies. An optional top-level `complete: [string]` lists metering points web found complete:
@@ -20,7 +20,14 @@ this changelog highlights the changes relevant for overview and operations.
     at least one day, and not rejected (`ABLEHNUNG_PT`) there, is not requested again: skipped with reason
     `ALREADY_REQUESTED` and `until` (ms, run creation + 1 h). Single and bulk requests alike; no override. A rejected
     metering point is free at once. GEA tenants are locked separately. If everything is skipped the run is still
-    stored (bulk requests) and the answer stays `204`.
+    stored (bulk requests).
+  - **Response: `200` with a body instead of `204`** (online community):
+    `{"requested": <metering points requested from the grid operator>, "skipped": [{"meteringPoint", "reason",
+    "until"?}]}`, the skipped entries the run records (`COMPLETE`, `ALREADY_REQUESTED`, `NOT_REGISTERED`, …), also for
+    a single request that is locked. Error status codes are unchanged; an offline community still gets `204`. Web
+    (`syncMeteringPoint`) only checks for a 2xx answer and does not read the body, so older web versions keep working.
+    A request with only `complete` (every metering point complete) is accepted and stored; before, a request without
+    metering points got `500` („no Meter selected“), which it still gets without `complete`.
   - `skipped[]` entries in the run row and in `ZUSAMMENFASSUNG_PT` gain the optional field `until`.
   - **Notification list (admins):** each open run with a summary (two or more metering points, younger than 24 h,
     not yet summarised) is listed as one entry shaped like a stored `ZUSAMMENFASSUNG_PT` (type `MESSAGE`, process
