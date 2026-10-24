@@ -130,3 +130,26 @@ func TestEnergyRequestCommunityCache(t *testing.T) {
 	assert.Empty(t, communityCache.entries)
 	communityCache.Unlock()
 }
+
+// rows read before a clear (a run written meanwhile) are not stored after it
+func TestEnergyRequestCommunityCache_readBeforeAClear(t *testing.T) {
+	clearCommunityCache()
+	communityCache.Lock()
+	generation := communityCache.generation
+	communityCache.Unlock()
+
+	clearCommunityCache() // a write while the read was running
+	storeCommunityRows("TE000179", generation, communityRows{at: time.Now()})
+	communityCache.Lock()
+	assert.Empty(t, communityCache.entries)
+	communityCache.Unlock()
+
+	communityCache.Lock()
+	generation = communityCache.generation
+	communityCache.Unlock()
+	storeCommunityRows("TE000179", generation, communityRows{at: time.Now()})
+	communityCache.Lock()
+	assert.Len(t, communityCache.entries, 1)
+	communityCache.Unlock()
+	clearCommunityCache()
+}

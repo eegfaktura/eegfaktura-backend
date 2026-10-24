@@ -29,9 +29,11 @@ const communityCacheTTL = 15 * time.Second
 // communityCache keeps EnergyRequestCommunity for the notification list, per tenant and per instance: web polls the
 // list while a live entry is shown. It is cleared when this instance writes or changes a run or writes a summary;
 // answers arriving meanwhile show up after communityCacheTTL at the latest. The lock reads uncached.
+// generation counts the clears: rows read before a clear are not stored after it.
 var communityCache = struct {
 	sync.Mutex
-	entries map[string]communityRows
+	entries    map[string]communityRows
+	generation uint64
 }{entries: map[string]communityRows{}}
 
 type communityRows struct {
@@ -43,6 +45,7 @@ type communityRows struct {
 func (db *sqlDatabase) energyRequestCommunityCached(ctx context.Context, tenant string) ([]energyrequest.Row, map[string]bool, error) {
 	communityCache.Lock()
 	e, ok := communityCache.entries[tenant]
+	generation := communityCache.generation
 	communityCache.Unlock()
 	if ok && time.Since(e.at) < communityCacheTTL {
 		return e.rows, e.tenants, nil
@@ -51,15 +54,23 @@ func (db *sqlDatabase) energyRequestCommunityCached(ctx context.Context, tenant 
 	if err != nil {
 		return nil, nil, err
 	}
-	communityCache.Lock()
-	communityCache.entries[tenant] = communityRows{at: time.Now(), rows: rows, tenants: tenants}
-	communityCache.Unlock()
+	storeCommunityRows(tenant, generation, communityRows{at: time.Now(), rows: rows, tenants: tenants})
 	return rows, tenants, nil
+}
+
+// storeCommunityRows keeps rows read at cache generation generation, unless the cache was cleared since.
+func storeCommunityRows(tenant string, generation uint64, e communityRows) {
+	communityCache.Lock()
+	defer communityCache.Unlock()
+	if communityCache.generation == generation {
+		communityCache.entries[tenant] = e
+	}
 }
 
 func clearCommunityCache() {
 	communityCache.Lock()
 	communityCache.entries = map[string]communityRows{}
+	communityCache.generation++
 	communityCache.Unlock()
 }
 
