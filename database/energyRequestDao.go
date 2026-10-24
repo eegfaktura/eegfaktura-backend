@@ -50,6 +50,17 @@ func (db *sqlDatabase) energyRequestCommunityCached(ctx context.Context, tenant 
 	if ok && time.Since(e.at) < communityCacheTTL {
 		return e.rows, e.tenants, nil
 	}
+	// most tenants have no open run: without a run of the tenant younger than Deadline there is no live entry and
+	// no answer to leave out, so the community rows are not read
+	found, err := db.hasEnergyRequestRun(ctx, tenant)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !found {
+		tenants := map[string]bool{tenant: true}
+		storeCommunityRows(tenant, generation, communityRows{at: time.Now(), rows: []energyrequest.Row{}, tenants: tenants})
+		return []energyrequest.Row{}, tenants, nil
+	}
 	rows, tenants, err := db.EnergyRequestCommunity(ctx, tenant)
 	if err != nil {
 		return nil, nil, err
@@ -150,6 +161,20 @@ func (db *sqlDatabase) EnergyRequestRows(ctx context.Context, tenants []string) 
 	rows := []energyrequest.Row{}
 	err = db.db.SelectContext(ctx, &rows, db.db.Rebind(query), args...)
 	return rows, err
+}
+
+// hasEnergyRequestRun tells whether tenant has a run row younger than energyrequest.Deadline (energyrequest.Live
+// lists only those). As in EnergyRequestRows, the lower id bound is the newest row older than the window: the primary
+// key is read backwards over the rows of the last Deadline of all tenants up to it, then forwards from it until the
+// first run row of tenant. No JSON is read, no answers, no base.eeg lookup.
+func (db *sqlDatabase) hasEnergyRequestRun(ctx context.Context, tenant string) (bool, error) {
+	var found bool
+	err := db.db.GetContext(ctx, &found, `SELECT EXISTS (SELECT 1 FROM base.notification
+		WHERE id > COALESCE((SELECT id FROM base.notification
+			WHERE date <= (now() AT TIME ZONE 'utc') - make_interval(secs => $1) ORDER BY id DESC LIMIT 1), 0)
+		AND process = $2 AND type = $3 AND tenant = $4)`,
+		energyrequest.Deadline.Seconds(), model.N_PROCESS_ENERGY_REQUEST, energyrequest.RowTypeRun, tenant)
+	return found, err
 }
 
 // EnergyRequestCommunity returns the rows of EnergyRequestRows for the tenants of tenant's community id (several for

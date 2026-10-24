@@ -154,3 +154,45 @@ func TestEnergyRequestCommunityCache_readBeforeAClear(t *testing.T) {
 	communityCache.Unlock()
 	clearCommunityCache()
 }
+
+// the list reads the community rows only for a tenant with a run younger than Deadline: no such run, no live entry
+func TestEnergyRequestRunProbe(t *testing.T) {
+	ctx := context.Background()
+	db, err := GetDB(ctx)
+	require.NoError(t, err)
+	clearCommunityCache()
+
+	const tenant = "TE000182" // no base.eeg row needed: an own tenant without community
+	found, err := db.(*sqlDatabase).hasEnergyRequestRun(ctx, tenant)
+	require.NoError(t, err)
+	assert.False(t, found)
+	_, err = db.GetNotification(ctx, tenant, 0, true)
+	require.NoError(t, err)
+	communityCache.Lock()
+	e, cached := communityCache.entries[tenant]
+	communityCache.Unlock()
+	assert.True(t, cached)
+	assert.Empty(t, e.rows, "no run: no rows read")
+
+	single := energyrequest.NewRun("AT00999900000TC000182000000000001", 1, 2)
+	single.NoSummary = true
+	id, err := db.SaveEnergyRequestRow(ctx, tenant, energyrequest.RowTypeRun, single)
+	require.NoError(t, err)
+	found, err = db.(*sqlDatabase).hasEnergyRequestRun(ctx, tenant)
+	require.NoError(t, err)
+	assert.True(t, found)
+	_, err = db.GetNotification(ctx, tenant, 0, true)
+	require.NoError(t, err)
+	communityCache.Lock()
+	e = communityCache.entries[tenant]
+	communityCache.Unlock()
+	assert.Len(t, e.rows, 1, "a run: the rows are read")
+
+	// older than Deadline: never live, the id bound is the run row itself
+	_, err = testDB.DbInstance.Exec(`UPDATE base.notification SET date = date - make_interval(secs => $1) WHERE id = $2`,
+		(energyrequest.Deadline + time.Minute).Seconds(), id)
+	require.NoError(t, err)
+	found, err = db.(*sqlDatabase).hasEnergyRequestRun(ctx, tenant)
+	require.NoError(t, err)
+	assert.False(t, found)
+}
