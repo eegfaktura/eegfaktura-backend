@@ -30,14 +30,18 @@ type endedRejectRow struct {
 }
 
 func insertEndedRejectFixture(t *testing.T, tenant string, rows map[string][3]string) {
+	insertEndedRejectFixtureIn(t, testDB.DbInstance, tenant, rows)
+}
+
+func insertEndedRejectFixtureIn(t *testing.T, dbx *sqlx.DB, tenant string, rows map[string][3]string) {
 	exec := func(q string, args ...interface{}) {
-		_, err := testDB.DbInstance.Exec(q, args...)
+		_, err := dbx.Exec(q, args...)
 		require.NoError(t, err)
 	}
 	exec(`INSERT INTO base.participant (id, tenant, firstname, lastname, status, "createdBy", "lastModifiedBy")
 		VALUES ($1, $2, 'Beendet', 'Abgelehnt', 'ACTIVE', 'test', 'test')`, endedRejectParticipant, tenant)
 	t.Cleanup(func() {
-		_, _ = testDB.DbInstance.Exec(`DELETE FROM base.participant WHERE id = $1`, endedRejectParticipant)
+		_, _ = dbx.Exec(`DELETE FROM base.participant WHERE id = $1`, endedRejectParticipant)
 	})
 	// rows: meter -> {status, process_state, inactivesince ("" = NULL)}
 	for meter, r := range rows {
