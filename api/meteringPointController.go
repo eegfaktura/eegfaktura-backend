@@ -360,9 +360,14 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 			MeteringPoints []struct {
 				Meter     string              `json:"meter"`
 				Direction model.DirectionType `json:"direction"`
+				// optional period of this metering point (ms); the period of the request applies without it
+				From *int64 `json:"from"`
+				To   *int64 `json:"to"`
 			} `json:"meteringPoints"`
 			From int64 `json:"from"`
 			To   int64 `json:"to"`
+			// metering points web found complete: recorded as skipped (COMPLETE), not requested
+			Complete []string `json:"complete"`
 		}{}
 		err := json.NewDecoder(r.Body).Decode(&request)
 		if err != nil {
@@ -381,9 +386,22 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 		fromDate := util.TruncateToStartOfDay(time.UnixMilli(request.From)).UnixMilli()
 		toDate := util.TruncateToEndOfDay(time.UnixMilli(request.To)).UnixMilli()
 
+		type period struct{ from, to int64 }
+		periods := map[string]period{}
 		var meters []string
 		for _, m := range request.MeteringPoints {
 			meters = append(meters, m.Meter)
+			p := period{from: fromDate, to: toDate}
+			if m.From != nil {
+				p.from = util.TruncateToStartOfDay(time.UnixMilli(*m.From)).UnixMilli()
+			}
+			if m.To != nil {
+				p.to = util.TruncateToEndOfDay(time.UnixMilli(*m.To)).UnixMilli()
+			}
+			if q, ok := periods[m.Meter]; ok {
+				p = period{from: min(p.from, q.from), to: max(p.to, q.to)}
+			}
+			periods[m.Meter] = p
 		}
 
 		if meters == nil {
@@ -394,7 +412,7 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 
 		if eeg.Online {
 			var errorList []string
-			requested := meters
+			requested := append(append([]string{}, meters...), request.Complete...)
 			meters, err := h.db.FindMeteringByIds(r.Context(), tenant, meters)
 			if err != nil {
 				log.WithField("tenant", tenant).WithError(err).Error("failed to request metering point values.")
@@ -415,6 +433,9 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 			// platform#173: record the run (requested and skipped metering points) before sending, so the answers
 			// can be summarised
 			run := energyrequest.NewRun(eeg.CommunityId, fromDate, toDate)
+			for _, c := range request.Complete {
+				run.Skip(c, energyrequest.ReasonComplete)
+			}
 			type energyRequest struct {
 				meter    *model.MeteringPoint
 				from, to int64
@@ -436,13 +457,17 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 				_activeSince := m.State.ActiveSince.Date.Unix() * 1000
 				_inactiveSince := m.State.InactiveSince.Date.Unix() * 1000
 
-				if _activeSince > toDate || _inactiveSince < fromDate {
+				p, ok := periods[m.MeteringPoint]
+				if !ok {
+					p = period{from: fromDate, to: toDate}
+				}
+				if _activeSince > p.to || _inactiveSince < p.from {
 					run.Skip(m.MeteringPoint, energyrequest.ReasonNotActiveInPeriod)
 					continue
 				}
 
-				from := util.MaxTimeStamp(_activeSince, fromDate)
-				to := util.MinTimeStamp(_inactiveSince, toDate)
+				from := util.MaxTimeStamp(_activeSince, p.from)
+				to := util.MinTimeStamp(_inactiveSince, p.to)
 				if until := locks.Until(m.MeteringPoint, from, to); until > 0 {
 					run.SkipUntil(m.MeteringPoint, energyrequest.ReasonAlreadyRequested, until)
 					continue
