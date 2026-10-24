@@ -105,7 +105,7 @@ func (r *Run) SkipUntil(meter, reason string, until int64) {
 // weakness ranks the reasons of several participations for SkipUntil: the higher, the sooner it gives way. A locked
 // participation (ALREADY_REQUESTED) tells most; NOT_ASSIGNED (archived) and NOT_ACTIVE_IN_PERIOD (e.g. the old
 // member's entry outside its period) least. NOT_FOUND (Save, for the metering points not found at all) never
-// replaces a reason. COMPLETE is recorded only for metering points not in meteringPoints.
+// replaces a reason, nor does an unknown one. COMPLETE is recorded only for metering points not in meteringPoints.
 func weakness(reason string) int {
 	switch reason {
 	case ReasonComplete:
@@ -120,10 +120,8 @@ func weakness(reason string) int {
 		return 4
 	case ReasonNotAssigned:
 		return 5
-	case ReasonNotFound:
-		return 6
 	}
-	return 0
+	return 6 // NOT_FOUND and unknown reasons
 }
 
 func (r *Run) dropSkipped(meter string) {

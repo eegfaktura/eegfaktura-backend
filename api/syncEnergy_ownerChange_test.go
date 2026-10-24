@@ -161,3 +161,16 @@ func TestSyncEnergy_archivedEntryNotRequested(t *testing.T) {
 	assert.Equal(t, []energyrequest.Skipped{{MeteringPoint: zp, Reason: energyrequest.ReasonNotActiveInPeriod}}, resp.Skipped,
 		"the current entry's reason counts, the archived entry's NOT_ASSIGNED gives way")
 }
+
+// an archived entry still in INIT (first registration failed) does not decide the reason over the current entry
+func TestSyncEnergy_archivedInitEntryGivesWay(t *testing.T) {
+	const zp = "AT0030000000000000000000000953097"
+	ownerChange(t, zp, "2025-01-01", "2025-06-15", "2025-06-16", 2)
+	_, err := testDB.DbInstance.Exec(`UPDATE base.meteringpoint SET status = 'INIT' WHERE metering_point_id = $1 AND flag = 2`, zp)
+	require.NoError(t, err)
+
+	var resp syncResponse
+	_, sent, _ := syncEnergy(t, syncBody(zp, start(2025, 3, 1), start(2025, 3, 31)), &resp)
+	assert.Empty(t, sent)
+	assert.Equal(t, []energyrequest.Skipped{{MeteringPoint: zp, Reason: energyrequest.ReasonNotActiveInPeriod}}, resp.Skipped)
+}

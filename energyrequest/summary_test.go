@@ -191,6 +191,17 @@ func TestRun_SkipReasonIndependentOfOrder(t *testing.T) {
 	assert.Equal(t, ReasonNotRegistered, r.Skipped[0].Reason)
 }
 
+// an unknown reason never replaces a known one, and a known one replaces it
+func TestRun_SkipUnknownReasonIsWeakest(t *testing.T) {
+	r := NewRun("EC", sepFrom, sepTo)
+	r.Skip("ZP1", ReasonNotAssigned)
+	r.Skip("ZP1", "NOT_A_REASON")
+	r.Skip("ZP2", "NOT_A_REASON")
+	r.Skip("ZP2", ReasonNotAssigned)
+	assert.Equal(t, []Skipped{{MeteringPoint: "ZP1", Reason: ReasonNotAssigned},
+		{MeteringPoint: "ZP2", Reason: ReasonNotAssigned}}, r.Skipped)
+}
+
 // withRun returns rows with the run in row runRowId, added in id order when rows lack it (Evaluate needs the run row).
 func withRun(rows []Row, run Run, runRowId int64) []Row {
 	i := sort.Search(len(rows), func(i int) bool { return rows[i].Id >= runRowId })

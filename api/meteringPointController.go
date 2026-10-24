@@ -448,13 +448,14 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 			candidates := 0
 			for _, m := range meters {
 				switch {
-				case m.Status == model.S_INIT:
-					checked = append(checked, energyRequest{meter: m, skip: energyrequest.ReasonNotRegistered})
-					continue
 				// the old member's entry after an owner change (moved) is requested for its own period too (user
-				// decision 2026-10-24: the billing needs all current data); an archived entry is not
+				// decision 2026-10-24: the billing needs all current data); an archived entry is not, also one still
+				// in INIT, so its reason never decides over the current entry's
 				case m.State.Flag != model.F_ASSIGNED && m.State.Flag != model.F_MOVED:
 					checked = append(checked, energyRequest{meter: m, skip: energyrequest.ReasonNotAssigned})
+					continue
+				case m.Status == model.S_INIT:
+					checked = append(checked, energyRequest{meter: m, skip: energyrequest.ReasonNotRegistered})
 					continue
 				case !m.State.ActiveSince.Valid || !m.State.InactiveSince.Valid:
 					checked = append(checked, energyRequest{meter: m, skip: energyrequest.ReasonNoActivePeriod})
@@ -496,8 +497,8 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 				}
 				locks = energyrequest.NewLocks(lockRows, tenant, lockTenants, time.Now())
 			}
-			// in the order of the metering points, as Skip decides between several participations by order. The lock
-			// is checked per participation: of an owner change, a part requested within the hour is not sent again
+			// Skip ranks the reasons of several participations (independent of their order). The lock is checked per
+			// participation: of an owner change, a part requested within the hour is not sent again
 			var free []energyRequest
 			for _, c := range checked {
 				m := c.meter
