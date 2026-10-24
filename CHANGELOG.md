@@ -23,7 +23,8 @@ this changelog highlights the changes relevant for overview and operations.
     at least one day, and not rejected (`ABLEHNUNG_PT`) there, is not requested again: skipped with reason
     `ALREADY_REQUESTED` and `until` (ms, run creation + 1 h). Single and bulk requests alike; no override. A rejected
     metering point is free at once. GEA tenants are locked separately. A metering point whose request could not be
-    sent (MQTT error, answer `500`) is taken out of the run again and is not locked.
+    sent (MQTT error, answer `500`) is taken out of the run again and is not locked; of a metering point with several
+    participations only the span of the sent ones stays.
   - **A request that sends nothing stores no run** (everything skipped: locked, complete, not registered, …): no
     live entry and no summary; the response body reports the skipped metering points. Before, a request for two or
     more metering points that were all skipped got a summary with 0 requested.
@@ -42,16 +43,19 @@ this changelog highlights the changes relevant for overview and operations.
     run are left out of the list. Once the stored summary is written it replaces the live entry, and the single
     answers are listed again as before. Single requests are unchanged. The rows behind it are kept for 15 s per
     backend instance (cleared when the instance writes a run or a summary; new answers show after 15 s at the
-    latest). If they cannot be read, the list comes without live entries instead of failing.
+    latest, so an answer arriving within these 15 s can show once as a single entry before it moves into the live
+    entry). If they cannot be read, the list comes without live entries instead of failing.
   - **Answers are attributed by period** (summary, lock and live entry alike). Answers carry no period and no
     reference to the request, so per metering point: a later run supersedes an earlier request only for a period
     sharing a day (before: any later run with that metering point, which marked e.g. a May request as „requested
     again“ after an April request and gave it all answers); within its range an answer goes to the oldest request
     without an answer, else to the newest. A rejection frees the period of the request it belongs to.
-  - **One row set for summary, lock and live entry:** all three read the run rows, answers and summaries of the last
-    25 hours (deadline + 1 h) of the tenants of the community id and attribute them alike. The 5-minute check reads
-    these 25 hours on every run (before: from the oldest open bulk run on, which left out single requests after a
-    restart and could disagree with the live entry and the lock).
+  - **One row set for summary, lock and live entry:** all three read the run rows and summaries of the last 49 hours
+    (2 x deadline + 1 h) and the answers from the oldest of these runs on, of the tenants of the community id, and
+    attribute them alike; an answer to an open run keeps its owner in the set even if that run is older than the
+    deadline. The 5-minute check reads this window on every run (before: from the oldest open bulk run on, which left
+    out single requests after a restart and could disagree with the live entry and the lock). After a long outage
+    a request is now still summarised up to about a day after its deadline (before: about an hour).
   - No schema change: the notification JSON is extended additively; old runs have no `until`.
   - **Deploy order:** backend first is safe; web shows the new reasons and the live entry only with its matching
     release.
