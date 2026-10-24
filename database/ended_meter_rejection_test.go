@@ -77,6 +77,7 @@ func TestMeteringPointsSetStatus_endedMeterRejection(t *testing.T) {
 		active188     = "AT0030000000000000000000990018006"
 		activePending = "AT0030000000000000000000990018007"
 		activeRevoked = "AT0030000000000000000000990018008"
+		revokedNever  = "AT0030000000000000000000990018009"
 	)
 	insertEndedRejectFixture(t, tenant, map[string][3]string{
 		endedInvalid:  {"INACTIVE", "INIT", "2025-01-22"},
@@ -87,14 +88,19 @@ func TestMeteringPointsSetStatus_endedMeterRejection(t *testing.T) {
 		active188:     {"ACTIVE", "ACTIVE", "2999-12-31"},
 		activePending: {"ACTIVE", "INIT", "2999-12-31"},
 		activeRevoked: {"ACTIVE", "REVOKED", "2999-12-31"},
+		revokedNever:  {"INACTIVE", "INIT", "2025-01-22"},
 	})
+	// never active (no activesince), ended by a revocation (CCMS): not an ended participation
+	_, err = testDB.DbInstance.Exec(`UPDATE base.meteringpoint SET activesince = NULL WHERE tenant = $1 AND metering_point_id = $2`,
+		tenant, revokedNever)
+	require.NoError(t, err)
 
 	code57, code99, code188 := int16(57), int16(99), int16(188)
 	require.NoError(t, db.MeteringPointsSetStatus(ctx, tenant, model.PENDING, nil, []string{activePending}, nil, nil))
 	require.NoError(t, db.MeteringPointsSetStatus(ctx, tenant, model.INVALID, &code188,
 		[]string{active188, activePending, activeRevoked}, nil, nil))
 	require.NoError(t, db.MeteringPointsSetStatus(ctx, tenant, model.INVALID, &code57,
-		[]string{endedInvalid, neverActive, active, endedNoDate}, nil, nil))
+		[]string{endedInvalid, neverActive, active, endedNoDate, revokedNever}, nil, nil))
 	require.NoError(t, db.MeteringPointsSetStatus(ctx, tenant, model.REJECTED, &code99,
 		[]string{endedRejected}, nil, nil))
 
@@ -115,6 +121,10 @@ func TestMeteringPointsSetStatus_endedMeterRejection(t *testing.T) {
 	assert.False(t, r.LastProcessState.Valid)
 	assert.Equal(t, "INIT", r.Status)
 	assert.Equal(t, int64(57), r.StatusCode.Int64)
+
+	r = readEndedRejectRow(t, testDB.DbInstance, tenant, revokedNever)
+	assert.Equal(t, "INVALID", r.ProcessState, "INACTIVE without activesince (never active): as before")
+	assert.False(t, r.LastProcessState.Valid)
 
 	r = readEndedRejectRow(t, testDB.DbInstance, tenant, endedNoDate)
 	assert.Equal(t, "INVALID", r.ProcessState, "INACTIVE without inactivesince: as before")
@@ -228,6 +238,7 @@ func TestEndedMeterRejection_revokeByConsentEndsInactive(t *testing.T) {
 
 	const tenant = "TE000022"
 	const activeInvalid, neverActive = "AT0030000000000000000000990022001", "AT0030000000000000000000990022002"
+	const inactiveNever = "AT0030000000000000000000990022003"
 	_, err = testDB.DbInstance.Exec(`INSERT INTO base.eeg
 		(tenant, name, description, "rcNumber", area, gridoperator_code, gridoperator_name, "communityId",
 		 street, "streetNumber", city, zip, email)
@@ -239,9 +250,11 @@ func TestEndedMeterRejection_revokeByConsentEndsInactive(t *testing.T) {
 	insertEndedRejectFixture(t, tenant, map[string][3]string{
 		activeInvalid: {"ACTIVE", "INVALID", "2999-12-31"},
 		neverActive:   {"INIT", "REJECTED", ""},
+		inactiveNever: {"INACTIVE", "INVALID", "2025-01-22"},
 	})
-	_, err = testDB.DbInstance.Exec(`UPDATE base.meteringpoint SET consent_id = 'C-' || right(metering_point_id, 3)
-		WHERE tenant = $1`, tenant)
+	_, err = testDB.DbInstance.Exec(`UPDATE base.meteringpoint SET consent_id = 'C-' || right(metering_point_id, 3),
+		activesince = CASE WHEN metering_point_id = $2 THEN NULL ELSE activesince END
+		WHERE tenant = $1`, tenant, inactiveNever)
 	require.NoError(t, err)
 
 	end := civil.DateFor(2026, 10, 1)
@@ -263,5 +276,13 @@ func TestEndedMeterRejection_revokeByConsentEndsInactive(t *testing.T) {
 	r = readEndedRejectRow(t, testDB.DbInstance, tenant, neverActive)
 	assert.Equal(t, "INIT", r.Status)
 	assert.Equal(t, "REJECTED", r.ProcessState, "never-active entry: as before")
+	assert.False(t, r.LastProcessState.Valid)
+
+	// INACTIVE without activesince (never active, revoked before via CCMS): as before
+	consent = "C-003"
+	_, err = db.MeteringPointRevokeByConsentId(ctx, "", &consent, inactiveNever, end)
+	require.NoError(t, err)
+	r = readEndedRejectRow(t, testDB.DbInstance, tenant, inactiveNever)
+	assert.Equal(t, "INVALID", r.ProcessState)
 	assert.False(t, r.LastProcessState.Valid)
 }

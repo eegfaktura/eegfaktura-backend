@@ -24,6 +24,7 @@ WITH restored AS (
     AND "modifiedBy" = 'cleanup-2026-10-24'
     AND process_state IN ('INACTIVE', 'ACTIVE')
     AND last_process_state IN ('INVALID', 'REJECTED')
+    AND (status = 'ACTIVE' OR (status = 'INACTIVE' AND inactivesince IS NOT NULL AND activesince IS NOT NULL))
   RETURNING tenant)
 SELECT count(*) AS geaendert, count(DISTINCT tenant) AS tenants FROM restored \gset
 

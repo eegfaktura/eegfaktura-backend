@@ -648,10 +648,12 @@ func restoreMeteringPointProcessState(ctx context.Context, db *sqlx.DB, tenant, 
 	return nil
 }
 
-// endedParticipation matches a metering point whose participation has ended (status INACTIVE with
-// an end date). A rejected re-registration leaves it INACTIVE (konzept-zaehlpunkt-ausblenden.md, part 2).
+// endedParticipation matches a metering point whose participation has ended (status INACTIVE with a
+// start and an end date). A rejected re-registration leaves it INACTIVE (konzept-zaehlpunkt-ausblenden.md,
+// part 2). Without activesince it never took part (e.g. revoked via CCMS before activation).
 func endedParticipation() exp.Expression {
-	return goqu.And(goqu.C("status").Eq(string(model.S_INACTIVE)), goqu.C("inactivesince").IsNotNull())
+	return goqu.And(goqu.C("status").Eq(string(model.S_INACTIVE)), goqu.C("inactivesince").IsNotNull(),
+		goqu.C("activesince").IsNotNull())
 }
 
 // activeParticipation matches a metering point that takes part (status ACTIVE). A rejection with a
@@ -926,11 +928,11 @@ func meteringPointRevokeByConsentId(ctx context.Context, db *sqlx.DB, receiver s
 			return nil, err
 		}
 
-		// An entry that ends here (status not INIT, end date set) while it carries a rejection goes to
+		// An entry that ends here (status not INIT, start and end date set) while it carries a rejection goes to
 		// INACTIVE like a rejected re-registration of an ended entry; the rejection goes to
 		// last_process_state (konzept-zaehlpunkt-ausblenden.md, part 2).
 		endsRejected := goqu.And(goqu.C("status").Neq("INIT"), goqu.C("inactivesince").IsNotNull(),
-			goqu.C("process_state").In(string(model.INVALID), string(model.REJECTED)))
+			goqu.C("activesince").IsNotNull(), goqu.C("process_state").In(string(model.INVALID), string(model.REJECTED)))
 		_, err = tx.Update(TABLE_METERINGPOINT).
 			Set(goqu.Record{
 				"process_state": goqu.Case().

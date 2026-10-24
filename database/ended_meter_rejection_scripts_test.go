@@ -75,6 +75,7 @@ func TestEndedMeterRejectionScripts(t *testing.T) {
 		endedNoDate    = "AT0030000000000000000000990019004"
 		activeRejected = "AT0030000000000000000000990019005"
 		activeOther    = "AT0030000000000000000000990019006"
+		inactiveNever  = "AT0030000000000000000000990019007"
 	)
 	insertEndedRejectFixture(t, tenant, map[string][3]string{
 		endedInvalid:   {"INACTIVE", "INVALID", "2025-01-22"},
@@ -83,7 +84,11 @@ func TestEndedMeterRejectionScripts(t *testing.T) {
 		endedNoDate:    {"INACTIVE", "INVALID", ""},
 		activeRejected: {"ACTIVE", "REJECTED", "2999-12-31"},
 		activeOther:    {"ACTIVE", "INVALID", "2999-12-31"},
+		inactiveNever:  {"INACTIVE", "INVALID", "2025-01-22"},
 	})
+	_, err = testDB.DbInstance.Exec(`UPDATE base.meteringpoint SET activesince = NULL WHERE tenant = $1 AND metering_point_id = $2`,
+		tenant, inactiveNever)
+	require.NoError(t, err)
 	// active variant: only request-level codes (188) are cleaned up; 57 concerns the metering point
 	_, err = testDB.DbInstance.Exec(`UPDATE base.meteringpoint SET "statusCode" = CASE metering_point_id
 		WHEN $2 THEN 188 WHEN $3 THEN 57 ELSE 57 END WHERE tenant = $1`, tenant, activeRejected, activeOther)
@@ -91,7 +96,7 @@ func TestEndedMeterRejectionScripts(t *testing.T) {
 	row := func(meter string) endedRejectRow { return readEndedRejectRow(t, testDB.DbInstance, tenant, meter) }
 
 	total, own := checkTotals(t, tenant)
-	assert.Equal(t, map[string]int64{"anzahl": 3, "beendet": 2, "aktiv": 1, "ohne_datum": 1, "aktiv_andere": 1, "tenants": 1}, own)
+	assert.Equal(t, map[string]int64{"anzahl": 3, "beendet": 2, "aktiv": 1, "ohne_datum": 2, "aktiv_andere": 1, "tenants": 1}, own)
 	expected := total["anzahl"]
 
 	// without or with a wrong expected count nothing is committed
@@ -120,6 +125,7 @@ func TestEndedMeterRejectionScripts(t *testing.T) {
 	assert.Equal(t, "test", row(neverActive).ModifiedBy.String)
 	assert.Equal(t, "INVALID", row(endedNoDate).ProcessState, "no end date: not touched")
 	assert.Equal(t, "INVALID", row(activeOther).ProcessState, "active + code 57: not touched")
+	assert.Equal(t, "INVALID", row(inactiveNever).ProcessState, "never active (no activesince): not touched")
 
 	total, _ = checkTotals(t, tenant)
 	assert.Equal(t, int64(0), total["anzahl"])
