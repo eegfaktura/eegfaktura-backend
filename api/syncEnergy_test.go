@@ -30,6 +30,9 @@ const (
 // lastBody is the response body of the last syncEnergy call.
 var lastBody string
 
+// sentEntries are the metering point entries the last syncEnergy call sent requests for (in send order).
+var sentEntries []*model.MeteringPoint
+
 // failSend lets the MQTT mock of syncEnergy fail for these metering points.
 var failSend = map[string]bool{}
 
@@ -58,11 +61,13 @@ func syncEnergyWith(t *testing.T, db database.Database, body string, resp ...*sy
 	orig := mqttclient.RequestingEnergyData
 	t.Cleanup(func() { mqttclient.RequestingEnergyData = orig })
 	var sent []sentRequest
+	sentEntries = nil
 	mqttclient.RequestingEnergyData = func(eeg *model.Eeg, meter *model.MeteringPoint, fromDate, toDate int64) error {
 		if failSend[meter.MeteringPoint] {
 			return errors.New("broker not reachable")
 		}
 		sent = append(sent, sentRequest{meter: meter.MeteringPoint, from: fromDate, to: toDate})
+		sentEntries = append(sentEntries, meter)
 		return nil
 	}
 	req, _ := http.NewRequest("POST", "/meteringpoint/syncenergy", strings.NewReader(body))

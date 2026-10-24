@@ -531,6 +531,10 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 					if n > 0 && !util.TruncateToStartOfDay(time.UnixMilli(c.from)).After(
 						util.TruncateToStartOfDay(time.UnixMilli(merged[n-1].to)).AddDate(0, 0, 1)) {
 						merged[n-1].to = max(merged[n-1].to, c.to)
+						// sent with the current entry, else the later one (BEG: its grid operator is the receiver)
+						if merged[n-1].meter.State.Flag != model.F_ASSIGNED {
+							merged[n-1].meter = c.meter
+						}
 						continue
 					}
 					merged = append(merged, c)

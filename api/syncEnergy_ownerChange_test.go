@@ -67,6 +67,9 @@ func TestSyncEnergy_ownerChangeContiguous(t *testing.T) {
 	assert.Equal(t, []sentRequest{{meter: zp, from: start(2025, 6, 5), to: end(2025, 6, 20)}}, sent)
 	assert.Equal(t, syncResponse{Requested: 1, Skipped: []energyrequest.Skipped{}}, resp)
 	assert.Equal(t, []energyrequest.MeterRange{{MeteringPoint: zp, From: start(2025, 6, 5), To: end(2025, 6, 20)}}, run.Meters)
+	// the merged request goes out with the current entry (BEG: its grid operator is the receiver)
+	require.Len(t, sentEntries, 1)
+	assert.Equal(t, "c1050001-0000-0000-0000-"+zp[len(zp)-12:], sentEntries[0].ParticipantId)
 }
 
 // a gap between the owners (old until 02.09., new from 06.09.): two requests, the run records the covering span. An
