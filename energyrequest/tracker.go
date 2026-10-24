@@ -14,17 +14,19 @@ import (
 // CheckInterval is how often open runs are evaluated.
 const CheckInterval = 5 * time.Minute
 
-// LookBack is how far back every evaluation (Check, lock, live entry) reads: the runs that can still be open, plus a
-// margin for a check after a restart. All three read the rows from the same bound, so they attribute alike.
-const LookBack = Deadline + time.Hour
+// LookBack is how far back every evaluation (Check, lock, live entry) reads run rows and summaries; the answers are
+// read from the oldest of these runs on. A run that can still be open (Deadline, plus an hour for a check after a
+// restart) may compete for answers with runs up to a Deadline older, so those are read too: the owner of an answer
+// stays in the set. All three read the rows from the same bound, so they attribute alike.
+const LookBack = 2*Deadline + time.Hour
 
 // Store is the part of the database the summary needs (implemented by database.Database).
 type Store interface {
 	SaveEnergyRequestRow(ctx context.Context, tenant, rowType string, value interface{}) (int64, error)
 	UpdateEnergyRequestRow(ctx context.Context, id int64, value interface{}) error
 	DeleteEnergyRequestRow(ctx context.Context, id int64) error
-	// EnergyRequestRows returns the run rows, answers and summaries of the last LookBack (ascending id), of the given
-	// tenants or of all tenants (nil).
+	// EnergyRequestRows returns the run rows and summaries of the last LookBack and the answers from the oldest of
+	// these runs on (ascending id), of the given tenants or of all tenants (nil).
 	EnergyRequestRows(ctx context.Context, tenants []string) ([]Row, error)
 	TenantsByEcId(ctx context.Context, ecId string) ([]string, error)
 	CloseEnergyRequest(ctx context.Context, tenant string, runRowId int64, summary Summary) (bool, error)

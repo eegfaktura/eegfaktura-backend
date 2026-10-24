@@ -100,27 +100,39 @@ func (db *sqlDatabase) DeleteEnergyRequestRow(ctx context.Context, id int64) err
 	return err
 }
 
-// EnergyRequestRows returns the rows every evaluation needs from energyrequest.LookBack on (ascending id): the hidden
-// run rows and the answers (ANTWORT_PT, ABLEHNUNG_PT) and summaries among the EDA notifications; of the given tenants,
-// or of all tenants for nil. The lower id bound is the newest row older than LookBack: the primary key is read
-// backwards up to it, so only the rows of that window are scanned (date grows with id; both are set on insert).
+// EnergyRequestRows returns the rows every evaluation needs (ascending id): the hidden run rows and the summaries of
+// the last energyrequest.LookBack, and the answers (ANTWORT_PT, ABLEHNUNG_PT) from the oldest of these runs on; of the
+// given tenants, or of all tenants for nil. The lower id bound is the newest row older than LookBack: the primary key
+// is read backwards up to it, so only the rows of that window are scanned (date grows with id; both are set on
+// insert). Without a run, no answers are read.
 func (db *sqlDatabase) EnergyRequestRows(ctx context.Context, tenants []string) ([]energyrequest.Row, error) {
+	if tenants != nil && len(tenants) == 0 {
+		return []energyrequest.Row{}, nil
+	}
+	tenantFilter := ``
+	if tenants != nil {
+		tenantFilter = ` AND tenant IN (?)`
+	}
 	query := `WITH b AS (SELECT COALESCE((SELECT id FROM base.notification
-			WHERE date <= (now() AT TIME ZONE 'utc') - make_interval(secs => ?) ORDER BY id DESC LIMIT 1), 0) AS id)
+			WHERE date <= (now() AT TIME ZONE 'utc') - make_interval(secs => ?) ORDER BY id DESC LIMIT 1), 0) AS id),
+		r AS (SELECT min(id) AS id FROM base.notification
+			WHERE id > (SELECT id FROM b) AND process = ? AND type = ?` + tenantFilter + `)
 		SELECT id, tenant, process, type, notification::text AS notification
 		FROM base.notification
 		WHERE id > (SELECT id FROM b) AND ((process = ? AND type = ?)
-		   OR (process = ? AND notification->>'type' IN ('ANTWORT_PT', 'ABLEHNUNG_PT', ?)))`
-	args := []interface{}{energyrequest.LookBack.Seconds(), model.N_PROCESS_ENERGY_REQUEST, energyrequest.RowTypeRun,
-		model.N_PROCESS_EDA_PROCESS, energyrequest.SummaryType}
+		   OR (process = ? AND notification->>'type' = ?)
+		   OR (id > (SELECT id FROM r) AND process = ? AND notification->>'type' IN ('ANTWORT_PT', 'ABLEHNUNG_PT')))` +
+		tenantFilter + ` ORDER BY id`
+	args := []interface{}{energyrequest.LookBack.Seconds(), model.N_PROCESS_ENERGY_REQUEST, energyrequest.RowTypeRun}
 	if tenants != nil {
-		if len(tenants) == 0 {
-			return []energyrequest.Row{}, nil
-		}
-		query += ` AND tenant IN (?)`
 		args = append(args, tenants)
 	}
-	query, args, err := sqlx.In(query+` ORDER BY id`, args...)
+	args = append(args, model.N_PROCESS_ENERGY_REQUEST, energyrequest.RowTypeRun,
+		model.N_PROCESS_EDA_PROCESS, energyrequest.SummaryType, model.N_PROCESS_EDA_PROCESS)
+	if tenants != nil {
+		args = append(args, tenants)
+	}
+	query, args, err := sqlx.In(query, args...)
 	if err != nil {
 		return nil, err
 	}

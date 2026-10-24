@@ -100,3 +100,53 @@ func TestEnergyRequestCheckLiveAndLockAgree(t *testing.T) {
 		assert.Equal(t, s, stored[runId])
 	}
 }
+
+// an answer to a run that is older than the deadline stays with that run: the run rows are read back further than
+// the answers (R0 May 26 h ago, R1 April 23 h ago, the answer 22 h ago belongs to R0, not to the open R1)
+func TestEnergyRequestOwnerOfAnAnswerStaysInTheSet(t *testing.T) {
+	ctx := context.Background()
+	db, err := GetDB(ctx)
+	require.NoError(t, err)
+	const tenant, ecId = "TE000181", "AT00999900000TC000181000000000001"
+	const zp1, zp2 = "AT0099990000000000000000000181001", "AT0099990000000000000000000181002"
+	_, err = testDB.DbInstance.Exec(`INSERT INTO base.eeg
+		(tenant, name, description, "rcNumber", area, gridoperator_code, gridoperator_name, "communityId",
+		 street, "streetNumber", city, zip, email)
+		VALUES ($1, 'OWNER-TEST', 'Testgemeinschaft', 'TE000181', 'LOCAL', 'AT009999', 'Test Operator', $2,
+		 'Solarweg', '1', 'Linz', '4020', 'owner-test@example.org')
+		ON CONFLICT (tenant) DO NOTHING`, tenant, ecId)
+	require.NoError(t, err)
+	insert := func(ago time.Duration, process, rowType string, v interface{}) {
+		msg, err := json.Marshal(v)
+		require.NoError(t, err)
+		_, err = testDB.DbInstance.Exec(`INSERT INTO base.notification (tenant, notification, type, role, process, date)
+			VALUES ($1, $2, $3, 'ADMIN', $4, (now() AT TIME ZONE 'utc') - make_interval(secs => $5))`,
+			tenant, string(msg), rowType, process, ago.Seconds())
+		require.NoError(t, err)
+	}
+	run := func(ago time.Duration, m time.Month, meters ...string) *energyrequest.Run {
+		from := time.Date(2026, m, 1, 0, 0, 0, 0, time.Local).UnixMilli()
+		to := time.Date(2026, m+1, 0, 23, 45, 0, 0, time.Local).UnixMilli()
+		r := energyrequest.NewRun(ecId, from, to)
+		for _, mp := range meters {
+			r.Add(mp, from, to)
+		}
+		r.CreatedAt = time.Now().Add(-ago).UnixMilli()
+		insert(ago, string(model.N_PROCESS_ENERGY_REQUEST), energyrequest.RowTypeRun, r)
+		return r
+	}
+	run(26*time.Hour, time.May, zp1, zp2)
+	r1 := run(23*time.Hour, time.April, zp1, zp2)
+	insert(22*time.Hour, string(model.N_PROCESS_EDA_PROCESS), string(model.N_TYPE_MESSAGE),
+		map[string]interface{}{"type": "ANTWORT_PT", "meteringPoints": []string{zp1}, "responseCodes": []string{}})
+
+	rows, tenants, err := db.EnergyRequestCommunity(ctx, tenant)
+	require.NoError(t, err)
+	require.Len(t, rows, 3)
+	entries, hidden := energyrequest.Live(rows, tenant, tenants, time.Now())
+	require.Len(t, entries, 1)
+	assert.Equal(t, r1.RunId, entries[0].Summary.RunId)
+	assert.Empty(t, entries[0].Summary.Accepted, "the answer belongs to the older May run")
+	assert.ElementsMatch(t, []string{zp1, zp2}, entries[0].Summary.NoAnswer)
+	assert.Empty(t, hidden)
+}

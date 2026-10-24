@@ -43,9 +43,9 @@ func TestEnergyRequestLiveEntry(t *testing.T) {
 	rows, tenants, err := db.EnergyRequestCommunity(ctx, tenant)
 	require.NoError(t, err)
 	assert.Equal(t, map[string]bool{tenant: true}, tenants)
-	require.Len(t, rows, 4, "the answers and the run of the last LookBack")
-	runRowId := rows[1].Id
-	assert.Equal(t, energyrequest.RowTypeRun, rows[1].Type)
+	require.Len(t, rows, 3, "the run and the answers from it on")
+	runRowId := rows[0].Id
+	assert.Equal(t, energyrequest.RowTypeRun, rows[0].Type)
 
 	list, err := db.GetNotification(ctx, tenant, 0, true)
 	require.NoError(t, err)
