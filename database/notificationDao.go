@@ -4,6 +4,7 @@ import (
 	"context"
 	dbsql "database/sql"
 	"encoding/json"
+	"errors"
 	"math"
 	"sort"
 	"strings"
@@ -58,14 +59,20 @@ const notificationPageSize = 30
 // GetNotification lists the newest notifications of tenant after id start. For admins, an open energy request run
 // with a summary is listed as a live entry (the current summary with live: true, at the run's row id and creation
 // time) and its answers are left out; they are listed again once the stored summary has replaced the live entry.
-// When the energy request rows cannot be read, the list comes without live entries (logged).
+// When the energy request rows cannot be read, the list comes without live entries (logged: a cancelled or timed out
+// request as warning, any other error as error).
 func (db *sqlDatabase) GetNotification(ctx context.Context, tenant string, start int64, isAdmin bool) ([]model.EegNotification, error) {
 	if !isAdmin {
 		return getNotification(db.db, tenant, start, isAdmin, nil)
 	}
 	rows, tenants, err := db.energyRequestCommunityCached(ctx, tenant)
 	if err != nil {
-		logrus.WithField("tenant", tenant).WithError(err).Warn("notifications: no live energy request entries")
+		entry := logrus.WithField("tenant", tenant).WithError(err)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			entry.Warn("notifications: no live energy request entries")
+		} else {
+			entry.Error("notifications: no live energy request entries")
+		}
 		return getNotification(db.db, tenant, start, isAdmin, nil)
 	}
 	live, hidden := energyrequest.Live(rows, tenant, tenants, time.Now())
