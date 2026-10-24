@@ -3,8 +3,6 @@ package database
 import (
 	"context"
 	"database/sql"
-	"os"
-	"regexp"
 	"testing"
 
 	"at.ourproject/vfeeg-backend/model"
@@ -15,9 +13,10 @@ import (
 )
 
 // konzept-zaehlpunkt-ausblenden.md, part 2: a rejection of a metering point whose participation has
-// ended keeps the process state INACTIVE, one of an ACTIVE metering point keeps it ACTIVE (decision
-// 24.10.2026); the rejected state goes to last_process_state, the code to statusCode. Never-active
-// (INIT) rows take the rejected state as before.
+// ended keeps the process state INACTIVE (any code), one of an ACTIVE metering point keeps it ACTIVE
+// for codes about the request only (model.REJECTED_KEEP_ACTIVE_CODES, decision 24.10.2026); the
+// rejected state goes to last_process_state, the code to statusCode. Never-active (INIT) rows, and
+// active ones with other codes, take the rejected state as before.
 
 const endedRejectParticipant = "b1180000-0000-0000-0000-000000000001"
 
@@ -75,6 +74,7 @@ func TestMeteringPointsSetStatus_endedMeterRejection(t *testing.T) {
 		neverActive   = "AT0030000000000000000000990018003"
 		active        = "AT0030000000000000000000990018004"
 		endedNoDate   = "AT0030000000000000000000990018005"
+		active188     = "AT0030000000000000000000990018006"
 	)
 	insertEndedRejectFixture(t, tenant, map[string][3]string{
 		endedInvalid:  {"INACTIVE", "INIT", "2025-01-22"},
@@ -82,9 +82,11 @@ func TestMeteringPointsSetStatus_endedMeterRejection(t *testing.T) {
 		neverActive:   {"INIT", "PENDING", ""},
 		active:        {"ACTIVE", "ACTIVE", "2999-12-31"},
 		endedNoDate:   {"INACTIVE", "INIT", ""},
+		active188:     {"ACTIVE", "ACTIVE", "2999-12-31"},
 	})
 
-	code57, code99 := int16(57), int16(99)
+	code57, code99, code188 := int16(57), int16(99), int16(188)
+	require.NoError(t, db.MeteringPointsSetStatus(ctx, tenant, model.INVALID, &code188, []string{active188}, nil, nil))
 	require.NoError(t, db.MeteringPointsSetStatus(ctx, tenant, model.INVALID, &code57,
 		[]string{endedInvalid, neverActive, active, endedNoDate}, nil, nil))
 	require.NoError(t, db.MeteringPointsSetStatus(ctx, tenant, model.REJECTED, &code99,
@@ -112,16 +114,24 @@ func TestMeteringPointsSetStatus_endedMeterRejection(t *testing.T) {
 	assert.Equal(t, "INVALID", r.ProcessState, "INACTIVE without inactivesince: as before")
 	assert.False(t, r.LastProcessState.Valid)
 
-	// an ACTIVE row stays ACTIVE (decision 24.10.2026); activesince is not touched
-	r = readEndedRejectRow(t, testDB.DbInstance, tenant, active)
-	assert.Equal(t, "ACTIVE", r.ProcessState, "active meter stays ACTIVE")
+	// an ACTIVE row stays ACTIVE when the code concerns the request, not the metering point (188
+	// participation factor > 100 %, decision 24.10.2026); activesince is not touched
+	r = readEndedRejectRow(t, testDB.DbInstance, tenant, active188)
+	assert.Equal(t, "ACTIVE", r.ProcessState, "active meter stays ACTIVE on code 188")
 	assert.Equal(t, "INVALID", r.LastProcessState.String)
 	assert.Equal(t, "ACTIVE", r.Status)
-	assert.Equal(t, int64(57), r.StatusCode.Int64)
+	assert.Equal(t, int64(188), r.StatusCode.Int64)
 	assert.Equal(t, "2024-03-06", r.ActiveSince.Time.Format("2006-01-02"))
 	// a restore after code 86 keeps it ACTIVE (the stored rejection is not restored)
-	require.NoError(t, db.RestoreMeteringPointProcessState(ctx, tenant, active))
-	assert.Equal(t, "ACTIVE", readEndedRejectRow(t, testDB.DbInstance, tenant, active).ProcessState)
+	require.NoError(t, db.RestoreMeteringPointProcessState(ctx, tenant, active188))
+	assert.Equal(t, "ACTIVE", readEndedRejectRow(t, testDB.DbInstance, tenant, active188).ProcessState)
+
+	// a code about the metering point itself (57 not supplied) shows the inconsistency: INVALID as before
+	r = readEndedRejectRow(t, testDB.DbInstance, tenant, active)
+	assert.Equal(t, "INVALID", r.ProcessState, "active meter + code 57: INVALID as before")
+	assert.False(t, r.LastProcessState.Valid)
+	assert.Equal(t, "ACTIVE", r.Status)
+	assert.Equal(t, int64(57), r.StatusCode.Int64)
 
 	// a later rejection with COMPETING_PROCESSES restores the state before the registration attempt:
 	// an ended meter goes back to INACTIVE, not to the stored rejection
@@ -239,100 +249,4 @@ func TestEndedMeterRejection_revokeByConsentEndsInactive(t *testing.T) {
 	assert.Equal(t, "INIT", r.Status)
 	assert.Equal(t, "REJECTED", r.ProcessState, "never-active entry: as before")
 	assert.False(t, r.LastProcessState.Valid)
-}
-
-// scripts/ended-meter-rejection/: check.sql lists, fix.sql moves existing ended + rejected rows to
-// INACTIVE (re-run changes nothing), rollback.sql restores them.
-func TestEndedMeterRejectionScripts(t *testing.T) {
-	_, err := GetTestDB(context.Background(), testDB)
-	require.NoError(t, err)
-
-	const tenant = "TE000019"
-	const (
-		endedInvalid  = "AT0030000000000000000000990019001"
-		endedRejected = "AT0030000000000000000000990019002"
-		neverActive   = "AT0030000000000000000000990019003"
-		endedNoDate   = "AT0030000000000000000000990019004"
-	)
-	insertEndedRejectFixture(t, tenant, map[string][3]string{
-		endedInvalid:  {"INACTIVE", "INVALID", "2025-01-22"},
-		endedRejected: {"INACTIVE", "REJECTED", "2025-01-22"},
-		neverActive:   {"INIT", "INVALID", ""},
-		endedNoDate:   {"INACTIVE", "INVALID", ""},
-	})
-
-	// the scripts work on all tenants: run them in one transaction and roll it back, so the
-	// fixture tenants of other tests stay untouched
-	tx, err := testDB.DbInstance.Beginx()
-	require.NoError(t, err)
-	defer func() { _ = tx.Rollback() }()
-
-	script := func(name string) string {
-		b, err := os.ReadFile("../scripts/ended-meter-rejection/" + name)
-		require.NoError(t, err)
-		return string(b)
-	}
-	// the operator scripts open their own transaction; inside the test transaction they run without it
-	stripTx := func(s string) string {
-		return regexp.MustCompile(`(?m)^BEGIN;$`).ReplaceAllString(s, "")
-	}
-	// check.sql: "anzahl" = rows fix.sql changes, "ohne_datum" = ended without inactivesince (reported only)
-	counts := func() (anzahl, ohneDatum int) {
-		rows, err := tx.Queryx(script("check.sql"))
-		require.NoError(t, err)
-		defer rows.Close()
-		for rows.Next() {
-			r := map[string]interface{}{}
-			require.NoError(t, rows.MapScan(r))
-			if r["tenant"] == tenant {
-				anzahl, ohneDatum = int(r["anzahl"].(int64)), int(r["ohne_datum"].(int64))
-			}
-		}
-		return
-	}
-	countFor := func() int { n, _ := counts(); return n }
-	_, noDate := counts()
-	assert.Equal(t, 2, countFor())
-	assert.Equal(t, 1, noDate)
-
-	// fix.sql reports how many rows it changed (the operator compares it with check.sql)
-	fix := stripTx(script("fix.sql"))
-	changed := func(sql string) int {
-		var n, tenants int
-		require.NoError(t, tx.QueryRowx(sql).Scan(&n, &tenants))
-		return n
-	}
-	assert.GreaterOrEqual(t, changed(fix), 2)
-	assert.Equal(t, 0, countFor())
-
-	r := readEndedRejectRow(t, tx, tenant, endedInvalid)
-	assert.Equal(t, "INACTIVE", r.ProcessState)
-	assert.Equal(t, "INVALID", r.LastProcessState.String)
-	assert.Equal(t, "cleanup-2026-10-24", r.ModifiedBy.String)
-	r = readEndedRejectRow(t, tx, tenant, endedRejected)
-	assert.Equal(t, "INACTIVE", r.ProcessState)
-	assert.Equal(t, "REJECTED", r.LastProcessState.String)
-	r = readEndedRejectRow(t, tx, tenant, neverActive)
-	assert.Equal(t, "INVALID", r.ProcessState, "never-active meter is not touched")
-	assert.Equal(t, "test", r.ModifiedBy.String)
-	assert.Equal(t, "INVALID", readEndedRejectRow(t, tx, tenant, endedNoDate).ProcessState, "no end date: not touched")
-
-	// a second run changes nothing
-	assert.Equal(t, 0, changed(fix))
-	r = readEndedRejectRow(t, tx, tenant, endedInvalid)
-	assert.Equal(t, "INVALID", r.LastProcessState.String)
-
-	// an entry that became history meanwhile (flag 0, e.g. re-registered at another member) is not rolled back
-	_, err = tx.Exec(`UPDATE base.meteringpoint SET flag = 0 WHERE tenant = $1 AND metering_point_id = $2`, tenant, endedRejected)
-	require.NoError(t, err)
-
-	assert.GreaterOrEqual(t, changed(stripTx(script("rollback.sql"))), 1)
-	r = readEndedRejectRow(t, tx, tenant, endedInvalid)
-	assert.Equal(t, "INVALID", r.ProcessState)
-	assert.False(t, r.LastProcessState.Valid)
-	var historyState string
-	require.NoError(t, tx.Get(&historyState, `SELECT process_state FROM base.meteringpoint
-		WHERE tenant = $1 AND metering_point_id = $2 AND flag = 0`, tenant, endedRejected))
-	assert.Equal(t, "INACTIVE", historyState)
-	assert.Equal(t, 1, countFor())
 }

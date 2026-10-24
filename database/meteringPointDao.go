@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"at.ourproject/vfeeg-backend/model"
@@ -653,8 +654,8 @@ func endedParticipation() exp.Expression {
 	return goqu.And(goqu.C("status").Eq(string(model.S_INACTIVE)), goqu.C("inactivesince").IsNotNull())
 }
 
-// activeParticipation matches a metering point that takes part (status ACTIVE). A rejection leaves
-// it ACTIVE (decision 24.10.2026).
+// activeParticipation matches a metering point that takes part (status ACTIVE). A rejection with a
+// code of model.REJECTED_KEEP_ACTIVE_CODES leaves it ACTIVE (decision 24.10.2026).
 func activeParticipation() exp.Expression {
 	return goqu.C("status").Eq(string(model.S_ACTIVE))
 }
@@ -679,18 +680,20 @@ func meteringPointsSetStatus(ctx context.Context, db *sqlx.DB, tenant string, pr
 		"modifiedBy":    "EVU",
 	}
 
-	// A rejection does not undo a participation: an ended metering point stays INACTIVE, an active
-	// one ACTIVE. The rejected state goes to last_process_state, the code to statusCode, the
-	// notification is written as before. Never-active (INIT) metering points take the rejected state.
-	// Any other message starts or ends a registration: the saved rejection no longer applies.
+	// A rejection does not undo a participation: an ended metering point stays INACTIVE (any code), an
+	// active one ACTIVE when the code concerns the request only (REJECTED_KEEP_ACTIVE_CODES). The
+	// rejected state goes to last_process_state, the code to statusCode, the notification is written
+	// as before. Never-active (INIT) metering points, and active ones with other codes, take the
+	// rejected state. Any other message starts or ends a registration: the saved rejection no longer applies.
 	if processState == model.INVALID || processState == model.REJECTED {
-		updateRecord["process_state"] = goqu.Case().
-			When(endedParticipation(), string(model.INACTIVE)).
-			When(activeParticipation(), string(model.ACTIVE)).
-			Else(goqu.V(processState))
-		updateRecord["last_process_state"] = goqu.Case().
-			When(goqu.Or(endedParticipation(), activeParticipation()), string(processState)).
-			Else(goqu.C("last_process_state"))
+		kept := endedParticipation()
+		processCase := goqu.Case().When(endedParticipation(), string(model.INACTIVE))
+		if statusCode != nil && slices.Contains(model.REJECTED_KEEP_ACTIVE_CODES, *statusCode) {
+			kept = goqu.Or(endedParticipation(), activeParticipation())
+			processCase = processCase.When(activeParticipation(), string(model.ACTIVE))
+		}
+		updateRecord["process_state"] = processCase.Else(goqu.V(processState))
+		updateRecord["last_process_state"] = goqu.Case().When(kept, string(processState)).Else(goqu.C("last_process_state"))
 	} else {
 		updateRecord["last_process_state"] = nil
 	}
