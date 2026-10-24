@@ -700,7 +700,12 @@ func meteringPointsSetStatus(ctx context.Context, db *sqlx.DB, tenant string, pr
 				When(activeParticipation(), goqu.C("process_state"))
 		}
 		updateRecord["process_state"] = processCase.Else(goqu.V(processState))
-		updateRecord["last_process_state"] = goqu.Case().When(kept, string(processState)).Else(goqu.C("last_process_state"))
+		// an applied rejection (the row takes INVALID/REJECTED) leaves no stale value behind
+		updateRecord["last_process_state"] = goqu.Case().When(kept, string(processState)).Else(nil)
+		if statusCode == nil {
+			// a rejection without code (ABBRUCH): an old code must not stay, e.g. 188 would look request-level
+			updateRecord["statusCode"] = nil
+		}
 	} else {
 		updateRecord["last_process_state"] = nil
 	}

@@ -286,3 +286,38 @@ func TestEndedMeterRejection_revokeByConsentEndsInactive(t *testing.T) {
 	assert.Equal(t, "INVALID", r.ProcessState)
 	assert.False(t, r.LastProcessState.Valid)
 }
+
+// Re-review backend#107 (4): an applied rejection leaves no stale last_process_state, and a rejection
+// without code (ABBRUCH) clears statusCode, so an old 188 cannot make an abort look request-level.
+func TestEndedMeterRejection_appliedRejectionClearsStaleValues(t *testing.T) {
+	ctx := context.Background()
+	db, err := GetTestDB(ctx, testDB)
+	require.NoError(t, err)
+
+	const tenant = "TE000023"
+	const neverActive, active = "AT0030000000000000000000990023001", "AT0030000000000000000000990023002"
+	insertEndedRejectFixture(t, tenant, map[string][3]string{
+		neverActive: {"INIT", "PENDING", ""},
+		active:      {"ACTIVE", "PENDING", "2999-12-31"},
+	})
+	_, err = testDB.DbInstance.Exec(`UPDATE base.meteringpoint SET last_process_state = 'INVALID', "statusCode" = 188
+		WHERE tenant = $1`, tenant)
+	require.NoError(t, err)
+
+	require.NoError(t, db.MeteringPointsSetStatus(ctx, tenant, model.REJECTED, nil, []string{neverActive, active}, nil, nil))
+	for _, m := range []string{neverActive, active} {
+		r := readEndedRejectRow(t, testDB.DbInstance, tenant, m)
+		assert.Equal(t, "REJECTED", r.ProcessState, m)
+		assert.False(t, r.LastProcessState.Valid, "no stale last_process_state: %s", m)
+		assert.False(t, r.StatusCode.Valid, "abort without code clears statusCode: %s", m)
+	}
+
+	code57 := int16(57)
+	_, err = testDB.DbInstance.Exec(`UPDATE base.meteringpoint SET last_process_state = 'REJECTED' WHERE tenant = $1`, tenant)
+	require.NoError(t, err)
+	require.NoError(t, db.MeteringPointsSetStatus(ctx, tenant, model.INVALID, &code57, []string{neverActive}, nil, nil))
+	r := readEndedRejectRow(t, testDB.DbInstance, tenant, neverActive)
+	assert.Equal(t, "INVALID", r.ProcessState)
+	assert.False(t, r.LastProcessState.Valid)
+	assert.Equal(t, int64(57), r.StatusCode.Int64)
+}
