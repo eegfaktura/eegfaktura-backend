@@ -1,12 +1,16 @@
 package database
 
 import (
+	"context"
 	dbsql "database/sql"
 	"encoding/json"
+	"errors"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
+	"at.ourproject/vfeeg-backend/energyrequest"
 	"at.ourproject/vfeeg-backend/model"
 	"github.com/doug-martin/goqu/v9"
 	"github.com/jjeffery/civil"
@@ -20,7 +24,7 @@ type NotificationRepository interface {
 	SaveNotificationFromMap(notificationValue map[string]interface{}, tenant string, notificationType model.NotificationType, process model.NotificationProcess, role string) error
 	SaveHistory(tenant string, code model.EbMsMessageType, conversationId, role, dir string, protocol model.EdaProtocol, msg interface{}) error
 	FetchEdaHistory(tenant, protocol string, start, end int64, pageSize uint) (interface{}, error)
-	GetNotification(tenant string, start int64, isAdmin bool) ([]model.EegNotification, error)
+	GetNotification(ctx context.Context, tenant string, start int64, isAdmin bool) ([]model.EegNotification, error)
 }
 
 func (db *sqlDatabase) SaveNotification(tenant string, code model.EbMsMessageType, meters []string, errCodes []string, protocol model.EdaProtocol) error {
@@ -49,8 +53,49 @@ func (db *sqlDatabase) SaveNotificationFromMap(notificationValue map[string]inte
 	return nil
 }
 
-func (db *sqlDatabase) GetNotification(tenant string, start int64, isAdmin bool) ([]model.EegNotification, error) {
-	return getNotification(db.db, tenant, start, isAdmin)
+// notificationPageSize is how many notifications the list returns.
+const notificationPageSize = 30
+
+// GetNotification lists the newest notifications of tenant after id start. For admins, an open energy request run
+// with a summary is listed as a live entry (the current summary with live: true, at the run's row id and creation
+// time) and its answers are left out; they are listed again once the stored summary has replaced the live entry.
+// When the energy request rows cannot be read, the list comes without live entries (logged: a cancelled or timed out
+// request as warning, any other error as error).
+func (db *sqlDatabase) GetNotification(ctx context.Context, tenant string, start int64, isAdmin bool) ([]model.EegNotification, error) {
+	if !isAdmin {
+		return getNotification(db.db, tenant, start, isAdmin, nil)
+	}
+	rows, tenants, err := db.energyRequestCommunityCached(ctx, tenant)
+	if err != nil {
+		entry := logrus.WithField("tenant", tenant).WithError(err)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			entry.Warn("notifications: no live energy request entries")
+		} else {
+			entry.Error("notifications: no live energy request entries")
+		}
+		return getNotification(db.db, tenant, start, isAdmin, nil)
+	}
+	live, hidden := energyrequest.Live(rows, tenant, tenants, time.Now())
+	n, err := getNotification(db.db, tenant, start, isAdmin, hidden)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range live {
+		if e.RowId <= start {
+			continue
+		}
+		msg, err := json.Marshal(e.Summary)
+		if err != nil {
+			return nil, err
+		}
+		n = append(n, model.EegNotification{Id: e.RowId, MsgType: string(model.N_TYPE_MESSAGE),
+			Process: model.N_PROCESS_EDA_PROCESS, Message: msg, Date: time.UnixMilli(e.CreatedAt).UTC()})
+	}
+	sort.Slice(n, func(i, j int) bool { return n[i].Id > n[j].Id })
+	if len(n) > notificationPageSize {
+		n = n[:notificationPageSize]
+	}
+	return n, nil
 }
 
 func (db *sqlDatabase) SaveHistory(tenant string, code model.EbMsMessageType, conversationId, role, dir string, protocol model.EdaProtocol, msg interface{}) error {
@@ -182,7 +227,7 @@ func createNotification(db sqlx.Execer, tenant, notification string,
 	return err
 }
 
-func getNotification(db *sqlx.DB, tenant string, start int64, isAdmin bool) ([]model.EegNotification, error) {
+func getNotification(db *sqlx.DB, tenant string, start int64, isAdmin bool, hidden map[int64]bool) ([]model.EegNotification, error) {
 	n := []model.EegNotification{}
 
 	statement := pgDialect.From("base.notification").Select(&n).
@@ -191,8 +236,15 @@ func getNotification(db *sqlx.DB, tenant string, start int64, isAdmin bool) ([]m
 	if !isAdmin {
 		statement = statement.Where(goqu.C("role").Eq("USER"))
 	}
+	if len(hidden) > 0 {
+		ids := make([]int64, 0, len(hidden))
+		for id := range hidden {
+			ids = append(ids, id)
+		}
+		statement = statement.Where(goqu.C("id").NotIn(ids))
+	}
 
-	sql, _, err := statement.Order(goqu.I("id").Desc()).Limit(30).ToSQL()
+	sql, _, err := statement.Order(goqu.I("id").Desc()).Limit(notificationPageSize).ToSQL()
 	if err != nil {
 		return nil, err
 	}

@@ -275,7 +275,7 @@ func (h *EegHandler) notifications() middleware.JWTHandlerFunc {
 			return false
 		}
 
-		notifications, err := h.db.GetNotification(tenant, id, isAdmin())
+		notifications, err := h.db.GetNotification(r.Context(), tenant, id, isAdmin())
 		if err != nil {
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1055, err.Error()))
 			return

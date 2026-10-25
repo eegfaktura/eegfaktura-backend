@@ -290,11 +290,13 @@ func protocolEcReqOnlHandler(ctx context.Context, msg model.SubscribeMessage) {
 			statusCode = &codes[0]
 		} else if codesContains(REJECTED_INVALID_CODES, codes) {
 			status = model.INVALID
-			statusCode = &intersectCodes(REJECTED_INVALID_CODES, codes)[0]
+			c := rejectionCode(intersectCodes(REJECTED_INVALID_CODES, codes))
+			statusCode = &c
 		} else {
 			status = model.REJECTED
 			if len(codes) > 0 {
-				statusCode = &codes[0]
+				c := rejectionCode(codes)
+				statusCode = &c
 			}
 		}
 	case model.EBMS_ONLINE_REG_APPROVAL, model.EBMS_OFFLINE_REG_APPROVAL:

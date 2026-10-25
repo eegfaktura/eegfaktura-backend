@@ -47,6 +47,102 @@ this changelog highlights the changes relevant for overview and operations.
 - The gRPC call to eda-xp for a mail with inline images and attachment gets 30 s instead of 5 s when its files
   exceed 256 KB (a customised mail may carry up to 6 MB); smaller mails keep 5 s.
 
+## [1.7.0] – 2026-10-25
+
+### Added
+- **Energy data requests: per-meter periods, lock against double requests, live status in Messages**
+  (`konzept-smart-nachfordern.md`). Contract change with **eegfaktura-web** (caller of `POST /meteringpoint/syncenergy`
+  and `GET /eeg/notifications/{id}`); the request additions are optional, older web versions keep working.
+  - `syncenergy`: each entry of `meteringPoints` takes optional `from`/`to` (ms, like the request's own). Set, they
+    are the period of that metering point (cut to start/end of day and to its active period as before); missing, the
+    request period applies. An optional top-level `complete: [string]` lists metering points web found complete:
+    they are not requested and appear in the run/summary as skipped with reason `COMPLETE`; a metering point also
+    listed in `meteringPoints` is handled by that entry (requested, or skipped for its own reason). With periods per
+    metering point, or without a request period, the run (and so summary and live entry) carries the span of the
+    requested metering points as its period.
+  - **Lock (1 hour):** a metering point requested by a run of the same tenant in the last hour for a period sharing
+    at least one day, and not rejected (`ABLEHNUNG_PT`) there, is not requested again: skipped with reason
+    `ALREADY_REQUESTED` and `until` (ms, run creation + 1 h). Single and bulk requests alike; no override. A rejected
+    metering point is free at once. GEA tenants are locked separately. A metering point whose request could not be
+    sent (MQTT error, answer `500`) is taken out of the run again and is not locked; of a metering point with several
+    participations only the span of the sent ones stays.
+  - **A request that sends nothing stores no run** (everything skipped: locked, complete, not registered, …): no
+    live entry and no summary; the response body reports the skipped metering points. Before, a request for two or
+    more metering points that were all skipped got a summary with 0 requested.
+  - **Response: `200` with a body instead of `204`** (online community):
+    `{"requested": <metering points requested from the grid operator>, "skipped": [{"meteringPoint", "reason",
+    "until"?}]}`, the skipped entries the run records (`COMPLETE`, `ALREADY_REQUESTED`, `NOT_REGISTERED`, …), also for
+    a single request that is locked. Error status codes are unchanged; an offline community still gets `204`. Web
+    (`syncMeteringPoint`) only checks for a 2xx answer and does not read the body, so older web versions keep working.
+    A request with only `complete` (every metering point complete) is accepted (nothing stored); before, a request without
+    metering points got `500` („no Meter selected“), which it still gets without `complete`.
+  - **A run that cannot be stored is not sent:** if the run row cannot be written (database error), nothing goes to
+    the grid operator and the request gets `500` (error code `5100`, as a failed send); it can be repeated at once.
+    Before, the requests went out without a run, so nothing locked or summarised them. (Rare: if the row is written
+    but the answer is lost, the metering points stay locked for the hour although nothing was sent.) The lock and
+    the stored requests are only read when at least one metering point can be sent: a request where every metering
+    point is complete or skipped for another reason answers `200` even when that read would fail.
+  - `skipped[]` entries in the run row and in `ZUSAMMENFASSUNG_PT` gain the optional field `until`.
+  - **Notification list (admins):** each open run with a summary (two or more metering points, younger than 24 h,
+    not yet summarised) is listed as one entry shaped like a stored `ZUSAMMENFASSUNG_PT` (type `MESSAGE`, process
+    `EDA_PROCESS`), computed at request time, with `live: true` in the message, the run's row id as `id` and its
+    creation time as `date`; it is ordered by id like the other entries. The `ANTWORT_PT` / `ABLEHNUNG_PT` of such a
+    run are left out of the list. Once the stored summary is written it replaces the live entry, and the single
+    answers are listed again as before. Single requests are unchanged. The rows behind it are kept for 15 s per
+    backend instance (cleared when the instance writes a run or a summary; new answers show after 15 s at the
+    latest, so an answer arriving within these 15 s can show once as a single entry before it moves into the live
+    entry). If they cannot be read, the list comes without live entries instead of failing. For a tenant without a
+    run younger than 24 h only a short probe runs, the rows are not read.
+  - **Answers are attributed by period** (summary, lock and live entry alike). Answers carry no period and no
+    reference to the request, so per metering point: a later run supersedes an earlier request only for a period
+    sharing a day (before: any later run with that metering point, which marked e.g. a May request as „requested
+    again“ after an April request and gave it all answers); within its range an answer goes to the oldest request
+    without an answer, else to the newest. A rejection frees the period of the request it belongs to.
+  - **One row set for summary, lock and live entry:** all three read the run rows and summaries of the last 49 hours
+    (2 x deadline + 1 h) and the answers from the oldest of these runs on, of the tenants of the community id, and
+    attribute them alike; an answer to an open run keeps its owner in the set even if that run is older than the
+    deadline. The 5-minute check reads this window on every run (before: from the oldest open bulk run on, which left
+    out single requests after a restart and could disagree with the live entry and the lock). After a long outage
+    a request is now still summarised up to about a day after its deadline (before: about an hour).
+  - No schema change: the notification JSON is extended additively; old runs have no `until`.
+  - **Deploy order:** backend first is safe; web shows the new reasons and the live entry only with its matching
+    release.
+
+### Changed
+- **Energy data request after an owner change: the old member's part is requested too** (decision of 2026-10-24:
+  the billing needs all current data, and the old member's data cannot be got later). **Behaviour towards the grid
+  operators changes.** Before, `syncenergy` skipped the old member's moved entry (flag 0, reason `NOT_ASSIGNED`)
+  and requested only the new member's part. Now every entry of the metering point is requested for its part of the
+  period (cut to its own active period); an archived entry (flag 2) is still skipped (`NOT_ASSIGNED`). Note: when
+  an archived metering point is registered again, `saveMeteringPoint` sets its earlier INACTIVE entries to flag 0, so
+  their periods are requested too; only archived entries of metering points that never came back stay skipped.
+  - Grid operator side (ebUtilities process CR_REQ_PT, https://www.ebutilities.at/prozesse/503, PDF:
+    https://www.ebutilities.at/api/export/pdf/processes/503): the grid operator checks „ob der Zählpunkt durch den
+    Anforderer im Anforderungszeitraum beliefert wird“ (rejection 55/94). The requester is the community, so the old
+    member's period qualifies while the metering point belonged to the community.
+  - A merged request goes out with the current entry (flag 1), else the later part's; for BEG its grid operator is
+    the receiver.
+  - Parts that overlap or touch (old until 15.06., new from 16.06.) go out as **one** ANFORDERUNG_PT over both parts;
+    a gap between the owners (old until 02.09., new from 06.09.) gives **two** requests, one per part. No period is
+    sent twice. A request only in the old member's period is sent (before: skipped as `NOT_ACTIVE_IN_PERIOD`).
+  - The 1 h lock is checked per part: a part requested within the hour is skipped, the other part is sent. The run
+    records one period per metering point, the span of the sent parts (as for several participations before), so
+    with a gap the days between the owners are locked too (no entry is active there, so none would be sent).
+    A part is skipped whole when the lock shares at least one day with it, as for every metering point since the
+    lock was introduced (no trimming): when the old member's last day is the new member's first day and only the
+    new part was requested, a request over both parts sends nothing for the old part either until the lock ends
+    (at most 1 h, the answer says `ALREADY_REQUESTED` with `until`).
+  - Skipped reason with several entries: independent of their order, the reason that tells most counts
+    (`ALREADY_REQUESTED` before `NOT_REGISTERED`, `NO_ACTIVE_PERIOD`, `NOT_ACTIVE_IN_PERIOD`, `NOT_ASSIGNED`); locked
+    for two entries, the later `until`. The old member's entry outside the period gives way to the new member's
+    reason, as `NOT_ASSIGNED` did before.
+  - Open: whether the grid operators answer a request for the old member's period (whose consent has ended) is not
+    verified in production yet (the spec above says it should be accepted). Known limit with a gap (two requests
+    for one metering point in a run): the latest answer counts for the summary and the lock, so a rejection of one
+    part frees the lock for the whole span and the summary can show the metering point as rejected although the
+    other part was accepted; the summary can also be written after the first of the two answers (the second one is
+    then listed as a single answer).
+
 ### Security
 - **`/query` no longer returns the token verifier's error text.** A request to the GraphQL endpoint with an
   invalid or expired token got the verifier message in the 401 body (e.g. `oidc: id token signed with
@@ -58,12 +154,93 @@ this changelog highlights the changes relevant for overview and operations.
 - Error notifications of a failed member mail (consent request / metering point active) and of a failed metering
   point list mail were saved under the community id (ecId) instead of the tenant and never reached the community's
   admins. They are saved under the tenant now.
+
+- **A rejection no longer undoes a participation** (`konzept-zaehlpunkt-ausblenden.md`, part 2, decisions
+  24.10.2026). Example: a metering point active 06.03.2024–22.01.2025 (`AUFHEBUNG_CCMI`), re-registered on 05.05.2025
+  and rejected with code 57 („Zählpunkt nicht versorgt“), got process state `INVALID` while its status stayed
+  `INACTIVE`. web then showed it in every period at the top of the problem cases, and it could not be deleted (it has
+  energy data and invoices). Now an answer that sets `INVALID` or `REJECTED` (rejection, refused or missing consent,
+  answer codes 182/183, abort) for a current entry (`flag = 1`):
+  - **ended** (status `INACTIVE` with `activesince` and `inactivesince`): process state stays `INACTIVE`, whatever
+    the code. Without `activesince` the entry never took part (e.g. revoked via CCMS before activation) and gets
+    `INVALID`/`REJECTED` as before;
+  - **active** (status `ACTIVE`) and **all** codes of the message concern the request, not the metering point
+    (`model.REJECTED_KEEP_ACTIVE_CODES`: 172/173 consent refused / not answered, 183 allocation keys > 100 %, 188
+    participation factor > 100 %): stays `ACTIVE`; `INIT`/`PENDING`/`APPROVED` left by the rejected request go back
+    to `ACTIVE`, `REVOKED` and other states stay. This includes ZUSTIMMUNG with 172/173 for an active metering point
+    (platform#180 below sets `INVALID` for one still in registration). For ABLEHNUNG the rule needs all deciding
+    codes to be such codes: if the message also has a code about the metering point that the old logic considered
+    (e.g. [188, 57]), that code is stored and the entry gets `INVALID`/`REJECTED` as before, so the admin sees the
+    inconsistency; a code the old logic ignored (e.g. 82 in [172, 82]) changes nothing, 172 stays stored.
+    ZUSTIMMUNG and ANTWORT keep their existing single-code logic. Any other code (56, 57, 185, 104, 159, …) gives
+    `INVALID`/`REJECTED` as before;
+  - where the state is kept, `last_process_state` holds the rejected state and `statusCode` the code; `activesince`
+    is not touched;
+  - never-active (`INIT`) entries get `INVALID`/`REJECTED` as before. An applied rejection clears
+    `last_process_state`; a rejection without code (ABBRUCH) keeps the stored `statusCode` as before.
+
+  The notification for the admins is unchanged. **Visible change:** a fresh rejection of such a metering point is
+  shown only in the messages (Nachrichten); the metering point keeps its inactive/active card in web, without the
+  `INVALID` card and code, and is no longer among the problem cases. The Excel master data export shows
+  `INACTIVE`/`ACTIVE` instead of `INVALID`/`REJECTED` in „ZP-Status“.
+  - **Revocation:** AUFHEBUNG_CCMI/CCMC (`meteringPointRevokeByConsentId`) of an entry that ends there (status not
+    `INIT`, `activesince` and end date set) and still carries `INVALID`/`REJECTED` ends it at `INACTIVE` (the
+    rejection goes to `last_process_state`) instead of `INACTIVE` + `INVALID`. This also applies to history entries
+    (`flag = 0`) that the revocation matches by consent id, consistent with the current entry. Never-active entries
+    as before; the „no longer part of the community“ mail still follows the status only.
+  - **Restore after code 86** (competing processes): an ended entry at `INIT` goes back to `INACTIVE`; every other
+    state stays. An ended entry rejected with 86 while its re-registration is `PENDING` therefore stays `PENDING`: 86
+    reports a competing process at the grid operator, and we cannot tell whether it is our own. `last_process_state`
+    is not used for the restore any more (it was never written before, so this was a no-op).
+  - `last_process_state` is cleared by every other status message (a new registration attempt or its result).
+  - **Operator, after deploying (prod and pilot):** clean up the existing cases once with
+    `scripts/ended-meter-rejection/` (README there): `pgz <ns> < check.sql` (read only; counts per variant and code,
+    and the variants left alone: `ohne_datum`, `aktiv_andere`), `pgz <ns> -v expected=<anzahl> < fix.sql` (commits
+    only if exactly that many rows changed), `rollback.sql` the same way to undo. The active variant covers only
+    `ACTIVE` + `INVALID` with code 172/173/183/188 (an abort gives `REJECTED` and keeps an old code, so it is only
+    reported); an optional read-only query in the README lists these with their latest EDA message. Rough size,
+    counted on 24.10.2026 before the `activesince` condition: about 377 ended entries in about 100 tenants, about 53
+    active ones (188/173). `expected` always comes from `check.sql`, never from these numbers.
+- **Restoring the process state after code 86 no longer logs an error on success.**
+  `restoreMeteringPointProcessState` always returned an error value (also without a database error), so every
+  rejection with code 86 logged „can not restore MeteringPointProcessState“. The update itself ran; only the log
+  changes.
 - **EDA: ZUSTIMMUNG_ECON/ECOF with code 172 sets the metering point to INVALID again** (platform#180). Code 172
   („Kunde hat Datenfreigabe abgelehnt“) had an empty `case` since 2025-09-22: the line for 173 was inserted between
   the label and the body of 172, and Go has no fallthrough. A consent message with 172 only went to the history; the
   metering point stayed in its state (usually PENDING) and the community got no notification. 172 and 173 now share
   the body again, as introduced on 2024-12-09: process state INVALID, status code 172, a notification for the
   admins. ABLEHNUNG_ECON/ECOF is unchanged. Metering points that received 172 before stay as they are.
+- **Metering points with an owner change: each entry gets its own period.** After an owner change a
+  metering point has two entries in the community (old member, new member). The lookup behind the energy data
+  request and the master data for energystore joined the period only by metering point number, so
+  both entries got the new member's period (or every combination of both). Effect: an energy data request over the
+  change date sent the request for the new member's part twice to the grid operator. Now every entry carries its
+  own period and flag, and the request is sent once. Metering points with one entry return the same as before
+  (the old member's part is now requested too, see Changed).
+- **Energy data request: an ended entry gets its full last day.** `syncenergy` cut the requested period at the
+  entry's `inactivesince` as UTC midnight (e.g. 31.05. 02:00 local), so the last active day was mostly not requested
+  from the grid operator; `activesince` started at UTC midnight (01:00 / 02:00 local). `inactivesince` is the last
+  active day (energystore and billing count it as a whole day): the period now ends at 23:45 local time of that day
+  and starts at 00:00 local time of `activesince`, as the request period itself (summer time included). Affects every
+  metering point whose active period starts or ends inside the requested period (single entries too, e.g. a
+  metering point that left the community); one with an open end is unchanged — to be confirmed by the user, as it
+  changes what goes to the grid operators for all such entries. Pre-existing; with the old member's part now
+  requested (see Changed) it reaches the grid operators on every owner change.
+- **Archiving a tariff that is still in use is refused** (`DELETE /eeg/tariff/{id}`). The check in `archiveTariff`
+  only failed on a database error and ignored the rows it found, so a tariff still assigned to a member
+  (`participant.tariffId`) or a metering point (`meteringpoint.tariff_id`) was archived. Now the tariff stays as it is
+  and the call answers `400` with code `4002` („Tariff is currently used“). Counted are entries whose tariff can still
+  be changed (decision 24.10.2026): members of the tenant in every status, metering points only as the current entry
+  (`flag = 1`, any status), not their moved (`0`) or archived (`2`) history rows. A later re-billing of an old period
+  may then miss the archived tariff (as before this fix, when every tariff could be archived). Check and archive are
+  one `UPDATE`. Not prevented: an assignment committed at the same moment, and saving a member or metering point does
+  not check the tariff's status (known gap). The member check is now tenant-scoped like the metering point check. An
+  unknown tariff id, or one of another community, now answers `400` with code `4001` („unknown tariff“, as when saving
+  a tariff) instead of `202`. eegfaktura-web checks this client-side as well (web#191).
+
+### CI
+- `rolling-release.yml`: no image build on a draft pull request — it runs when the pull request is marked ready for review (`ready_for_review`) and on every later push to it; `pr-checks.yml` still checks drafts. Pushes, tags and the deploy dispatch are unchanged.
 
 ## [1.6.0] – 2026-10-21
 
