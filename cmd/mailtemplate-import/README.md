@@ -18,7 +18,7 @@ A **copy of the data volume**, not the repository's `public/` folder. It uses th
 | Go template | new format |
 |---|---|
 | `{{.Participant.FirstName}}`, `.LastName`, `.ParticipantNumber.String` | `member.firstName`, `member.lastName`, `member.number` |
-| `{{.Eeg.Name}}`, `{{.Eeg.Description}}`, `.Contact.Phone.String`, `.Contact.Email.String`, `.Website.String` | `eeg.name`, `eeg.description`, `eeg.phone`, `eeg.email`, `eeg.website` |
+| `{{.Eeg.Name}}`, `{{.Eeg.Description}}`, `.Contact.Phone.String`, `.Contact.Email.String`, `.Website.String` | `eeg.name` (both: the designation since 25.10.2026), `eeg.phone`, `eeg.email`, `eeg.website` |
 | `<ul>{{range .Meteringpoints}}<li>{{.}}</li>{{end}}</ul>` | block `meteringPoints` |
 | several consecutive `{{if .Eeg.<field>.Valid}}…{{end}}`, or one around the contact person | block `eeg.contactBlock` |
 | a single `{{if .Eeg.Contact.Phone/Email/Website.Valid}}…{{end}}` | condition dropped, inner placeholder kept |
