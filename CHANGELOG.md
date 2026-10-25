@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.7.0] – 2026-10-25
+
 ### Added
 - **Energy data requests: per-meter periods, lock against double requests, live status in Messages**
   (`konzept-smart-nachfordern.md`). Contract change with **eegfaktura-web** (caller of `POST /meteringpoint/syncenergy`
