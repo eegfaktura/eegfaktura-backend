@@ -154,7 +154,7 @@ func TestRender_InactiveDefaultWithoutDirectionAndEndDate(t *testing.T) {
 		Reason: "Weil.", Eeg: testEeg()}, nil, ImagesInline)
 	require.NoError(t, err)
 	text, _ := visible(t, r.Html)
-	assert.Contains(t, text, "dein Zählpunkt AT1 ist nicht mehr Teil der Energiegemeinschaft TE-EEG.")
+	assert.Contains(t, text, "dein Zählpunkt AT1 ist nicht mehr Teil der Energiegemeinschaft Test Energiegemeinschaft.")
 	assert.NotContains(t, text, "()")
 	assert.NotContains(t, text, "ab dem")
 
@@ -244,4 +244,32 @@ func TestTemplateBracesAreBrokenUp(t *testing.T) {
 	r, err = Render(def, "S", `<p><span data-ph="member.firstName">x</span></p>`, "", &Data{FirstName: "{{constructor}}"}, nil, ImagesInline)
 	require.NoError(t, err)
 	assert.Contains(t, r.Html, "{<!-- -->{constructor}}", "member values are broken up too")
+}
+
+// {eeg.name} is the community's designation in every member mail, as in the billing mail (decision 25.10.2026);
+// the short name only without a designation. eeg.description is no longer offered but texts saved with it render.
+func TestRender_EegNameIsTheDesignation(t *testing.T) {
+	def := Lookup(KeyZpActive)
+	body := `<p><span data-ph="eeg.name">x</span></p>`
+	r, err := Render(def, "Hallo {eeg.name}", body, "", &Data{Eeg: testEeg()}, nil, ImagesInline)
+	require.NoError(t, err)
+	assert.Equal(t, "Hallo Test Energiegemeinschaft", r.Subject)
+	assert.Contains(t, r.Html, "Test Energiegemeinschaft")
+	assert.NotContains(t, r.Html, "TE-EEG")
+
+	short := testEeg()
+	short.Description = " "
+	r, err = Render(def, "Hallo {eeg.name}", body, "", &Data{Eeg: short}, nil, ImagesInline)
+	require.NoError(t, err)
+	assert.Equal(t, "Hallo TE-EEG", r.Subject)
+
+	r, err = Render(def, "Hallo {eeg.description}", `<p><span data-ph="eeg.description">x</span></p>`, "",
+		&Data{Eeg: testEeg()}, nil, ImagesInline)
+	require.NoError(t, err)
+	assert.Equal(t, "Hallo Test Energiegemeinschaft", r.Subject)
+	assert.Contains(t, r.Html, "Test Energiegemeinschaft")
+
+	for _, ph := range def.Placeholders {
+		assert.NotEqual(t, "eeg.description", ph.Key, "no longer offered")
+	}
 }

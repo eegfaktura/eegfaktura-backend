@@ -226,9 +226,11 @@ func renderSubject(def *Definition, stored string, data *Data) (string, error) {
 
 // text returns the plain value of a placeholder ("" when missing).
 func (d *Data) text(def *Definition, key string) (string, error) {
-	if def.Placeholder(key) == nil {
+	ph := def.Placeholder(key)
+	if ph == nil {
 		return "", fmt.Errorf("unknown placeholder %q", key)
 	}
+	key = ph.Key // an alias (placeholderAliases) renders as its key
 	eeg := d.Eeg
 	if eeg == nil {
 		eeg = &model.Eeg{}
@@ -264,9 +266,9 @@ func (d *Data) text(def *Definition, key string) (string, error) {
 	case "reason":
 		return d.Reason, nil
 	case "eeg.name":
-		return eeg.Name, nil
-	case "eeg.description":
-		return eeg.Description, nil
+		// the community's designation (base.eeg.description), as the issuer on documents and {eeg.name} in the
+		// billing mail (decision 25.10.2026); the short name only when the designation is empty
+		return eegDisplayName(eeg), nil
 	case "eeg.email":
 		return strings.TrimSpace(eeg.Email.String), nil
 	case "eeg.phone":
@@ -328,10 +330,7 @@ func (d *Data) contactLines() []string {
 			lines = append(lines, prefix+v)
 		}
 	}
-	name := eeg.Description
-	if strings.TrimSpace(name) == "" {
-		name = eeg.Name
-	}
+	name := eegDisplayName(eeg)
 	add("", name)
 	add("", eeg.ContactPerson.String)
 	place := strings.TrimSpace(eeg.Zip + " " + eeg.City)
@@ -363,4 +362,12 @@ func setAttr(n *xhtml.Node, key, val string) {
 		}
 	}
 	n.Attr = append(n.Attr, xhtml.Attribute{Key: key, Val: val})
+}
+
+// eegDisplayName is the designation of the community, else its short name.
+func eegDisplayName(eeg *model.Eeg) string {
+	if strings.TrimSpace(eeg.Description) != "" {
+		return eeg.Description
+	}
+	return eeg.Name
 }

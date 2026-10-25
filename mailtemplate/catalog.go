@@ -67,12 +67,20 @@ type Definition struct {
 
 // Placeholder returns the placeholder with the given key, nil if the mail does not know it.
 func (d *Definition) Placeholder(key string) *Placeholder {
+	if alias, ok := placeholderAliases[key]; ok {
+		key = alias
+	}
 	for i := range d.Placeholders {
 		if d.Placeholders[i].Key == key {
 			return &d.Placeholders[i]
 		}
 	}
 	return nil
+}
+
+// placeholderAliases are keys no longer offered that texts saved before may still contain.
+var placeholderAliases = map[string]string{
+	"eeg.description": "eeg.name", // same value since 25.10.2026 (the community's designation)
 }
 
 var (
@@ -89,7 +97,6 @@ var (
 	phEndDateText   = Placeholder{Key: "endDateText", Label: "ab dem Enddatum – leer, wenn unbekannt"}
 	phReason        = Placeholder{Key: "reason", Label: "Grund"}
 	phEegName       = Placeholder{Key: "eeg.name", Label: "Name der EEG"}
-	phEegDesc       = Placeholder{Key: "eeg.description", Label: "Bezeichnung der EEG"}
 	phEegEmail      = Placeholder{Key: "eeg.email", Label: "E-Mail der EEG"}
 	phEegPhone      = Placeholder{Key: "eeg.phone", Label: "Telefon der EEG"}
 	phEegWebsite    = Placeholder{Key: "eeg.website", Label: "Website der EEG"}
@@ -109,7 +116,7 @@ var catalog = []Definition{
 		Name:        "Freigabe-Aufforderung",
 		Description: "Wird verschickt, wenn der Netzbetreiber den Eingang der Anmeldung eines Zählpunkts bestätigt. Das Mitglied wird gebeten, die Datenfreigabe zu bestätigen.",
 		Placeholders: []Placeholder{phFirstName, phLastName, phNumber, phMeter, phMeters, phGridOperator,
-			phEegName, phEegDesc, phEegEmail, phEegPhone, phEegWebsite, phContactBlock},
+			phEegName, phEegEmail, phEegPhone, phEegWebsite, phContactBlock},
 		Limits:         memberMailLimits,
 		DefaultVersion: 1,
 		DefaultSubject: "Aktivierung im Serviceportal",
@@ -129,7 +136,7 @@ var catalog = []Definition{
 		Name:        "Zählpunkt aktiv",
 		Description: "Wird verschickt, wenn die Anmeldung eines Zählpunkts abgeschlossen ist und der Zählpunkt aktiv ist.",
 		Placeholders: []Placeholder{phFirstName, phLastName, phNumber, phMeter, phMeters, phGridOperator,
-			phEegName, phEegDesc, phEegEmail, phEegPhone, phEegWebsite, phContactBlock},
+			phEegName, phEegEmail, phEegPhone, phEegWebsite, phContactBlock},
 		Limits:         memberMailLimits,
 		DefaultVersion: 1,
 		DefaultSubject: "Dein Zählpunkt ist aktiv",
@@ -143,7 +150,7 @@ var catalog = []Definition{
 		Name:        "Zählpunkt inaktiv",
 		Description: "Wird verschickt, wenn ein Zählpunkt nicht mehr Teil der Gemeinschaft ist (Datenfreigabe beendet oder Zählpunkt abgemeldet).",
 		Placeholders: []Placeholder{phFirstName, phLastName, phNumber, phMeter, phMeters, phDirection, phEndDate, phDirectionText, phEndDateText, phReason,
-			phEegName, phEegDesc, phEegEmail, phEegPhone, phEegWebsite, phContactBlock},
+			phEegName, phEegEmail, phEegPhone, phEegWebsite, phContactBlock},
 		Limits:         memberMailLimits,
 		DefaultVersion: 1,
 		DefaultSubject: "Dein Zählpunkt ist nicht mehr Teil der Energiegemeinschaft",

@@ -247,7 +247,7 @@ func TestMailTemplates_HappyPath(t *testing.T) {
 		"subject": "Vorschau {eeg.name}", "bodyHtml": body})
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	preview := decode[map[string]string](t, w)
-	assert.Equal(t, "Vorschau MAIL-TEST", preview["subject"])
+	assert.Equal(t, "Vorschau Mailtest Gemeinschaft", preview["subject"]) // {eeg.name} = designation (25.10.2026)
 	assert.Contains(t, preview["html"], "<p>Hallo Max!</p>")
 	assert.Contains(t, preview["html"], `src="data:image/png;base64,`)
 	assert.Contains(t, preview["html"], "<div>Mailtest Gemeinschaft</div>")

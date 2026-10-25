@@ -109,7 +109,7 @@ var values = map[string]string{
 	".Participant.LastName":                 "member.lastName",
 	".Participant.ParticipantNumber.String": "member.number",
 	".Eeg.Name":                             "eeg.name",
-	".Eeg.Description":                      "eeg.description",
+	".Eeg.Description":                      "eeg.name",
 	".Eeg.Contact.Phone.String":             "eeg.phone",
 	".Eeg.Phone.String":                     "eeg.phone",
 	".Eeg.Contact.Email.String":             "eeg.email",

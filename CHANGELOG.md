@@ -44,6 +44,11 @@ this changelog highlights the changes relevant for overview and operations.
 
 ### Changed
 - The mail send log line no longer contains the subject (a customised subject can contain member data).
+- **`{eeg.name}` is the community's designation** (`base.eeg.description`, as the issuer on documents and in the
+  billing mail; the short name only when the designation is empty), decision 25.10.2026. `eeg.description` is no
+  longer offered (same value); texts saved with it still render. The import tool maps `.Eeg.Description` to
+  `eeg.name`. The built-in zp-inactive mail says "nicht mehr Teil der Energiegemeinschaft <designation>" instead of
+  the short name — a changed member mail text for every community without its own template.
 - The gRPC call to eda-xp for a mail with inline images and attachment gets 30 s instead of 5 s when its files
   exceed 256 KB (a customised mail may carry up to 6 MB); smaller mails keep 5 s.
 
