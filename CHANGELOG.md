@@ -55,6 +55,9 @@ this changelog highlights the changes relevant for overview and operations.
   exceed 256 KB (a customised mail may carry up to 6 MB); smaller mails keep 5 s.
 
 ### Fixed
+- Mail texts (review 25.10.2026): a save without `attachmentFileId` is a 400 (it removed a saved PDF silently; `null`
+  = no PDF); the preview and test mail show a hand-made volume template only when nothing is customised (also no own
+  image or PDF); `legacyTemplateActive` also reports the global volume template, as the send path uses it.
 - Error notifications of a failed member mail (consent request / metering point active) and of a failed metering
   point list mail were saved under the community id (ecId) instead of the tenant and never reached the community's
   admins. They are saved under the tenant now.

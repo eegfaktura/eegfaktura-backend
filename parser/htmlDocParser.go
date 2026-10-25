@@ -60,11 +60,12 @@ func resolveTemplateSource(tenant, templateConfigName string) (fs.FS, string) {
 	return embedded, "embedded"
 }
 
-// TenantTemplateActive reports whether a hand-made template of the community on
-// the data volume applies to a mail (used while it has no saved version).
+// TenantTemplateActive reports whether a hand-made template on the data volume
+// applies to a mail of the community (its own or the global one, as the send
+// path resolves it; used while it has no saved version).
 func TenantTemplateActive(tenant, templateConfigName string) bool {
-	_, err := os.Stat(filepath.Join(viper.GetString("file-content.templates"), tenant, "templates", templateConfigName))
-	return err == nil
+	_, source := resolveTemplateSource(tenant, templateConfigName)
+	return source != "embedded"
 }
 
 // RenderLegacy renders the template the legacy resolution would send (tenant

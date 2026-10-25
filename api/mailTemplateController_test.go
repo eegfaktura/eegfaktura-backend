@@ -103,6 +103,13 @@ func (c *mtClient) do(token, tenant, method, path string, body io.Reader, conten
 }
 
 func (c *mtClient) json(token, tenant, method, path string, payload interface{}) *httptest.ResponseRecorder {
+	// a save names the PDF explicitly, as web always does (null = none); a missing field is a 400
+	// (TestMailTemplates_SaveWithoutAttachmentField)
+	if m, ok := payload.(map[string]interface{}); ok && method == "PUT" && !strings.Contains(path, "/files") {
+		if _, set := m["attachmentFileId"]; !set {
+			m["attachmentFileId"] = nil
+		}
+	}
 	var body io.Reader
 	if payload != nil {
 		b, err := json.Marshal(payload)
@@ -332,6 +339,22 @@ InlinePictures = [ { Filepath="l.png", contentId="logo-1" } ]`), 0o644))
 	w = c.json("admin", mtTenant, "POST", "/eeg/mailtemplates/consent-request/preview", map[string]interface{}{
 		"subject": def.DefaultSubject, "bodyHtml": "<p>Neu</p>"})
 	assert.Contains(t, decode[map[string]string](t, w)["html"], "<p>Neu</p>")
+
+	// the default text with an own PDF or an own image is a change: the preview shows it, not the hand-made template
+	w = c.upload("admin", mtTenant, "consent-request", "attachment", "anleitung.pdf", minimalPDF)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	pdfId := decode[map[string]interface{}](t, w)["id"].(string)
+	w = c.json("admin", mtTenant, "POST", "/eeg/mailtemplates/consent-request/preview", map[string]interface{}{
+		"subject": def.DefaultSubject, "bodyHtml": compact, "attachmentFileId": pdfId})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.NotContains(t, decode[map[string]string](t, w)["html"], "Servus Max", "own PDF: not the hand-made template")
+	w = c.upload("admin", mtTenant, "consent-request", "image", "bild.png", logoPNG(t))
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	imgId := decode[map[string]interface{}](t, w)["id"].(string)
+	w = c.json("admin", mtTenant, "POST", "/eeg/mailtemplates/consent-request/preview", map[string]interface{}{
+		"subject": def.DefaultSubject, "bodyHtml": compact + `<p><img src="mailfile:` + imgId + `"></p>`})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.NotContains(t, decode[map[string]string](t, w)["html"], "Servus Max", "own image: not the hand-made template")
 
 	// a saved version replaces the hand-made template
 	w = c.json("admin", mtTenant, "PUT", "/eeg/mailtemplates/consent-request", map[string]interface{}{
@@ -572,4 +595,32 @@ func TestMailTemplates_TenantIsolationAndRole(t *testing.T) {
 	// the file is untouched
 	w = c.do("admin", mtTenant, "GET", "/eeg/mailtemplates/zp-active/files/"+imgId, nil, "")
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+// A save sets the whole version: without attachmentFileId a saved PDF would be removed silently, so it is a 400.
+func TestMailTemplates_SaveWithoutAttachmentField(t *testing.T) {
+	c := newMailTemplateClient(t)
+	w := c.do("admin", mtTenant, "PUT", "/eeg/mailtemplates/zp-active",
+		strings.NewReader(`{"subject":"Betreff","bodyHtml":"<p>Hallo</p>","version":0}`), "application/json")
+	assert.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), "attachmentFileId")
+}
+
+// A global hand-made template on the volume applies to every community without its own one (as the send path
+// resolves it), so the editor reports it as active too.
+func TestMailTemplates_GlobalLegacyTemplateActive(t *testing.T) {
+	c := newMailTemplateClient(t)
+	vol := t.TempDir()
+	dir := filepath.Join(vol, "templates")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "activation-mail-template.toml"), []byte(`TemplateFile="t.html"`), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "t.html"), []byte(`<html><body><p>Global {{.Eeg.Name}}</p></body></html>`), 0o644))
+	orig := viper.GetString("file-content.templates")
+	viper.Set("file-content.templates", vol)
+	t.Cleanup(func() { viper.Set("file-content.templates", orig) })
+
+	w := c.json("admin", mtTenant, "GET", "/eeg/mailtemplates/consent-request", nil)
+	assert.True(t, decode[mtDTO](t, w).LegacyTemplateActive)
+	w = c.json("admin", mtTenant, "GET", "/eeg/mailtemplates/zp-active", nil)
+	assert.False(t, decode[mtDTO](t, w).LegacyTemplateActive)
 }

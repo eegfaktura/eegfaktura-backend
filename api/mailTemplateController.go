@@ -287,9 +287,15 @@ func (h *MailTemplateHandler) save() middleware.JWTHandlerFunc {
 		if !ok {
 			return
 		}
-		attachmentId, _, aerr := req.attachment()
+		attachmentId, present, aerr := req.attachment()
 		if aerr != nil {
 			respondValidation(w, aerr)
+			return
+		}
+		if !present {
+			// a save sets the whole version: without the field a saved PDF would be removed silently
+			respondValidation(w, &mailtemplate.ValidationError{Field: "attachmentFileId",
+				Message: "attachmentFileId fehlt (null = kein PDF-Anhang)."})
 			return
 		}
 		images := mailtemplate.ReferencedImages(body)
@@ -674,6 +680,10 @@ func (h *MailTemplateHandler) legacy(r *http.Request, tenant string, def *mailte
 		return nil, nil, false
 	}
 	if !req.UseDefault && !def.SameAsDefault(req.Subject, req.BodyHtml) {
+		return nil, nil, false
+	}
+	// an own image or PDF is a change, even when the text equals the default (SameAsDefault drops own images)
+	if attachmentId, _, _ := req.attachment(); attachmentId != nil || len(mailtemplate.ReferencedImages(req.BodyHtml)) > 0 {
 		return nil, nil, false
 	}
 	if t, err := h.db.GetMailTemplate(r.Context(), tenant, def.Key); err != nil || t != nil {
