@@ -400,7 +400,7 @@ func TestParseTemplate2(t *testing.T) {
 		return nil
 	}
 
-	err := SendActivationMailFromTemplate(sendMock, "sepp", "test", eeg, participant, "activation-mail-template.toml")
+	err := SendActivationMailFromTemplate(sendMock, nil, "sepp", "test", eeg, participant, "activation-mail-template.toml")
 	assert.NoError(t, err)
 }
 
@@ -494,7 +494,7 @@ func TestManualSending(t *testing.T) {
 	}
 
 	var err error
-	if err = SendActivationMailFromTemplate(services.SendMail,
+	if err = SendActivationMailFromTemplate(services.SendMail, nil,
 		eeg.Id, "Aktivierung im Serviceportal", eeg, participant, "activation-mail-template.toml"); err != nil {
 		logrus.WithField("tenant", eeg.Id).WithError(err).Error("Error Sending Mail")
 	}

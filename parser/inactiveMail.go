@@ -3,6 +3,7 @@ package parser
 import (
 	"fmt"
 
+	"at.ourproject/vfeeg-backend/mailtemplate"
 	"at.ourproject/vfeeg-backend/model"
 	"at.ourproject/vfeeg-backend/services"
 	"github.com/jjeffery/civil"
@@ -48,6 +49,12 @@ func DirectionText(d model.DirectionType) string {
 
 // SendMeteringPointInactiveMail renders the inactive mail and sends it to the member, with the
 // community in Cc. A member without e-mail address gets no mail.
-func SendMeteringPointInactiveMail(sendMail services.SendMailFunc, tenant string, data InactiveMailData) error {
-	return sendTemplateMail(sendMail, tenant, InactiveMailSubject, InactiveMailTemplate, data.Eeg, data.Participant, data)
+// store holds the community's customised mails; nil sends the legacy template.
+func SendMeteringPointInactiveMail(sendMail services.SendMailFunc, store mailtemplate.Store, tenant string, data InactiveMailData) error {
+	mailData := memberMailData(data.Eeg, data.Participant)
+	mailData.MeteringPoints = []string{data.MeteringPoint}
+	mailData.Direction = data.Direction
+	mailData.EndDate = data.EndDate
+	mailData.Reason = data.Reason
+	return sendTemplateMail(sendMail, store, tenant, InactiveMailSubject, InactiveMailTemplate, data.Eeg, data.Participant, data, mailData)
 }

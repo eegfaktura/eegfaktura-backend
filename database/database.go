@@ -38,6 +38,7 @@ type Database interface {
 	TariffRepository
 	MqttRepository
 	EnergyRequestRepository
+	MailTemplateRepository
 }
 
 type MqttRepository interface {

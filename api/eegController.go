@@ -39,6 +39,7 @@ func InitEegRouter(r *mux.Router, db database.Database) *mux.Router {
 	s.HandleFunc("/notifications/{id}", middleware.Protect(h.notifications())).Methods("GET")
 	s.HandleFunc("/gridoperators", middleware.Protect(h.gridOperators())).Methods("GET")
 	s.HandleFunc("/user/get-user", middleware.Protect(h.getUser())).Methods("GET")
+	initMailTemplateRoutes(s, db)
 
 	//_ = InitUserRouter(s)
 

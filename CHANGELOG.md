@@ -8,6 +8,60 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Added
+- **Editable member mail texts** (konzept-mail-texte-editierbar.md): a community customises subject and text of
+  the three member mails `consent-request` (Freigabe-Aufforderung), `zp-active` and `zp-inactive`. New REST API
+  under `/eeg/mailtemplates` (EEG_ADMIN, tenant header): catalog, read, save (`version`, 409 on a stale version),
+  reset, image/PDF upload (type checked on the content: PNG/JPEG ≤ 1 MB, max. 10; one PDF ≤ 3 MB; all files
+  ≤ 6 MB), preview (sample member, real community data) and test mail (to the login's e-mail or the community
+  address, no Cc, subject prefixed `[Test] `).
+  Uploads are drafts and are never sent; saving (`attachmentFileId` names the PDF) makes the used files part of the
+  version, deletes files the version no longer uses and drafts older than 24 h; a file the saved version uses can
+  not be deleted (409); an image the text references must exist when saving (400 otherwise).
+  `legacyTemplateActive` tells the editor that a hand-made volume template still applies; preview and test mail
+  of the unchanged default (compared after sanitising) or with `useDefault: true` then use that template.
+  Texts are sanitised with bluemonday driven by `mailtemplate/mail-html-policy.json`, tested against the case list
+  `mailtemplate/mail-html-policy-cases.json` (both shared with eegfaktura-billing). Placeholders are
+  `<span|div data-ph>` in the text (blocks only at top level) and `{key}` in the subject (only the catalog key
+  syntax; `{EEG}` stays text); they are replaced as escaped values, never through a template engine. "{{" in
+  text is written as "{<!-- -->{" (client-side template engines); link URLs are kept as written.
+  `eeg.contactBlock` shows name, contact person, address, phone, e-mail and website of the community, each only
+  when present (decision G.1; today's signature has no contact person). zp-inactive also has
+  `directionText`/`endDateText`, which carry their own wording and are empty without a value.
+  Sending: a stored version of the tenant goes first (only its committed, referenced files; images inline as
+  `cid:`, optional PDF, size checked before eda-xp); otherwise the existing resolution (volume per tenant → volume
+  global → embedded) is unchanged. A stored version that can not be rendered (including a missing image) sends
+  that default and an error notification to the community (validation/size text or a generic sentence; details only
+  in the log). On startup, communities whose customised mail is based on an older default get one notification
+  (written together with its "notified" mark).
+  Migrations `20261022120000_mail_templates` (two new tables) and `20261023120000_mail_template_file_drafts`
+  (`committed`, `attachment_file_id`), both additive with down; `schema.sql`, `schema.hcl` updated, `atlas.sum`
+  regenerated with `atlas migrate hash` (it was hashed over CRLF files before and did not validate).
+- **`cmd/mailtemplate-import`**: one-off operator tool that converts the hand-made mail templates of a volume copy
+  (`<TENANT>/templates`) into the new format and imports them through the REST API (dry run, `-test-mail eeg`).
+  Unmappable template expressions (also inside attributes) stop the import of that tenant; `-overwrite` replaces a
+  saved version only by the save itself. See `cmd/mailtemplate-import/README.md`.
+
+### Changed
+- The mail send log line no longer contains the subject (a customised subject can contain member data).
+- **`{eeg.name}` is the community's designation** (`base.eeg.description`, as the issuer on documents and in the
+  billing mail; the short name only when the designation is empty), decision 25.10.2026. `eeg.description` is no
+  longer offered (same value); texts saved with it still render. The import tool maps `.Eeg.Description` to
+  `eeg.name`. Changed member mail wording: the built-in zp-inactive mail says "nicht mehr Teil der Energiegemeinschaft
+  <designation>" instead of the short name (every community without its own template), and saved texts that use
+  `{eeg.name}` now show the designation. The default text itself is unchanged, so no "new default" notice is sent
+  (`DefaultVersion` stays 1). Hand-made volume templates with `{{.Eeg.Name}}` keep the short name until imported.
+- The gRPC call to eda-xp for a mail with inline images and attachment gets 30 s instead of 5 s when its files
+  exceed 256 KB (a customised mail may carry up to 6 MB); smaller mails keep 5 s.
+
+### Fixed
+- Mail texts (review 25.10.2026): a save without `attachmentFileId` is a 400 (it removed a saved PDF silently; `null`
+  = no PDF); the preview and test mail show a hand-made volume template only when nothing is customised (also no own
+  image or PDF); `legacyTemplateActive` also reports the global volume template, as the send path uses it.
+- Error notifications of a failed member mail (consent request / metering point active) and of a failed metering
+  point list mail were saved under the community id (ecId) instead of the tenant and never reached the community's
+  admins. They are saved under the tenant now.
+
 ## [1.7.0] – 2026-10-25
 
 ### Added
@@ -112,6 +166,7 @@ this changelog highlights the changes relevant for overview and operations.
   stdout; nothing calls it. `GET /master/test` now answers 404.
 
 ### Fixed
+
 - **A rejection no longer undoes a participation** (`konzept-zaehlpunkt-ausblenden.md`, part 2, decisions
   24.10.2026). Example: a metering point active 06.03.2024–22.01.2025 (`AUFHEBUNG_CCMI`), re-registered on 05.05.2025
   and rejected with code 57 („Zählpunkt nicht versorgt“), got process state `INVALID` while its status stayed

@@ -119,8 +119,8 @@ func TestEndedMeterRejectionScripts(t *testing.T) {
 		activeRejected: {"ACTIVE", "INVALID", "2999-12-31"},
 		activeOther:    {"ACTIVE", "INVALID", "2999-12-31"},
 		// an abort (REJECTED) after an old 188: not request-level, reported as aktiv_andere only
-		activeAbort: {"ACTIVE", "REJECTED", "2999-12-31"},
-		inactiveNever:  {"INACTIVE", "INVALID", "2025-01-22"},
+		activeAbort:   {"ACTIVE", "REJECTED", "2999-12-31"},
+		inactiveNever: {"INACTIVE", "INVALID", "2025-01-22"},
 	})
 	_, err = dbx.Exec(`UPDATE base.meteringpoint SET activesince = NULL WHERE tenant = $1 AND metering_point_id = $2`,
 		tenant, inactiveNever)

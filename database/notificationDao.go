@@ -207,7 +207,7 @@ func fetchEdaHistory(db *sqlx.DB, tenant, protocol string, start, end int64, pag
 	return result, err
 }
 
-func createNotification(db *sqlx.DB, tenant, notification string,
+func createNotification(db sqlx.Execer, tenant, notification string,
 	msgType model.NotificationType, process model.NotificationProcess, role string) error {
 	stmt, _, err := pgDialect.Insert("base.notification").
 		Rows(
