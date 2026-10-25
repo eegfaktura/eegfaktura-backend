@@ -47,10 +47,17 @@ this changelog highlights the changes relevant for overview and operations.
 - **`{eeg.name}` is the community's designation** (`base.eeg.description`, as the issuer on documents and in the
   billing mail; the short name only when the designation is empty), decision 25.10.2026. `eeg.description` is no
   longer offered (same value); texts saved with it still render. The import tool maps `.Eeg.Description` to
-  `eeg.name`. The built-in zp-inactive mail says "nicht mehr Teil der Energiegemeinschaft <designation>" instead of
-  the short name — a changed member mail text for every community without its own template.
+  `eeg.name`. Changed member mail wording: the built-in zp-inactive mail says "nicht mehr Teil der Energiegemeinschaft
+  <designation>" instead of the short name (every community without its own template), and saved texts that use
+  `{eeg.name}` now show the designation. The default text itself is unchanged, so no "new default" notice is sent
+  (`DefaultVersion` stays 1). Hand-made volume templates with `{{.Eeg.Name}}` keep the short name until imported.
 - The gRPC call to eda-xp for a mail with inline images and attachment gets 30 s instead of 5 s when its files
   exceed 256 KB (a customised mail may carry up to 6 MB); smaller mails keep 5 s.
+
+### Fixed
+- Error notifications of a failed member mail (consent request / metering point active) and of a failed metering
+  point list mail were saved under the community id (ecId) instead of the tenant and never reached the community's
+  admins. They are saved under the tenant now.
 
 ## [1.7.0] – 2026-10-25
 
@@ -156,9 +163,6 @@ this changelog highlights the changes relevant for overview and operations.
   stdout; nothing calls it. `GET /master/test` now answers 404.
 
 ### Fixed
-- Error notifications of a failed member mail (consent request / metering point active) and of a failed metering
-  point list mail were saved under the community id (ecId) instead of the tenant and never reached the community's
-  admins. They are saved under the tenant now.
 
 - **A rejection no longer undoes a participation** (`konzept-zaehlpunkt-ausblenden.md`, part 2, decisions
   24.10.2026). Example: a metering point active 06.03.2024–22.01.2025 (`AUFHEBUNG_CCMI`), re-registered on 05.05.2025

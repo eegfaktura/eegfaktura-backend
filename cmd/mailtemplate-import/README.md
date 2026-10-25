@@ -27,6 +27,10 @@ A **copy of the data volume**, not the repository's `public/` folder. It uses th
 | `Attachment` | upload as PDF |
 | `<div>` holding only text (signature lines) | its content followed by `<br>` (the policy unwraps plain divs) |
 
+Since 25.10.2026 `{{.Eeg.Name}}` (short name) and `{{.Eeg.Description}}` both become `eeg.name`, the designation. A template
+that shows both (e.g. `{{.Eeg.Description}} ({{.Eeg.Name}})`) then repeats the designation, and a short name used on
+purpose turns into the long one: check the converted text in the dry run / preview before importing.
+
 Any other template expression is a **STOP**. The mail of that tenant is not imported, so no raw
 `{{…}}` ever reaches a member. A file that is not PNG/JPEG/PDF, or that is too large, is also a STOP.
 Everything the sanitiser removes (fonts, colours, tables, `http:` links, external images) is printed
