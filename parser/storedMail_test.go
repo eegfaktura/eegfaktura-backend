@@ -3,6 +3,8 @@ package parser
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"at.ourproject/vfeeg-backend/model"
@@ -91,4 +93,48 @@ func TestInactiveMail_UsesStoredTemplate(t *testing.T) {
 	require.NoError(t, SendMeteringPointInactiveMail(send, store, "TE000300", InactiveMailData{
 		Eeg: eeg, Participant: participant, MeteringPoint: "AT1", Direction: "Bezug", EndDate: "01.02.2026", Reason: "Weil."}))
 	assert.Contains(t, body, "<p>AT1 Bezug 01.02.2026 Weil.</p>")
+}
+
+// Hand-made templates on the volume (per tenant and global) are ignored: a community without a saved
+// version gets the built-in default for every member mail.
+func TestMemberMails_IgnoreVolumeTemplates(t *testing.T) {
+	vol := t.TempDir()
+	for _, dir := range []string{filepath.Join(vol, "TE000300", "templates"), filepath.Join(vol, "templates")} {
+		require.NoError(t, os.MkdirAll(dir, 0o755))
+		for _, cfg := range []string{"activation-mail-template.toml", "zp-complete-mail-template.toml", InactiveMailTemplate} {
+			require.NoError(t, os.WriteFile(filepath.Join(dir, cfg), []byte(`TemplateFile="t.html"`), 0o644))
+		}
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "t.html"), []byte(`<p>VOLUME {{.Eeg.Name}}</p>`), 0o644))
+	}
+	orig := viper.GetString("file-content.templates")
+	viper.Set("file-content.templates", vol)
+	t.Cleanup(func() { viper.Set("file-content.templates", orig) })
+	assert.Len(t, IgnoredVolumeTemplates(vol), 6, "listed for the startup warning")
+
+	eeg, participant := storedMailFixture()
+	store := &storeStub{} // no saved version
+	var body string
+	var inline int
+	send := func(_, _, _ string, _ *string, b *bytes.Buffer, in []*services.Attachment, _ *services.Attachment) error {
+		body, inline = b.String(), len(in)
+		return nil
+	}
+	reset := func() { body, inline = "", -1 }
+	for cfg, want := range map[string]string{
+		"activation-mail-template.toml":  "damit dein Zählpunkt tatsächlich Energie",
+		"zp-complete-mail-template.toml": "wurde erfolgreich aktiviert",
+	} {
+		reset()
+		require.NoError(t, SendActivationMailFromTemplate(send, store, "TE000300", "s", eeg, participant, cfg))
+		assert.NotContains(t, body, "VOLUME", cfg)
+		assert.Contains(t, body, want, cfg)
+		assert.Equal(t, 1, inline, cfg+": the embedded logo")
+	}
+	reset()
+	require.NoError(t, SendMeteringPointInactiveMail(send, store, "TE000300", InactiveMailData{
+		Eeg: eeg, Participant: participant, MeteringPoint: "AT1", Direction: "Bezug", EndDate: "01.02.2026", Reason: "Weil."}))
+	assert.NotContains(t, body, "VOLUME")
+	assert.Contains(t, body, "nicht mehr Teil")
+	assert.GreaterOrEqual(t, inline, 0, "the inactive mail was sent")
+	assert.Empty(t, store.notices)
 }

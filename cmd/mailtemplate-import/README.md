@@ -3,6 +3,11 @@
 One-off operator tool. It moves the hand-made member mail templates from the data volume into the
 editable mail texts (`/eeg/mailtemplates`). See konzept-mail-texte-editierbar.md, sections G.4 and C.
 
+From backend 1.9.0 on, the backend no longer reads the volume templates (`<TENANT>/templates`
+and the global `templates` dir): after the import only the saved version counts, and a community without one gets
+the built-in default. The import is optional: since 2026-10-26 it is not part of the rollout, the communities set up
+their own text in the editor themselves. The global `templates` dir is not imported.
+
 ## Input
 
 A **copy of the data volume**, not the repository's `public/` folder. It uses the same layout:
@@ -67,7 +72,9 @@ Per mail the tool:
    only in this one step;
 4. sends the test mail, if requested.
 
-If a step fails, the community's saved version stays untouched and the uploaded drafts are deleted again. The volume
-template then still applies where there was no saved version. The exit code is 1 if any mail was not imported.
+If a step fails, the community's saved version stays untouched and the uploaded drafts are deleted again. Without a
+saved version the community gets the built-in default (the volume template is not used). The exit code is 1 if any
+mail was not imported.
 
-After the community has approved the import (two weeks without objection, G.4), remove the volume template.
+The volume templates are no longer used after the import; keep them only as a backup until the community has
+approved the imported text (two weeks without objection, G.4), then remove them.
