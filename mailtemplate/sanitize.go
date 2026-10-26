@@ -257,7 +257,11 @@ func (s *sanitizer) cleanURL(el, key, val string) (string, bool) {
 		}
 		return "", false
 	case "https":
-		return val, u.Host != "" && u.Opaque == ""
+		// no % in the authority (bit%2Ely), as in eegfaktura-billing; url.Parse refuses a \ there already
+		if u.Host == "" || u.Opaque != "" {
+			return "", false
+		}
+		return val, !strings.Contains(upToPathEnd(val[strings.Index(val, "://")+3:]), "%")
 	case "mailto":
 		return val, strings.TrimSpace(u.Opaque) != ""
 	}
