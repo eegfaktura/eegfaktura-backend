@@ -35,6 +35,16 @@ this changelog highlights the changes relevant for overview and operations.
   name, not an IP. **No placeholder inside a link** (new key `placeholder-in-link`, „Platzhalter dürfen nicht in einem
   Link stehen: Website der EEG“): at send time `eeg.website`/`eeg.email` would show another address than the target.
   The sanitiser also drops an https link with `%` in its host part (as eegfaktura-billing).
+  **Host characters:** a link whose host has other characters than ASCII letters, digits, `-` and `.` (fullwidth
+  letters or digits, soft hyphen, zero-width characters, umlauts) is refused (new key `bad-host`, „Die Linkadresse
+  enthält ungültige Zeichen: münchen.at“); an umlaut domain has to be written in its `xn--` form
+  (`xn--mnchen-3ya.at`). Link texts: invisible format characters (Unicode `Cf`, e.g. soft hyphen) are removed,
+  fullwidth ASCII counts as ASCII, a word also ends at a `:` not followed by `//` (`Website:bank.at`), punctuation
+  and symbols at both ends of a word are stripped (`»bank.at«`, `bank.at…`, `→bank.at`; a final `/` stays), the
+  alt text of an image inside a link counts as link text, and `www.eeg.at:443` shows the host `eeg.at`. Hosts and
+  `mailto` addresses are compared with ASCII-only lower-casing (`İnfo@` is not `info@`); a `mailto` address is
+  trimmed of Unicode spaces after percent-decoding. The sanitiser trims Unicode spaces (also NBSP) around a URL,
+  as eegfaktura-billing does.
 - Contract (additive, for **eegfaktura-web**): the `limits` of `GET /eeg/mailtemplates/{key}` carry `maxLinks` (3) and
   `maxLinkDomains` (2), read from the policy file.
 - **Uploaded mail images are re-encoded** (security hardening): images wider than 1200 px, higher than 4000 px or over
