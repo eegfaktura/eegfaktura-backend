@@ -106,8 +106,10 @@ func TestMemberMails_IgnoreVolumeTemplates(t *testing.T) {
 		}
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "t.html"), []byte(`<p>VOLUME {{.Eeg.Name}}</p>`), 0o644))
 	}
+	orig := viper.GetString("file-content.templates")
 	viper.Set("file-content.templates", vol)
-	t.Cleanup(func() { viper.Set("file-content.templates", "../public") })
+	t.Cleanup(func() { viper.Set("file-content.templates", orig) })
+	assert.Len(t, IgnoredVolumeTemplates(vol), 6, "listed for the startup warning")
 
 	eeg, participant := storedMailFixture()
 	store := &storeStub{} // no saved version
@@ -117,18 +119,22 @@ func TestMemberMails_IgnoreVolumeTemplates(t *testing.T) {
 		body, inline = b.String(), len(in)
 		return nil
 	}
+	reset := func() { body, inline = "", -1 }
 	for cfg, want := range map[string]string{
 		"activation-mail-template.toml":  "damit dein Zählpunkt tatsächlich Energie",
 		"zp-complete-mail-template.toml": "wurde erfolgreich aktiviert",
 	} {
+		reset()
 		require.NoError(t, SendActivationMailFromTemplate(send, store, "TE000300", "s", eeg, participant, cfg))
 		assert.NotContains(t, body, "VOLUME", cfg)
 		assert.Contains(t, body, want, cfg)
 		assert.Equal(t, 1, inline, cfg+": the embedded logo")
 	}
+	reset()
 	require.NoError(t, SendMeteringPointInactiveMail(send, store, "TE000300", InactiveMailData{
 		Eeg: eeg, Participant: participant, MeteringPoint: "AT1", Direction: "Bezug", EndDate: "01.02.2026", Reason: "Weil."}))
 	assert.NotContains(t, body, "VOLUME")
 	assert.Contains(t, body, "nicht mehr Teil")
+	assert.GreaterOrEqual(t, inline, 0, "the inactive mail was sent")
 	assert.Empty(t, store.notices)
 }

@@ -9,6 +9,12 @@ this changelog highlights the changes relevant for overview and operations.
 ## [Unreleased]
 
 ### Changed
+- **Go/no-go for production:** roll out 1.9.0 only when `cmd/mailtemplate-import` exited 0 for every community
+  that has a directory under the template volume (or the default text was consciously accepted for it). On start,
+  1.9.0 logs a warning listing every member-mail template file still on the volume that is now ignored
+  (`… hand-made mail template file(s) on the volume are ignored since 1.9.0 …`).
+- A saved text that can not be rendered now falls back to the built-in default (before: to the volume template, if
+  any); the community's error notice already said "Standardtext".
 - **Hand-made mail templates on the data volume are no longer used.** A member mail (`consent-request`, `zp-active`,
   `zp-inactive`) is either the community's saved text (`base.mail_template`) or the built-in default embedded in the
   binary; `<file-content.templates>/<TENANT>/templates/*` and `<file-content.templates>/templates/*` are ignored by

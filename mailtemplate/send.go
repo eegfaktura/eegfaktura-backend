@@ -21,7 +21,7 @@ type Store interface {
 }
 
 // SendStored sends the customised version of a member mail when the community
-// has one. handled=false means the caller sends the legacy template: either
+// has one. handled=false means the caller sends the built-in default: either
 // there is no customised version, or it could not be used — then the community
 // gets an error notification and the member still gets the default mail.
 // A send error after a successful render is returned with handled=true.

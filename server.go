@@ -21,6 +21,7 @@ import (
 	"at.ourproject/vfeeg-backend/graph"
 	"at.ourproject/vfeeg-backend/graph/generated"
 	"at.ourproject/vfeeg-backend/mailtemplate"
+	"at.ourproject/vfeeg-backend/parser"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
 	"at.ourproject/vfeeg-backend/services"
 	"github.com/99designs/gqlgen/graphql/handler"
@@ -126,6 +127,7 @@ func main() {
 	//	os.Exit(1)
 	//}
 
+	parser.WarnIgnoredVolumeTemplates()
 	StartServer(db)
 
 	err = db.CloseDB()
