@@ -196,7 +196,7 @@ func TestMailTemplates_HappyPath(t *testing.T) {
 	def := decode[mtDTO](t, w)
 	assert.False(t, def.Customized)
 	assert.Equal(t, 0, def.Version)
-	assert.Equal(t, 1, def.DefaultVersion)
+	assert.Equal(t, 2, def.DefaultVersion)
 	assert.Equal(t, "Aktivierung im Serviceportal", def.Subject)
 	assert.Equal(t, def.DefaultBodyHtml, def.BodyHtml)
 	assert.Contains(t, def.BodyHtml, `data-ph="eeg.contactBlock"`)

@@ -162,8 +162,6 @@ func TestParseTemplate(t *testing.T) {
         
         </p>
         
-        <p>versandt durch</p>
-        <img src="cid:eegfaktura-logo-1" style="max-height: 90px"/>
         </body>
         </html>`, " ")),
 			false,

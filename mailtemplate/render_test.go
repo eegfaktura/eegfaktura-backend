@@ -108,10 +108,12 @@ func TestDefaultMatchesLegacyTemplates(t *testing.T) {
 			assert.Equal(t, wantText, gotText)
 			assert.True(t, strings.HasSuffix(gotText, FixedFooterText), gotText)
 			assert.Equal(t, wantImages, gotImages)
-			assert.Equal(t, []string{"cid:eegfaktura-logo-1"}, gotImages)
-			require.Len(t, r.Inline, 1)
-			assert.Equal(t, "eegfaktura-logo-1", *r.Inline[0].ContentId)
-			assert.Equal(t, "image/png", r.Inline[0].MimeType)
+			// since default version 2 without "versandt durch" and logo: the fixed footer says it
+			assert.Empty(t, gotImages)
+			assert.Empty(t, r.Inline)
+			assert.Equal(t, 1, strings.Count(gotText, "versandt durch"), gotText)
+			assert.NotContains(t, def.DefaultBody, "versandt durch")
+			assert.NotContains(t, def.DefaultBody, BuiltinLogoId)
 			assert.Nil(t, r.Attachment)
 			assert.Equal(t, def.DefaultSubject, r.Subject)
 		})
@@ -220,7 +222,7 @@ func TestCatalog(t *testing.T) {
 	keys := map[string]bool{}
 	for _, def := range Catalog() {
 		keys[def.Key] = true
-		assert.Equal(t, 1, def.DefaultVersion)
+		assert.Equal(t, 2, def.DefaultVersion, "2: fixed footer instead of \"versandt durch\" and logo in the text")
 		assert.NotNil(t, LookupByLegacyConfig(def.LegacyConfig))
 		_, err := public.Templates.ReadFile("templates/" + def.LegacyConfig)
 		assert.NoError(t, err, def.LegacyConfig)

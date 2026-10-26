@@ -11,9 +11,10 @@ const (
 	KeyZpInactive     = "zp-inactive"
 )
 
-// BuiltinLogoId is the image id of the "versandt durch eegfaktura" logo. It is
-// part of the editable default text, available to every community and mail,
-// and served from the binary instead of the database.
+// BuiltinLogoId is the image id of the "versandt durch eegfaktura" logo. It was
+// part of the default text until default version 2; texts saved before still
+// use it, so it stays available to every community and mail, served from the
+// binary instead of the database.
 const BuiltinLogoId = "eegfaktura-logo"
 
 // builtinLogoCid is the Content-ID the legacy templates use for the logo.
@@ -103,12 +104,11 @@ var (
 	phContactBlock  = Placeholder{Key: "eeg.contactBlock", Label: "Kontaktblock der EEG", Block: true}
 )
 
-// defaultSignature is the end of every default text: greeting, the community's
-// contact block and the "versandt durch eegfaktura" logo, as in the legacy templates.
+// defaultSignature is the end of every default text: greeting and the community's
+// contact block. "versandt durch" is the fixed footer (FixedFooterText) since
+// default version 2, no longer part of the text.
 const defaultSignature = `<p>Mit besten Grüßen</p>
-<div data-ph="eeg.contactBlock">Kontaktblock der EEG</div>
-<p>versandt durch</p>
-<img src="mailfile:eegfaktura-logo" alt="eegfaktura" width="335">`
+<div data-ph="eeg.contactBlock">Kontaktblock der EEG</div>`
 
 var catalog = []Definition{
 	{
@@ -118,7 +118,7 @@ var catalog = []Definition{
 		Placeholders: []Placeholder{phFirstName, phLastName, phNumber, phMeter, phMeters, phGridOperator,
 			phEegName, phEegEmail, phEegPhone, phEegWebsite, phContactBlock},
 		Limits:         memberMailLimits,
-		DefaultVersion: 1,
+		DefaultVersion: 2,
 		DefaultSubject: "Aktivierung im Serviceportal",
 		DefaultBody: `<p>Hallo <span data-ph="member.firstName">Vorname</span>,</p>
 <p>damit dein Zählpunkt tatsächlich Energie mit den anderen Mitgliedern austauschen kann, muss der EEG noch der Zugriff auf deine Energiedaten gewährt werden.</p>
@@ -138,7 +138,7 @@ var catalog = []Definition{
 		Placeholders: []Placeholder{phFirstName, phLastName, phNumber, phMeter, phMeters, phGridOperator,
 			phEegName, phEegEmail, phEegPhone, phEegWebsite, phContactBlock},
 		Limits:         memberMailLimits,
-		DefaultVersion: 1,
+		DefaultVersion: 2,
 		DefaultSubject: "Dein Zählpunkt ist aktiv",
 		DefaultBody: `<p>Hallo <span data-ph="member.firstName">Vorname</span>,</p>
 <p>dein Zählpunkt <strong><span data-ph="meteringPoint">Zählpunkt</span></strong> wurde erfolgreich aktiviert. Ab sofort werden deine Energiedaten erfasst.</p>
@@ -152,7 +152,7 @@ var catalog = []Definition{
 		Placeholders: []Placeholder{phFirstName, phLastName, phNumber, phMeter, phMeters, phDirection, phEndDate, phDirectionText, phEndDateText, phReason,
 			phEegName, phEegEmail, phEegPhone, phEegWebsite, phContactBlock},
 		Limits:         memberMailLimits,
-		DefaultVersion: 1,
+		DefaultVersion: 2,
 		DefaultSubject: "Dein Zählpunkt ist nicht mehr Teil der Energiegemeinschaft",
 		DefaultBody: `<p>Hallo <span data-ph="member.firstName">Vorname</span>,</p>
 <p>dein Zählpunkt <strong><span data-ph="meteringPoint">Zählpunkt</span></strong> <span data-ph="directionText">(Richtung) – leer, wenn unbekannt</span> ist <strong><span data-ph="endDateText">ab dem Enddatum – leer, wenn unbekannt</span></strong> nicht mehr Teil der Energiegemeinschaft <span data-ph="eeg.name">Name der EEG</span>.</p>

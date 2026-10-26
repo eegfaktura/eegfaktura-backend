@@ -130,7 +130,7 @@ func TestMemberMails_IgnoreVolumeTemplates(t *testing.T) {
 		require.NoError(t, SendActivationMailFromTemplate(send, store, "TE000300", "s", eeg, participant, cfg))
 		assert.NotContains(t, body, "VOLUME", cfg)
 		assert.Contains(t, body, want, cfg)
-		assert.Equal(t, 1, inline, cfg+": the embedded logo")
+		assert.Equal(t, 0, inline, cfg+": no logo since default version 2")
 	}
 	reset()
 	require.NoError(t, SendMeteringPointInactiveMail(send, store, "TE000300", InactiveMailData{
