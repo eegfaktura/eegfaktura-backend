@@ -180,18 +180,39 @@ const FixedFooterHtml = `<p style="font-size:12px;color:#6b7280">versandt durch 
 // AppendFixedFooter adds the fixed footer to a complete HTML mail: before the
 // last </body>, at the end when there is none.
 func AppendFixedFooter(doc string) string {
-	i := strings.LastIndex(strings.ToLower(doc), "</body>")
+	i := lastIndexBodyEnd(doc)
 	if i < 0 {
 		return doc + "\n" + FixedFooterHtml
 	}
 	return doc[:i] + FixedFooterHtml + "\n" + doc[i:]
 }
 
+// lastIndexBodyEnd returns the byte offset of the last "</body>" in doc, in any
+// ASCII case, -1 if there is none. It compares bytes, so the offset is valid
+// for doc itself (strings.ToLower may change the length, e.g. of 'İ').
+func lastIndexBodyEnd(doc string) int {
+	const tag = "</body>"
+	for i := len(doc) - len(tag); i >= 0; i-- {
+		match := true
+		for j := 0; j < len(tag) && match; j++ {
+			b := doc[i+j]
+			if 'A' <= b && b <= 'Z' {
+				b += 'a' - 'A'
+			}
+			match = b == tag[j]
+		}
+		if match {
+			return i
+		}
+	}
+	return -1
+}
+
 // frame is the fixed outer frame of every customised member mail; it matches
 // the head of the legacy templates and ends with the fixed footer.
 func frame(subject, body string) string {
-	return "<!DOCTYPE html>\n<html lang=\"de\">\n<head>\n    <meta charset=\"UTF-8\">\n    <title>" +
-		html.EscapeString(subject) + "</title>\n</head>\n<body>\n" + body + "\n" + FixedFooterHtml + "\n</body>\n</html>"
+	return AppendFixedFooter("<!DOCTYPE html>\n<html lang=\"de\">\n<head>\n    <meta charset=\"UTF-8\">\n    <title>" +
+		html.EscapeString(subject) + "</title>\n</head>\n<body>\n" + body + "\n</body>\n</html>")
 }
 
 // imageSource returns the src of an image and, for ImagesInline, its inline attachment.

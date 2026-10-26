@@ -38,6 +38,10 @@ func TestAppendFixedFooter(t *testing.T) {
 	assert.Equal(t, "<html><body><p>a</p>"+FixedFooterHtml+"\n</body></html>", AppendFixedFooter("<html><body><p>a</p></body></html>"))
 	assert.Equal(t, "<p>a</p>\n"+FixedFooterHtml, AppendFixedFooter("<p>a</p>"), "a fragment gets it at the end")
 	assert.Equal(t, "<BODY><p>a</p>"+FixedFooterHtml+"\n</BODY>", AppendFixedFooter("<BODY><p>a</p></BODY>"))
+	// characters that change their length under strings.ToLower must not shift the position
+	assert.Equal(t, "<html><body><p>İlhan İnce K</p>"+FixedFooterHtml+"\n</body></html>",
+		AppendFixedFooter("<html><body><p>İlhan İnce K</p></body></html>"))
+	assert.Equal(t, "<p>a</body></p>"+FixedFooterHtml+"\n</Body>", AppendFixedFooter("<p>a</body></p></Body>"), "the last one")
 }
 
 // The footer follows the rendered body in every mode (send/test mail inline, preview data URIs), once,
