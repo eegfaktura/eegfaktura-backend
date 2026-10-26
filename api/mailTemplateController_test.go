@@ -260,7 +260,7 @@ func TestMailTemplates_HappyPath(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "image/png", w.Header().Get("Content-Type"))
 	assert.Equal(t, "nosniff", w.Header().Get("X-Content-Type-Options"))
-	assert.Equal(t, logoPNG(t), w.Body.Bytes())
+	assert.Equal(t, decodedPNG(t, logoPNG(t)), decodedPNG(t, w.Body.Bytes()), "the re-encoded image has the same pixels")
 
 	w = c.json("admin", mtTenant, "POST", "/eeg/mailtemplates/consent-request/preview", map[string]interface{}{
 		"subject": "Vorschau {eeg.name}", "bodyHtml": body})

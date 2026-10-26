@@ -86,6 +86,19 @@ func (h *MailTemplateHandler) uploadFile() middleware.JWTHandlerFunc {
 			respondValidation(w, &mailtemplate.ValidationError{Field: "file", Message: msg})
 			return
 		}
+		if kind == model.MailFileKindImage {
+			// only the re-encoded pixels are stored: no EXIF/GPS, no hidden or appended data
+			reencoded, msg := reencodeMailImage(content, mimeType)
+			if msg != "" {
+				respondValidation(w, &mailtemplate.ValidationError{Field: "file", Message: msg})
+				return
+			}
+			if int64(len(reencoded)) > maxBytes {
+				respondValidation(w, &mailtemplate.ValidationError{Field: "file", Message: fmt.Sprintf("Die Datei ist zu groß (höchstens %s).", formatBytes(maxBytes))})
+				return
+			}
+			content = reencoded
+		}
 
 		f := &model.MailTemplateFile{
 			Id: uuid.New(), Tenant: tenant, MailKey: def.Key, Kind: kind,
