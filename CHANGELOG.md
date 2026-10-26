@@ -27,6 +27,14 @@ this changelog highlights the changes relevant for overview and operations.
   `co.at`, `or.at`, `gv.at`, `ac.at`; `mailto` not counted as a domain; the fixed footer never counts). Save (PUT), preview and test mail answer 400
   with one German message per broken rule in the existing `errors` format. New shared cases
   `mail-link-cases.json` (byte-identical with eegfaktura-billing).
+  Link texts are read as the reader sees them, with the same algorithm as eegfaktura-billing: zero-width characters
+  are removed, every Unicode space (also NBSP) separates words, and every word that is an address (`…://…`, `www.…`,
+  an e-mail address, a bare domain; surrounding quotes and punctuation stripped) must match the target —
+  „Mehr unter https://eeg.at“ is fine, `a@b`, `office@eeg` and `z.B.` are no address, a `mailto:` with `%40` matches
+  its text. The host dots `。` `．` `｡` count as `.` (`bit。ly` is a shortener); a single hex word like `cafe` is a host
+  name, not an IP. **No placeholder inside a link** (new key `placeholder-in-link`, „Platzhalter dürfen nicht in einem
+  Link stehen: Website der EEG“): at send time `eeg.website`/`eeg.email` would show another address than the target.
+  The sanitiser also drops an https link with `%` in its host part (as eegfaktura-billing).
 - Contract (additive, for **eegfaktura-web**): the `limits` of `GET /eeg/mailtemplates/{key}` carry `maxLinks` (3) and
   `maxLinkDomains` (2), read from the policy file.
 - **Uploaded mail images are re-encoded** (security hardening): images wider than 1200 px, higher than 4000 px or over
