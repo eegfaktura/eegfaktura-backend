@@ -124,6 +124,7 @@ func convert(fsys fs.FS, tenant string, def *mailtemplate.Definition) *Conversio
 		c.block("Vorlage hat keinen <body>")
 		return c
 	}
+	c.dropLegacySignature(body)
 	preIds := c.convertImages(fsys, def, cfg.InlinePictures, body)
 	keepDivLines(body)
 	c.noteFormattingLosses(body)
@@ -143,6 +144,67 @@ func convert(fsys fs.FS, tenant string, def *mailtemplate.Definition) *Conversio
 	}
 	c.Body = clean
 	return c
+}
+
+// dropLegacySignature removes the closing "versandt durch" paragraph and the
+// eegfaktura logo after it from the end of a legacy template: the server now
+// ends every member mail with the fixed footer, which says the same. A logo
+// elsewhere in the text stays (as the built-in image).
+func (c *Conversion) dropLegacySignature(body *html.Node) {
+	logo := lastElement(body)
+	if logo == nil {
+		return
+	}
+	img := logo
+	if logo.DataAtom == atom.P && strings.TrimSpace(textOf(logo)) == "" {
+		img = lastElement(logo)
+	}
+	if img == nil || img.DataAtom != atom.Img || attrValue(img, "src") != "cid:eegfaktura-logo-1" {
+		return
+	}
+	prev := logo.PrevSibling
+	for prev != nil && prev.Type != html.ElementNode {
+		if prev.Type == html.TextNode && strings.TrimSpace(prev.Data) != "" {
+			return
+		}
+		prev = prev.PrevSibling
+	}
+	if prev == nil || prev.DataAtom != atom.P || !strings.EqualFold(strings.TrimSpace(textOf(prev)), "versandt durch") {
+		return
+	}
+	body.RemoveChild(logo)
+	body.RemoveChild(prev)
+	c.note("Abschluss „versandt durch“ mit eegfaktura-Logo entfällt; jede Mail endet jetzt mit der festen Fußzeile „%s“", mailtemplate.FixedFooterText)
+}
+
+// lastElement returns the last child element of n, nil if text that is not
+// only whitespace or no element follows.
+func lastElement(n *html.Node) *html.Node {
+	for ch := n.LastChild; ch != nil; ch = ch.PrevSibling {
+		switch {
+		case ch.Type == html.ElementNode:
+			return ch
+		case ch.Type == html.TextNode && strings.TrimSpace(ch.Data) != "":
+			return nil
+		}
+	}
+	return nil
+}
+
+// textOf returns the text content of n.
+func textOf(n *html.Node) string {
+	var b strings.Builder
+	var rec func(*html.Node)
+	rec = func(n *html.Node) {
+		for ch := n.FirstChild; ch != nil; ch = ch.NextSibling {
+			if ch.Type == html.TextNode {
+				b.WriteString(ch.Data)
+			}
+			rec(ch)
+		}
+	}
+	rec(n)
+	return b.String()
 }
 
 // convertImages rewrites cid: images to mailfile: ids and queues their upload.

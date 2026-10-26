@@ -156,6 +156,35 @@ func TestConvert_Images(t *testing.T) {
 	assert.True(t, ConvertTenant(fs, "TE000300")[0].Blocked(), "a disguised image stops the import")
 }
 
+// The legacy closing "versandt durch" + logo would say it twice next to the fixed footer: it is dropped with a Hinweis.
+func TestConvert_DropsLegacySignature(t *testing.T) {
+	logo := `InlinePictures = [ { Filepath="eegfaktura-logo.png", contentId="eegfaktura-logo-1" } ]`
+	for name, tail := range map[string]string{
+		"as in the old default": "<p>versandt durch</p>\n<img src=\"cid:eegfaktura-logo-1\" style=\"max-height: 90px\"/>\n",
+		"logo in a paragraph":   "<p> Versandt durch </p><p><img src=\"cid:eegfaktura-logo-1\"/></p>",
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := ConvertTenant(templateFS("<p>Hallo</p><p>Gruß</p>"+tail, logo), "TE000300")[0]
+			require.False(t, c.Blocked(), findingTexts(c))
+			assert.Equal(t, "<p>Hallo</p><p>Gruß</p>", strings.TrimSpace(c.Body))
+			assert.Contains(t, findingTexts(c), "„versandt durch“ mit eegfaktura-Logo entfällt")
+		})
+	}
+
+	// a logo that is not the closing signature stays, as the built-in image
+	for name, html := range map[string]string{
+		"logo without versandt durch": `<p>Gruß</p><img src="cid:eegfaktura-logo-1"/>`,
+		"text after the logo":         `<p>versandt durch</p><img src="cid:eegfaktura-logo-1"/><p>PS</p>`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := ConvertTenant(templateFS(html, logo), "TE000300")[0]
+			require.False(t, c.Blocked(), findingTexts(c))
+			assert.Contains(t, c.Body, `src="mailfile:eegfaktura-logo"`)
+			assert.NotContains(t, findingTexts(c), "versandt durch")
+		})
+	}
+}
+
 // The import uploads drafts, swaps the ids and saves with the current version;
 // on an error the community's saved version stays and the drafts are deleted.
 func TestImportMail(t *testing.T) {
