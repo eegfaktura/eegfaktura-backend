@@ -47,8 +47,9 @@ func TestParseTemplateZpCompleteMeteringPoint(t *testing.T) {
 }
 
 // TestZpCompleteMailRendersFromEmbeddedDefault: the zp-complete ("Zählpunkt
-// aktiv") mail — config, template and inline logo — renders from the defaults
-// embedded in the binary, so a deployment sends it without anything on the PVC.
+// aktiv") mail — config and template — renders from the defaults embedded in
+// the binary, so a deployment sends it without anything on the PVC. Since
+// default version 2 it has no inline logo; the fixed footer replaces it.
 func TestZpCompleteMailRendersFromEmbeddedDefault(t *testing.T) {
 	fsys := embeddedTemplates()
 
@@ -82,8 +83,10 @@ func TestZpCompleteMailRendersFromEmbeddedDefault(t *testing.T) {
 		t.Errorf("rendered mail missing expected content; got:\n%s", body)
 	}
 
-	inline := buildInlineContent(fsys, cfg.InlinePictures)
-	if len(inline) != 1 || inline[0].Filecontent.Len() == 0 {
-		t.Errorf("expected one non-empty inline logo from the embed, got %d", len(inline))
+	if body := buf.String(); strings.Contains(body, "versandt durch") || strings.Contains(body, "eegfaktura-logo") {
+		t.Errorf("the default must not contain \"versandt durch\" or the logo; got:\n%s", body)
+	}
+	if inline := buildInlineContent(fsys, cfg.InlinePictures); len(inline) != 0 {
+		t.Errorf("expected no inline picture, got %d", len(inline))
 	}
 }

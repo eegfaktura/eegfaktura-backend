@@ -46,6 +46,9 @@ type Rendered struct {
 	Attachment *services.Attachment
 }
 
+// NoAttachmentMessage is the answer to a PDF attachment while a mail allows none.
+const NoAttachmentMessage = "PDF-Anhänge sind derzeit nicht möglich; bitte den Anhang entfernen."
+
 // ErrTooLarge is returned when the files of a mail exceed its size limit.
 var ErrTooLarge = errors.New("mail too large")
 
@@ -69,6 +72,13 @@ func Render(def *Definition, subject, body, attachmentId string, data *Data, fil
 			attachment = f
 		}
 	}
+	// the limits apply to stored texts saved before them too
+	if attachmentId != "" && def.Limits.MaxAttachments == 0 {
+		return nil, &ValidationError{Field: "attachmentFileId", Message: NoAttachmentMessage}
+	}
+	if n := countDistinct(ReferencedImages(body)); n > def.Limits.MaxImages {
+		return nil, &ValidationError{Field: "bodyHtml", Message: fmt.Sprintf("Höchstens %d Bilder je Mail (jetzt %d).", def.Limits.MaxImages, n)}
+	}
 	if attachmentId != "" && attachment == nil {
 		return nil, fmt.Errorf("%w: PDF attachment %s", ErrMissingFile, attachmentId)
 	}
@@ -87,6 +97,13 @@ func Render(def *Definition, subject, body, attachmentId string, data *Data, fil
 	cleanBody, err := SanitizeBody(def, body, func(id string) bool { return byId[id] != nil })
 	if err != nil {
 		return nil, err
+	}
+	if errs := LinkErrors(cleanBody); len(errs) > 0 {
+		msgs := make([]string, len(errs))
+		for i, e := range errs {
+			msgs[i] = e.Message
+		}
+		return nil, &ValidationError{Field: "bodyHtml", Message: strings.Join(msgs, " ")}
 	}
 
 	renderedSubject, err := renderSubject(def, cleanSubject, data)
@@ -168,11 +185,51 @@ func Render(def *Definition, subject, body, attachmentId string, data *Data, fil
 	return out, nil
 }
 
+// FixedFooterText is the line every member mail ends with, in send, preview and
+// test mail, for an own text and for the built-in default. The server appends it
+// after sanitising, so it is neither editable nor part of the stored text. Same
+// text in eegfaktura-billing.
+const FixedFooterText = "versandt durch EEG Faktura, ein Service des VFEEG - https://vfeeg.org/"
+
+// FixedFooterHtml is FixedFooterText as HTML.
+const FixedFooterHtml = `<p style="font-size:12px;color:#6b7280">versandt durch EEG Faktura, ein Service des VFEEG - <a href="https://vfeeg.org/">https://vfeeg.org/</a></p>`
+
+// AppendFixedFooter adds the fixed footer to a complete HTML mail: before the
+// last </body>, at the end when there is none.
+func AppendFixedFooter(doc string) string {
+	i := lastIndexBodyEnd(doc)
+	if i < 0 {
+		return doc + "\n" + FixedFooterHtml
+	}
+	return doc[:i] + FixedFooterHtml + "\n" + doc[i:]
+}
+
+// lastIndexBodyEnd returns the byte offset of the last "</body>" in doc, in any
+// ASCII case, -1 if there is none. It compares bytes, so the offset is valid
+// for doc itself (strings.ToLower may change the length, e.g. of 'İ').
+func lastIndexBodyEnd(doc string) int {
+	const tag = "</body>"
+	for i := len(doc) - len(tag); i >= 0; i-- {
+		match := true
+		for j := 0; j < len(tag) && match; j++ {
+			b := doc[i+j]
+			if 'A' <= b && b <= 'Z' {
+				b += 'a' - 'A'
+			}
+			match = b == tag[j]
+		}
+		if match {
+			return i
+		}
+	}
+	return -1
+}
+
 // frame is the fixed outer frame of every customised member mail; it matches
-// the head of the legacy templates.
+// the head of the legacy templates and ends with the fixed footer.
 func frame(subject, body string) string {
-	return "<!DOCTYPE html>\n<html lang=\"de\">\n<head>\n    <meta charset=\"UTF-8\">\n    <title>" +
-		html.EscapeString(subject) + "</title>\n</head>\n<body>\n" + body + "\n</body>\n</html>"
+	return AppendFixedFooter("<!DOCTYPE html>\n<html lang=\"de\">\n<head>\n    <meta charset=\"UTF-8\">\n    <title>" +
+		html.EscapeString(subject) + "</title>\n</head>\n<body>\n" + body + "\n</body>\n</html>")
 }
 
 // imageSource returns the src of an image and, for ImagesInline, its inline attachment.
@@ -370,4 +427,12 @@ func eegDisplayName(eeg *model.Eeg) string {
 		return eeg.Description
 	}
 	return eeg.Name
+}
+
+func countDistinct(ids []string) int {
+	seen := map[string]bool{}
+	for _, id := range ids {
+		seen[id] = true
+	}
+	return len(seen)
 }

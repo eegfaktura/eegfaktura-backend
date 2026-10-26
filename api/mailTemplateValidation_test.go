@@ -62,15 +62,13 @@ func TestMailTemplates_Validation(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code, "image over 1 MB")
 
 	w = c.upload("admin", mtTenant, "zp-active", "attachment", "a.pdf", minimalPDF)
-	require.Equal(t, http.StatusCreated, w.Code)
-	w = c.upload("admin", mtTenant, "zp-active", "attachment", "b.pdf", minimalPDF)
-	assert.Equal(t, http.StatusBadRequest, w.Code, "one PDF per mail")
-	for i := 0; i < 10; i++ {
+	assert.Equal(t, http.StatusBadRequest, w.Code, "no PDF for member mails for now")
+	for i := 0; i < 3; i++ {
 		w = c.upload("admin", mtTenant, "zp-active", "image", "a.png", logoPNG(t))
 		require.Equal(t, http.StatusCreated, w.Code)
 	}
 	w = c.upload("admin", mtTenant, "zp-active", "image", "a.png", logoPNG(t))
-	assert.Equal(t, http.StatusBadRequest, w.Code, "at most 10 images")
+	assert.Equal(t, http.StatusBadRequest, w.Code, "at most 3 images")
 
 	// test mail: only "me" or "eeg", never a free address
 	body := map[string]interface{}{"recipient": "someone@example.org", "subject": "S", "bodyHtml": "<p>x</p>"}

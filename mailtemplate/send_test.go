@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"at.ourproject/vfeeg-backend/model"
@@ -92,12 +93,11 @@ func capture(sent *[]sentMail) services.SendMailFunc {
 
 func TestSendStored_UsesCustomisedVersion(t *testing.T) {
 	store := &fakeStore{templates: map[string]*model.MailTemplate{
-		"TE000300/zp-active": {Tenant: "TE000300", MailKey: KeyZpActive, Version: 2, AttachmentFileId: strPtr("pdf"),
+		"TE000300/zp-active": {Tenant: "TE000300", MailKey: KeyZpActive, Version: 2,
 			Subject:  `Aktiv: {meteringPoint}`,
 			BodyHtml: `<p>Servus <span data-ph="member.firstName">Vorname</span></p><img src="mailfile:` + ownImage + `">`},
 	}, files: []storedFile{
 		{MailTemplateFile: model.MailTemplateFile{Id: ownImage, Tenant: "TE000300", Kind: model.MailFileKindImage, Filename: "x.png", MimeType: "image/png", Content: []byte("png")}},
-		{MailTemplateFile: model.MailTemplateFile{Id: "pdf", Tenant: "TE000300", Kind: model.MailFileKindAttachment, Filename: "a.pdf", MimeType: "application/pdf", Content: []byte("%PDF")}},
 		{MailTemplateFile: model.MailTemplateFile{Id: "unused", Tenant: "TE000300", Kind: model.MailFileKindImage, Content: []byte("big")}},
 	}}
 	var sent []sentMail
@@ -113,9 +113,9 @@ func TestSendStored_UsesCustomisedVersion(t *testing.T) {
 	assert.Contains(t, sent[0].body, "<p>Servus Maria</p>")
 	assert.Contains(t, sent[0].body, `src="cid:`+ownImage+`"`)
 	require.Len(t, sent[0].inline, 1)
-	require.NotNil(t, sent[0].attachment)
+	assert.Nil(t, sent[0].attachment)
 	assert.Empty(t, store.notices)
-	assert.ElementsMatch(t, []string{ownImage, "pdf"}, store.requested, "only the referenced files are loaded")
+	assert.ElementsMatch(t, []string{ownImage}, store.requested, "only the referenced files are loaded")
 }
 
 func TestSendStored_NoCustomisedVersion(t *testing.T) {
@@ -134,14 +134,33 @@ func TestSendStored_BrokenVersionFallsBackWithNotification(t *testing.T) {
 		// a placeholder the catalog does not (or no longer) know
 		"TE000300/zp-active": {Tenant: "TE000300", MailKey: KeyZpActive, Subject: "x", BodyHtml: `<p><span data-ph="member.iban">x</span></p>`},
 	}
-	tooLarge := []storedFile{{MailTemplateFile: model.MailTemplateFile{Id: "pdf", Tenant: "TE000300", Kind: model.MailFileKindAttachment, Content: make([]byte, 7*1024*1024)}}}
 	png := model.MailTemplateFile{Id: ownImage, Tenant: "TE000300", Kind: model.MailFileKindImage, Content: []byte("png")}
+	bigPng := png
+	bigPng.Content = make([]byte, 7*1024*1024) // stored files are not limited per image here
 	withImage := map[string]*model.MailTemplate{
 		"TE000300/zp-active": {Tenant: "TE000300", MailKey: KeyZpActive, Subject: "x", BodyHtml: `<p>x</p><img src="mailfile:` + ownImage + `">`}}
+	stored := func(body string, attachment *string) map[string]*model.MailTemplate {
+		return map[string]*model.MailTemplate{
+			"TE000300/zp-active": {Tenant: "TE000300", MailKey: KeyZpActive, Subject: "x", BodyHtml: body, AttachmentFileId: attachment}}
+	}
+	var fourImages string
+	var four []storedFile
+	for _, id := range []string{"11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222",
+		"33333333-3333-3333-3333-333333333333", "44444444-4444-4444-4444-444444444444"} {
+		fourImages += `<img src="mailfile:` + id + `">`
+		f := png
+		f.Id = id
+		four = append(four, storedFile{MailTemplateFile: f})
+	}
+	pdf := []storedFile{{MailTemplateFile: model.MailTemplateFile{Id: "pdf", Tenant: "TE000300", Kind: model.MailFileKindAttachment, Content: []byte("%PDF")}}}
 	for name, store := range map[string]*fakeStore{
 		"unknown placeholder": {templates: broken},
-		"too large": {templates: map[string]*model.MailTemplate{
-			"TE000300/zp-active": {Tenant: "TE000300", MailKey: KeyZpActive, Subject: "x", BodyHtml: `<p>x</p>`, AttachmentFileId: strPtr("pdf")}}, files: tooLarge},
+		"too large":           {templates: withImage, files: []storedFile{{MailTemplateFile: bigPng}}},
+		// saved before the link rules and limits of 2026-10-26
+		"shortener link":                {templates: stored(`<p><a href="https://bit.ly/x">Portal</a></p>`, nil)},
+		"four links":                    {templates: stored(strings.Repeat(`<a href="https://eeg.at">x</a>`, 4), nil)},
+		"four images":                   {templates: stored(`<p>x</p>`+fourImages, nil), files: four},
+		"pdf attachment":                {templates: stored(`<p>x</p>`, strPtr("pdf")), files: pdf},
 		"referenced image missing":      {templates: withImage},
 		"referenced image only a draft": {templates: withImage, files: []storedFile{{MailTemplateFile: png, draft: true}}},
 	} {
@@ -159,6 +178,9 @@ func TestSendStored_BrokenVersionFallsBackWithNotification(t *testing.T) {
 			assert.Contains(t, n.message, `"type":"Mail"`)
 			assert.Contains(t, n.message, "Zählpunkt aktiv")
 			assert.NotContains(t, n.message, "image ", "internal details stay in the log")
+			if name == "shortener link" {
+				assert.Contains(t, n.message, "Links zu Kurz-Link-Diensten sind nicht erlaubt: bit.ly", "the community reads why")
+			}
 		})
 	}
 }

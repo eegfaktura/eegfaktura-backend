@@ -102,14 +102,18 @@ func TestDefaultMatchesLegacyTemplates(t *testing.T) {
 			r, err := Render(def, def.DefaultSubject, def.DefaultBody, "", data, nil, ImagesInline)
 			require.NoError(t, err)
 
-			wantText, wantImages := visible(t, renderLegacy(t, tc.legacy, tc.legacyData))
+			// the parser sends the legacy default with the same fixed footer (AppendFixedFooter)
+			wantText, wantImages := visible(t, AppendFixedFooter(renderLegacy(t, tc.legacy, tc.legacyData)))
 			gotText, gotImages := visible(t, r.Html)
 			assert.Equal(t, wantText, gotText)
+			assert.True(t, strings.HasSuffix(gotText, FixedFooterText), gotText)
 			assert.Equal(t, wantImages, gotImages)
-			assert.Equal(t, []string{"cid:eegfaktura-logo-1"}, gotImages)
-			require.Len(t, r.Inline, 1)
-			assert.Equal(t, "eegfaktura-logo-1", *r.Inline[0].ContentId)
-			assert.Equal(t, "image/png", r.Inline[0].MimeType)
+			// since default version 2 without "versandt durch" and logo: the fixed footer says it
+			assert.Empty(t, gotImages)
+			assert.Empty(t, r.Inline)
+			assert.Equal(t, 1, strings.Count(gotText, "versandt durch"), gotText)
+			assert.NotContains(t, def.DefaultBody, "versandt durch")
+			assert.NotContains(t, def.DefaultBody, BuiltinLogoId)
 			assert.Nil(t, r.Attachment)
 			assert.Equal(t, def.DefaultSubject, r.Subject)
 		})
@@ -143,7 +147,7 @@ func TestRender_MissingValuesAreEmpty(t *testing.T) {
 		"", &Data{}, nil, ImagesInline)
 	require.NoError(t, err)
 	text, _ := visible(t, r.Html)
-	assert.Equal(t, "Nr. , Ende .", text)
+	assert.Equal(t, "Nr. , Ende . "+FixedFooterText, text, "only the fixed footer follows")
 	assert.NotContains(t, r.Html, "data-ph")
 }
 
@@ -165,8 +169,15 @@ func TestRender_InactiveDefaultWithoutDirectionAndEndDate(t *testing.T) {
 	assert.Contains(t, text, "dein Zählpunkt AT1 (Einspeisung) ist nicht mehr Teil")
 }
 
+// withAttachment is a member mail definition that allows a PDF (member mails allow none for now, the code stays).
+func withAttachment(key string) *Definition {
+	def := *Lookup(key)
+	def.Limits.MaxAttachments = 1
+	return &def
+}
+
 func TestRender_ImagesAndAttachment(t *testing.T) {
-	def := Lookup(KeyZpActive)
+	def := withAttachment(KeyZpActive)
 	png := []byte("\x89PNG\r\n\x1a\nfake")
 	files := []model.MailTemplateFile{
 		{Id: ownImage, Kind: model.MailFileKindImage, Filename: "logo.png", MimeType: "image/png", Content: png},
@@ -198,8 +209,30 @@ func TestRender_ImagesAndAttachment(t *testing.T) {
 	assert.ErrorIs(t, err, ErrMissingFile)
 }
 
-func TestRender_TooLarge(t *testing.T) {
+// A stored text with more images than allowed (saved before the limit of 3) is not rendered.
+func TestRender_TooManyImages(t *testing.T) {
 	def := Lookup(KeyZpActive)
+	var files []model.MailTemplateFile
+	body := ""
+	for _, id := range []string{"11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222",
+		"33333333-3333-3333-3333-333333333333", "44444444-4444-4444-4444-444444444444"} {
+		files = append(files, model.MailTemplateFile{Id: id, Kind: model.MailFileKindImage, MimeType: "image/png", Content: []byte("png")})
+		body += `<img src="mailfile:` + id + `">`
+	}
+	_, err := Render(def, "S", "<p>a</p>"+body, "", &Data{}, files, ImagesInline)
+	var verr *ValidationError
+	require.ErrorAs(t, err, &verr)
+	assert.Equal(t, "Höchstens 3 Bilder je Mail (jetzt 4).", verr.Message)
+
+	// the same image three times and the built-in logo are fine
+	_, err = Render(def, "S", "<p>a</p>"+strings.Repeat(`<img src="mailfile:`+files[0].Id+`">`, 3)+
+		`<img src="mailfile:eegfaktura-logo">`+`<img src="mailfile:`+files[1].Id+`">`+`<img src="mailfile:`+files[2].Id+`">`,
+		"", &Data{}, files, ImagesInline)
+	assert.NoError(t, err)
+}
+
+func TestRender_TooLarge(t *testing.T) {
+	def := withAttachment(KeyZpActive)
 	big := make([]byte, def.Limits.MaxTotalBytes/2+1)
 	files := []model.MailTemplateFile{
 		{Id: ownImage, Kind: model.MailFileKindImage, Filename: "a.png", MimeType: "image/png", Content: big},
@@ -218,7 +251,7 @@ func TestCatalog(t *testing.T) {
 	keys := map[string]bool{}
 	for _, def := range Catalog() {
 		keys[def.Key] = true
-		assert.Equal(t, 1, def.DefaultVersion)
+		assert.Equal(t, 2, def.DefaultVersion, "2: fixed footer instead of \"versandt durch\" and logo in the text")
 		assert.NotNil(t, LookupByLegacyConfig(def.LegacyConfig))
 		_, err := public.Templates.ReadFile("templates/" + def.LegacyConfig)
 		assert.NoError(t, err, def.LegacyConfig)

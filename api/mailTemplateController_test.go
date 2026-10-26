@@ -15,6 +15,7 @@ import (
 
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"at.ourproject/vfeeg-backend/database"
+	"at.ourproject/vfeeg-backend/mailtemplate"
 	"at.ourproject/vfeeg-backend/public"
 	"at.ourproject/vfeeg-backend/services"
 	"github.com/gorilla/mux"
@@ -148,6 +149,7 @@ type mtDTO struct {
 	DefaultSubject   string  `json:"defaultSubject"`
 	DefaultBodyHtml  string  `json:"defaultBodyHtml"`
 	AttachmentFileId *string `json:"attachmentFileId"`
+	FixedFooter      string  `json:"fixedFooter"`
 	UpdatedBy        *string
 	Placeholders     []struct {
 		Key   string `json:"key"`
@@ -189,18 +191,27 @@ func TestMailTemplates_HappyPath(t *testing.T) {
 	assert.Equal(t, "consent-request", list[0]["key"])
 	assert.Equal(t, false, list[0]["customized"])
 	assert.Nil(t, list[0]["updatedAt"])
+	for _, entry := range list {
+		assert.Equal(t, "versandt durch EEG Faktura, ein Service des VFEEG - https://vfeeg.org/", entry["fixedFooter"])
+	}
 
 	w = c.json("admin", mtTenant, "GET", "/eeg/mailtemplates/consent-request", nil)
 	require.Equal(t, http.StatusOK, w.Code)
 	def := decode[mtDTO](t, w)
 	assert.False(t, def.Customized)
 	assert.Equal(t, 0, def.Version)
-	assert.Equal(t, 1, def.DefaultVersion)
+	assert.Equal(t, 2, def.DefaultVersion)
+	assert.Equal(t, "versandt durch EEG Faktura, ein Service des VFEEG - https://vfeeg.org/", def.FixedFooter)
+	assert.NotContains(t, def.DefaultBodyHtml, "versandt durch", "the footer is not part of the editable text")
+	assert.NotContains(t, def.DefaultBodyHtml, "eegfaktura-logo")
 	assert.Equal(t, "Aktivierung im Serviceportal", def.Subject)
 	assert.Equal(t, def.DefaultBodyHtml, def.BodyHtml)
 	assert.Contains(t, def.BodyHtml, `data-ph="eeg.contactBlock"`)
 	assert.Empty(t, def.Files)
-	assert.Equal(t, int64(10), def.Limits["maxImages"])
+	assert.Equal(t, int64(3), def.Limits["maxImages"])
+	assert.Equal(t, int64(0), def.Limits["maxAttachments"])
+	assert.Equal(t, int64(3), def.Limits["maxLinks"], "from mail-html-policy.json")
+	assert.Equal(t, int64(2), def.Limits["maxLinkDomains"])
 	assert.Equal(t, int64(6*1024*1024), def.Limits["maxTotalBytes"])
 
 	// the builtin logo of the default text can be shown by the editor
@@ -217,20 +228,22 @@ func TestMailTemplates_HappyPath(t *testing.T) {
 
 	assert.Equal(t, false, img["committed"], "an upload is a draft")
 
+	// no PDF attachment for member mails for now (2026-10-26)
 	w = c.upload("admin", mtTenant, "consent-request", "attachment", "anleitung.pdf", minimalPDF)
-	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
-	pdfId := decode[map[string]interface{}](t, w)["id"].(string)
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	assert.Equal(t, "PDF-Anhänge sind derzeit nicht möglich.", decode[mtErrors](t, w).Errors[0].Message)
 
 	body := `<p>Hallo <span data-ph="member.firstName">Vorname</span>!</p><img src="mailfile:` + imgId + `" alt="Logo"><div data-ph="eeg.contactBlock">x</div>`
 	w = c.json("admin", mtTenant, "PUT", "/eeg/mailtemplates/consent-request", map[string]interface{}{
-		"subject": `Hallo {member.firstName}`, "bodyHtml": body, "version": 0, "attachmentFileId": pdfId})
+		"subject": `Hallo {member.firstName}`, "bodyHtml": body, "version": 0, "attachmentFileId": nil})
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	saved := decode[mtDTO](t, w)
 	assert.True(t, saved.Customized)
 	assert.Equal(t, 1, saved.Version)
-	require.NotNil(t, saved.AttachmentFileId)
-	assert.Equal(t, pdfId, *saved.AttachmentFileId)
-	require.Len(t, saved.Files, 2)
+	assert.Equal(t, mailtemplate.FixedFooterText, saved.FixedFooter)
+	assert.NotContains(t, saved.BodyHtml, "versandt durch", "the footer is never stored")
+	assert.Nil(t, saved.AttachmentFileId)
+	require.Len(t, saved.Files, 1)
 	for _, f := range saved.Files {
 		assert.True(t, f.Committed, f.Filename)
 	}
@@ -247,7 +260,7 @@ func TestMailTemplates_HappyPath(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "image/png", w.Header().Get("Content-Type"))
 	assert.Equal(t, "nosniff", w.Header().Get("X-Content-Type-Options"))
-	assert.Equal(t, logoPNG(t), w.Body.Bytes())
+	assert.Equal(t, decodedPNG(t, logoPNG(t)), decodedPNG(t, w.Body.Bytes()), "the re-encoded image has the same pixels")
 
 	w = c.json("admin", mtTenant, "POST", "/eeg/mailtemplates/consent-request/preview", map[string]interface{}{
 		"subject": "Vorschau {eeg.name}", "bodyHtml": body})
@@ -258,6 +271,7 @@ func TestMailTemplates_HappyPath(t *testing.T) {
 	assert.Contains(t, preview["html"], `src="data:image/png;base64,`)
 	assert.Contains(t, preview["html"], "<div>Mailtest Gemeinschaft</div>")
 	assert.Contains(t, preview["html"], "<div>T: +43 1 300</div>")
+	assert.Equal(t, 1, strings.Count(preview["html"], mailtemplate.FixedFooterHtml), "the preview shows the fixed footer")
 
 	w = c.json("admin", mtTenant, "POST", "/eeg/mailtemplates/consent-request/test", map[string]interface{}{
 		"recipient": "me", "subject": "Test {member.lastName}", "bodyHtml": body})
@@ -274,8 +288,9 @@ func TestMailTemplates_HappyPath(t *testing.T) {
 	assert.Nil(t, c.sent[0].cc, "a test mail has no copy to the community")
 	assert.Equal(t, mtTenant, c.sent[0].tenant)
 	assert.Contains(t, c.sent[0].body, `src="cid:`+imgId+`"`)
+	assert.Equal(t, 1, strings.Count(c.sent[0].body, mailtemplate.FixedFooterHtml), "the test mail ends with the fixed footer")
 	assert.Equal(t, 1, c.sent[0].inline)
-	assert.True(t, c.sent[0].attachment)
+	assert.False(t, c.sent[0].attachment)
 	assert.Equal(t, "eeg-mail-test@example.org; office@example.org", c.sent[1].to)
 
 	w = c.json("admin", mtTenant, "DELETE", "/eeg/mailtemplates/consent-request", nil)

@@ -71,6 +71,20 @@ func TestSanitizeBody_SharedCases(t *testing.T) {
 			assert.Contains(t, out, `style="text-align: center"`, el)
 		}
 	})
+	t.Run("font-size 13px/20px kept alone and with text-align, other sizes removed", func(t *testing.T) {
+		for in, want := range map[string]string{
+			`<p style="font-size:13px">a</p>`:                      `<p style="font-size: 13px">a</p>`,
+			`<li style="font-size: 20px">a</li>`:                   `<li style="font-size: 20px">a</li>`,
+			`<h2 style="text-align:center;font-size:20px">a</h2>`:  `<h2 style="text-align: center; font-size: 20px">a</h2>`,
+			`<p style="text-align: center; font-size: 20px">a</p>`: `<p style="text-align: center; font-size: 20px">a</p>`,
+			`<p style="font-size: 13px; text-align: right;">a</p>`: `<p style="font-size: 13px; text-align: right">a</p>`,
+			`<p style="text-align:center;font-size:30px">a</p>`:    `<p style="text-align: center">a</p>`,
+			`<p style="font-size:1em">a</p>`:                       `<p>a</p>`,
+			`<p>x <span style="font-size:20px">a</span></p>`:       `<p>x a</p>`,
+		} {
+			assert.Equal(t, want, sanitizeOK(t, in), in)
+		}
+	})
 	t.Run("other styles removed", func(t *testing.T) {
 		out := sanitizeOK(t, `<p style="color:red;text-align:right">a</p><p style="text-align:justify">b</p><blockquote style="text-align:center">c</blockquote>`)
 		assert.Equal(t, `<p style="text-align: right">a</p><p>b</p><blockquote>c</blockquote>`, out)
@@ -182,7 +196,10 @@ func TestPolicyFileIsTheSharedOne(t *testing.T) {
 	require.NoError(t, err)
 	data = []byte(strings.ReplaceAll(string(data), "\r\n", "\n"))
 	sum := sha256.Sum256(data)
-	assert.Equal(t, "1d29ff9d7073a71bf835de1ec623cfacbf513e43e8c70200e85b9a474795ecd1", hex.EncodeToString(sum[:]))
-	assert.Equal(t, 1, policy.Version)
+	assert.Equal(t, "3e6f9115e4e9e14f7f673ae52e1cc33093552b336ba4fdec798a445549912e6a", hex.EncodeToString(sum[:]))
+	assert.Equal(t, 2, policy.Version)
 	assert.Equal(t, "noopener noreferrer", policy.LinkRel)
+	assert.Equal(t, 3, policy.Links.MaxLinks)
+	assert.Equal(t, 2, policy.Links.MaxLinkDomains)
+	assert.Contains(t, policy.Links.BlockedHosts, "bit.ly")
 }

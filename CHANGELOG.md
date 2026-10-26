@@ -8,6 +8,67 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Added
+- **Fixed footer in every member mail:** `consent-request`, `zp-active` and `zp-inactive` end with
+  `versandt durch EEG Faktura, ein Service des VFEEG - https://vfeeg.org/` — in the sent mail (saved text and
+  built-in default), the preview and the test mail. The server appends it after sanitising; it is not editable and
+  not stored. The text/plain part (derived from the HTML by eda-xp) contains it too.
+- Contract (additive, for **eegfaktura-web**): `GET /eeg/mailtemplates` and `GET /eeg/mailtemplates/{key}` return the
+  new string field `fixedFooter` with that text. Deploy before or together with web (web shows nothing without it).
+- **Font sizes in mail texts:** `mail-html-policy.json` version 2 allows `font-size` `13px` and `20px` on `p`,
+  `h1`–`h3` and `li`, alone or together with `text-align`; other sizes and units are dropped. New shared cases in
+  `mail-html-policy-cases.json` (font sizes, image widths 200/400/600); both files stay byte-identical with
+  eegfaktura-billing.
+- **Link rules for member mails (Variante A, decided 2026-10-26):** links only to `https:`/`mailto:` (as before), no
+  IP address host (also decimal/hex forms), no URL shortener (list `links.blockedHosts` in `mail-html-policy.json`,
+  host and subdomains), a link text that shows an address must show the target's (an e-mail address as text of a web
+  link and a web address as text of a `mailto` link never match; a file name like `anleitung.pdf` is no address), at
+  most 3 links and 2 main domains per text (`portal.salzburgnetz.at` counts as `salzburgnetz.at`; three labels under
+  `co.at`, `or.at`, `gv.at`, `ac.at`; `mailto` not counted as a domain; the fixed footer never counts). Save (PUT), preview and test mail answer 400
+  with one German message per broken rule in the existing `errors` format. New shared cases
+  `mail-link-cases.json` (byte-identical with eegfaktura-billing).
+  Link texts are read as the reader sees them, with the same algorithm as eegfaktura-billing: zero-width characters
+  are removed, every Unicode space (also NBSP) separates words, and every word that is an address (`…://…`, `www.…`,
+  an e-mail address, a bare domain; surrounding quotes and punctuation stripped) must match the target —
+  „Mehr unter https://eeg.at“ is fine, `a@b`, `office@eeg` and `z.B.` are no address, a `mailto:` with `%40` matches
+  its text. The host dots `。` `．` `｡` count as `.` (`bit。ly` is a shortener); a single hex word like `cafe` is a host
+  name, not an IP. **No placeholder inside a link** (new key `placeholder-in-link`, „Platzhalter dürfen nicht in einem
+  Link stehen: Website der EEG“): at send time `eeg.website`/`eeg.email` would show another address than the target.
+  The sanitiser also drops an https link with `%` in its host part (as eegfaktura-billing).
+  **Host characters:** a link whose host has other characters than ASCII letters, digits, `-` and `.` (fullwidth
+  letters or digits, soft hyphen, zero-width characters, umlauts) is refused (new key `bad-host`, „Die Linkadresse
+  enthält ungültige Zeichen: münchen.at“); an umlaut domain has to be written in its `xn--` form
+  (`xn--mnchen-3ya.at`). Link texts: invisible format characters (Unicode `Cf`, e.g. soft hyphen) are removed,
+  fullwidth ASCII counts as ASCII, a word also ends at a `:` not followed by `//` (`Website:bank.at`), punctuation
+  and symbols at both ends of a word are stripped (`»bank.at«`, `bank.at…`, `→bank.at`; a final `/` stays), the
+  alt text of an image inside a link counts as link text, and `www.eeg.at:443` shows the host `eeg.at`. Hosts and
+  `mailto` addresses are compared with ASCII-only lower-casing (`İnfo@` is not `info@`); a `mailto` address is
+  trimmed of Unicode spaces after percent-decoding. The sanitiser trims Unicode spaces (also NBSP) around a URL,
+  as eegfaktura-billing does.
+- Contract (additive, for **eegfaktura-web**): the `limits` of `GET /eeg/mailtemplates/{key}` carry `maxLinks` (3) and
+  `maxLinkDomains` (2), read from the policy file.
+- **Uploaded mail images are re-encoded** (security hardening): images wider than 1200 px, higher than 4000 px or over
+  4.8 million pixels, or that do not decode, are refused (400); the rest is decoded and encoded again (PNG lossless,
+  JPEG quality 80) and only that is stored, so EXIF/GPS and hidden or appended data are dropped. Images stored before
+  are not touched.
+
+### Changed
+- **Member mail limits:** at most 3 images (was 10) and no PDF attachment for now (was 1): a PDF upload or a save with
+  `attachmentFileId` is refused with a message. A saved text that breaks the link rules, has more than 3 images or a
+  PDF attachment is not changed; at send it counts as "can not render": the member gets the default text and the
+  community the existing error notification with the reason.
+- `cmd/mailtemplate-import`: links the save would refuse and a PDF attachment are a STOP (3 of the 10 hand-made
+  templates in `public/`); the legacy closing „versandt durch“ + logo is dropped with a Hinweis.
+- The default texts no longer contain „versandt durch“ and the eegfaktura logo (catalog and the embedded default
+  templates, which also no longer attach the logo); the fixed footer replaces them. `DefaultVersion` 1 → 2 for the
+  three mails, so communities with an own text get the "Standardtext geändert" notice once. Saved texts are not
+  changed; the built-in logo (`mailfile:eegfaktura-logo`) is still served and sent for texts that use it.
+
+### Fixed
+- The fixed footer was inserted at a wrong position (inside a tag) when the mail contained characters that change
+  their length in lower case (e.g. „İ“); the footer is now placed by a byte-exact search, also in the frame of saved
+  texts.
+
 ## [1.9.0] – 2026-10-26
 
 ### Changed

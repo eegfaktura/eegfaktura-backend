@@ -56,6 +56,8 @@ type mailTemplateSummary struct {
 	UpdatedAt      *time.Time `json:"updatedAt"`
 	UpdatedBy      *string    `json:"updatedBy"`
 	DefaultChanged bool       `json:"defaultChanged"`
+	// FixedFooter is the line the server appends to every mail (not editable, not stored)
+	FixedFooter string `json:"fixedFooter"`
 }
 
 type mailTemplateDTO struct {
@@ -76,6 +78,7 @@ type mailTemplateDTO struct {
 	Placeholders    []mailtemplate.Placeholder `json:"placeholders"`
 	Files           []model.MailTemplateFile   `json:"files"`
 	Limits          mailtemplate.Limits        `json:"limits"`
+	FixedFooter     string                     `json:"fixedFooter"`
 }
 
 type mailTemplateRequest struct {
@@ -105,7 +108,7 @@ func (req *mailTemplateRequest) attachment() (id *string, present bool, err *mai
 }
 
 func summaryOf(def *mailtemplate.Definition, t *model.MailTemplate) mailTemplateSummary {
-	s := mailTemplateSummary{Key: def.Key, Name: def.Name, Description: def.Description}
+	s := mailTemplateSummary{Key: def.Key, Name: def.Name, Description: def.Description, FixedFooter: mailtemplate.FixedFooterText}
 	if t != nil {
 		s.Customized = true
 		s.UpdatedAt = &t.UpdatedAt
@@ -123,7 +126,7 @@ func dtoOf(def *mailtemplate.Definition, t *model.MailTemplate, files []model.Ma
 		Customized: s.Customized, DefaultVersion: def.DefaultVersion, DefaultChanged: s.DefaultChanged,
 		DefaultSubject: def.DefaultSubject, DefaultBodyHtml: def.DefaultBodyHtml(),
 		UpdatedAt: s.UpdatedAt, UpdatedBy: s.UpdatedBy,
-		Placeholders: def.Placeholders, Files: files, Limits: def.Limits,
+		Placeholders: def.Placeholders, Files: files, Limits: def.Limits, FixedFooter: s.FixedFooter,
 	}
 	if t != nil {
 		dto.Subject, dto.BodyHtml, dto.Version, dto.AttachmentFile = t.Subject, t.BodyHtml, t.Version, t.AttachmentFileId
@@ -243,6 +246,8 @@ func sanitize(w http.ResponseWriter, def *mailtemplate.Definition, req *mailTemp
 	body, err := mailtemplate.SanitizeBody(def, req.BodyHtml, fileOK)
 	if errors.As(err, &verr) {
 		errs = append(errs, verr)
+	} else if err == nil {
+		errs = append(errs, mailtemplate.LinkErrors(body)...)
 	}
 	if len(errs) > 0 {
 		respondValidation(w, errs...)
@@ -340,6 +345,9 @@ func checkVersionFiles(def *mailtemplate.Definition, tenant string, images []str
 	}
 	if len(seen) > def.Limits.MaxImages {
 		return &mailtemplate.ValidationError{Field: "bodyHtml", Message: fmt.Sprintf("Höchstens %d Bilder je Mail.", def.Limits.MaxImages)}
+	}
+	if attachmentId != nil && def.Limits.MaxAttachments == 0 {
+		return &mailtemplate.ValidationError{Field: "attachmentFileId", Message: mailtemplate.NoAttachmentMessage}
 	}
 	if attachmentId != nil {
 		f := byId[*attachmentId]
