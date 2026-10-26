@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.10.0] – 2026-10-26
+
 ### Added
 - **Fixed footer in every member mail:** `consent-request`, `zp-active` and `zp-inactive` end with
   `versandt durch EEG Faktura, ein Service des VFEEG - https://vfeeg.org/` — in the sent mail (saved text and
