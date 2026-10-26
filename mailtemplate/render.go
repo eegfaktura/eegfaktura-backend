@@ -168,11 +168,30 @@ func Render(def *Definition, subject, body, attachmentId string, data *Data, fil
 	return out, nil
 }
 
+// FixedFooterText is the line every member mail ends with, in send, preview and
+// test mail, for an own text and for the built-in default. The server appends it
+// after sanitising, so it is neither editable nor part of the stored text. Same
+// text in eegfaktura-billing.
+const FixedFooterText = "versandt durch EEG Faktura, ein Service des VFEEG - https://vfeeg.org/"
+
+// FixedFooterHtml is FixedFooterText as HTML.
+const FixedFooterHtml = `<p style="font-size:12px;color:#6b7280">versandt durch EEG Faktura, ein Service des VFEEG - <a href="https://vfeeg.org/">https://vfeeg.org/</a></p>`
+
+// AppendFixedFooter adds the fixed footer to a complete HTML mail: before the
+// last </body>, at the end when there is none.
+func AppendFixedFooter(doc string) string {
+	i := strings.LastIndex(strings.ToLower(doc), "</body>")
+	if i < 0 {
+		return doc + "\n" + FixedFooterHtml
+	}
+	return doc[:i] + FixedFooterHtml + "\n" + doc[i:]
+}
+
 // frame is the fixed outer frame of every customised member mail; it matches
-// the head of the legacy templates.
+// the head of the legacy templates and ends with the fixed footer.
 func frame(subject, body string) string {
 	return "<!DOCTYPE html>\n<html lang=\"de\">\n<head>\n    <meta charset=\"UTF-8\">\n    <title>" +
-		html.EscapeString(subject) + "</title>\n</head>\n<body>\n" + body + "\n</body>\n</html>"
+		html.EscapeString(subject) + "</title>\n</head>\n<body>\n" + body + "\n" + FixedFooterHtml + "\n</body>\n</html>"
 }
 
 // imageSource returns the src of an image and, for ImagesInline, its inline attachment.

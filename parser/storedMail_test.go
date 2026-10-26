@@ -5,8 +5,10 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"at.ourproject/vfeeg-backend/mailtemplate"
 	"at.ourproject/vfeeg-backend/model"
 	"at.ourproject/vfeeg-backend/services"
 	"github.com/spf13/viper"
@@ -137,4 +139,29 @@ func TestMemberMails_IgnoreVolumeTemplates(t *testing.T) {
 	assert.Contains(t, body, "nicht mehr Teil")
 	assert.GreaterOrEqual(t, inline, 0, "the inactive mail was sent")
 	assert.Empty(t, store.notices)
+}
+
+// Every member mail ends with the fixed footer: the built-in default (no saved text) and a saved text.
+func TestMemberMails_FixedFooter(t *testing.T) {
+	viper.Set("file-content.templates", t.TempDir())
+	eeg, participant := storedMailFixture()
+	var body string
+	send := func(_, _, _ string, _ *string, b *bytes.Buffer, _ []*services.Attachment, _ *services.Attachment) error {
+		body = b.String()
+		return nil
+	}
+	saved := &model.MailTemplate{Tenant: "TE000300", MailKey: "zp-active", Version: 1, Subject: "S", BodyHtml: "<p>Eigener Text</p>"}
+	for _, store := range []*storeStub{{}, {template: saved}} {
+		for _, cfg := range []string{"activation-mail-template.toml", "zp-complete-mail-template.toml"} {
+			body = ""
+			require.NoError(t, SendActivationMailFromTemplate(send, store, "TE000300", "s", eeg, participant, cfg))
+			assert.Equal(t, 1, strings.Count(body, mailtemplate.FixedFooterHtml), cfg)
+			assert.Contains(t, body, mailtemplate.FixedFooterHtml+"\n</body>", cfg+": before </body>")
+		}
+		body = ""
+		require.NoError(t, SendMeteringPointInactiveMail(send, store, "TE000300", InactiveMailData{
+			Eeg: eeg, Participant: participant, MeteringPoint: "AT1", Direction: "Bezug", EndDate: "01.02.2026", Reason: "Weil."}))
+		assert.Equal(t, 1, strings.Count(body, mailtemplate.FixedFooterHtml), "inactive")
+		assert.Contains(t, body, mailtemplate.FixedFooterHtml+"\n</body>", "inactive")
+	}
 }

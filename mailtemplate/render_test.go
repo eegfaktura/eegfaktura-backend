@@ -102,9 +102,11 @@ func TestDefaultMatchesLegacyTemplates(t *testing.T) {
 			r, err := Render(def, def.DefaultSubject, def.DefaultBody, "", data, nil, ImagesInline)
 			require.NoError(t, err)
 
-			wantText, wantImages := visible(t, renderLegacy(t, tc.legacy, tc.legacyData))
+			// the parser sends the legacy default with the same fixed footer (AppendFixedFooter)
+			wantText, wantImages := visible(t, AppendFixedFooter(renderLegacy(t, tc.legacy, tc.legacyData)))
 			gotText, gotImages := visible(t, r.Html)
 			assert.Equal(t, wantText, gotText)
+			assert.True(t, strings.HasSuffix(gotText, FixedFooterText), gotText)
 			assert.Equal(t, wantImages, gotImages)
 			assert.Equal(t, []string{"cid:eegfaktura-logo-1"}, gotImages)
 			require.Len(t, r.Inline, 1)
@@ -143,7 +145,7 @@ func TestRender_MissingValuesAreEmpty(t *testing.T) {
 		"", &Data{}, nil, ImagesInline)
 	require.NoError(t, err)
 	text, _ := visible(t, r.Html)
-	assert.Equal(t, "Nr. , Ende .", text)
+	assert.Equal(t, "Nr. , Ende . "+FixedFooterText, text, "only the fixed footer follows")
 	assert.NotContains(t, r.Html, "data-ph")
 }
 

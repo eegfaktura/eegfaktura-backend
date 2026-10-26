@@ -15,6 +15,7 @@ import (
 
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"at.ourproject/vfeeg-backend/database"
+	"at.ourproject/vfeeg-backend/mailtemplate"
 	"at.ourproject/vfeeg-backend/public"
 	"at.ourproject/vfeeg-backend/services"
 	"github.com/gorilla/mux"
@@ -258,6 +259,7 @@ func TestMailTemplates_HappyPath(t *testing.T) {
 	assert.Contains(t, preview["html"], `src="data:image/png;base64,`)
 	assert.Contains(t, preview["html"], "<div>Mailtest Gemeinschaft</div>")
 	assert.Contains(t, preview["html"], "<div>T: +43 1 300</div>")
+	assert.Equal(t, 1, strings.Count(preview["html"], mailtemplate.FixedFooterHtml), "the preview shows the fixed footer")
 
 	w = c.json("admin", mtTenant, "POST", "/eeg/mailtemplates/consent-request/test", map[string]interface{}{
 		"recipient": "me", "subject": "Test {member.lastName}", "bodyHtml": body})
@@ -274,6 +276,7 @@ func TestMailTemplates_HappyPath(t *testing.T) {
 	assert.Nil(t, c.sent[0].cc, "a test mail has no copy to the community")
 	assert.Equal(t, mtTenant, c.sent[0].tenant)
 	assert.Contains(t, c.sent[0].body, `src="cid:`+imgId+`"`)
+	assert.Equal(t, 1, strings.Count(c.sent[0].body, mailtemplate.FixedFooterHtml), "the test mail ends with the fixed footer")
 	assert.Equal(t, 1, c.sent[0].inline)
 	assert.True(t, c.sent[0].attachment)
 	assert.Equal(t, "eeg-mail-test@example.org; office@example.org", c.sent[1].to)

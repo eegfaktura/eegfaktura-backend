@@ -115,8 +115,9 @@ func sendTemplateMail(sendMail services.SendMailFunc, store mailtemplate.Store, 
 		return err
 	}
 
+	// the built-in default ends with the same fixed footer as a customised mail
 	return sendMail(tenant, participant.Contact.Email.String,
-		subject, eeg.Email.Ptr(), buf,
+		subject, eeg.Email.Ptr(), bytes.NewBufferString(mailtemplate.AppendFixedFooter(buf.String())),
 		buildInlineContent(tmplFS, templateConfig.InlinePictures),
 		buildAttachment(tmplFS, templateConfig.Attachment.Name, templateConfig.Attachment.Mime),
 	)
