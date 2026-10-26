@@ -8,6 +8,24 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Added
+- **Fixed footer in every member mail:** `consent-request`, `zp-active` and `zp-inactive` end with
+  `versandt durch EEG Faktura, ein Service des VFEEG - https://vfeeg.org/` — in the sent mail (saved text and
+  built-in default), the preview and the test mail. The server appends it after sanitising; it is not editable and
+  not stored. The text/plain part (derived from the HTML by eda-xp) contains it too.
+- Contract (additive, for **eegfaktura-web**): `GET /eeg/mailtemplates` and `GET /eeg/mailtemplates/{key}` return the
+  new string field `fixedFooter` with that text. Deploy before or together with web (web shows nothing without it).
+- **Font sizes in mail texts:** `mail-html-policy.json` version 2 allows `font-size` `13px` and `20px` on `p`,
+  `h1`–`h3` and `li`, alone or together with `text-align`; other sizes and units are dropped. New shared cases in
+  `mail-html-policy-cases.json` (font sizes, image widths 200/400/600); both files stay byte-identical with
+  eegfaktura-billing.
+
+### Changed
+- The default texts no longer contain „versandt durch“ and the eegfaktura logo (catalog and the embedded default
+  templates, which also no longer attach the logo); the fixed footer replaces them. `DefaultVersion` 1 → 2 for the
+  three mails, so communities with an own text get the "Standardtext geändert" notice once. Saved texts are not
+  changed; the built-in logo (`mailfile:eegfaktura-logo`) is still served and sent for texts that use it.
+
 ## [1.9.0] – 2026-10-26
 
 ### Changed
