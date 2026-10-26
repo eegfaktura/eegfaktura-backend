@@ -25,6 +25,13 @@ var mailfileRef = regexp.MustCompile(`mailfile:([A-Za-z0-9-]+)`)
 func TestConvertTheTenHandMadeTemplates(t *testing.T) {
 	blocked := map[string]string{
 		"CC100438": "Logo_4c_cmyk.jpg", // 2.3 MB logo, must be made smaller first
+		// link rules and limits of 2026-10-26: the community has to change the text first
+		"RC100915": "Höchstens 3 Links pro Mail (jetzt 9)",
+		"RC101162": "PDF-Anhänge sind derzeit nicht möglich",
+		"RC101311": "Links zu höchstens 2 verschiedenen Domains pro Mail (jetzt 3",
+		"RC101352": "Links zu höchstens 2 verschiedenen Domains pro Mail (jetzt 3",
+		"RC101364": "Links zu höchstens 2 verschiedenen Domains pro Mail (jetzt 3",
+		"RC101370": "Höchstens 3 Links pro Mail (jetzt 9)",
 	}
 	entries, err := os.ReadDir("../../public")
 	require.NoError(t, err)
@@ -80,14 +87,14 @@ func TestConvertTheTenHandMadeTemplates(t *testing.T) {
 	assert.Equal(t, 10, count)
 }
 
-func TestConvert_RC101162KeepsHeaderAndPdf(t *testing.T) {
+// Member mails allow no PDF attachment for now (2026-10-26): a template with one stops.
+func TestConvert_RC101162StopsOnPdf(t *testing.T) {
 	c := ConvertTenant(os.DirFS("../../public/RC101162/templates"), "RC101162")[0]
-	require.False(t, c.Blocked())
-	require.Len(t, c.Files, 2)
-	assert.Equal(t, "image", c.Files[0].Kind)
-	assert.Equal(t, "attachment", c.Files[1].Kind)
-	assert.True(t, strings.HasPrefix(c.Files[1].Filename, "Anleitung Zusatzvereinbarung Netz O"), c.Files[1].Filename)
-	assert.True(t, strings.HasSuffix(c.Files[1].Filename, ".pdf"))
+	require.True(t, c.Blocked())
+	assert.Contains(t, findingTexts(c), "PDF-Anhänge sind derzeit nicht möglich")
+	for _, f := range c.Files {
+		assert.NotEqual(t, "attachment", f.Kind)
+	}
 }
 
 func templateFS(html string, extra ...string) fstest.MapFS {
@@ -136,6 +143,13 @@ func TestConvert_ActionInAttributeIsNamed(t *testing.T) {
 	c := ConvertTenant(templateFS(`<p>Hallo {{.Participant.FirstName}}, <a href="mailto:{{.Eeg.Contact.Email.String}}">schreib uns</a></p>`), "TE000300")[0]
 	require.True(t, c.Blocked())
 	assert.Contains(t, findingTexts(c), `href="mailto:{{.Eeg.Contact.Email.String}}"`)
+}
+
+// Links the save would refuse stop the import with the message of the rule.
+func TestConvert_LinkRules(t *testing.T) {
+	c := ConvertTenant(templateFS(`<p><a href="https://bit.ly/x">Portal</a></p>`), "TE000300")[0]
+	require.True(t, c.Blocked())
+	assert.Contains(t, findingTexts(c), "Links: Links zu Kurz-Link-Diensten sind nicht erlaubt: bit.ly")
 }
 
 func TestConvert_Images(t *testing.T) {
@@ -190,10 +204,10 @@ func TestConvert_DropsLegacySignature(t *testing.T) {
 func TestImportMail(t *testing.T) {
 	png, err := os.ReadFile("../../public/templates/eegfaktura-logo.png")
 	require.NoError(t, err)
-	fs := templateFS(`<p>Hallo {{.Participant.FirstName}}</p><img src="cid:logo"/>`,
-		`InlinePictures = [ { Filepath="l.png", contentId="logo" } ]`, `Attachment = { Name="a.pdf", Mime="application/pdf" }`)
+	fs := templateFS(`<p>Hallo {{.Participant.FirstName}}</p><img src="cid:logo"/><img src="cid:logo2"/>`,
+		`InlinePictures = [ { Filepath="l.png", contentId="logo" }, { Filepath="l2.png", contentId="logo2" } ]`)
 	fs["l.png"] = &fstest.MapFile{Data: png}
-	fs["a.pdf"] = &fstest.MapFile{Data: []byte("%PDF-1.4\n%%EOF\n")}
+	fs["l2.png"] = &fstest.MapFile{Data: png}
 	c := ConvertTenant(fs, "TE000300")[0]
 	require.False(t, c.Blocked(), findingTexts(c))
 
@@ -238,8 +252,9 @@ func TestImportMail(t *testing.T) {
 	require.NoError(t, client.importMail(c, false, "eeg"))
 	assert.Equal(t, []string{"GET " + p, "POST " + p + "/files", "POST " + p + "/files", "PUT " + p, "POST " + p + "/test"}, calls)
 	assert.Contains(t, saved["bodyHtml"], "mailfile:"+ids[0])
+	assert.Contains(t, saved["bodyHtml"], "mailfile:"+ids[1])
 	assert.NotContains(t, saved["bodyHtml"], c.Files[0].PreId)
-	assert.Equal(t, ids[1], saved["attachmentFileId"])
+	assert.Nil(t, saved["attachmentFileId"])
 	assert.Equal(t, float64(0), saved["version"])
 
 	// a customised mail is skipped without -overwrite

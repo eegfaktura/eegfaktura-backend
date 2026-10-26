@@ -142,6 +142,10 @@ func convert(fsys fs.FS, tenant string, def *mailtemplate.Definition) *Conversio
 		c.block("Bereinigung: %v", err)
 		return c
 	}
+	// the save would refuse them: the community has to shorten the links first
+	for _, p := range mailtemplate.CheckLinks(clean) {
+		c.block("Links: %s", p.Message)
+	}
 	c.Body = clean
 	return c
 }
@@ -283,6 +287,10 @@ func (c *Conversion) convertImages(fsys fs.FS, def *mailtemplate.Definition, pic
 
 func (c *Conversion) convertAttachment(fsys fs.FS, def *mailtemplate.Definition, name string) {
 	if name == "" {
+		return
+	}
+	if def.Limits.MaxAttachments == 0 {
+		c.block("Anhang %q: PDF-Anhänge sind derzeit nicht möglich", name)
 		return
 	}
 	content, err := fs.ReadFile(fsys, name)

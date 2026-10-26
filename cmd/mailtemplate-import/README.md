@@ -29,7 +29,8 @@ A **copy of the data volume**, not the repository's `public/` folder. It uses th
 | a single `{{if .Eeg.Contact.Phone/Email/Website.Valid}}…{{end}}` | condition dropped, inner placeholder kept |
 | `<img src="cid:…">` from `InlinePictures` | upload as image, `mailfile:<id>`, size from `max-height`/`max-width` becomes `width` |
 | `cid:eegfaktura-logo-1` / `eegfaktura-logo.png` | built-in `mailfile:eegfaktura-logo` (no upload) |
-| `Attachment` | upload as PDF |
+| closing `<p>versandt durch</p>` + `cid:eegfaktura-logo-1` at the end | dropped (Hinweis): every mail ends with the fixed footer |
+| `Attachment` | **STOP** while member mails allow no PDF (since 26.10.2026) |
 | `<div>` holding only text (signature lines) | its content followed by `<br>` (the policy unwraps plain divs) |
 
 Since 25.10.2026 `{{.Eeg.Name}}` (short name) and `{{.Eeg.Description}}` both become `eeg.name`, the designation. A template
@@ -37,7 +38,9 @@ that shows both (e.g. `{{.Eeg.Description}} ({{.Eeg.Name}})`) then repeats the d
 purpose turns into the long one: check the converted text in the dry run / preview before importing.
 
 Any other template expression is a **STOP**. The mail of that tenant is not imported, so no raw
-`{{…}}` ever reaches a member. A file that is not PNG/JPEG/PDF, or that is too large, is also a STOP.
+`{{…}}` ever reaches a member. A file that is not PNG/JPEG/PDF, or that is too large, is also a STOP, and
+so are links the save would refuse (more than 3 links or 2 domains, URL shorteners, IP addresses, a link text
+showing another address — the link rules of `mail-html-policy.json`).
 Everything the sanitiser removes (fonts, colours, tables, `http:` links, external images) is printed
 as a **Hinweis**. Go through these hints with the community.
 
