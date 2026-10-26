@@ -27,6 +27,9 @@ type Limits struct {
 	MaxAttachments     int   `json:"maxAttachments"`
 	MaxAttachmentBytes int64 `json:"maxAttachmentBytes"`
 	MaxTotalBytes      int64 `json:"maxTotalBytes"`
+	// MaxLinks and MaxLinkDomains come from the links section of mail-html-policy.json (CheckLinks).
+	MaxLinks       int `json:"maxLinks"`
+	MaxLinkDomains int `json:"maxLinkDomains"`
 }
 
 const (
@@ -36,12 +39,16 @@ const (
 	MaxBodyBytes = 100 * 1024
 )
 
+// member mails: at most 3 images and no PDF attachment for now (link rules
+// Variante A, decided 2026-10-26)
 var memberMailLimits = Limits{
-	MaxImages:          10,
+	MaxImages:          3,
 	MaxImageBytes:      1024 * 1024,
-	MaxAttachments:     1,
+	MaxAttachments:     0,
 	MaxAttachmentBytes: 3 * 1024 * 1024,
 	MaxTotalBytes:      6 * 1024 * 1024,
+	MaxLinks:           policy.Links.MaxLinks,
+	MaxLinkDomains:     policy.Links.MaxLinkDomains,
 }
 
 // Placeholder is one value a mail text may contain. Block placeholders render

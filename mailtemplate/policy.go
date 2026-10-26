@@ -24,6 +24,14 @@ type htmlPolicy struct {
 	Styles     map[string][]string `json:"styles"`
 	Required   map[string][]string `json:"required"`
 	LinkRel    string              `json:"linkRel"`
+	Links      linkPolicy          `json:"links"`
+}
+
+// linkPolicy holds the link rules of a mail text (CheckLinks).
+type linkPolicy struct {
+	MaxLinks       int      `json:"maxLinks"`
+	MaxLinkDomains int      `json:"maxLinkDomains"`
+	BlockedHosts   []string `json:"blockedHosts"`
 }
 
 var policy = mustLoadPolicy(policyJSON)
@@ -35,6 +43,9 @@ func mustLoadPolicy(data []byte) *htmlPolicy {
 	}
 	if len(p.Elements) == 0 {
 		panic("mail-html-policy.json: no elements")
+	}
+	if p.Links.MaxLinks <= 0 || p.Links.MaxLinkDomains <= 0 || len(p.Links.BlockedHosts) == 0 {
+		panic("mail-html-policy.json: no link rules")
 	}
 	return &p
 }

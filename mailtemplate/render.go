@@ -46,6 +46,9 @@ type Rendered struct {
 	Attachment *services.Attachment
 }
 
+// NoAttachmentMessage is the answer to a PDF attachment while a mail allows none.
+const NoAttachmentMessage = "PDF-Anhänge sind derzeit nicht möglich; bitte den Anhang entfernen."
+
 // ErrTooLarge is returned when the files of a mail exceed its size limit.
 var ErrTooLarge = errors.New("mail too large")
 
@@ -69,6 +72,13 @@ func Render(def *Definition, subject, body, attachmentId string, data *Data, fil
 			attachment = f
 		}
 	}
+	// the limits apply to stored texts saved before them too
+	if attachmentId != "" && def.Limits.MaxAttachments == 0 {
+		return nil, &ValidationError{Field: "attachmentFileId", Message: NoAttachmentMessage}
+	}
+	if n := countDistinct(ReferencedImages(body)); n > def.Limits.MaxImages {
+		return nil, &ValidationError{Field: "bodyHtml", Message: fmt.Sprintf("Höchstens %d Bilder je Mail (jetzt %d).", def.Limits.MaxImages, n)}
+	}
 	if attachmentId != "" && attachment == nil {
 		return nil, fmt.Errorf("%w: PDF attachment %s", ErrMissingFile, attachmentId)
 	}
@@ -87,6 +97,13 @@ func Render(def *Definition, subject, body, attachmentId string, data *Data, fil
 	cleanBody, err := SanitizeBody(def, body, func(id string) bool { return byId[id] != nil })
 	if err != nil {
 		return nil, err
+	}
+	if errs := LinkErrors(cleanBody); len(errs) > 0 {
+		msgs := make([]string, len(errs))
+		for i, e := range errs {
+			msgs[i] = e.Message
+		}
+		return nil, &ValidationError{Field: "bodyHtml", Message: strings.Join(msgs, " ")}
 	}
 
 	renderedSubject, err := renderSubject(def, cleanSubject, data)
@@ -410,4 +427,12 @@ func eegDisplayName(eeg *model.Eeg) string {
 		return eeg.Description
 	}
 	return eeg.Name
+}
+
+func countDistinct(ids []string) int {
+	seen := map[string]bool{}
+	for _, id := range ids {
+		seen[id] = true
+	}
+	return len(seen)
 }
