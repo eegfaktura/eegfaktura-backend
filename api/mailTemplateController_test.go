@@ -149,6 +149,7 @@ type mtDTO struct {
 	DefaultSubject   string  `json:"defaultSubject"`
 	DefaultBodyHtml  string  `json:"defaultBodyHtml"`
 	AttachmentFileId *string `json:"attachmentFileId"`
+	FixedFooter      string  `json:"fixedFooter"`
 	UpdatedBy        *string
 	Placeholders     []struct {
 		Key   string `json:"key"`
@@ -190,6 +191,9 @@ func TestMailTemplates_HappyPath(t *testing.T) {
 	assert.Equal(t, "consent-request", list[0]["key"])
 	assert.Equal(t, false, list[0]["customized"])
 	assert.Nil(t, list[0]["updatedAt"])
+	for _, entry := range list {
+		assert.Equal(t, "versandt durch EEG Faktura, ein Service des VFEEG - https://vfeeg.org/", entry["fixedFooter"])
+	}
 
 	w = c.json("admin", mtTenant, "GET", "/eeg/mailtemplates/consent-request", nil)
 	require.Equal(t, http.StatusOK, w.Code)
@@ -197,6 +201,9 @@ func TestMailTemplates_HappyPath(t *testing.T) {
 	assert.False(t, def.Customized)
 	assert.Equal(t, 0, def.Version)
 	assert.Equal(t, 2, def.DefaultVersion)
+	assert.Equal(t, "versandt durch EEG Faktura, ein Service des VFEEG - https://vfeeg.org/", def.FixedFooter)
+	assert.NotContains(t, def.DefaultBodyHtml, "versandt durch", "the footer is not part of the editable text")
+	assert.NotContains(t, def.DefaultBodyHtml, "eegfaktura-logo")
 	assert.Equal(t, "Aktivierung im Serviceportal", def.Subject)
 	assert.Equal(t, def.DefaultBodyHtml, def.BodyHtml)
 	assert.Contains(t, def.BodyHtml, `data-ph="eeg.contactBlock"`)
@@ -229,6 +236,8 @@ func TestMailTemplates_HappyPath(t *testing.T) {
 	saved := decode[mtDTO](t, w)
 	assert.True(t, saved.Customized)
 	assert.Equal(t, 1, saved.Version)
+	assert.Equal(t, mailtemplate.FixedFooterText, saved.FixedFooter)
+	assert.NotContains(t, saved.BodyHtml, "versandt durch", "the footer is never stored")
 	require.NotNil(t, saved.AttachmentFileId)
 	assert.Equal(t, pdfId, *saved.AttachmentFileId)
 	require.Len(t, saved.Files, 2)
