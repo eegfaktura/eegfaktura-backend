@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.8.0] – 2026-10-26
+
 ### Added
 - **Editable member mail texts** (konzept-mail-texte-editierbar.md): a community customises subject and text of
   the three member mails `consent-request` (Freigabe-Aufforderung), `zp-active` and `zp-inactive`. New REST API
