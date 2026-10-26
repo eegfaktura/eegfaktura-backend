@@ -8,6 +8,18 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Changed
+- **Hand-made mail templates on the data volume are no longer used.** A member mail (`consent-request`, `zp-active`,
+  `zp-inactive`) is either the community's saved text (`base.mail_template`) or the built-in default embedded in the
+  binary; `<file-content.templates>/<TENANT>/templates/*` and `<file-content.templates>/templates/*` are ignored by
+  the send path, the preview and the test mail. Communities without a saved text and without volume templates get the
+  same mail as before. Contract change with **eegfaktura-web**: `legacyTemplateActive` is removed from
+  `GET /eeg/mailtemplates/{key}`, and `useDefault` of preview/test mail is no longer read (it only selected the volume
+  template); web ignores both.
+  **Operations note:** in production run `cmd/mailtemplate-import` for every community with volume templates
+  **before** rolling out this version — otherwise those communities send the default text from the rollout on. The
+  global `templates` dir is not covered by the import; a global template must be saved per community by hand.
+
 ## [1.8.0] – 2026-10-26
 
 ### Added

@@ -3,7 +3,6 @@ package parser
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"errors"
 	"html/template"
 	"io/fs"
@@ -19,7 +18,6 @@ import (
 	"github.com/gabriel-vasile/mimetype"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-	"gopkg.in/guregu/null.v4"
 )
 
 // ParseTemplate renders the HTML template named name from fsys with data.
@@ -36,84 +34,21 @@ func ParseTemplate(fsys fs.FS, name string, data interface{}) (*bytes.Buffer, er
 	return buf, nil
 }
 
-// resolveTemplateSource decides where a mail template and its inline assets are
-// read from. Operator overrides on the data volume win — a per-tenant templates
-// dir first, then the global templates dir — so a mail can still be customised
-// by dropping files on the PVC. When neither holds the requested config file,
-// the defaults embedded in the binary (public/templates) are used, so a fresh
-// deployment renders the mail without any template being seeded onto the volume.
-func resolveTemplateSource(tenant, templateConfigName string) (fs.FS, string) {
-	base := viper.GetString("file-content.templates")
-	for _, dir := range []string{
-		filepath.Join(base, tenant, "templates"),
-		filepath.Join(base, "templates"),
-	} {
-		if _, err := os.Stat(filepath.Join(dir, templateConfigName)); err == nil {
-			return os.DirFS(dir), dir
-		}
-	}
+// embeddedTemplates returns the default mail templates and their inline assets
+// embedded in the binary (public/templates). Hand-made templates on the data
+// volume are no longer read: a community's own text is its saved version
+// (base.mail_template); cmd/mailtemplate-import converts the volume files once.
+func embeddedTemplates() fs.FS {
 	embedded, err := fs.Sub(public.Templates, "templates")
 	if err != nil {
 		// A fixed sub-path of an embed.FS never fails; fall back defensively.
-		return public.Templates, "embedded"
+		return public.Templates
 	}
-	return embedded, "embedded"
-}
-
-// TenantTemplateActive reports whether a hand-made template on the data volume
-// applies to a mail of the community (its own or the global one, as the send
-// path resolves it; used while it has no saved version).
-func TenantTemplateActive(tenant, templateConfigName string) bool {
-	_, source := resolveTemplateSource(tenant, templateConfigName)
-	return source != "embedded"
-}
-
-// RenderLegacy renders the template the legacy resolution would send (tenant
-// dir, global dir, embedded) with the given member data: for the preview with
-// images as data: URIs, for a test mail with inline images and attachment as
-// the member gets them.
-func RenderLegacy(tenant, templateConfigName string, eeg *model.Eeg, data *mailtemplate.Data, mode mailtemplate.ImageMode) (*mailtemplate.Rendered, error) {
-	tmplFS, _ := resolveTemplateSource(tenant, templateConfigName)
-	cfg, err := config.ReadActivationMailTemplateConfig(tmplFS, templateConfigName)
-	if err != nil {
-		return nil, err
-	}
-	participant := &model.EegParticipant{EegParticipantBase: model.EegParticipantBase{
-		FirstName: data.FirstName, LastName: data.LastName, ParticipantNumber: null.StringFrom(data.Number)}}
-	templateData := struct {
-		Eeg            *model.Eeg
-		Participant    *model.EegParticipant
-		Meteringpoints []string
-		MeteringPoint  string
-		Direction      string
-		EndDate        string
-		Reason         string
-	}{eeg, participant, data.MeteringPoints, strings.Join(data.MeteringPoints, ", "), data.Direction, data.EndDate, data.Reason}
-	buf, err := ParseTemplate(tmplFS, cfg.TemplateFile, templateData)
-	if err != nil {
-		return nil, err
-	}
-	if mode == mailtemplate.ImagesInline {
-		return &mailtemplate.Rendered{
-			Html:       buf.String(),
-			Inline:     buildInlineContent(tmplFS, cfg.InlinePictures),
-			Attachment: buildAttachment(tmplFS, cfg.Attachment.Name, cfg.Attachment.Mime),
-		}, nil
-	}
-	out := buf.String()
-	for _, p := range cfg.InlinePictures {
-		content, err := fs.ReadFile(tmplFS, p.Filepath)
-		if err != nil {
-			continue
-		}
-		out = strings.ReplaceAll(out, "cid:"+p.ContentId,
-			"data:"+mimetype.Detect(content).String()+";base64,"+base64.StdEncoding.EncodeToString(content))
-	}
-	return &mailtemplate.Rendered{Html: out}, nil
+	return embedded
 }
 
 // SendActivationMailFromTemplate sends the consent-request or the zp-active mail (by template
-// config name). store holds the community's customised mails; nil sends the legacy template.
+// config name). store holds the community's customised mails; nil sends the built-in default.
 func SendActivationMailFromTemplate(sendMail services.SendMailFunc, store mailtemplate.Store,
 	tenant, subject string, eeg *model.Eeg, participant *model.EegParticipant, templateConfigName string) error {
 
@@ -149,8 +84,8 @@ func memberMailData(eeg *model.Eeg, participant *model.EegParticipant) *mailtemp
 }
 
 // sendTemplateMail sends a member mail to the participant with the community in Cc: the
-// community's customised version when it has one (store), else the legacy template config
-// (tenant dir, global dir, embedded default). A participant without an e-mail address is
+// community's customised version when it has one (store), else the built-in default (the
+// template config embedded in public/templates). A participant without an e-mail address is
 // skipped. Shared by the activation and the inactive mail.
 func sendTemplateMail(sendMail services.SendMailFunc, store mailtemplate.Store, tenant, subject, templateConfigName string,
 	eeg *model.Eeg, participant *model.EegParticipant, data interface{}, mailData *mailtemplate.Data) error {
@@ -164,12 +99,11 @@ func sendTemplateMail(sendMail services.SendMailFunc, store mailtemplate.Store, 
 		}
 	}
 
-	tmplFS, source := resolveTemplateSource(tenant, templateConfigName)
+	tmplFS := embeddedTemplates()
 	templateConfig, err := config.ReadActivationMailTemplateConfig(tmplFS, templateConfigName)
 	if err != nil {
 		return err
 	}
-	log.Infof("Mail template %q for tenant %q resolved from %s", templateConfigName, tenant, source)
 
 	if !participant.Contact.Email.Valid || strings.TrimSpace(participant.Contact.Email.String) == "" {
 		log.Warnf("Participant without email contact: %s (%s)", participant.LastName, participant.Id)

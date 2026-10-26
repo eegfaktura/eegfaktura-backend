@@ -138,19 +138,18 @@ func decode[T any](t *testing.T, w *httptest.ResponseRecorder) T {
 }
 
 type mtDTO struct {
-	Key                  string  `json:"key"`
-	Subject              string  `json:"subject"`
-	BodyHtml             string  `json:"bodyHtml"`
-	Customized           bool    `json:"customized"`
-	Version              int     `json:"version"`
-	DefaultVersion       int     `json:"defaultVersion"`
-	DefaultChanged       bool    `json:"defaultChanged"`
-	DefaultSubject       string  `json:"defaultSubject"`
-	DefaultBodyHtml      string  `json:"defaultBodyHtml"`
-	LegacyTemplateActive bool    `json:"legacyTemplateActive"`
-	AttachmentFileId     *string `json:"attachmentFileId"`
-	UpdatedBy            *string
-	Placeholders         []struct {
+	Key              string  `json:"key"`
+	Subject          string  `json:"subject"`
+	BodyHtml         string  `json:"bodyHtml"`
+	Customized       bool    `json:"customized"`
+	Version          int     `json:"version"`
+	DefaultVersion   int     `json:"defaultVersion"`
+	DefaultChanged   bool    `json:"defaultChanged"`
+	DefaultSubject   string  `json:"defaultSubject"`
+	DefaultBodyHtml  string  `json:"defaultBodyHtml"`
+	AttachmentFileId *string `json:"attachmentFileId"`
+	UpdatedBy        *string
+	Placeholders     []struct {
 		Key   string `json:"key"`
 		Block bool   `json:"block"`
 	} `json:"placeholders"`
@@ -287,98 +286,37 @@ func TestMailTemplates_HappyPath(t *testing.T) {
 	assert.Empty(t, reset.Files, "reset deletes the files")
 }
 
-// While a hand-made volume template applies, GET says so and the unchanged default previews that template.
-func TestMailTemplates_LegacyTemplateActive(t *testing.T) {
+// Hand-made templates on the volume (per tenant and global) are ignored: GET does not report them, and preview
+// and test mail of the unchanged default show the built-in default.
+func TestMailTemplates_VolumeTemplateIgnored(t *testing.T) {
 	c := newMailTemplateClient(t)
 	vol := t.TempDir()
-	dir := filepath.Join(vol, mtTenant, "templates")
-	require.NoError(t, os.MkdirAll(dir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "activation-mail-template.toml"), []byte(`TemplateFile="t.html"
-InlinePictures = [ { Filepath="l.png", contentId="logo-1" } ]`), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "t.html"), []byte(`<html><body><p>Servus {{.Participant.FirstName}} von {{.Eeg.Name}}</p><img src="cid:logo-1"></body></html>`), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "l.png"), logoPNG(t), 0o644))
+	for _, dir := range []string{filepath.Join(vol, mtTenant, "templates"), filepath.Join(vol, "templates")} {
+		require.NoError(t, os.MkdirAll(dir, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "activation-mail-template.toml"), []byte(`TemplateFile="t.html"`), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "t.html"), []byte(`<html><body><p>Servus {{.Participant.FirstName}}</p></body></html>`), 0o644))
+	}
 	orig := viper.GetString("file-content.templates")
 	viper.Set("file-content.templates", vol)
 	t.Cleanup(func() { viper.Set("file-content.templates", orig) })
 
 	w := c.json("admin", mtTenant, "GET", "/eeg/mailtemplates/consent-request", nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.NotContains(t, w.Body.String(), "legacyTemplateActive")
 	def := decode[mtDTO](t, w)
-	assert.True(t, def.LegacyTemplateActive)
-	w = c.json("admin", mtTenant, "GET", "/eeg/mailtemplates/zp-active", nil)
-	assert.False(t, decode[mtDTO](t, w).LegacyTemplateActive, "no hand-made template for this mail")
+	assert.False(t, def.Customized)
 
 	w = c.json("admin", mtTenant, "POST", "/eeg/mailtemplates/consent-request/preview", map[string]interface{}{
 		"subject": def.DefaultSubject, "bodyHtml": def.DefaultBodyHtml})
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	preview := decode[map[string]string](t, w)
-	assert.Contains(t, preview["html"], "<p>Servus Max von MAIL-TEST</p>")
-	assert.Contains(t, preview["html"], `src="data:image/png;base64,`)
-	assert.Equal(t, "Aktivierung im Serviceportal", preview["subject"])
+	assert.NotContains(t, preview["html"], "Servus")
+	assert.Contains(t, preview["html"], "damit dein Zählpunkt tatsächlich Energie")
 
-	// the editor's own serialisation of the default (no line breaks) still counts as unchanged
-	compact := strings.ReplaceAll(def.DefaultBodyHtml, "\n", "")
-	w = c.json("admin", mtTenant, "POST", "/eeg/mailtemplates/consent-request/preview", map[string]interface{}{
-		"subject": " " + def.DefaultSubject + " ", "bodyHtml": compact})
-	assert.Contains(t, decode[map[string]string](t, w)["html"], "<p>Servus Max von MAIL-TEST</p>")
-	// useDefault asks for it explicitly
-	w = c.json("admin", mtTenant, "POST", "/eeg/mailtemplates/consent-request/preview", map[string]interface{}{
-		"subject": "x", "bodyHtml": "<p>x</p>", "useDefault": true})
-	assert.Contains(t, decode[map[string]string](t, w)["html"], "<p>Servus Max von MAIL-TEST</p>")
-
-	// the test mail sends the same hand-made template, with its inline image
 	w = c.json("admin", mtTenant, "POST", "/eeg/mailtemplates/consent-request/test", map[string]interface{}{
-		"recipient": "me", "subject": def.DefaultSubject, "bodyHtml": compact})
+		"recipient": "me", "subject": def.DefaultSubject, "bodyHtml": def.DefaultBodyHtml})
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	require.Len(t, c.sent, 1)
-	assert.Equal(t, "[Test] Aktivierung im Serviceportal", c.sent[0].subject)
-	assert.Contains(t, c.sent[0].body, "<p>Servus Max von MAIL-TEST</p>")
-	assert.Contains(t, c.sent[0].body, `src="cid:logo-1"`)
-	assert.Equal(t, 1, c.sent[0].inline)
-
-	// a changed text previews the new format
-	w = c.json("admin", mtTenant, "POST", "/eeg/mailtemplates/consent-request/preview", map[string]interface{}{
-		"subject": def.DefaultSubject, "bodyHtml": "<p>Neu</p>"})
-	assert.Contains(t, decode[map[string]string](t, w)["html"], "<p>Neu</p>")
-
-	// the default text with an own PDF or an own image is a change: the preview shows it, not the hand-made template
-	w = c.upload("admin", mtTenant, "consent-request", "attachment", "anleitung.pdf", minimalPDF)
-	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
-	pdfId := decode[map[string]interface{}](t, w)["id"].(string)
-	w = c.json("admin", mtTenant, "POST", "/eeg/mailtemplates/consent-request/preview", map[string]interface{}{
-		"subject": def.DefaultSubject, "bodyHtml": compact, "attachmentFileId": pdfId})
-	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-	assert.NotContains(t, decode[map[string]string](t, w)["html"], "Servus Max", "own PDF: not the hand-made template")
-	w = c.upload("admin", mtTenant, "consent-request", "image", "bild.png", logoPNG(t))
-	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
-	imgId := decode[map[string]interface{}](t, w)["id"].(string)
-	w = c.json("admin", mtTenant, "POST", "/eeg/mailtemplates/consent-request/preview", map[string]interface{}{
-		"subject": def.DefaultSubject, "bodyHtml": compact + `<p><img src="mailfile:` + imgId + `"></p>`})
-	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-	assert.NotContains(t, decode[map[string]string](t, w)["html"], "Servus Max", "own image: not the hand-made template")
-
-	// a saved version replaces the hand-made template
-	w = c.json("admin", mtTenant, "PUT", "/eeg/mailtemplates/consent-request", map[string]interface{}{
-		"subject": "S", "bodyHtml": "<p>x</p>", "version": 0})
-	require.Equal(t, http.StatusOK, w.Code)
-	w = c.json("admin", mtTenant, "GET", "/eeg/mailtemplates/consent-request", nil)
-	assert.False(t, decode[mtDTO](t, w).LegacyTemplateActive)
-}
-
-// A global hand-made template on the volume applies to every community without its own one (as the send path
-// resolves it), so the editor reports it as active too.
-func TestMailTemplates_GlobalLegacyTemplateActive(t *testing.T) {
-	c := newMailTemplateClient(t)
-	vol := t.TempDir()
-	dir := filepath.Join(vol, "templates")
-	require.NoError(t, os.MkdirAll(dir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "activation-mail-template.toml"), []byte(`TemplateFile="t.html"`), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "t.html"), []byte(`<html><body><p>Global {{.Eeg.Name}}</p></body></html>`), 0o644))
-	orig := viper.GetString("file-content.templates")
-	viper.Set("file-content.templates", vol)
-	t.Cleanup(func() { viper.Set("file-content.templates", orig) })
-
-	w := c.json("admin", mtTenant, "GET", "/eeg/mailtemplates/consent-request", nil)
-	assert.True(t, decode[mtDTO](t, w).LegacyTemplateActive)
-	w = c.json("admin", mtTenant, "GET", "/eeg/mailtemplates/zp-active", nil)
-	assert.False(t, decode[mtDTO](t, w).LegacyTemplateActive)
+	assert.NotContains(t, c.sent[0].body, "Servus")
+	assert.Contains(t, c.sent[0].body, "damit dein Zählpunkt tatsächlich Energie")
 }

@@ -10,7 +10,6 @@ import (
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"at.ourproject/vfeeg-backend/mailtemplate"
 	"at.ourproject/vfeeg-backend/model"
-	"at.ourproject/vfeeg-backend/parser"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -81,48 +80,12 @@ func (h *MailTemplateHandler) preview() middleware.JWTHandlerFunc {
 		if !ok {
 			return
 		}
-		rendered, _, ok := h.legacy(r, tenant, def, req, mailtemplate.ImagesDataURI)
+		rendered, _, ok := h.render(w, r, tenant, def, req, mailtemplate.ImagesDataURI)
 		if !ok {
-			if rendered, _, ok = h.render(w, r, tenant, def, req, mailtemplate.ImagesDataURI); !ok {
-				return
-			}
+			return
 		}
 		respondWithJSON(w, http.StatusOK, map[string]string{"subject": rendered.Subject, "html": rendered.Html})
 	}
-}
-
-// legacy renders the hand-made volume template for preview and test mail when
-// it is what members get today and the editor shows the default unchanged.
-// Rule (section H, legacyTemplateActive): no saved version, a hand-made
-// template of the community on the volume, and either the request sets
-// useDefault or its subject and text equal the default after sanitising
-// (whitespace between elements ignored, see Definition.SameAsDefault).
-func (h *MailTemplateHandler) legacy(r *http.Request, tenant string, def *mailtemplate.Definition, req *mailTemplateRequest,
-	mode mailtemplate.ImageMode) (*mailtemplate.Rendered, *model.Eeg, bool) {
-	if !parser.TenantTemplateActive(tenant, def.LegacyConfig) {
-		return nil, nil, false
-	}
-	if !req.UseDefault && !def.SameAsDefault(req.Subject, req.BodyHtml) {
-		return nil, nil, false
-	}
-	// an own image or PDF is a change, even when the text equals the default (SameAsDefault drops own images)
-	if attachmentId, _, _ := req.attachment(); attachmentId != nil || len(mailtemplate.ReferencedImages(req.BodyHtml)) > 0 {
-		return nil, nil, false
-	}
-	if t, err := h.db.GetMailTemplate(r.Context(), tenant, def.Key); err != nil || t != nil {
-		return nil, nil, false
-	}
-	eeg, err := h.db.GetEegById(r.Context(), tenant)
-	if err != nil || eeg == nil || !strings.EqualFold(eeg.Id, tenant) {
-		return nil, nil, false
-	}
-	rendered, err := parser.RenderLegacy(tenant, def.LegacyConfig, eeg, mailtemplate.SampleData(eeg), mode)
-	if err != nil {
-		log.WithField("tenant", tenant).WithError(err).Warn("mail template: legacy template can not be rendered")
-		return nil, nil, false
-	}
-	rendered.Subject = def.DefaultSubject
-	return rendered, eeg, true
 }
 
 func (h *MailTemplateHandler) test() middleware.JWTHandlerFunc {
@@ -139,12 +102,9 @@ func (h *MailTemplateHandler) test() middleware.JWTHandlerFunc {
 			respondValidation(w, &mailtemplate.ValidationError{Field: "recipient", Message: "recipient muss me oder eeg sein."})
 			return
 		}
-		// test mail and preview agree: the hand-made template while it applies
-		rendered, eeg, ok := h.legacy(r, tenant, def, req, mailtemplate.ImagesInline)
+		rendered, eeg, ok := h.render(w, r, tenant, def, req, mailtemplate.ImagesInline)
 		if !ok {
-			if rendered, eeg, ok = h.render(w, r, tenant, def, req, mailtemplate.ImagesInline); !ok {
-				return
-			}
+			return
 		}
 		// the recipient is chosen by the service, never given by the browser
 		to := strings.TrimSpace(claims.Email)

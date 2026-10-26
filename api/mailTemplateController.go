@@ -12,7 +12,6 @@ import (
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/mailtemplate"
 	"at.ourproject/vfeeg-backend/model"
-	"at.ourproject/vfeeg-backend/parser"
 	"at.ourproject/vfeeg-backend/services"
 	"github.com/gorilla/mux"
 	"github.com/pborman/uuid"
@@ -60,25 +59,23 @@ type mailTemplateSummary struct {
 }
 
 type mailTemplateDTO struct {
-	Key             string     `json:"key"`
-	Name            string     `json:"name"`
-	Description     string     `json:"description"`
-	Subject         string     `json:"subject"`
-	BodyHtml        string     `json:"bodyHtml"`
-	Customized      bool       `json:"customized"`
-	Version         int        `json:"version"`
-	DefaultVersion  int        `json:"defaultVersion"`
-	DefaultChanged  bool       `json:"defaultChanged"`
-	DefaultSubject  string     `json:"defaultSubject"`
-	DefaultBodyHtml string     `json:"defaultBodyHtml"`
-	UpdatedAt       *time.Time `json:"updatedAt"`
-	UpdatedBy       *string    `json:"updatedBy"`
-	AttachmentFile  *string    `json:"attachmentFileId"`
-	// LegacyTemplateActive: no saved version and a hand-made template on the volume applies
-	LegacyTemplateActive bool                       `json:"legacyTemplateActive"`
-	Placeholders         []mailtemplate.Placeholder `json:"placeholders"`
-	Files                []model.MailTemplateFile   `json:"files"`
-	Limits               mailtemplate.Limits        `json:"limits"`
+	Key             string                     `json:"key"`
+	Name            string                     `json:"name"`
+	Description     string                     `json:"description"`
+	Subject         string                     `json:"subject"`
+	BodyHtml        string                     `json:"bodyHtml"`
+	Customized      bool                       `json:"customized"`
+	Version         int                        `json:"version"`
+	DefaultVersion  int                        `json:"defaultVersion"`
+	DefaultChanged  bool                       `json:"defaultChanged"`
+	DefaultSubject  string                     `json:"defaultSubject"`
+	DefaultBodyHtml string                     `json:"defaultBodyHtml"`
+	UpdatedAt       *time.Time                 `json:"updatedAt"`
+	UpdatedBy       *string                    `json:"updatedBy"`
+	AttachmentFile  *string                    `json:"attachmentFileId"`
+	Placeholders    []mailtemplate.Placeholder `json:"placeholders"`
+	Files           []model.MailTemplateFile   `json:"files"`
+	Limits          mailtemplate.Limits        `json:"limits"`
 }
 
 type mailTemplateRequest struct {
@@ -86,9 +83,6 @@ type mailTemplateRequest struct {
 	Subject   string `json:"subject"`
 	BodyHtml  string `json:"bodyHtml"`
 	Version   int    `json:"version"`
-	// UseDefault (preview and test mail): render what the default sends today, i.e. the
-	// hand-made volume template while legacyTemplateActive.
-	UseDefault bool `json:"useDefault"`
 	// AttachmentFileId: the PDF; null = none. Preview and test mail without the field use the saved version's PDF.
 	AttachmentFileId json.RawMessage `json:"attachmentFileId"`
 }
@@ -224,9 +218,7 @@ func (h *MailTemplateHandler) get() middleware.JWTHandlerFunc {
 		if !ok {
 			return
 		}
-		dto := dtoOf(def, t, files)
-		dto.LegacyTemplateActive = t == nil && parser.TenantTemplateActive(tenant, def.LegacyConfig)
-		respondWithJSON(w, http.StatusOK, dto)
+		respondWithJSON(w, http.StatusOK, dtoOf(def, t, files))
 	}
 }
 

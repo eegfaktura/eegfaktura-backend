@@ -46,18 +46,11 @@ func TestParseTemplateZpCompleteMeteringPoint(t *testing.T) {
 	}
 }
 
-// TestZpCompleteMailRendersFromEmbeddedDefault proves the hybrid-embed
-// behaviour: with nothing seeded on the data volume, the zp-complete
-// ("Zählpunkt aktiv") mail — config, template and inline logo — still resolves
-// from the defaults embedded in the binary. This is what lets a fresh
-// deployment send the mail without hand-seeding the PVC.
+// TestZpCompleteMailRendersFromEmbeddedDefault: the zp-complete ("Zählpunkt
+// aktiv") mail — config, template and inline logo — renders from the defaults
+// embedded in the binary, so a deployment sends it without anything on the PVC.
 func TestZpCompleteMailRendersFromEmbeddedDefault(t *testing.T) {
-	viper.Set("file-content.templates", t.TempDir()) // empty: no template on the volume
-
-	fsys, source := resolveTemplateSource("any-tenant", "zp-complete-mail-template.toml")
-	if source != "embedded" {
-		t.Fatalf("expected the embedded defaults to be used, got source %q", source)
-	}
+	fsys := embeddedTemplates()
 
 	cfg, err := config.ReadActivationMailTemplateConfig(fsys, "zp-complete-mail-template.toml")
 	if err != nil {
