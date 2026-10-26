@@ -12,7 +12,9 @@ import (
 )
 
 // plainText mirrors htmlToPlainText of eegfaktura-eda-xp (SendMailServiceImpl), which derives the
-// text/plain part of every member mail from the HTML the backend sends.
+// text/plain part of every member mail from the HTML the backend sends. It is a copy and can drift
+// from eda-xp: the real check is the stack E2E (eegfaktura-dev), which asserts that the text part
+// of a sent member mail contains the footer.
 func plainText(doc string) string {
 	for _, r := range []struct{ re, repl string }{
 		{`(?is)<script[^>]*>.*?</script>`, ""},
