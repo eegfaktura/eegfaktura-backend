@@ -30,7 +30,7 @@ type LinkProblem struct {
 // CheckLinks checks the links (<a href>) of a sanitised body against the link
 // rules of mail-html-policy.json: no IP address, no URL shortener, a link text
 // that shows an address shows the target's, at most maxLinks links and
-// maxLinkDomains domains. The fixed footer is not part of the body. It returns
+// maxLinkDomains main domains. The fixed footer is not part of the body. It returns
 // one problem per broken rule, nil when the text is fine.
 func CheckLinks(body string) []LinkProblem {
 	nodes, err := parseFragment(body)
@@ -76,7 +76,7 @@ func CheckLinks(body string) []LinkProblem {
 			case isBlockedHost(host):
 				add(&shorteners, "short", host)
 			}
-			add(&domains, "domain", domainOf(host))
+			add(&domains, "domain", mainDomain(host))
 			if !textMatchesHost(linkText, host) {
 				add(&mismatches, "text", "„"+linkText+"“")
 			}
@@ -149,9 +149,45 @@ func isBlockedHost(host string) bool {
 	return false
 }
 
-// domainOf is the domain a link counts for: the host in lower case without a leading www.
+// domainOf is the host a link text is compared with: lower case, without a leading www.
 func domainOf(host string) string {
 	return strings.TrimPrefix(strings.TrimSuffix(strings.ToLower(host), "."), "www.")
+}
+
+// mainDomain is the domain a link counts for: the last two labels of the host,
+// the last three under a second-level suffix of the policy (e.g. co.at). An IP
+// address counts as itself.
+func mainDomain(host string) string {
+	host = domainOf(host)
+	if isIPHost(host) {
+		return host
+	}
+	labels := strings.Split(host, ".")
+	n := 2
+	if len(labels) >= 3 {
+		suffix := strings.Join(labels[len(labels)-2:], ".")
+		for _, s := range policy.Links.SecondLevelSuffixes {
+			if suffix == s {
+				n = 3
+			}
+		}
+	}
+	if len(labels) <= n {
+		return host
+	}
+	return strings.Join(labels[len(labels)-n:], ".")
+}
+
+// isFileName reports whether a host-like text ends in a file extension of the policy (anleitung.pdf).
+func isFileName(host string) bool {
+	labels := strings.Split(strings.ToLower(host), ".")
+	last := labels[len(labels)-1]
+	for _, ext := range policy.Links.FileExtensions {
+		if last == ext {
+			return true
+		}
+	}
+	return false
 }
 
 // bareDomain is a link text like example.at or example.at/pfad.
@@ -174,11 +210,18 @@ func textHost(text string) (host string, ok bool) {
 	if err != nil {
 		return "", true // shows an address that cannot be compared
 	}
+	if !strings.Contains(lower, "://") && isFileName(u.Hostname()) {
+		return "", false
+	}
 	return domainOf(u.Hostname()), true
 }
 
-// textMatchesHost: a link text that shows a web address shows the link's host.
+// textMatchesHost: a link text that shows a web address shows the link's host;
+// one that shows an e-mail address never matches a web link.
 func textMatchesHost(text, host string) bool {
+	if mailAddress.MatchString(strings.TrimPrefix(strings.ToLower(text), "mailto:")) {
+		return false
+	}
 	shown, ok := textHost(text)
 	return !ok || (shown != "" && shown == domainOf(host))
 }

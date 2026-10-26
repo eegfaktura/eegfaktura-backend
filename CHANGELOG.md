@@ -21,8 +21,10 @@ this changelog highlights the changes relevant for overview and operations.
   eegfaktura-billing.
 - **Link rules for member mails (Variante A, decided 2026-10-26):** links only to `https:`/`mailto:` (as before), no
   IP address host (also decimal/hex forms), no URL shortener (list `links.blockedHosts` in `mail-html-policy.json`,
-  host and subdomains), a link text that shows an address must show the target's, at most 3 links and 2 domains per
-  text (`mailto` not counted as a domain; the fixed footer never counts). Save (PUT), preview and test mail answer 400
+  host and subdomains), a link text that shows an address must show the target's (an e-mail address as text of a web
+  link and a web address as text of a `mailto` link never match; a file name like `anleitung.pdf` is no address), at
+  most 3 links and 2 main domains per text (`portal.salzburgnetz.at` counts as `salzburgnetz.at`; three labels under
+  `co.at`, `or.at`, `gv.at`, `ac.at`; `mailto` not counted as a domain; the fixed footer never counts). Save (PUT), preview and test mail answer 400
   with one German message per broken rule in the existing `errors` format. New shared cases
   `mail-link-cases.json` (byte-identical with eegfaktura-billing).
 - Contract (additive, for **eegfaktura-web**): the `limits` of `GET /eeg/mailtemplates/{key}` carry `maxLinks` (3) and
@@ -37,7 +39,7 @@ this changelog highlights the changes relevant for overview and operations.
   `attachmentFileId` is refused with a message. A saved text that breaks the link rules, has more than 3 images or a
   PDF attachment is not changed; at send it counts as "can not render": the member gets the default text and the
   community the existing error notification with the reason.
-- `cmd/mailtemplate-import`: links the save would refuse and a PDF attachment are a STOP (6 of the 10 hand-made
+- `cmd/mailtemplate-import`: links the save would refuse and a PDF attachment are a STOP (3 of the 10 hand-made
   templates in `public/`); the legacy closing „versandt durch“ + logo is dropped with a Hinweis.
 - The default texts no longer contain „versandt durch“ and the eegfaktura logo (catalog and the embedded default
   templates, which also no longer attach the logo); the fixed footer replaces them. `DefaultVersion` 1 → 2 for the

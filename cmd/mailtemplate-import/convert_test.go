@@ -28,9 +28,6 @@ func TestConvertTheTenHandMadeTemplates(t *testing.T) {
 		// link rules and limits of 2026-10-26: the community has to change the text first
 		"RC100915": "Höchstens 3 Links pro Mail (jetzt 9)",
 		"RC101162": "PDF-Anhänge sind derzeit nicht möglich",
-		"RC101311": "Links zu höchstens 2 verschiedenen Domains pro Mail (jetzt 3",
-		"RC101352": "Links zu höchstens 2 verschiedenen Domains pro Mail (jetzt 3",
-		"RC101364": "Links zu höchstens 2 verschiedenen Domains pro Mail (jetzt 3",
 		"RC101370": "Höchstens 3 Links pro Mail (jetzt 9)",
 	}
 	entries, err := os.ReadDir("../../public")

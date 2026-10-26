@@ -32,6 +32,10 @@ type linkPolicy struct {
 	MaxLinks       int      `json:"maxLinks"`
 	MaxLinkDomains int      `json:"maxLinkDomains"`
 	BlockedHosts   []string `json:"blockedHosts"`
+	// SecondLevelSuffixes are suffixes like co.at under which the main domain has three labels.
+	SecondLevelSuffixes []string `json:"secondLevelSuffixes"`
+	// FileExtensions: a link text ending in one of them is a file name, not an address.
+	FileExtensions []string `json:"fileExtensions"`
 }
 
 var policy = mustLoadPolicy(policyJSON)
