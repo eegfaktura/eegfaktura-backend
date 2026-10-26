@@ -3,7 +3,7 @@
 One-off operator tool. It moves the hand-made member mail templates from the data volume into the
 editable mail texts (`/eeg/mailtemplates`). See konzept-mail-texte-editierbar.md, sections G.4 and C.
 
-From the backend release after 1.8.0 on, the backend no longer reads the volume templates (`<TENANT>/templates`
+From backend 1.9.0 on, the backend no longer reads the volume templates (`<TENANT>/templates`
 and the global `templates` dir): after the import only the saved version counts, and a community without one gets
 the built-in default. Run the import **before** rolling out that version. The global `templates` dir is not imported.
 
