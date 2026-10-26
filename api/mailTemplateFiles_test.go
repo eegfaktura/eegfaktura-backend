@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"at.ourproject/vfeeg-backend/database"
+	"at.ourproject/vfeeg-backend/mailtemplate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -66,34 +67,35 @@ func TestMailTemplates_FileLifecycle(t *testing.T) {
 		return out
 	}
 	img1, img2, other := upload("image", logoPNG(t)), upload("image", logoPNG(t)), upload("image", logoPNG(t))
-	pdf := upload("attachment", minimalPDF)
 
 	w := c.json("admin", mtTenant, "PUT", "/eeg/mailtemplates/zp-active", map[string]interface{}{
-		"subject": "S", "bodyHtml": `<p>x</p><img src="mailfile:` + img1 + `">`, "version": 0, "attachmentFileId": pdf})
+		"subject": "S", "bodyHtml": `<p>x</p><img src="mailfile:` + img1 + `">`, "version": 0, "attachmentFileId": nil})
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-	assert.Equal(t, map[string]bool{img1: true, img2: false, other: false, pdf: true}, committed(),
+	assert.Equal(t, map[string]bool{img1: true, img2: false, other: false}, committed(),
 		"used files are committed; fresh drafts (also of other editors) stay")
 
 	// a file the saved version uses can not be deleted; a draft can
 	w = c.do("admin", mtTenant, "DELETE", "/eeg/mailtemplates/zp-active/files/"+img1, nil, "")
 	assert.Equal(t, http.StatusConflict, w.Code)
-	w = c.do("admin", mtTenant, "DELETE", "/eeg/mailtemplates/zp-active/files/"+pdf, nil, "")
-	assert.Equal(t, http.StatusConflict, w.Code)
 	w = c.do("admin", mtTenant, "DELETE", "/eeg/mailtemplates/zp-active/files/"+other, nil, "")
 	assert.Equal(t, http.StatusNoContent, w.Code)
 
-	// the next version uses img2 and no PDF: img1 and the PDF go
+	// the next version uses img2: img1 goes
 	w = c.json("admin", mtTenant, "PUT", "/eeg/mailtemplates/zp-active", map[string]interface{}{
 		"subject": "S", "bodyHtml": `<p>x</p><img src="mailfile:` + img2 + `">`, "version": 1, "attachmentFileId": nil})
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	assert.Nil(t, decode[mtDTO](t, w).AttachmentFileId)
 	assert.Equal(t, map[string]bool{img2: true}, committed())
 
-	// referencing a PDF that does not exist (or an image as PDF) → 400
+	// any PDF is refused while member mails allow none (2026-10-26)
 	for _, id := range []string{"00000000-0000-0000-0000-000000000000", img2, "not-a-uuid"} {
 		w = c.json("admin", mtTenant, "PUT", "/eeg/mailtemplates/zp-active", map[string]interface{}{
 			"subject": "S", "bodyHtml": `<p>x</p>`, "version": 2, "attachmentFileId": id})
 		require.Equal(t, http.StatusBadRequest, w.Code, id)
-		assert.Equal(t, "attachmentFileId", decode[mtErrors](t, w).Errors[0].Field)
+		errs := decode[mtErrors](t, w).Errors
+		assert.Equal(t, "attachmentFileId", errs[0].Field)
+		if id != "not-a-uuid" {
+			assert.Equal(t, mailtemplate.NoAttachmentMessage, errs[0].Message)
+		}
 	}
 }

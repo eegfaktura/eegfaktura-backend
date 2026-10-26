@@ -208,7 +208,10 @@ func TestMailTemplates_HappyPath(t *testing.T) {
 	assert.Equal(t, def.DefaultBodyHtml, def.BodyHtml)
 	assert.Contains(t, def.BodyHtml, `data-ph="eeg.contactBlock"`)
 	assert.Empty(t, def.Files)
-	assert.Equal(t, int64(10), def.Limits["maxImages"])
+	assert.Equal(t, int64(3), def.Limits["maxImages"])
+	assert.Equal(t, int64(0), def.Limits["maxAttachments"])
+	assert.Equal(t, int64(3), def.Limits["maxLinks"], "from mail-html-policy.json")
+	assert.Equal(t, int64(2), def.Limits["maxLinkDomains"])
 	assert.Equal(t, int64(6*1024*1024), def.Limits["maxTotalBytes"])
 
 	// the builtin logo of the default text can be shown by the editor
@@ -225,22 +228,22 @@ func TestMailTemplates_HappyPath(t *testing.T) {
 
 	assert.Equal(t, false, img["committed"], "an upload is a draft")
 
+	// no PDF attachment for member mails for now (2026-10-26)
 	w = c.upload("admin", mtTenant, "consent-request", "attachment", "anleitung.pdf", minimalPDF)
-	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
-	pdfId := decode[map[string]interface{}](t, w)["id"].(string)
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	assert.Equal(t, "PDF-Anhänge sind derzeit nicht möglich.", decode[mtErrors](t, w).Errors[0].Message)
 
 	body := `<p>Hallo <span data-ph="member.firstName">Vorname</span>!</p><img src="mailfile:` + imgId + `" alt="Logo"><div data-ph="eeg.contactBlock">x</div>`
 	w = c.json("admin", mtTenant, "PUT", "/eeg/mailtemplates/consent-request", map[string]interface{}{
-		"subject": `Hallo {member.firstName}`, "bodyHtml": body, "version": 0, "attachmentFileId": pdfId})
+		"subject": `Hallo {member.firstName}`, "bodyHtml": body, "version": 0, "attachmentFileId": nil})
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	saved := decode[mtDTO](t, w)
 	assert.True(t, saved.Customized)
 	assert.Equal(t, 1, saved.Version)
 	assert.Equal(t, mailtemplate.FixedFooterText, saved.FixedFooter)
 	assert.NotContains(t, saved.BodyHtml, "versandt durch", "the footer is never stored")
-	require.NotNil(t, saved.AttachmentFileId)
-	assert.Equal(t, pdfId, *saved.AttachmentFileId)
-	require.Len(t, saved.Files, 2)
+	assert.Nil(t, saved.AttachmentFileId)
+	require.Len(t, saved.Files, 1)
 	for _, f := range saved.Files {
 		assert.True(t, f.Committed, f.Filename)
 	}
@@ -287,7 +290,7 @@ func TestMailTemplates_HappyPath(t *testing.T) {
 	assert.Contains(t, c.sent[0].body, `src="cid:`+imgId+`"`)
 	assert.Equal(t, 1, strings.Count(c.sent[0].body, mailtemplate.FixedFooterHtml), "the test mail ends with the fixed footer")
 	assert.Equal(t, 1, c.sent[0].inline)
-	assert.True(t, c.sent[0].attachment)
+	assert.False(t, c.sent[0].attachment)
 	assert.Equal(t, "eeg-mail-test@example.org; office@example.org", c.sent[1].to)
 
 	w = c.json("admin", mtTenant, "DELETE", "/eeg/mailtemplates/consent-request", nil)

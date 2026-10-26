@@ -246,6 +246,8 @@ func sanitize(w http.ResponseWriter, def *mailtemplate.Definition, req *mailTemp
 	body, err := mailtemplate.SanitizeBody(def, req.BodyHtml, fileOK)
 	if errors.As(err, &verr) {
 		errs = append(errs, verr)
+	} else if err == nil {
+		errs = append(errs, mailtemplate.LinkErrors(body)...)
 	}
 	if len(errs) > 0 {
 		respondValidation(w, errs...)
@@ -343,6 +345,9 @@ func checkVersionFiles(def *mailtemplate.Definition, tenant string, images []str
 	}
 	if len(seen) > def.Limits.MaxImages {
 		return &mailtemplate.ValidationError{Field: "bodyHtml", Message: fmt.Sprintf("Höchstens %d Bilder je Mail.", def.Limits.MaxImages)}
+	}
+	if attachmentId != nil && def.Limits.MaxAttachments == 0 {
+		return &mailtemplate.ValidationError{Field: "attachmentFileId", Message: mailtemplate.NoAttachmentMessage}
 	}
 	if attachmentId != nil {
 		f := byId[*attachmentId]

@@ -40,6 +40,10 @@ func (h *MailTemplateHandler) uploadFile() middleware.JWTHandlerFunc {
 		case model.MailFileKindImage:
 			maxBytes = limits.MaxImageBytes
 		case model.MailFileKindAttachment:
+			if limits.MaxAttachments == 0 {
+				respondValidation(w, &mailtemplate.ValidationError{Field: "file", Message: "PDF-Anhänge sind derzeit nicht möglich."})
+				return
+			}
 			maxBytes = limits.MaxAttachmentBytes
 		default:
 			respondValidation(w, &mailtemplate.ValidationError{Field: "kind", Message: "kind muss image oder attachment sein."})
