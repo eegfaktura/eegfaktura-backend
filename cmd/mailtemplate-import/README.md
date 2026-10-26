@@ -5,7 +5,8 @@ editable mail texts (`/eeg/mailtemplates`). See konzept-mail-texte-editierbar.md
 
 From backend 1.9.0 on, the backend no longer reads the volume templates (`<TENANT>/templates`
 and the global `templates` dir): after the import only the saved version counts, and a community without one gets
-the built-in default. Run the import **before** rolling out that version. The global `templates` dir is not imported.
+the built-in default. The import is optional: since 2026-10-26 it is not part of the rollout, the communities set up
+their own text in the editor themselves. The global `templates` dir is not imported.
 
 ## Input
 
