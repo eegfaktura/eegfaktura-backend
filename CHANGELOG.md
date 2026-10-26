@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.9.0] – 2026-10-26
+
 ### Changed
 - **No migration of the hand-made templates (decided 2026-10-26):** communities with volume templates send the
   default text from the rollout on and set up their own text in the editor themselves. On start, 1.9.0 logs a
