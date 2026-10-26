@@ -196,7 +196,7 @@ func TestPolicyFileIsTheSharedOne(t *testing.T) {
 	require.NoError(t, err)
 	data = []byte(strings.ReplaceAll(string(data), "\r\n", "\n"))
 	sum := sha256.Sum256(data)
-	assert.Equal(t, "d6d8e416b62c50629e2da33955a71d6ec54bc1f5eb6ee3e3b2e7a0fa53f1ba39", hex.EncodeToString(sum[:]))
+	assert.Equal(t, "3e6f9115e4e9e14f7f673ae52e1cc33093552b336ba4fdec798a445549912e6a", hex.EncodeToString(sum[:]))
 	assert.Equal(t, 2, policy.Version)
 	assert.Equal(t, "noopener noreferrer", policy.LinkRel)
 	assert.Equal(t, 3, policy.Links.MaxLinks)

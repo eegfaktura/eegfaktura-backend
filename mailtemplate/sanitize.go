@@ -333,6 +333,15 @@ func attr(n *html.Node, key string) string {
 	return ""
 }
 
+func hasAttr(n *html.Node, key string) bool {
+	for _, a := range n.Attr {
+		if a.Key == key && a.Namespace == "" {
+			return true
+		}
+	}
+	return false
+}
+
 func parseFragment(s string) ([]*html.Node, error) {
 	return html.ParseFragment(strings.NewReader(s), &html.Node{Type: html.ElementNode, Data: "body", DataAtom: atom.Body})
 }

@@ -399,7 +399,8 @@ func textOf(n *html.Node) string {
 			if c.Type == html.TextNode {
 				b.WriteString(c.Data)
 			}
-			if c.Type == html.ElementNode && c.DataAtom == atom.Img {
+			if c.Type == html.ElementNode && c.DataAtom == atom.Img && hasAttr(c, "alt") {
+				// an image without alt adds nothing, as in eegfaktura-billing
 				b.WriteString(" " + attr(c, "alt") + " ")
 			}
 			if c.Type == html.ElementNode && strings.TrimSpace(attr(c, "data-ph")) != "" {
