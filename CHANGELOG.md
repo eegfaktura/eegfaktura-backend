@@ -19,12 +19,35 @@ this changelog highlights the changes relevant for overview and operations.
   `h1`–`h3` and `li`, alone or together with `text-align`; other sizes and units are dropped. New shared cases in
   `mail-html-policy-cases.json` (font sizes, image widths 200/400/600); both files stay byte-identical with
   eegfaktura-billing.
+- **Link rules for member mails (Variante A, decided 2026-10-26):** links only to `https:`/`mailto:` (as before), no
+  IP address host (also decimal/hex forms), no URL shortener (list `links.blockedHosts` in `mail-html-policy.json`,
+  host and subdomains), a link text that shows an address must show the target's, at most 3 links and 2 domains per
+  text (`mailto` not counted as a domain; the fixed footer never counts). Save (PUT), preview and test mail answer 400
+  with one German message per broken rule in the existing `errors` format. New shared cases
+  `mail-link-cases.json` (byte-identical with eegfaktura-billing).
+- Contract (additive, for **eegfaktura-web**): the `limits` of `GET /eeg/mailtemplates/{key}` carry `maxLinks` (3) and
+  `maxLinkDomains` (2), read from the policy file.
+- **Uploaded mail images are re-encoded** (security hardening): images wider than 1200 px, higher than 4000 px or over
+  4.8 million pixels, or that do not decode, are refused (400); the rest is decoded and encoded again (PNG lossless,
+  JPEG quality 80) and only that is stored, so EXIF/GPS and hidden or appended data are dropped. Images stored before
+  are not touched.
 
 ### Changed
+- **Member mail limits:** at most 3 images (was 10) and no PDF attachment for now (was 1): a PDF upload or a save with
+  `attachmentFileId` is refused with a message. A saved text that breaks the link rules, has more than 3 images or a
+  PDF attachment is not changed; at send it counts as "can not render": the member gets the default text and the
+  community the existing error notification with the reason.
+- `cmd/mailtemplate-import`: links the save would refuse and a PDF attachment are a STOP (6 of the 10 hand-made
+  templates in `public/`); the legacy closing „versandt durch“ + logo is dropped with a Hinweis.
 - The default texts no longer contain „versandt durch“ and the eegfaktura logo (catalog and the embedded default
   templates, which also no longer attach the logo); the fixed footer replaces them. `DefaultVersion` 1 → 2 for the
   three mails, so communities with an own text get the "Standardtext geändert" notice once. Saved texts are not
   changed; the built-in logo (`mailfile:eegfaktura-logo`) is still served and sent for texts that use it.
+
+### Fixed
+- The fixed footer was inserted at a wrong position (inside a tag) when the mail contained characters that change
+  their length in lower case (e.g. „İ“); the footer is now placed by a byte-exact search, also in the frame of saved
+  texts.
 
 ## [1.9.0] – 2026-10-26
 
