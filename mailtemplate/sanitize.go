@@ -231,7 +231,7 @@ func (s *sanitizer) cleanElement(el *html.Node) (elementAction, error) {
 // scheme of the policy for this attribute, a host for https, an address for
 // mailto, and for mailfile: an image of this mail (ids compared in lower case).
 func (s *sanitizer) cleanURL(el, key, val string) (string, bool) {
-	val = strings.TrimSpace(val)
+	val = trimSpaces(val)
 	if strings.ContainsAny(val, " \t\r\n") {
 		return "", false
 	}
@@ -266,6 +266,14 @@ func (s *sanitizer) cleanURL(el, key, val string) (string, bool) {
 		return val, strings.TrimSpace(u.Opaque) != ""
 	}
 	return val, true
+}
+
+// trimSpaces trims Unicode spaces (also NBSP) and ASCII whitespace from both
+// ends of a URL, as eegfaktura-billing does.
+func trimSpaces(s string) string {
+	return strings.TrimFunc(s, func(r rune) bool {
+		return unicode.Is(unicode.Z, r) || strings.ContainsRune(" \t\n\v\f\r", r)
+	})
 }
 
 // MailfileId returns the file id (lower case) of an <img src="mailfile:..."> value.
