@@ -56,6 +56,8 @@
     {"name": "user info in a text address: another host rejected", "html": "<p><a href=\"https://eeg.at\">https://eeg.at@evil.at</a></p>", "errors": ["text-mismatch"]},
     {"name": "mailto with an encoded @ matches the text", "html": "<p><a href=\"mailto:office%40eeg.at\">office@eeg.at</a></p>", "ok": true},
     {"name": "mailto address within a sentence is fine", "html": "<p><a href=\"mailto:office@eeg.at\">Schreib an office@eeg.at, danke</a></p>", "ok": true},
-    {"name": "e-mail address within a sentence of an https link rejected", "html": "<p><a href=\"https://eeg.at\">Kontakt: office@eeg.at</a></p>", "errors": ["text-mismatch"]}
+    {"name": "e-mail address within a sentence of an https link rejected", "html": "<p><a href=\"https://eeg.at\">Kontakt: office@eeg.at</a></p>", "errors": ["text-mismatch"]},
+    {"name": "mailto with a malformed escape is compared as written", "html": "<p><a href=\"mailto:a%zz@b.at\">a%zz@b.at</a></p>", "ok": true},
+    {"name": "ipv6 host with a port rejected", "html": "<p><a href=\"https://[2001:db8::1]:8443/x\">Portal</a></p>", "errors": ["ip"]}
   ]
 }

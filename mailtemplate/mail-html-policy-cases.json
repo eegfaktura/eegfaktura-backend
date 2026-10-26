@@ -82,6 +82,9 @@
     {"name": "https link with % in the host removed", "input": "<p><a href=\"https://bit%2Ely/x\">x</a></p>", "contains": ["x"], "notContains": ["href", "bit%2Ely"]},
     {"name": "https link with an unclosed IPv6 bracket removed", "input": "<p><a href=\"https://[::1\">x</a></p>", "contains": ["x"], "notContains": ["href", "::1"]},
     {"name": "https link with a port that is no number removed", "input": "<p><a href=\"https://x.example:80x/\">x</a></p>", "contains": ["x"], "notContains": ["href", "x.example"]},
-    {"name": "mailto with a space after the colon removed", "input": "<p><a href=\"mailto: info@eeg.example\">mail</a></p>", "contains": ["mail"], "notContains": ["href", "info@eeg.example"]}
+    {"name": "mailto with a space after the colon removed", "input": "<p><a href=\"mailto: info@eeg.example\">mail</a></p>", "contains": ["mail"], "notContains": ["href", "info@eeg.example"]},
+    {"name": "https link with user info and a port kept", "input": "<p><a href=\"https://u:p@x.example:8443/a\">x</a></p>", "contains": ["href=\"https://u:p@x.example:8443/a\""]},
+    {"name": "https link with a bracket in the user info removed", "input": "<p><a href=\"https://u[x@x.example/\">x</a></p>", "contains": ["x"], "notContains": ["href"]},
+    {"name": "https link with text after the IPv6 bracket removed", "input": "<p><a href=\"https://[::1]x/\">x</a></p>", "contains": ["x"], "notContains": ["href"]}
   ]
 }
