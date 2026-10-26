@@ -2,7 +2,6 @@ package mailtemplate
 
 import (
 	"fmt"
-	"net"
 	"net/url"
 	"regexp"
 	"strings"
@@ -18,6 +17,7 @@ const (
 	LinkTextMismatch   = "text-mismatch"
 	LinkTooManyLinks   = "too-many-links"
 	LinkTooManyDomains = "too-many-domains"
+	LinkPlaceholder    = "placeholder-in-link"
 )
 
 // LinkProblem is one broken link rule of a mail text, with the message the
@@ -30,14 +30,15 @@ type LinkProblem struct {
 // CheckLinks checks the links (<a href>) of a sanitised body against the link
 // rules of mail-html-policy.json: no IP address, no URL shortener, a link text
 // that shows an address shows the target's, at most maxLinks links and
-// maxLinkDomains main domains. The fixed footer is not part of the body. It returns
-// one problem per broken rule, nil when the text is fine.
+// maxLinkDomains main domains, no placeholder inside a link (it would show
+// another address than the target). The fixed footer is not part of the body.
+// It returns one problem per broken rule, nil when the text is fine.
 func CheckLinks(body string) []LinkProblem {
 	nodes, err := parseFragment(body)
 	if err != nil {
 		return nil
 	}
-	var ips, shorteners, mismatches, domains []string
+	var ips, shorteners, mismatches, domains, placeholders []string
 	seen := map[string]bool{}
 	add := func(list *[]string, kind, v string) {
 		if !seen[kind+" "+v] {
@@ -58,18 +59,21 @@ func CheckLinks(body string) []LinkProblem {
 				continue
 			}
 			links++
+			for _, key := range placeholdersIn(c) {
+				add(&placeholders, "ph", placeholderLabel(key))
+			}
 			u, err := url.Parse(href)
 			if err != nil {
 				continue // the sanitiser keeps parseable URLs only
 			}
-			linkText := strings.TrimSpace(strings.ReplaceAll(textOf(c), " ", " "))
+			linkText := normalizeLinkText(textOf(c))
 			if strings.EqualFold(u.Scheme, "mailto") {
 				if !textMatchesMailto(linkText, u) {
 					add(&mismatches, "text", "„"+linkText+"“")
 				}
 				continue
 			}
-			host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+			host := strings.TrimSuffix(strings.ToLower(mapDots(u.Hostname())), ".")
 			switch {
 			case isIPHost(host):
 				add(&ips, "ip", host)
@@ -95,6 +99,9 @@ func CheckLinks(body string) []LinkProblem {
 	if len(mismatches) > 0 {
 		out = append(out, LinkProblem{LinkTextMismatch, "Der Linktext zeigt eine andere Adresse als das Ziel: " + strings.Join(mismatches, ", ")})
 	}
+	if len(placeholders) > 0 {
+		out = append(out, LinkProblem{LinkPlaceholder, "Platzhalter dürfen nicht in einem Link stehen: " + strings.Join(placeholders, ", ")})
+	}
 	if links > limits.MaxLinks {
 		out = append(out, LinkProblem{LinkTooManyLinks, fmt.Sprintf("Höchstens %d Links pro Mail (jetzt %d).", limits.MaxLinks, links)})
 	}
@@ -114,30 +121,31 @@ func LinkErrors(body string) []*ValidationError {
 	return out
 }
 
-// isIPHost reports whether a host is an IP address: IPv6 or IPv4, also in the
-// forms browsers accept (a last label of digits or 0x-hex, e.g. 3232235777),
-// or a single label of hex digits.
+// isIPHost reports whether a host (lower case, dots mapped) is an IP address:
+// IPv6 (only in brackets, without them here), or labels that are all numbers in
+// decimal or 0x hex (1.2.3.4, 3232235777, 0x7f.1). A single hex word like
+// "cafe" is a name.
 func isIPHost(host string) bool {
-	if net.ParseIP(host) != nil {
+	if strings.Contains(host, ":") {
 		return true
 	}
-	labels := strings.Split(host, ".")
-	last := labels[len(labels)-1]
-	if isNumber(last) {
-		return true
+	for _, label := range strings.Split(host, ".") {
+		if !isNumber(label) {
+			return false
+		}
 	}
-	return len(labels) == 1 && last != "" && strings.Trim(last, "0123456789abcdef") == ""
+	return true
 }
 
 func isNumber(s string) bool {
-	if s == "" {
-		return false
-	}
 	if hex, ok := strings.CutPrefix(s, "0x"); ok {
 		return strings.Trim(hex, "0123456789abcdef") == ""
 	}
-	return strings.Trim(s, "0123456789") == ""
+	return s != "" && strings.Trim(s, "0123456789") == ""
 }
+
+// mapDots replaces the dots browsers accept in a host (。 ． ｡) by ".".
+var mapDots = strings.NewReplacer("\u3002", ".", "\uff0e", ".", "\uff61", ".").Replace
 
 // isBlockedHost reports whether a host is a URL shortener of the policy or one of its subdomains.
 func isBlockedHost(host string) bool {
@@ -149,9 +157,9 @@ func isBlockedHost(host string) bool {
 	return false
 }
 
-// domainOf is the host a link text is compared with: lower case, without a leading www.
+// domainOf is the host a link text is compared with: lower case, dots mapped, without a leading www.
 func domainOf(host string) string {
-	return strings.TrimPrefix(strings.TrimSuffix(strings.ToLower(host), "."), "www.")
+	return strings.TrimPrefix(strings.TrimSuffix(strings.ToLower(mapDots(host)), "."), "www.")
 }
 
 // mainDomain is the domain a link counts for: the last two labels of the host,
@@ -190,60 +198,132 @@ func isFileName(host string) bool {
 	return false
 }
 
-// bareDomain is a link text like example.at or example.at/pfad.
-var bareDomain = regexp.MustCompile(`^[\p{L}\p{N}-]+(\.[\p{L}\p{N}-]+)*\.\p{L}{2,}\.?(:[0-9]+)?([/?#]\S*)?$`)
+// The address extraction of a link text is the same algorithm as in
+// eegfaktura-billing (MailLinkRules): the text is split into words, and every
+// word that is an address must show the link's own address.
+var (
+	zeroWidth = regexp.MustCompile("[\u200b\u200c\u200d\u2060\ufeff]")
+	textSpace = regexp.MustCompile(`[\p{Z}\t\n\v\f\r]+`)
+	// mailAddress is a word like office@example.at.
+	mailAddress = regexp.MustCompile(`^[^@\s]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$`)
+	// bareDomain is a word like example.at or example.at/pfad.
+	bareDomain = regexp.MustCompile(`^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}([/?#]\S*)?$`)
+)
 
-// mailAddress is a link text like office@example.at.
-var mailAddress = regexp.MustCompile(`^[^\s@<>]+@[^\s@<>]+$`)
+// wordPunct is stripped from both ends of a word, "." only from its end.
+const wordPunct = "()[]<>\"'„“”‚‘,;:!?"
 
-// textHost returns the host a link text shows; ok=false when the text is no web address.
-func textHost(text string) (host string, ok bool) {
-	lower := strings.ToLower(text)
-	switch {
-	case strings.Contains(text, "://"):
-	case strings.HasPrefix(lower, "www.") || bareDomain.MatchString(text):
-		text = "https://" + text
-	default:
-		return "", false
-	}
-	u, err := url.Parse(text)
-	if err != nil {
-		return "", true // shows an address that cannot be compared
-	}
-	if !strings.Contains(lower, "://") && isFileName(u.Hostname()) {
-		return "", false
-	}
-	return domainOf(u.Hostname()), true
+// normalizeLinkText removes zero-width characters, maps the dot variants and
+// turns every Unicode space into one plain space.
+func normalizeLinkText(text string) string {
+	text = textSpace.ReplaceAllString(mapDots(zeroWidth.ReplaceAllString(text, "")), " ")
+	return strings.Trim(text, " ")
 }
 
-// textMatchesHost: a link text that shows a web address shows the link's host;
-// one that shows an e-mail address never matches a web link.
+// shownAddress is an address a link text shows: a host (web) or an e-mail address, lower case.
+type shownAddress struct {
+	mail  bool
+	value string
+}
+
+// shownAddresses returns the addresses in a normalised link text.
+func shownAddresses(text string) []shownAddress {
+	var out []shownAddress
+	for _, w := range strings.Split(text, " ") {
+		w = strings.TrimRight(strings.TrimLeft(w, wordPunct), wordPunct+".")
+		lower := strings.ToLower(w)
+		switch {
+		case w == "":
+		case strings.Contains(w, "://"):
+			authority := upToPathEnd(w[strings.Index(w, "://")+3:])
+			out = append(out, shownAddress{value: domainOf(hostOfAuthority(authority))})
+		case strings.HasPrefix(lower, "www."):
+			out = append(out, shownAddress{value: domainOf(upToPathEnd(w))})
+		case mailAddress.MatchString(strings.TrimPrefix(lower, "mailto:")):
+			out = append(out, shownAddress{mail: true, value: strings.TrimPrefix(lower, "mailto:")})
+		case bareDomain.MatchString(w) && !isFileName(upToPathEnd(w)):
+			out = append(out, shownAddress{value: domainOf(upToPathEnd(w))})
+		}
+	}
+	return out
+}
+
+// upToPathEnd is s up to the first / ? or #.
+func upToPathEnd(s string) string {
+	if i := strings.IndexAny(s, "/?#"); i >= 0 {
+		return s[:i]
+	}
+	return s
+}
+
+// hostOfAuthority is the host of an authority: without user info (up to the last @) and port.
+func hostOfAuthority(authority string) string {
+	authority = authority[strings.LastIndex(authority, "@")+1:]
+	if strings.HasPrefix(authority, "[") {
+		if end := strings.Index(authority, "]"); end >= 0 {
+			return authority[:end+1]
+		}
+		return authority
+	}
+	host, _, _ := strings.Cut(authority, ":")
+	return host
+}
+
+// textMatchesHost: every web address a link text shows is the link's host; an
+// e-mail address never matches a web link.
 func textMatchesHost(text, host string) bool {
-	if mailAddress.MatchString(strings.TrimPrefix(strings.ToLower(text), "mailto:")) {
-		return false
+	for _, a := range shownAddresses(text) {
+		if a.mail || a.value != domainOf(host) {
+			return false
+		}
 	}
-	shown, ok := textHost(text)
-	return !ok || (shown != "" && shown == domainOf(host))
+	return true
 }
 
-// textMatchesMailto: a link text that shows an e-mail address shows the
-// link's address; one that shows a web address never matches a mailto link.
+// textMatchesMailto: every e-mail address a link text shows is the link's
+// address (percent-decoded); a web address never matches a mailto link.
 func textMatchesMailto(text string, u *url.URL) bool {
-	if _, ok := textHost(text); ok {
-		return false
-	}
-	shown := strings.TrimPrefix(strings.ToLower(text), "mailto:")
-	if !mailAddress.MatchString(shown) {
-		return true
-	}
 	addr, _, _ := strings.Cut(u.Opaque, "?")
 	if a, err := url.PathUnescape(addr); err == nil {
 		addr = a
 	}
-	return strings.EqualFold(strings.TrimSpace(addr), shown)
+	addr = strings.ToLower(strings.TrimSpace(addr))
+	for _, a := range shownAddresses(text) {
+		if !a.mail || a.value != addr {
+			return false
+		}
+	}
+	return true
 }
 
-// textOf returns the text content of n.
+// placeholdersIn returns the placeholder keys (data-ph) inside n.
+func placeholdersIn(n *html.Node) []string {
+	var keys []string
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type != html.ElementNode {
+			continue
+		}
+		if key := attr(c, "data-ph"); strings.TrimSpace(key) != "" {
+			keys = append(keys, key)
+			continue
+		}
+		keys = append(keys, placeholdersIn(c)...)
+	}
+	return keys
+}
+
+// placeholderLabel is the label of a placeholder key in the catalog, the key if no mail knows it.
+func placeholderLabel(key string) string {
+	for i := range catalog {
+		if ph := catalog[i].Placeholder(key); ph != nil {
+			return ph.Label
+		}
+	}
+	return key
+}
+
+// textOf returns the text content of n without the labels of placeholders
+// (a placeholder in a link is a problem of its own, see placeholdersIn).
 func textOf(n *html.Node) string {
 	var b strings.Builder
 	var rec func(*html.Node)
@@ -251,6 +331,9 @@ func textOf(n *html.Node) string {
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
 			if c.Type == html.TextNode {
 				b.WriteString(c.Data)
+			}
+			if c.Type == html.ElementNode && strings.TrimSpace(attr(c, "data-ph")) != "" {
+				continue
 			}
 			rec(c)
 		}

@@ -70,7 +70,17 @@ func TestCheckLinks_Messages(t *testing.T) {
 	assert.Equal(t, "Höchstens 3 Links pro Mail (jetzt 4).", msgs(strings.Repeat(`<a href="https://eeg.at">x</a>`, 4)))
 	assert.Equal(t, "Links zu höchstens 2 verschiedenen Domains pro Mail (jetzt 3: a.at, b.at, c.at).",
 		msgs(`<a href="https://a.at">a</a><a href="https://b.at">b</a><a href="https://www.c.at">c</a>`))
+	assert.Equal(t, "Platzhalter dürfen nicht in einem Link stehen: Website der EEG, E-Mail der EEG",
+		msgs(`<p><a href="https://eeg.at"><span data-ph="eeg.website">x</span></a> <a href="mailto:office@eeg.at"><span data-ph="eeg.email">y</span></a></p>`))
+	assert.Equal(t, "Platzhalter dürfen nicht in einem Link stehen: unbekannt.key", msgs(`<p><a href="https://eeg.at"><span data-ph="unbekannt.key">x</span></a></p>`))
 	assert.Empty(t, msgs(`<p>kein Link</p>`))
+}
+
+// No default text breaks a link rule, e.g. a placeholder inside a link.
+func TestDefaultsKeepTheLinkRules(t *testing.T) {
+	for _, def := range Catalog() {
+		assert.Empty(t, CheckLinks(def.DefaultBodyHtml()), def.Key)
+	}
 }
 
 // The limits of the API come from the policy file.
@@ -98,6 +108,10 @@ func TestRender_RejectsLinkAndLimitViolations(t *testing.T) {
 	_, err := Render(def, "S", `<p><a href="https://bit.ly/x">Portal</a></p>`, "", &Data{}, nil, ImagesInline)
 	require.ErrorAs(t, err, &verr)
 	assert.Contains(t, verr.Message, "Kurz-Link")
+
+	_, err = Render(def, "S", `<p><a href="https://eeg.at"><span data-ph="eeg.website">Website der EEG</span></a></p>`, "", &Data{}, nil, ImagesInline)
+	require.ErrorAs(t, err, &verr)
+	assert.Contains(t, verr.Message, "Platzhalter dürfen nicht in einem Link stehen: Website der EEG")
 
 	_, err = Render(def, "S", `<p>x</p>`, "pdf", &Data{}, nil, ImagesInline)
 	require.ErrorAs(t, err, &verr)
