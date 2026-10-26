@@ -73,6 +73,7 @@ func TestCheckLinks_Messages(t *testing.T) {
 	assert.Equal(t, "Platzhalter dürfen nicht in einem Link stehen: Website der EEG, E-Mail der EEG",
 		msgs(`<p><a href="https://eeg.at"><span data-ph="eeg.website">x</span></a> <a href="mailto:office@eeg.at"><span data-ph="eeg.email">y</span></a></p>`))
 	assert.Equal(t, "Platzhalter dürfen nicht in einem Link stehen: unbekannt.key", msgs(`<p><a href="https://eeg.at"><span data-ph="unbekannt.key">x</span></a></p>`))
+	assert.Equal(t, "Die Linkadresse enthält ungültige Zeichen: München.at", msgs(`<p><a href="https://München.at/x">x</a></p>`))
 	assert.Empty(t, msgs(`<p>kein Link</p>`))
 }
 
