@@ -82,6 +82,9 @@ CREATE TABLE IF NOT EXISTS "base"."tariff"
     "timeTariff2From"       time,
     "timeTariff2To"         time,
     "timeTariff2CentPerKWh" double precision,
+    "joiningFee"             numeric(10, 2)  DEFAULT 0                         NOT NULL,
+    "joiningFeeUseVat"       boolean         DEFAULT false                     NOT NULL,
+    "joiningFeeVatInPercent" numeric         DEFAULT 0                         NOT NULL,
     CONSTRAINT tariffpk PRIMARY KEY (id, version)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tariff ON base.tariff (id, tenant, name, type, version);
@@ -316,7 +319,10 @@ SELECT id,
        "timeTariff2Name",
        to_char("timeTariff2From", 'HH24:MI') AS "timeTariff2From",
        to_char("timeTariff2To", 'HH24:MI')   AS "timeTariff2To",
-       "timeTariff2CentPerKWh"
+       "timeTariff2CentPerKWh",
+       "joiningFee",
+       "joiningFeeUseVat",
+       "joiningFeeVatInPercent"
 FROM base.tariff,
      (SELECT id as tid, MAX(version) as tversion FROM base.tariff GROUP BY id) as x
 WHERE id = x.tid
@@ -402,7 +408,10 @@ SELECT p.id                                                    AS participant_id
        COALESCE(c."bankName", ''::text)                        AS eec_bank_name,
        c.iban                                                  AS eec_bank_iban,
        c.owner                                                 AS eec_bank_owner,
-       c.creditor_id                                           AS eec_bank_creditor_id
+       c.creditor_id                                           AS eec_bank_creditor_id,
+       COALESCE(tp."joiningFee", 0::numeric)                   AS tariff_joining_fee,
+       COALESCE(tp."joiningFeeUseVat", false)                  AS tariff_joining_fee_use_vat,
+       COALESCE(tp."joiningFeeVatInPercent", 0::numeric)       AS tariff_joining_fee_vat_in_percent
 FROM base.participant p
          LEFT JOIN base.eeg c ON c.tenant::text = p.tenant::text
          LEFT JOIN base.meteringpoint pm ON pm.participant_id = p.id

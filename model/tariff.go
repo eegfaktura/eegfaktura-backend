@@ -3,6 +3,7 @@ package model
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 
 	"github.com/jjeffery/civil"
@@ -91,6 +92,35 @@ type Tariff struct {
 	TimeTariff2From       null.String `json:"timeTariff2From,omitempty" db:"timeTariff2From"`
 	TimeTariff2To         null.String `json:"timeTariff2To,omitempty" db:"timeTariff2To"`
 	TimeTariff2CentPerKWh null.Float  `json:"timeTariff2CentPerKWh,omitempty" db:"timeTariff2CentPerKWh"`
+
+	// Beitrittsgebuehr (konzept-beitrittsgebuehr.md): einmalig je Mitglied, nur am
+	// EEG-Tarif, mit eigener USt-Einstellung. Die Spalte ist numeric(10,2), der Betrag
+	// bleibt dort exakt; ValidateJoiningFee laesst hoechstens 2 Nachkommastellen zu.
+	JoiningFee             float64     `json:"joiningFee" db:"joiningFee"`
+	JoiningFeeUseVat       bool        `json:"joiningFeeUseVat" db:"joiningFeeUseVat"`
+	JoiningFeeVatInPercent IntOrString `json:"joiningFeeVatInPercent" db:"joiningFeeVatInPercent"`
+}
+
+// ValidateJoiningFee enforces the joining fee rules server-side (konzept-beitrittsgebuehr.md,
+// Tech Design B): only EEG tariffs carry a fee (other types must send 0/false), the amount
+// is >= 0 with at most 2 decimals, the VAT rate lies in 0..100.
+func (t *Tariff) ValidateJoiningFee() error {
+	if t.Type != EEG {
+		if t.JoiningFee != 0 || t.JoiningFeeUseVat || t.JoiningFeeVatInPercent != 0 {
+			return fmt.Errorf("Beitrittsgebühr ist nur für Mitgliedsbeitrags-Tarife zulässig")
+		}
+		return nil
+	}
+	if t.JoiningFee < 0 {
+		return fmt.Errorf("Beitrittsgebühr darf nicht negativ sein")
+	}
+	if cents := t.JoiningFee * 100; math.Abs(cents-math.Round(cents)) > 1e-6 {
+		return fmt.Errorf("Beitrittsgebühr: höchstens 2 Nachkommastellen")
+	}
+	if t.JoiningFeeVatInPercent < 0 || t.JoiningFeeVatInPercent > 100 {
+		return fmt.Errorf("USt-Satz der Beitrittsgebühr muss zwischen 0 und 100 liegen")
+	}
+	return nil
 }
 
 // parseTimeTariffTime parses "HH:MM", enforcing the 15-min raster

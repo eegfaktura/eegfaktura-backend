@@ -8,6 +8,31 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Added
+- **Joining fee on the EEG tariff** (konzept-beitrittsgebuehr.md, platform#217): a one-time fee per member with its
+  own VAT setting. Migration `20261028130000_joining_fee` adds to `base.tariff` the columns `"joiningFee"`
+  (`numeric(10,2)`, not null, default 0 — exact, unlike the `real` of `participantFee`), `"joiningFeeUseVat"`
+  (`boolean`, not null, default false) and `"joiningFeeVatInPercent"` (`numeric`, not null, default 0). No backfill:
+  every existing tariff has no fee. Versioned like the other tariff fields. `POST /eeg/tariff` rejects (400, code
+  4001) an amount below 0 or with more than 2 decimals, a VAT rate outside 0–100, and any value other than 0/false
+  on a tariff that is not of type `EEG`. The backend has no billing logic for the fee; eegfaktura-billing decides
+  when it is due.
+- Contract (additive, for **eegfaktura-web**): the tariff JSON (`GET /eeg/tariff`, `GET /eeg/tariff/{id}`,
+  `POST /eeg/tariff`) has the fields `joiningFee` (number, ≥ 0, 2 decimals), `joiningFeeUseVat` (bool) and
+  `joiningFeeVatInPercent` (number 0–100); missing fields are read as 0/false, so an older web keeps working (it
+  saves 0 for a new tariff version).
+- Contract (for **eegfaktura-billing** and **eegfaktura-v3**): the view `base.billing_masterdata` has three new
+  **last** columns from the member's EEG tariff, with fallback like the other `tariff_participant_fee_*` columns:
+  `tariff_joining_fee` (`numeric`, `COALESCE(tp."joiningFee", 0)`), `tariff_joining_fee_use_vat` (`boolean`,
+  `COALESCE(…, false)`), `tariff_joining_fee_vat_in_percent` (`numeric`, `COALESCE(…, 0)`). `base.activeTariff`
+  gets the three tariff columns at its end. Both views are replaced in place (`CREATE OR REPLACE`). Deploy the
+  backend before a billing that reads the columns (an older billing ignores them). **v3:** add the three columns
+  (0/false) to `v3.billing_masterdata_v3` before installing its UNION (`billing-view-union.sql` aborts on a missing
+  column); where the UNION is installed, this migration replaces it with the plain definition — remove it with
+  `billing-view-rollback.sql` first and reinstall it afterwards.
+- Rollback: the down migration restores both views as after ZVT and **keeps** the three tariff columns with their
+  values (no data loss; a new rollout finds them again).
+
 ### Fixed
 - **Tariff validation messages reach the client:** `POST /eeg/tariff` answered a rejected time-based tariff (ZVT)
   with 400 and the body `{}` — the reason was lost because a plain Go error marshals to an empty object. It now

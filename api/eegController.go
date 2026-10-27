@@ -121,6 +121,10 @@ func (h *EegHandler) addTariff() middleware.JWTHandlerFunc {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrUpdateTariff(err))
 			return
 		}
+		if err = t.ValidateJoiningFee(); err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrUpdateTariff(err))
+			return
+		}
 
 		if err = h.db.AddTariff(tenant, claims.Username, &t); err != nil {
 			respondWith(w, http.StatusBadRequest, tenant, err)

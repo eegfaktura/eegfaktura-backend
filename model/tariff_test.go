@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/json"
 	"testing"
 
 	"gopkg.in/guregu/null.v4"
@@ -115,4 +116,63 @@ func TestValidateTimeTariff(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
+}
+
+// konzept-beitrittsgebuehr.md, Tech Design B: amount >= 0 with at most 2 decimals, VAT 0..100, other types 0/false.
+func TestValidateJoiningFee(t *testing.T) {
+	tests := []struct {
+		name    string
+		tariff  Tariff
+		wantErr bool
+	}{
+		{"EEG without fee", Tariff{Type: EEG}, false},
+		{"EEG with cents", Tariff{Type: EEG, JoiningFee: 49.90, JoiningFeeUseVat: true, JoiningFeeVatInPercent: 20}, false},
+		{"EEG one decimal", Tariff{Type: EEG, JoiningFee: 0.1}, false},
+		{"EEG large amount with cents", Tariff{Type: EEG, JoiningFee: 12345678.91}, false},
+		{"EEG VAT 100", Tariff{Type: EEG, JoiningFee: 50, JoiningFeeVatInPercent: 100}, false},
+		{"EEG VAT without use flag", Tariff{Type: EEG, JoiningFee: 50, JoiningFeeVatInPercent: 13}, false},
+		{"EEG negative", Tariff{Type: EEG, JoiningFee: -0.01}, true},
+		{"EEG three decimals", Tariff{Type: EEG, JoiningFee: 49.999}, true},
+		{"EEG VAT above 100", Tariff{Type: EEG, JoiningFee: 50, JoiningFeeVatInPercent: 101}, true},
+		{"EEG VAT negative", Tariff{Type: EEG, JoiningFee: 50, JoiningFeeVatInPercent: -1}, true},
+		{"VZP zero", Tariff{Type: VZP}, false},
+		{"VZP with fee", Tariff{Type: VZP, JoiningFee: 50}, true},
+		{"EZP with VAT flag", Tariff{Type: EZP, JoiningFeeUseVat: true}, true},
+		{"AKONTO with VAT rate", Tariff{Type: AKONTO, JoiningFeeVatInPercent: 20}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.tariff.ValidateJoiningFee()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ValidateJoiningFee() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// Tariff JSON contract (caller eegfaktura-web): the three fields default to 0/false when absent and keep 2 decimals.
+func TestTariffJoiningFeeJSON(t *testing.T) {
+	var old Tariff
+	if err := json.Unmarshal([]byte(`{"type":"EEG","name":"Beitrag","participantFee":2}`), &old); err != nil {
+		t.Fatal(err)
+	}
+	if old.JoiningFee != 0 || old.JoiningFeeUseVat || old.JoiningFeeVatInPercent != 0 {
+		t.Fatalf("defaults: got %v/%v/%v", old.JoiningFee, old.JoiningFeeUseVat, old.JoiningFeeVatInPercent)
+	}
+
+	var fee Tariff
+	if err := json.Unmarshal([]byte(`{"type":"EEG","name":"Beitrag","joiningFee":49.90,"joiningFeeUseVat":true,"joiningFeeVatInPercent":20}`), &fee); err != nil {
+		t.Fatal(err)
+	}
+	b, err := json.Marshal(fee)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]interface{}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["joiningFee"] != 49.9 || got["joiningFeeUseVat"] != true || got["joiningFeeVatInPercent"] != float64(20) {
+		t.Fatalf("round trip: %s", b)
+	}
 }
