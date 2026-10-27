@@ -32,6 +32,17 @@ this changelog highlights the changes relevant for overview and operations.
   `billing-view-rollback.sql` first and reinstall it afterwards.
 - Rollback: the down migration restores both views as after ZVT and **keeps** the three tariff columns with their
   values (no data loss; a new rollout finds them again).
+- **Member export shows the joining fee:** the sheet „Mitglieder“ of the master data export has two new columns
+  directly after „Mitgliedstarif“, in every row of the member like „Mitgliedstarif“: „Beitrittsgebühr (€)“ (the fee of
+  the member's EEG tariff as a number, empty without a fee) and „Beitrittsgebühr verrechnet“ (e.g. „RG202600012 vom
+  15.01.2026“, empty while not billed or when web sends no list). All later columns move two to the right.
+- Contract (for **eegfaktura-web**): `/eeg/export/masterdata` also accepts `POST` with an optional JSON body — the
+  array eegfaktura-billing returns from `GET /api/billingDocuments/tenant/{tenantId}/joiningFeeState`, unchanged:
+  `[{"participantId": "<uuid>", "energyBilled": bool, "joiningFee": {"documentNumber": "…", "documentDate":
+  "YYYY-MM-DD"} | null}]`. The backend does not call billing. Without a body (or with `GET`, which stays until web has
+  switched) the column „verrechnet“ stays empty; a malformed body answers 400 (code 2000). Entries for participants
+  that are not members of the tenant from the `tenant` header are ignored; the list only fills the column. Auth
+  unchanged (`Protect`, tenant from the checked header).
 
 ### Fixed
 - **Tariff validation messages reach the client:** `POST /eeg/tariff` answered a rejected time-based tariff (ZVT)

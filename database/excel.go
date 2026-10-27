@@ -210,7 +210,10 @@ func CreateNotificationMessageFromLog(logMsg *model.Log) map[string]interface{} 
 	}
 }
 
-func ExportMasterdataToExcel(participants []*model.EegParticipant, eeg *model.Eeg, tariffMap map[string]string) (*bytes.Buffer, error) {
+// ExportMasterdataToExcel writes the master data workbook. joiningFees maps an EEG tariff id to its joining fee
+// (> 0 only); feeStates is the optional list web fetched from billing (nil: column "verrechnet" stays empty).
+func ExportMasterdataToExcel(participants []*model.EegParticipant, eeg *model.Eeg, tariffMap map[string]string,
+	joiningFees map[string]float64, feeStates []model.JoiningFeeState) (*bytes.Buffer, error) {
 	f := excelize.NewFile()
 	defer func() {
 		if err := f.Close(); err != nil {
@@ -222,7 +225,7 @@ func ExportMasterdataToExcel(participants []*model.EegParticipant, eeg *model.Ee
 	if err != nil {
 		return nil, err
 	}
-	err = generateParticipantMastersheet(f, participants, tariffMap)
+	err = generateParticipantMastersheet(f, participants, tariffMap, joiningFees, feeStates)
 	if err != nil {
 		return nil, err
 	}
@@ -343,7 +346,20 @@ var memberActivityLabel = map[model.MemberActivityType]string{
 	model.MemberInactive: "inaktiv",
 }
 
-func generateParticipantMastersheet(f *excelize.File, participants []*model.EegParticipant, tariffMap map[string]string) error {
+// joiningFeeBilledLabel is the text of the column "Beitrittsgebühr verrechnet", e.g. "RG202600012 vom 15.01.2026".
+func joiningFeeBilledLabel(d *model.JoiningFeeDocument) string {
+	if d == nil {
+		return ""
+	}
+	date := d.DocumentDate
+	if t, err := time.Parse("2006-01-02", date); err == nil {
+		date = t.Format("02.01.2006")
+	}
+	return fmt.Sprintf("%s vom %s", d.DocumentNumber, date)
+}
+
+func generateParticipantMastersheet(f *excelize.File, participants []*model.EegParticipant, tariffMap map[string]string,
+	joiningFees map[string]float64, feeStates []model.JoiningFeeState) error {
 
 	getTariffName := func(id string) string {
 		name, ok := tariffMap[id]
@@ -351,6 +367,18 @@ func generateParticipantMastersheet(f *excelize.File, participants []*model.EegP
 			return ""
 		}
 		return name
+	}
+
+	// Only the tenant's own members are looked up below, so entries for other participant ids are ignored.
+	feeBilled := map[string]string{}
+	for _, s := range feeStates {
+		feeBilled[strings.ToLower(s.ParticipantId)] = joiningFeeBilledLabel(s.JoiningFee)
+	}
+	getJoiningFee := func(tariffId string) interface{} {
+		if fee, ok := joiningFees[tariffId]; ok && fee > 0 {
+			return fee
+		}
+		return ""
 	}
 
 	getNullDate := func(d civil.NullDate) string {
@@ -370,6 +398,7 @@ func generateParticipantMastersheet(f *excelize.File, participants []*model.EegP
 		Font:   &excelize.Font{Size: 10.0},
 		NumFmt: 14,
 	})
+	styleIdAmount, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Size: 10.0}, NumFmt: 2})
 
 	sheet := "Mitglieder"
 	_, err = f.NewSheet(sheet)
@@ -394,11 +423,15 @@ func generateParticipantMastersheet(f *excelize.File, participants []*model.EegP
 	colNr, _ = excelize.ColumnNameToNumber("R")
 	err = sw.SetColWidth(colNr, colNr+1, 20.0)
 	colNr, _ = excelize.ColumnNameToNumber("Y")
-	err = sw.SetColWidth(colNr, colNr+1, 32.0)
-	err = sw.SetColWidth(colNr+3, colNr+3, 8.0)
-	err = sw.SetColWidth(colNr+4, colNr+4, 20.0)
-	err = sw.SetColWidth(colNr+6, colNr+6, 18.0)
-	colNr, _ = excelize.ColumnNameToNumber("AI")
+	err = sw.SetColWidth(colNr, colNr, 32.0)
+	err = sw.SetColWidth(colNr+1, colNr+1, 14.0) // Beitrittsgebühr (€)
+	err = sw.SetColWidth(colNr+2, colNr+2, 28.0) // Beitrittsgebühr verrechnet
+	colNr, _ = excelize.ColumnNameToNumber("AB")
+	err = sw.SetColWidth(colNr, colNr, 32.0)
+	err = sw.SetColWidth(colNr+2, colNr+2, 8.0)
+	err = sw.SetColWidth(colNr+3, colNr+3, 20.0)
+	err = sw.SetColWidth(colNr+5, colNr+5, 18.0)
+	colNr, _ = excelize.ColumnNameToNumber("AK")
 	err = sw.SetColWidth(colNr, colNr+1, 20.0)
 	err = sw.SetColWidth(colNr+3, colNr+4, 12.0)
 	err = sw.SetColWidth(colNr+5, colNr+5, 30.0)
@@ -430,6 +463,8 @@ func generateParticipantMastersheet(f *excelize.File, participants []*model.EegP
 		excelize.Cell{Value: "teilnahme als"},
 		excelize.Cell{Value: "Status"},
 		excelize.Cell{Value: "Mitgliedstarif"},
+		excelize.Cell{Value: "Beitrittsgebühr (€)"},
+		excelize.Cell{Value: "Beitrittsgebühr verrechnet"},
 		excelize.Cell{Value: "Zählpunkt"},
 		excelize.Cell{Value: "ZP-Status"},
 		excelize.Cell{Value: "ZpNr."},
@@ -501,6 +536,8 @@ func generateParticipantMastersheet(f *excelize.File, participants []*model.EegP
 					}()},
 					excelize.Cell{Value: status},
 					excelize.Cell{Value: getTariffName(c.TariffId.String), StyleID: styleDateId},
+					excelize.Cell{Value: getJoiningFee(c.TariffId.String), StyleID: styleIdAmount},
+					excelize.Cell{Value: feeBilled[strings.ToLower(c.Id.String())]},
 					excelize.Cell{Value: m.MeteringPoint},
 					excelize.Cell{Value: m.ProcessState},
 					excelize.Cell{Value: m.EquipmentNumber.String},

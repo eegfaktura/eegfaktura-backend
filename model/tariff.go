@@ -216,3 +216,19 @@ func (t *Tariff) ValidateTimeTariff() error {
 
 type TariffHistory struct {
 }
+
+// JoiningFeeState is one entry of billing's joiningFeeState list (GET
+// /api/billingDocuments/tenant/{tenantId}/joiningFeeState). eegfaktura-web passes the list
+// unchanged as the body of POST /eeg/export/masterdata; it only fills the export column
+// "Beitrittsgebühr verrechnet" (konzept-beitrittsgebuehr.md, Tech Design A).
+type JoiningFeeState struct {
+	ParticipantId string              `json:"participantId"`
+	EnergyBilled  bool                `json:"energyBilled"`
+	JoiningFee    *JoiningFeeDocument `json:"joiningFee"`
+}
+
+// JoiningFeeDocument is the final billing document that carries a member's joining fee.
+type JoiningFeeDocument struct {
+	DocumentNumber string `json:"documentNumber"`
+	DocumentDate   string `json:"documentDate"` // YYYY-MM-DD
+}
