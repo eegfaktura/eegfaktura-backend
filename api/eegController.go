@@ -118,7 +118,7 @@ func (h *EegHandler) addTariff() middleware.JWTHandlerFunc {
 
 		// ZVT: serverseitige Plausibilitaetspruefung der Zeitfenster
 		if err = t.ValidateTimeTariff(); err != nil {
-			respondWith(w, http.StatusBadRequest, tenant, err)
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrUpdateTariff(err))
 			return
 		}
 
