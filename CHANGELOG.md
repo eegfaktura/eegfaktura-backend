@@ -45,7 +45,7 @@ this changelog highlights the changes relevant for overview and operations.
   unchanged (`Protect`, tenant from the checked header).
 
 ### Fixed
-- **Tariff validation messages reach the client:** `POST /eeg/tariff` answered a rejected time-based tariff (ZVT)
+- **Tariff validation messages reach the client (261027-mm1):** `POST /eeg/tariff` answered a rejected time-based tariff (ZVT)
   with 400 and the body `{}` — the reason was lost because a plain Go error marshals to an empty object. It now
   answers in the usual error format (`{"error": {"code": 4001, "message": "…"}}`) with the German reason. Pre-existing
   defect, met while adding the joining fee validation.
