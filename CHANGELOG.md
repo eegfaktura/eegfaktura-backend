@@ -34,15 +34,22 @@ this changelog highlights the changes relevant for overview and operations.
   values (no data loss; a new rollout finds them again).
 - **Member export shows the joining fee:** the sheet „Mitglieder“ of the master data export has two new columns
   directly after „Mitgliedstarif“, in every row of the member like „Mitgliedstarif“: „Beitrittsgebühr (€)“ (the fee of
-  the member's EEG tariff as a number, empty without a fee) and „Beitrittsgebühr verrechnet“ (e.g. „RG202600012 vom
-  15.01.2026“, empty while not billed or when web sends no list). All later columns move two to the right.
+  the member's EEG tariff as a number, empty without a fee) and „Beitrittsgebühr Status“ (konzept-beitrittsgebuehr.md,
+  Erweiterung 27.10.2026; same texts as the member details in web), first match wins: „verrechnet mit RG… vom
+  TT.MM.JJJJ“ (final billing document), „außerhalb bezahlt am TT.MM.JJJJ“ (plus „ (Notiz)“ when billing has a note),
+  „zur Verrechnung im nächsten Abrechnungslauf vorgemerkt“, „offen – wird mit der ersten Energieabrechnung
+  verrechnet“ (never billed with energy, tariff fee > 0; also a member without an entry in the list), „nicht
+  verrechnet – Mitglied wurde schon abgerechnet“ (billed with energy, tariff fee > 0), empty when the tariff has no fee
+  and nothing is recorded. Without a list from web the status column stays empty. All later columns move two to the
+  right. The note is the community's own free text and appears only in its own export.
 - Contract (for **eegfaktura-web**): `/eeg/export/masterdata` also accepts `POST` with an optional JSON body — the
   array eegfaktura-billing returns from `GET /api/billingDocuments/tenant/{tenantId}/joiningFeeState`, unchanged:
   `[{"participantId": "<uuid>", "energyBilled": bool, "joiningFee": {"documentNumber": "…", "documentDate":
-  "YYYY-MM-DD"} | null}]`. The backend does not call billing. Without a body (or with `GET`, which stays until web has
-  switched) the column „verrechnet“ stays empty; a malformed body answers 400 (code 2000). Entries for participants
-  that are not members of the tenant from the `tenant` header are ignored; the list only fills the column. Auth
-  unchanged (`Protect`, tenant from the checked header).
+  "YYYY-MM-DD"} | null, "requested": bool, "paidExternally": {"paidOn": "YYYY-MM-DD", "note": "…"} | null}]`. The
+  backend does not call billing. Without a body (or with `GET`, which stays until web has switched) the status column
+  stays empty; a posted empty array `[]` means no member has a final document yet. A malformed body answers 400 (code
+  2000). Entries for participants that are not members of the tenant from the `tenant` header are ignored; the list
+  only fills the column. Auth unchanged (`Protect`, tenant from the checked header).
 
 ### Fixed
 - **Tariff validation messages reach the client (261027-mm1):** `POST /eeg/tariff` answered a rejected time-based tariff (ZVT)

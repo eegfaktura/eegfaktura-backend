@@ -222,7 +222,7 @@ func (h *EegHandler) uploadMasterData() middleware.JWTHandlerFunc {
 
 func (h *EegHandler) exportMasterData() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
-		// optional body: billing's joiningFeeState list, passed on by web; no body = column stays empty
+		// optional body: billing's joiningFeeState list, passed on by web; no body = status column stays empty
 		var feeStates []model.JoiningFeeState
 		if r.Method == http.MethodPost {
 			if err := json.NewDecoder(r.Body).Decode(&feeStates); err != nil && !errors.Is(err, io.EOF) {

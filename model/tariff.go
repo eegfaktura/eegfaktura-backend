@@ -220,15 +220,23 @@ type TariffHistory struct {
 // JoiningFeeState is one entry of billing's joiningFeeState list (GET
 // /api/billingDocuments/tenant/{tenantId}/joiningFeeState). eegfaktura-web passes the list
 // unchanged as the body of POST /eeg/export/masterdata; it only fills the export column
-// "Beitrittsgebühr verrechnet" (konzept-beitrittsgebuehr.md, Tech Design A).
+// "Beitrittsgebühr Status" (konzept-beitrittsgebuehr.md, Tech Design A and Erweiterung 27.10.2026).
 type JoiningFeeState struct {
-	ParticipantId string              `json:"participantId"`
-	EnergyBilled  bool                `json:"energyBilled"`
-	JoiningFee    *JoiningFeeDocument `json:"joiningFee"`
+	ParticipantId  string                  `json:"participantId"`
+	EnergyBilled   bool                    `json:"energyBilled"`
+	JoiningFee     *JoiningFeeDocument     `json:"joiningFee"`
+	Requested      bool                    `json:"requested"`
+	PaidExternally *JoiningFeePaidExternal `json:"paidExternally"`
 }
 
 // JoiningFeeDocument is the final billing document that carries a member's joining fee.
 type JoiningFeeDocument struct {
 	DocumentNumber string `json:"documentNumber"`
 	DocumentDate   string `json:"documentDate"` // YYYY-MM-DD
+}
+
+// JoiningFeePaidExternal is a payment of the fee outside eegfaktura, recorded in billing.
+type JoiningFeePaidExternal struct {
+	PaidOn string `json:"paidOn"` // YYYY-MM-DD
+	Note   string `json:"note"`
 }

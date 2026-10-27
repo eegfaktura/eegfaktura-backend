@@ -211,7 +211,7 @@ func CreateNotificationMessageFromLog(logMsg *model.Log) map[string]interface{} 
 }
 
 // ExportMasterdataToExcel writes the master data workbook. joiningFees maps an EEG tariff id to its joining fee
-// (> 0 only); feeStates is the optional list web fetched from billing (nil: column "verrechnet" stays empty).
+// (> 0 only); feeStates is the optional list web fetched from billing (nil: column "Status" stays empty).
 func ExportMasterdataToExcel(participants []*model.EegParticipant, eeg *model.Eeg, tariffMap map[string]string,
 	joiningFees map[string]float64, feeStates []model.JoiningFeeState) (*bytes.Buffer, error) {
 	f := excelize.NewFile()
@@ -346,16 +346,39 @@ var memberActivityLabel = map[model.MemberActivityType]string{
 	model.MemberInactive: "inaktiv",
 }
 
-// joiningFeeBilledLabel is the text of the column "Beitrittsgebühr verrechnet", e.g. "RG202600012 vom 15.01.2026".
-func joiningFeeBilledLabel(d *model.JoiningFeeDocument) string {
-	if d == nil {
+// germanDate shows "YYYY-MM-DD" as "TT.MM.JJJJ"; any other text as sent.
+func germanDate(s string) string {
+	if t, err := time.Parse("2006-01-02", s); err == nil {
+		return t.Format("02.01.2006")
+	}
+	return s
+}
+
+// joiningFeeStatus is the text of the column "Beitrittsgebühr Status" (konzept-beitrittsgebuehr.md, Erweiterung
+// 27.10.2026, same texts as the member details). s is the member's entry of billing's list (nil: no entry, i.e. no
+// final document yet), fee the joining fee of the member's EEG tariff.
+func joiningFeeStatus(s *model.JoiningFeeState, fee float64) string {
+	if s == nil {
+		s = &model.JoiningFeeState{}
+	}
+	switch {
+	case s.JoiningFee != nil:
+		return fmt.Sprintf("verrechnet mit %s vom %s", s.JoiningFee.DocumentNumber, germanDate(s.JoiningFee.DocumentDate))
+	case s.PaidExternally != nil:
+		text := "außerhalb bezahlt am " + germanDate(s.PaidExternally.PaidOn)
+		if s.PaidExternally.Note != "" {
+			text += " (" + s.PaidExternally.Note + ")"
+		}
+		return text
+	case s.Requested:
+		return "zur Verrechnung im nächsten Abrechnungslauf vorgemerkt"
+	case fee <= 0:
 		return ""
+	case !s.EnergyBilled:
+		return "offen – wird mit der ersten Energieabrechnung verrechnet"
+	default:
+		return "nicht verrechnet – Mitglied wurde schon abgerechnet"
 	}
-	date := d.DocumentDate
-	if t, err := time.Parse("2006-01-02", date); err == nil {
-		date = t.Format("02.01.2006")
-	}
-	return fmt.Sprintf("%s vom %s", d.DocumentNumber, date)
 }
 
 func generateParticipantMastersheet(f *excelize.File, participants []*model.EegParticipant, tariffMap map[string]string,
@@ -370,15 +393,22 @@ func generateParticipantMastersheet(f *excelize.File, participants []*model.EegP
 	}
 
 	// Only the tenant's own members are looked up below, so entries for other participant ids are ignored.
-	feeBilled := map[string]string{}
-	for _, s := range feeStates {
-		feeBilled[strings.ToLower(s.ParticipantId)] = joiningFeeBilledLabel(s.JoiningFee)
+	feeState := map[string]*model.JoiningFeeState{}
+	for i := range feeStates {
+		feeState[strings.ToLower(feeStates[i].ParticipantId)] = &feeStates[i]
 	}
 	getJoiningFee := func(tariffId string) interface{} {
 		if fee, ok := joiningFees[tariffId]; ok && fee > 0 {
 			return fee
 		}
 		return ""
+	}
+	// without a list from billing (older web, billing not reachable) the column stays empty
+	getJoiningFeeStatus := func(c *model.EegParticipant) string {
+		if feeStates == nil {
+			return ""
+		}
+		return joiningFeeStatus(feeState[strings.ToLower(c.Id.String())], joiningFees[c.TariffId.String])
 	}
 
 	getNullDate := func(d civil.NullDate) string {
@@ -425,7 +455,7 @@ func generateParticipantMastersheet(f *excelize.File, participants []*model.EegP
 	colNr, _ = excelize.ColumnNameToNumber("Y")
 	err = sw.SetColWidth(colNr, colNr, 32.0)
 	err = sw.SetColWidth(colNr+1, colNr+1, 14.0) // Beitrittsgebühr (€)
-	err = sw.SetColWidth(colNr+2, colNr+2, 28.0) // Beitrittsgebühr verrechnet
+	err = sw.SetColWidth(colNr+2, colNr+2, 45.0) // Beitrittsgebühr Status
 	colNr, _ = excelize.ColumnNameToNumber("AB")
 	err = sw.SetColWidth(colNr, colNr, 32.0)
 	err = sw.SetColWidth(colNr+2, colNr+2, 8.0)
@@ -464,7 +494,7 @@ func generateParticipantMastersheet(f *excelize.File, participants []*model.EegP
 		excelize.Cell{Value: "Status"},
 		excelize.Cell{Value: "Mitgliedstarif"},
 		excelize.Cell{Value: "Beitrittsgebühr (€)"},
-		excelize.Cell{Value: "Beitrittsgebühr verrechnet"},
+		excelize.Cell{Value: "Beitrittsgebühr Status"},
 		excelize.Cell{Value: "Zählpunkt"},
 		excelize.Cell{Value: "ZP-Status"},
 		excelize.Cell{Value: "ZpNr."},
@@ -486,6 +516,7 @@ func generateParticipantMastersheet(f *excelize.File, participants []*model.EegP
 	for _, c := range participants {
 		// platform#165: the member status from its metering points, the stored one stays ACTIVE after leaving
 		status := memberActivityLabel[model.MemberActivity(c.MeteringPoint)]
+		feeStatus := getJoiningFeeStatus(c)
 		for _, m := range c.MeteringPoint {
 			line = line + 1
 			err = sw.SetRow(fmt.Sprintf("A%d", line),
@@ -537,7 +568,7 @@ func generateParticipantMastersheet(f *excelize.File, participants []*model.EegP
 					excelize.Cell{Value: status},
 					excelize.Cell{Value: getTariffName(c.TariffId.String), StyleID: styleDateId},
 					excelize.Cell{Value: getJoiningFee(c.TariffId.String), StyleID: styleIdAmount},
-					excelize.Cell{Value: feeBilled[strings.ToLower(c.Id.String())]},
+					excelize.Cell{Value: feeStatus},
 					excelize.Cell{Value: m.MeteringPoint},
 					excelize.Cell{Value: m.ProcessState},
 					excelize.Cell{Value: m.EquipmentNumber.String},

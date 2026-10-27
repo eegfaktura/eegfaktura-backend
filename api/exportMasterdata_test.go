@@ -64,7 +64,7 @@ func TestExportMasterdata_joiningFee(t *testing.T) {
 		router.ServeHTTP(w, req)
 		return w
 	}
-	// fee and "verrechnet" of every row of the member
+	// fee and status of every row of the member
 	memberCells := func(w *httptest.ResponseRecorder) [][2]string {
 		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 		f, err := excelize.OpenReader(bytes.NewReader(w.Body.Bytes()))
@@ -95,7 +95,22 @@ func TestExportMasterdata_joiningFee(t *testing.T) {
 	tokenTenants, roles = []string{tenant}, nil
 	t.Run("POST with the list", func(t *testing.T) {
 		for _, c := range memberCells(call(http.MethodPost, tenant, billedBody)) {
-			assert.Equal(t, [2]string{"49.9", "RG202600012 vom 15.01.2026"}, c)
+			assert.Equal(t, [2]string{"49.9", "verrechnet mit RG202600012 vom 15.01.2026"}, c)
+		}
+	})
+	t.Run("POST with paid outside and requested", func(t *testing.T) {
+		body := `[{"participantId":"` + member + `","energyBilled":true,"joiningFee":null,"requested":false,` +
+			`"paidExternally":{"paidOn":"2025-03-01","note":"bar beim Beitritt"}}]`
+		for _, c := range memberCells(call(http.MethodPost, tenant, body)) {
+			assert.Equal(t, [2]string{"49.9", "außerhalb bezahlt am 01.03.2025 (bar beim Beitritt)"}, c)
+		}
+		body = `[{"participantId":"` + member + `","energyBilled":true,"joiningFee":null,"requested":true,"paidExternally":null}]`
+		for _, c := range memberCells(call(http.MethodPost, tenant, body)) {
+			assert.Equal(t, [2]string{"49.9", "zur Verrechnung im nächsten Abrechnungslauf vorgemerkt"}, c)
+		}
+		body = `[{"participantId":"` + member + `","energyBilled":true,"joiningFee":null,"requested":false,"paidExternally":null}]`
+		for _, c := range memberCells(call(http.MethodPost, tenant, body)) {
+			assert.Equal(t, [2]string{"49.9", "nicht verrechnet – Mitglied wurde schon abgerechnet"}, c)
 		}
 	})
 	t.Run("POST without body", func(t *testing.T) {
@@ -121,7 +136,7 @@ func TestExportMasterdata_joiningFee(t *testing.T) {
 		tokenTenants, roles = []string{"TE000004"}, []string{"superuser"}
 		t.Cleanup(func() { tokenTenants, roles = []string{tenant}, nil })
 		for _, c := range memberCells(call(http.MethodPost, tenant, billedBody)) {
-			assert.Equal(t, [2]string{"49.9", "RG202600012 vom 15.01.2026"}, c)
+			assert.Equal(t, [2]string{"49.9", "verrechnet mit RG202600012 vom 15.01.2026"}, c)
 		}
 	})
 }
