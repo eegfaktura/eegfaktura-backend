@@ -52,6 +52,10 @@ this changelog highlights the changes relevant for overview and operations.
   only fills the column. Auth unchanged (`Protect`, tenant from the checked header).
 
 ### Fixed
+- **CI: the Snyk Code scan fails visibly when it cannot run.** An invalid `SNYK_TOKEN` ended the weekly and
+  push scan green without any result (`continue-on-error`); now only „issues found“ keeps the run green (the
+  issues go to Code Scanning), an authentication or tool error fails it. The Snyk CLI is pinned to 1.1308.1
+  instead of the latest version.
 - **Tariff validation messages reach the client (261027-mm1):** `POST /eeg/tariff` answered a rejected time-based tariff (ZVT)
   with 400 and the body `{}` — the reason was lost because a plain Go error marshals to an empty object. It now
   answers in the usual error format (`{"error": {"code": 4001, "message": "…"}}`) with the German reason. Pre-existing
