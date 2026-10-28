@@ -23,7 +23,9 @@ this changelog highlights the changes relevant for overview and operations.
   summary does not count it) and the messages of a run that got no summary 24 h after it started. Response shape
   unchanged, no web change.
 - The admin list reads in batches (30, then 500, at most 40) until a page is full; reaching the limit is logged. When
-  the rows of the live entries cannot be read, it is the plain list as before.
+  the rows of the live entries, the runs or the summaries cannot be read, it is the plain list as before. Known limit:
+  in a GEA whose EDA messages are stored under another tenant of the community, the requesting tenant's live entry is
+  placed at its row id as before (nothing to place it by).
 
 ### Added
 - Migrations `20261028120000_notification_energy_request_index` and `20261028120100_notification_summary_index`:
