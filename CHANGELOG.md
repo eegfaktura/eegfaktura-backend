@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.13.0] – 2026-10-28
+
 ### Fixed
 - **Image build: code generators pinned to go.mod** (pre-existing): the Dockerfile installed `protoc-gen-go`,
   `protoc-gen-go-grpc` and `go-jsonschema` with `@latest`, so the image could be generated with other versions than
