@@ -12,18 +12,25 @@ this changelog highlights the changes relevant for overview and operations.
 - **Messages: an energy request for several metering points is one entry, also after it closed** (user decision
   28.10.2026, after a request for a whole community in prod). The notification list for admins
   (`GET /eeg/notifications/{start}`) leaves out the request echoes (`ANFORDERUNG_PT`) and the answers
-  (`ANTWORT_PT`, `ABLEHNUNG_PT`) of a run with a summary; the live entry stands for them while the run is open, the
-  stored summary after it closed. Before, only the answers of an open run were left out, every request echo was
-  listed, and once the summary was written all answers came back. A message belongs to the newest run before it that
-  sent one of its metering points (at most 25 h earlier); runs older than the rows the live entry reads (49 h) are
-  matched through the stored summary written after the message. A request for a single metering point keeps its
-  messages. Response shape unchanged, no web change; the details stay in the summary and the process history.
+  (`ANTWORT_PT`, `ABLEHNUNG_PT`) of a run with a summary of the same tenant; the live entry stands for them while the
+  run is open, the stored summary after it closed. Before, only the answers of an open run were left out, every
+  request echo was listed, and once the summary was written all answers came back. A message belongs to the newest
+  run of the community before it that sent one of its metering points, at most 25 h earlier
+  (`energyrequest.Collapser`). Kept: requests for a single metering point, and in a GEA the messages of another
+  tenant's run (that tenant has the live entry and the summary). Response shape unchanged, no web change; the details
+  stay in the summary and the process history.
+- The admin list reads in batches (30, then 500, at most 40) until a page is full; reaching the limit is logged.
+
+### Added
+- Migration `20261028120000_notification_energy_request_index`: partial index `notification_energy_request_idx` on
+  `base.notification (tenant, id) WHERE process = 'ENERGY_REQUEST'` (the hidden RUN rows, one per request), built
+  `CONCURRENTLY`, so the list finds the runs of a community at any age. No data change; down drops it.
 
 ### Fixed
 - **The live entry of a request for a whole community did not show** (28.10.2026, prod): it was placed at the run's
   row id, below the request echoes written after it, and the list returns the newest 30 entries only. It is now placed
   with the newest message it stands for (its `id` stays the run's row id), so web finds it and refreshes it every
-  minute. The list reads up to 25 × 200 rows to fill a page.
+  minute.
 
 ## [1.10.0] – 2026-10-26
 

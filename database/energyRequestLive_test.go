@@ -3,7 +3,6 @@ package database
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"testing"
 	"time"
 
@@ -14,7 +13,7 @@ import (
 )
 
 // An open run with a summary is listed as a live entry at its row id, its answers are left out of the list; once
-// closed, the stored summary takes its place and the answers are listed again.
+// closed, the stored summary takes its place and the answers stay out (decision 28.10.2026).
 func TestEnergyRequestLiveEntry(t *testing.T) {
 	ctx := context.Background()
 	db, err := GetDB(ctx)
@@ -82,13 +81,14 @@ func TestEnergyRequestLiveEntry(t *testing.T) {
 		assert.NotEqual(t, runRowId, n.Id)
 	}
 
-	// the energy request rows cannot be read (here: cancelled context, not cached): the plain list, nothing hidden
+	// the energy request rows cannot be read (here: cancelled context, not cached): no live entry, the run's answer
+	// stays out
 	clearCommunityCache()
 	cancelled, cancel := context.WithCancel(ctx)
 	cancel()
 	list, err = db.GetNotification(cancelled, tenant, 0, true)
 	require.NoError(t, err)
-	require.Len(t, list, 3, "the three answers, no live entry")
+	require.Len(t, list, 2, "the answers to zp9, no live entry")
 	for _, n := range list {
 		assert.NotEqual(t, runRowId, n.Id)
 	}
@@ -106,65 +106,6 @@ func TestEnergyRequestLiveEntry(t *testing.T) {
 	for _, n := range list {
 		assert.NotEqual(t, runRowId, n.Id)
 	}
-}
-
-// A request for a whole community: one request echo and one answer per metering point, more than a page. The live
-// entry stays on top and stands for all of them, then the stored summary does.
-func TestEnergyRequestLiveEntry_wholeCommunity(t *testing.T) {
-	ctx := context.Background()
-	db, err := GetDB(ctx)
-	require.NoError(t, err)
-
-	const tenant = "TE000183"
-	const ecId = "AT00999900000TC000183000000000001"
-	_, err = testDB.DbInstance.Exec(`INSERT INTO base.eeg
-		(tenant, name, description, "rcNumber", area, gridoperator_code, gridoperator_name, "communityId",
-		 street, "streetNumber", city, zip, email)
-		VALUES ($1, 'LIVE-TEST-2', 'Testgemeinschaft', $3, 'LOCAL', 'AT009999', 'Test Operator', $2,
-		 'Solarweg', '1', 'Linz', '4020', 'live-test-2@example.org')
-		ON CONFLICT (tenant) DO NOTHING`, tenant, ecId, tenant)
-	require.NoError(t, err)
-
-	const other = "AT0099990000000000000000000183999"
-	require.NoError(t, db.SaveNotification(tenant, model.EBMS_ZP_RES, []string{other}, []string{}, model.CR_REQ_PT))
-
-	from := time.Date(2026, 9, 1, 0, 0, 0, 0, time.Local).UnixMilli()
-	to := time.Date(2026, 9, 30, 23, 45, 0, 0, time.Local).UnixMilli()
-	run := energyrequest.NewRun(ecId, from, to)
-	meters := []string{}
-	for i := 0; i < 40; i++ {
-		zp := fmt.Sprintf("AT0099990000000000000000000183%03d", i)
-		meters = append(meters, zp)
-		run.Add(zp, from, to)
-	}
-	_, err = energyrequest.Save(ctx, db, tenant, meters, run)
-	require.NoError(t, err)
-	for _, zp := range meters {
-		require.NoError(t, db.SaveNotification(tenant, model.EBMS_ZP_SYNC, []string{zp}, []string{}, model.CR_REQ_PT))
-	}
-	for _, zp := range meters[:3] {
-		require.NoError(t, db.SaveNotification(tenant, model.EBMS_ZP_RES, []string{zp}, []string{}, model.CR_REQ_PT))
-	}
-
-	list, err := db.GetNotification(ctx, tenant, 0, true)
-	require.NoError(t, err)
-	require.Len(t, list, 2, "the live entry, the answer before the run")
-	var s energyrequest.Summary
-	require.NoError(t, json.Unmarshal(list[0].Message, &s))
-	assert.True(t, s.Live)
-	assert.Equal(t, 40, s.Requested)
-	assert.Len(t, s.Accepted, 3)
-
-	// closed after the deadline: the stored summary stands for the requests and answers
-	require.NoError(t, energyrequest.Check(ctx, db, time.Now().Add(energyrequest.Deadline+time.Minute)))
-	list, err = db.GetNotification(ctx, tenant, 0, true)
-	require.NoError(t, err)
-	require.Len(t, list, 2, "the summary, the answer before the run")
-	s = energyrequest.Summary{}
-	require.NoError(t, json.Unmarshal(list[0].Message, &s))
-	assert.False(t, s.Live)
-	assert.Equal(t, energyrequest.SummaryType, s.Type)
-	assert.Len(t, s.NoAnswer, 37)
 }
 
 // the list keeps the community rows for communityCacheTTL; writing a run clears them, so the lock and a new live

@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// Message is a listed notification as far as Collapse needs it.
+// Message is a listed notification as far as a Collapser needs it.
 type Message struct {
 	Id      int64
 	Date    time.Time
@@ -20,67 +20,58 @@ var collapsedTypes = map[string]bool{"ANFORDERUNG_PT": true, answerAccepted: tru
 // Deadline at the latest).
 const CollapseWindow = Deadline + time.Hour
 
-type owner struct {
-	id      int64
-	at      time.Time // run: creation; stored summary: when it was written
-	summary bool      // false: a request for a single metering point, its messages stay
-	meters  map[string]bool
+// Collapsible reports whether a message is of a type a Collapser may leave out, so its runs have to be read.
+func Collapsible(content json.RawMessage) bool {
+	var m struct {
+		Type string `json:"type"`
+	}
+	return json.Unmarshal(content, &m) == nil && collapsedTypes[m.Type]
 }
 
-// IsSummary reports whether content is a stored summary (not a live entry).
-func IsSummary(content json.RawMessage) bool {
-	var s Summary
-	return json.Unmarshal(content, &s) == nil && s.Type == SummaryType && !s.Live
+type collapseRun struct {
+	id        int64
+	createdAt time.Time
+	own       bool // a run of the listed tenant with a summary: its messages are left out
+	meters    map[string]bool
 }
 
-// Collapse returns the ids of the requests (ANFORDERUNG_PT) and answers (ANTWORT_PT, ABLEHNUNG_PT) among messages
-// that belong to a run with a summary: in Messages the summary, or the live entry while the run is open, stands for
-// them (platform#173). A message belongs to the newest run before it (lower row id, created at most CollapseWindow
-// earlier) that sent one of its metering points; a request for a single metering point (NoSummary) keeps its
-// messages. runs are the RUN rows of the community that Live reads (the last LookBack). For an older message, whose
-// run is no longer among them, the stored summary written after it (higher id, at most CollapseWindow later) that
-// names one of its metering points stands for it; a single request between that run and its summary is then left
-// out too.
-//
-// latest maps the row id of a run to the highest id of its messages, so its live entry can be placed with its
-// newest message.
-func Collapse(runs []Row, summaries []Message, messages []Message) (hidden map[int64]bool, latest map[int64]int64) {
-	runOwners := make([]owner, 0, len(runs))
-	for _, r := range runs {
+// Collapser decides which requests (ANFORDERUNG_PT) and answers (ANTWORT_PT, ABLEHNUNG_PT) the Messages list of a
+// tenant leaves out (platform#173, decision 28.10.2026): those of a run with a summary of that tenant. The live entry
+// stands for them while the run is open, the stored summary after it closed. A message belongs to the newest run of
+// the community before it (lower row id, created at most CollapseWindow earlier) that sent one of its metering points.
+// A request for a single metering point (NoSummary) keeps its messages, and so does a run of another tenant of the
+// community (GEA): that tenant gets its live entry and summary, the messages may be stored under this one.
+type Collapser struct {
+	tenant string
+	runs   map[int64]collapseRun
+}
+
+func NewCollapser(tenant string) *Collapser {
+	return &Collapser{tenant: tenant, runs: map[int64]collapseRun{}}
+}
+
+// AddRuns adds RUN rows of the community; rows already added and other rows are ignored.
+func (c *Collapser) AddRuns(rows []Row) {
+	for _, r := range rows {
+		if _, ok := c.runs[r.Id]; ok || r.Type != RowTypeRun {
+			continue
+		}
 		var run Run
-		if r.Type != RowTypeRun || json.Unmarshal(r.Message, &run) != nil {
+		if json.Unmarshal(r.Message, &run) != nil {
 			continue
 		}
 		meters := map[string]bool{}
 		for _, m := range run.Meters {
 			meters[strings.ToUpper(m.MeteringPoint)] = true
 		}
-		runOwners = append(runOwners, owner{id: r.Id, at: time.UnixMilli(run.CreatedAt), summary: !run.NoSummary,
-			meters: meters})
+		c.runs[r.Id] = collapseRun{id: r.Id, createdAt: time.UnixMilli(run.CreatedAt),
+			own: !run.NoSummary && strings.EqualFold(r.Tenant, c.tenant), meters: meters}
 	}
-	summaryOwners := make([]owner, 0, len(summaries))
-	for _, m := range summaries {
-		var s Summary
-		if json.Unmarshal(m.Content, &s) != nil || s.Type != SummaryType || s.Live {
-			continue
-		}
-		meters := map[string]bool{}
-		add := func(mp string) { meters[strings.ToUpper(mp)] = true }
-		for _, a := range s.Accepted {
-			add(a.MeteringPoint)
-		}
-		for _, r := range s.Rejected {
-			add(r.MeteringPoint)
-		}
-		for _, mp := range s.NoAnswer {
-			add(mp)
-		}
-		for _, mp := range s.Superseded {
-			add(mp)
-		}
-		summaryOwners = append(summaryOwners, owner{id: m.Id, at: m.Date, summary: true, meters: meters})
-	}
+}
 
+// Hide returns the ids of the messages left out, and for each run the highest id of its messages left out (its live
+// entry is placed there).
+func (c *Collapser) Hide(messages []Message) (hidden map[int64]bool, latest map[int64]int64) {
 	hidden = map[int64]bool{}
 	latest = map[int64]int64{}
 	for _, msg := range messages {
@@ -91,41 +82,25 @@ func Collapse(runs []Row, summaries []Message, messages []Message) (hidden map[i
 		if json.Unmarshal(msg.Content, &m) != nil || !collapsedTypes[m.Type] {
 			continue
 		}
-		names := func(o owner) bool {
+		var owner *collapseRun
+		for _, r := range c.runs {
+			if r.id >= msg.Id || msg.Date.Sub(r.createdAt) > CollapseWindow || (owner != nil && owner.id > r.id) {
+				continue
+			}
 			for _, mp := range m.MeteringPoints {
-				if o.meters[strings.ToUpper(mp)] {
-					return true
+				if r.meters[strings.ToUpper(mp)] {
+					r := r
+					owner = &r
+					break
 				}
 			}
-			return false
 		}
-		// the newest run before the message
-		var run *owner
-		for i := range runOwners {
-			o := &runOwners[i]
-			if o.id < msg.Id && msg.Date.Sub(o.at) <= CollapseWindow && (run == nil || o.id > run.id) && names(*o) {
-				run = o
-			}
-		}
-		if run != nil {
-			if run.summary {
-				hidden[msg.Id] = true
-				if msg.Id > latest[run.id] {
-					latest[run.id] = msg.Id
-				}
-			}
+		if owner == nil || !owner.own {
 			continue
 		}
-		// else the first stored summary after the message
-		var summary *owner
-		for i := range summaryOwners {
-			o := &summaryOwners[i]
-			if o.id > msg.Id && o.at.Sub(msg.Date) <= CollapseWindow && (summary == nil || o.id < summary.id) && names(*o) {
-				summary = o
-			}
-		}
-		if summary != nil {
-			hidden[msg.Id] = true
+		hidden[msg.Id] = true
+		if msg.Id > latest[owner.id] {
+			latest[owner.id] = msg.Id
 		}
 	}
 	return hidden, latest

@@ -180,21 +180,50 @@ func (db *sqlDatabase) hasEnergyRequestRun(ctx context.Context, tenant string) (
 // EnergyRequestCommunity returns the rows of EnergyRequestRows for the tenants of tenant's community id (several for
 // a GEA), and these tenants (tenant included).
 func (db *sqlDatabase) EnergyRequestCommunity(ctx context.Context, tenant string) ([]energyrequest.Row, map[string]bool, error) {
-	list := []string{}
-	if err := db.db.SelectContext(ctx, &list, `SELECT tenant FROM base.eeg
-		WHERE "communityId" = (SELECT "communityId" FROM base.eeg WHERE tenant = $1)`, tenant); err != nil {
+	list, err := db.communityTenants(ctx, tenant)
+	if err != nil {
 		return nil, nil, err
 	}
-	tenants := map[string]bool{tenant: true}
+	tenants := map[string]bool{}
 	for _, t := range list {
 		tenants[t] = true
 	}
-	list = list[:0]
-	for t := range tenants {
-		list = append(list, t)
-	}
 	rows, err := db.EnergyRequestRows(ctx, list)
 	return rows, tenants, err
+}
+
+// communityTenants returns tenant and the other tenants with its community id (GEA), each once.
+func (db *sqlDatabase) communityTenants(ctx context.Context, tenant string) ([]string, error) {
+	list := []string{}
+	if err := db.db.SelectContext(ctx, &list, `SELECT tenant FROM base.eeg
+		WHERE "communityId" = (SELECT "communityId" FROM base.eeg WHERE tenant = $1)`, tenant); err != nil {
+		return nil, err
+	}
+	tenants := []string{tenant}
+	for _, t := range list {
+		if t != tenant {
+			tenants = append(tenants, t)
+		}
+	}
+	return tenants, nil
+}
+
+// energyRequestRunsBefore returns the RUN rows of tenants with an id below before, written at since or later, for
+// the Messages list (energyrequest.Collapser). It reads the partial index notification_energy_request_idx only.
+func (db *sqlDatabase) energyRequestRunsBefore(ctx context.Context, tenants []string, before int64,
+	since time.Time) ([]energyrequest.Row, error) {
+	query, args, err := sqlx.In(`SELECT id, tenant, process, type, notification::text AS notification
+		FROM base.notification
+		WHERE process = ? AND tenant IN (?) AND id < ? AND type = ?
+		  AND date >= (to_timestamp(?) AT TIME ZONE 'utc')
+		ORDER BY id`, model.N_PROCESS_ENERGY_REQUEST, tenants, before, energyrequest.RowTypeRun,
+		float64(since.UnixMilli())/1000)
+	if err != nil {
+		return nil, err
+	}
+	rows := []energyrequest.Row{}
+	err = db.db.SelectContext(ctx, &rows, db.db.Rebind(query), args...)
+	return rows, err
 }
 
 // TenantsByEcId returns the tenants of a community id (several for a GEA).
