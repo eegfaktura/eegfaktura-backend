@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.12.0] – 2026-10-28
+
 ### Added
 - **Joining fee on the EEG tariff** (konzept-beitrittsgebuehr.md, platform#217): a one-time fee per member with its
   own VAT setting. Migration `20261028130000_joining_fee` adds to `base.tariff` the columns `"joiningFee"`
