@@ -8,6 +8,37 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Changed
+- **Messages: an energy request for several metering points is one entry, also after it closed** (user decision
+  28.10.2026, after a request for a whole community in prod). The notification list for admins
+  (`GET /eeg/notifications/{start}`) leaves out the request echoes (`ANFORDERUNG_PT`) and the answers
+  (`ANTWORT_PT`, `ABLEHNUNG_PT`) a live entry or a stored summary of the same tenant stands for; the live entry while
+  the run is open, the stored summary after it closed. Before, only the answers of an open run were left out, every
+  request echo was listed, and once the summary was written all answers came back. Answers carry no period and no
+  reference to their request, so the rule (`energyrequest.Collapser`) is conservative: a message is left out only if,
+  for each of its metering points, every run that can still own it (older, created at most 25 h before, sent the
+  metering point, open or with its summary after the message) is a run with a summary of the listed tenant. Kept:
+  messages of a request for a single metering point, messages a single request and a run compete for, in a GEA the
+  messages of another tenant's run (that tenant has the live entry and the summary), an answer after the summary (the
+  summary does not count it) and the messages of a run that got no summary 24 h after it started. Response shape
+  unchanged, no web change.
+- The admin list reads in batches (30, then 500, at most 40) until a page is full; reaching the limit is logged. When
+  the rows of the live entries, the runs or the summaries cannot be read, it is the plain list as before. Known limit:
+  in a GEA whose EDA messages are stored under another tenant of the community, the requesting tenant's live entry is
+  placed at its row id as before (nothing to place it by).
+
+### Added
+- Migrations `20261028120000_notification_energy_request_index` and `20261028120100_notification_summary_index`:
+  partial indexes on `base.notification (tenant, id)` for the hidden RUN rows (`process = 'ENERGY_REQUEST'`, one per
+  request) and the stored summaries (`notification->>'type' = 'ZUSAMMENFASSUNG_PT'`, one per closed request), built
+  `CONCURRENTLY`, so the list finds both at any age. No data change; the down migrations drop them.
+
+### Fixed
+- **The live entry of a request for a whole community did not show** (28.10.2026, prod): it was placed at the run's
+  row id, below the request echoes written after it, and the list returns the newest 30 entries only. It is now placed
+  with the newest message it stands for (its `id` stays the run's row id), so web finds it and refreshes it every
+  minute.
+
 ## [1.10.0] – 2026-10-26
 
 ### Added

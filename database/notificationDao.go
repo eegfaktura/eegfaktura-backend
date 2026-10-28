@@ -56,14 +56,28 @@ func (db *sqlDatabase) SaveNotificationFromMap(notificationValue map[string]inte
 // notificationPageSize is how many notifications the list returns.
 const notificationPageSize = 30
 
-// GetNotification lists the newest notifications of tenant after id start. For admins, an open energy request run
-// with a summary is listed as a live entry (the current summary with live: true, at the run's row id and creation
-// time) and its answers are left out; they are listed again once the stored summary has replaced the live entry.
-// When the energy request rows cannot be read, the list comes without live entries (logged: a cancelled or timed out
+// Batches of the admin list: the first one fills a page when nothing is left out; the next ones go further back past
+// the requests and answers an energy request leaves out (one each per metering point, so a request for a whole
+// community can hide a few thousand rows). collapseMaxBatches bounds the reads per call; reaching it is logged.
+// Variables for the tests.
+var (
+	collapseFirstBatch uint = notificationPageSize
+	collapseBatch      uint = 500
+	collapseMaxBatches      = 40
+)
+
+// collapseTimeout bounds the reads of the list when the request context is not used (see GetNotification).
+const collapseTimeout = 30 * time.Second
+
+// GetNotification lists the newest notifications of tenant after id start. For admins, the requests and answers an
+// energy request with a summary of this tenant stands for are left out (energyrequest.Collapser): while the run is
+// open, a live entry (the current summary with live: true, at the run's row id and creation time) stands for them,
+// placed with the newest of its messages; once closed, the stored summary. When the rows of the live entries, the
+// runs or the summaries cannot be read, the plain list comes, nothing left out (logged: a cancelled or timed out
 // request as warning, any other error as error).
 func (db *sqlDatabase) GetNotification(ctx context.Context, tenant string, start int64, isAdmin bool) ([]model.EegNotification, error) {
 	if !isAdmin {
-		return getNotification(db.db, tenant, start, isAdmin, nil)
+		return getNotification(db.db, tenant, start)
 	}
 	rows, tenants, err := db.energyRequestCommunityCached(ctx, tenant)
 	if err != nil {
@@ -73,13 +87,22 @@ func (db *sqlDatabase) GetNotification(ctx context.Context, tenant string, start
 		} else {
 			entry.Error("notifications: no live energy request entries")
 		}
-		return getNotification(db.db, tenant, start, isAdmin, nil)
+		// as before this list did not depend on ctx: answer anyway, one bounded read
+		detached, cancel := context.WithTimeout(context.WithoutCancel(ctx), collapseTimeout)
+		defer cancel()
+		n, _, err := db.collapsedNotifications(detached, tenant, start, false)
+		return n, err
 	}
-	live, hidden := energyrequest.Live(rows, tenant, tenants, time.Now())
-	n, err := getNotification(db.db, tenant, start, isAdmin, hidden)
+	live, _ := energyrequest.Live(rows, tenant, tenants, time.Now())
+	n, latest, err := db.collapsedNotifications(ctx, tenant, start, true)
 	if err != nil {
-		return nil, err
+		// the runs or summaries could not be read: the plain list, without live entries
+		logrus.WithField("tenant", tenant).WithError(err).Error("notifications: energy request messages not collapsed")
+		n, _, err = db.collapsedNotifications(ctx, tenant, start, false)
+		return n, err
 	}
+	// a live entry is placed with its newest message; its id stays the run's row id
+	place := map[int64]int64{}
 	for _, e := range live {
 		if e.RowId <= start {
 			continue
@@ -90,12 +113,106 @@ func (db *sqlDatabase) GetNotification(ctx context.Context, tenant string, start
 		}
 		n = append(n, model.EegNotification{Id: e.RowId, MsgType: string(model.N_TYPE_MESSAGE),
 			Process: model.N_PROCESS_EDA_PROCESS, Message: msg, Date: time.UnixMilli(e.CreatedAt).UTC()})
+		place[e.RowId] = max(e.RowId, latest[e.RowId])
 	}
-	sort.Slice(n, func(i, j int) bool { return n[i].Id > n[j].Id })
+	key := func(x model.EegNotification) int64 {
+		if p, ok := place[x.Id]; ok {
+			return p
+		}
+		return x.Id
+	}
+	sort.SliceStable(n, func(i, j int) bool { return key(n[i]) > key(n[j]) })
 	if len(n) > notificationPageSize {
 		n = n[:notificationPageSize]
 	}
 	return n, nil
+}
+
+// collapsedNotifications reads the newest admin notifications of tenant after id start in batches and, with
+// collapse, leaves out what an energyrequest.Collapser leaves out, until a page is full. The runs and summaries come from the community's rows through the partial indexes
+// notification_energy_request_idx and notification_summary_idx, read only for batches with requests or answers.
+// latest is as in Collapser.Hide.
+func (db *sqlDatabase) collapsedNotifications(ctx context.Context, tenant string, start int64,
+	collapse bool) ([]model.EegNotification, map[int64]int64, error) {
+	visible := []model.EegNotification{}
+	latest := map[int64]int64{}
+	collapser := energyrequest.NewCollapser(tenant, time.Now())
+	summariesFrom := int64(math.MaxInt32) // summaries are read for the runs from this row id on (id is SERIAL)
+	var community []string
+	before := int64(math.MaxInt64)
+	size := collapseFirstBatch
+	for i := 0; len(visible) < notificationPageSize; i++ {
+		if i == collapseMaxBatches {
+			logrus.WithField("tenant", tenant).Warnf("notifications: %d entries after reading %d batches", len(visible), i)
+			break
+		}
+		batch := []model.EegNotification{}
+		sql, _, err := pgDialect.From("base.notification").Select(&batch).
+			Where(goqu.C("tenant").Eq(tenant), goqu.C("id").Gt(start), goqu.C("id").Lt(before),
+				goqu.C("process").Neq(model.N_PROCESS_ENERGY_REQUEST)).
+			Order(goqu.I("id").Desc()).Limit(size).ToSQL()
+		if err != nil {
+			return nil, nil, err
+		}
+		if err = db.db.SelectContext(ctx, &batch, sql); err != nil && !errors.Is(err, dbsql.ErrNoRows) {
+			return nil, nil, err
+		}
+		if len(batch) == 0 {
+			break
+		}
+		before = batch[len(batch)-1].Id
+		messages := []energyrequest.Message{}
+		var oldest time.Time
+		for _, b := range batch {
+			if !collapse || !energyrequest.Collapsible(json.RawMessage(b.Message)) {
+				continue
+			}
+			messages = append(messages, energyrequest.Message{Id: b.Id, Date: b.Date, Content: json.RawMessage(b.Message)})
+			if oldest.IsZero() || b.Date.Before(oldest) {
+				oldest = b.Date
+			}
+		}
+		left := map[int64]bool{}
+		if len(messages) > 0 {
+			if community == nil {
+				if community, err = db.communityTenants(ctx, tenant); err != nil {
+					return nil, nil, err
+				}
+			}
+			runs, err := db.energyRequestRunsBefore(ctx, community, messages[0].Id, oldest.Add(-energyrequest.CollapseWindow))
+			if err != nil {
+				return nil, nil, err
+			}
+			collapser.AddRuns(runs)
+			if len(runs) > 0 && runs[0].Id < summariesFrom {
+				summaries, err := db.energyRequestSummariesFrom(ctx, community, runs[0].Id, summariesFrom)
+				if err != nil {
+					return nil, nil, err
+				}
+				collapser.AddSummaries(summaries)
+				summariesFrom = runs[0].Id
+			}
+			var l map[int64]int64
+			left, l = collapser.Hide(messages)
+			for id, last := range l {
+				latest[id] = max(latest[id], last)
+			}
+		}
+		for _, b := range batch {
+			if left[b.Id] {
+				continue
+			}
+			visible = append(visible, b)
+			if len(visible) == notificationPageSize {
+				break
+			}
+		}
+		if uint(len(batch)) < size {
+			break
+		}
+		size = collapseBatch
+	}
+	return visible, latest, nil
 }
 
 func (db *sqlDatabase) SaveHistory(tenant string, code model.EbMsMessageType, conversationId, role, dir string, protocol model.EdaProtocol, msg interface{}) error {
@@ -227,22 +344,13 @@ func createNotification(db sqlx.Execer, tenant, notification string,
 	return err
 }
 
-func getNotification(db *sqlx.DB, tenant string, start int64, isAdmin bool, hidden map[int64]bool) ([]model.EegNotification, error) {
+// getNotification lists the newest notifications for users (role USER) of tenant after id start.
+func getNotification(db *sqlx.DB, tenant string, start int64) ([]model.EegNotification, error) {
 	n := []model.EegNotification{}
 
 	statement := pgDialect.From("base.notification").Select(&n).
 		Where(goqu.C("tenant").Eq(tenant), goqu.C("id").Gt(start),
-			goqu.C("process").Neq(model.N_PROCESS_ENERGY_REQUEST))
-	if !isAdmin {
-		statement = statement.Where(goqu.C("role").Eq("USER"))
-	}
-	if len(hidden) > 0 {
-		ids := make([]int64, 0, len(hidden))
-		for id := range hidden {
-			ids = append(ids, id)
-		}
-		statement = statement.Where(goqu.C("id").NotIn(ids))
-	}
+			goqu.C("process").Neq(model.N_PROCESS_ENERGY_REQUEST), goqu.C("role").Eq("USER"))
 
 	sql, _, err := statement.Order(goqu.I("id").Desc()).Limit(notificationPageSize).ToSQL()
 	if err != nil {

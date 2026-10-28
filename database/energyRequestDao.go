@@ -11,8 +11,9 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-// EnergyRequestRepository keeps the energy request summary (platform#173) in base.notification: no own tables. All
-// reads are id ranges on the primary key, the table has no other index.
+// EnergyRequestRepository keeps the energy request summary (platform#173) in base.notification: no own tables. The
+// evaluation reads id ranges on the primary key; the Messages list finds runs and summaries of any age through the
+// partial indexes notification_energy_request_idx and notification_summary_idx.
 type EnergyRequestRepository interface {
 	SaveEnergyRequestRow(ctx context.Context, tenant, rowType string, value interface{}) (int64, error)
 	UpdateEnergyRequestRow(ctx context.Context, id int64, value interface{}) error
@@ -180,21 +181,66 @@ func (db *sqlDatabase) hasEnergyRequestRun(ctx context.Context, tenant string) (
 // EnergyRequestCommunity returns the rows of EnergyRequestRows for the tenants of tenant's community id (several for
 // a GEA), and these tenants (tenant included).
 func (db *sqlDatabase) EnergyRequestCommunity(ctx context.Context, tenant string) ([]energyrequest.Row, map[string]bool, error) {
-	list := []string{}
-	if err := db.db.SelectContext(ctx, &list, `SELECT tenant FROM base.eeg
-		WHERE "communityId" = (SELECT "communityId" FROM base.eeg WHERE tenant = $1)`, tenant); err != nil {
+	list, err := db.communityTenants(ctx, tenant)
+	if err != nil {
 		return nil, nil, err
 	}
-	tenants := map[string]bool{tenant: true}
+	tenants := map[string]bool{}
 	for _, t := range list {
 		tenants[t] = true
 	}
-	list = list[:0]
-	for t := range tenants {
-		list = append(list, t)
-	}
 	rows, err := db.EnergyRequestRows(ctx, list)
 	return rows, tenants, err
+}
+
+// communityTenants returns tenant and the other tenants with its community id (GEA), each once.
+func (db *sqlDatabase) communityTenants(ctx context.Context, tenant string) ([]string, error) {
+	list := []string{}
+	if err := db.db.SelectContext(ctx, &list, `SELECT tenant FROM base.eeg
+		WHERE "communityId" = (SELECT "communityId" FROM base.eeg WHERE tenant = $1)`, tenant); err != nil {
+		return nil, err
+	}
+	tenants := []string{tenant}
+	for _, t := range list {
+		if t != tenant {
+			tenants = append(tenants, t)
+		}
+	}
+	return tenants, nil
+}
+
+// energyRequestRunsBefore returns the RUN rows of tenants with an id below before, written at since or later, in
+// ascending id, for the Messages list (energyrequest.Collapser). The literal process matches the partial index
+// notification_energy_request_idx, so only it is read.
+func (db *sqlDatabase) energyRequestRunsBefore(ctx context.Context, tenants []string, before int64,
+	since time.Time) ([]energyrequest.Row, error) {
+	query, args, err := sqlx.In(`SELECT id, tenant, process, type, notification::text AS notification
+		FROM base.notification
+		WHERE process = 'ENERGY_REQUEST' AND tenant IN (?) AND id < ? AND type = ?
+		  AND date >= (to_timestamp(?) AT TIME ZONE 'utc')
+		ORDER BY id`, tenants, before, energyrequest.RowTypeRun, float64(since.UnixMilli())/1000)
+	if err != nil {
+		return nil, err
+	}
+	rows := []energyrequest.Row{}
+	err = db.db.SelectContext(ctx, &rows, db.db.Rebind(query), args...)
+	return rows, err
+}
+
+// energyRequestSummariesFrom returns the stored summaries of tenants with a row id from from up to below to (the
+// runs' summaries are written after them), for the Messages list. The literal condition matches the partial index
+// notification_summary_idx.
+func (db *sqlDatabase) energyRequestSummariesFrom(ctx context.Context, tenants []string, from, to int64) ([]energyrequest.Row, error) {
+	query, args, err := sqlx.In(`SELECT id, tenant, process, type, notification::text AS notification
+		FROM base.notification
+		WHERE (notification->>'type') = 'ZUSAMMENFASSUNG_PT' AND tenant IN (?) AND id >= ? AND id < ?
+		ORDER BY id`, tenants, from, to)
+	if err != nil {
+		return nil, err
+	}
+	rows := []energyrequest.Row{}
+	err = db.db.SelectContext(ctx, &rows, db.db.Rebind(query), args...)
+	return rows, err
 }
 
 // TenantsByEcId returns the tenants of a community id (several for a GEA).

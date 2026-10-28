@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// An open run with a summary is listed as a live entry at its row id, its answers are left out of the list; once
-// closed, the stored summary takes its place and the answers are listed again.
+// An open run with a summary is listed as a live entry (with its row id), its answers are left out of the list; once
+// closed, the stored summary takes its place and the answers stay out (decision 28.10.2026).
 func TestEnergyRequestLiveEntry(t *testing.T) {
 	ctx := context.Background()
 	db, err := GetDB(ctx)
@@ -81,7 +81,7 @@ func TestEnergyRequestLiveEntry(t *testing.T) {
 		assert.NotEqual(t, runRowId, n.Id)
 	}
 
-	// the energy request rows cannot be read (here: cancelled context, not cached): the plain list, nothing hidden
+	// the energy request rows cannot be read (here: cancelled context, not cached): the plain list, nothing left out
 	clearCommunityCache()
 	cancelled, cancel := context.WithCancel(ctx)
 	cancel()
@@ -92,12 +92,12 @@ func TestEnergyRequestLiveEntry(t *testing.T) {
 		assert.NotEqual(t, runRowId, n.Id)
 	}
 
-	// closed: the stored summary instead of the live entry, the answers are listed again
+	// closed: the stored summary instead of the live entry; it still stands for the run's answers
 	require.NoError(t, db.SaveNotification(tenant, model.EBMS_ZP_REJ, []string{zp2}, []string{"86"}, model.CR_REQ_PT))
 	require.NoError(t, energyrequest.Check(ctx, db, time.Now()))
 	list, err = db.GetNotification(ctx, tenant, 0, true)
 	require.NoError(t, err)
-	require.Len(t, list, 5, "summary, answer zp2, answer zp9, answer zp1, answer zp9")
+	require.Len(t, list, 3, "summary, answer zp9, answer zp9")
 	s = energyrequest.Summary{}
 	require.NoError(t, json.Unmarshal(list[0].Message, &s))
 	assert.Equal(t, energyrequest.SummaryType, s.Type)
