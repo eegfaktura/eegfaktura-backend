@@ -8,6 +8,55 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Added
+- **Joining fee on the EEG tariff** (konzept-beitrittsgebuehr.md, platform#217): a one-time fee per member with its
+  own VAT setting. Migration `20261028130000_joining_fee` adds to `base.tariff` the columns `"joiningFee"`
+  (`numeric(10,2)`, not null, default 0 — exact, unlike the `real` of `participantFee`), `"joiningFeeUseVat"`
+  (`boolean`, not null, default false) and `"joiningFeeVatInPercent"` (`numeric`, not null, default 0). No backfill:
+  every existing tariff has no fee. Versioned like the other tariff fields. `POST /eeg/tariff` rejects (400, code
+  4001) an amount below 0 or with more than 2 decimals, a VAT rate outside 0–100, and any value other than 0/false
+  on a tariff that is not of type `EEG`. The backend has no billing logic for the fee; eegfaktura-billing decides
+  when it is due.
+- Contract (additive, for **eegfaktura-web**): the tariff JSON (`GET /eeg/tariff`, `GET /eeg/tariff/{id}`,
+  `POST /eeg/tariff`) has the fields `joiningFee` (number, ≥ 0, 2 decimals), `joiningFeeUseVat` (bool) and
+  `joiningFeeVatInPercent` (number 0–100); missing fields are read as 0/false, so an older web keeps working (it
+  saves 0 for a new tariff version).
+- Contract (for **eegfaktura-billing** and **eegfaktura-v3**): the view `base.billing_masterdata` has three new
+  **last** columns from the member's EEG tariff, with fallback like the other `tariff_participant_fee_*` columns:
+  `tariff_joining_fee` (`numeric`, `COALESCE(tp."joiningFee", 0)`), `tariff_joining_fee_use_vat` (`boolean`,
+  `COALESCE(…, false)`), `tariff_joining_fee_vat_in_percent` (`numeric`, `COALESCE(…, 0)`). `base.activeTariff`
+  gets the three tariff columns at its end. Both views are replaced in place (`CREATE OR REPLACE`). Deploy the
+  backend before a billing that reads the columns (an older billing ignores them). **v3:** add the three columns
+  (0/false) to `v3.billing_masterdata_v3` before installing its UNION (`billing-view-union.sql` aborts on a missing
+  column); where the UNION is installed, this migration replaces it with the plain definition — remove it with
+  `billing-view-rollback.sql` first and reinstall it afterwards.
+- Rollback: the down migration restores both views as after ZVT and **keeps** the three tariff columns with their
+  values (no data loss; a new rollout finds them again).
+- **Member export shows the joining fee:** the sheet „Mitglieder“ of the master data export has two new columns
+  directly after „Mitgliedstarif“, in every row of the member like „Mitgliedstarif“: „Beitrittsgebühr (€)“ (the fee of
+  the member's EEG tariff as a number, empty without a fee) and „Beitrittsgebühr Status“ (konzept-beitrittsgebuehr.md,
+  Erweiterung 27.10.2026; same texts as the member details in web), first match wins: „verrechnet mit RG… vom
+  TT.MM.JJJJ“ (final billing document), „außerhalb bezahlt am TT.MM.JJJJ“ (plus „ (Notiz)“ when billing has a note),
+  „zur Verrechnung im nächsten Abrechnungslauf vorgemerkt“, „offen – wird mit der ersten Energieabrechnung
+  verrechnet“ (never billed with energy, tariff fee > 0; also a member without an entry in the list), „nicht
+  verrechnet – Mitglied wurde schon abgerechnet“ (billed with energy, tariff fee > 0), empty when the tariff has no fee
+  and nothing is recorded. Without a list from web the status column stays empty. All later columns move two to the
+  right. The note is the community's own free text and appears only in its own export.
+- Contract (for **eegfaktura-web**): `/eeg/export/masterdata` also accepts `POST` with an optional JSON body — the
+  array eegfaktura-billing returns from `GET /api/billingDocuments/tenant/{tenantId}/joiningFeeState`, unchanged:
+  `[{"participantId": "<uuid>", "energyBilled": bool, "joiningFee": {"documentNumber": "…", "documentDate":
+  "YYYY-MM-DD"} | null, "requested": bool, "paidExternally": {"paidOn": "YYYY-MM-DD", "note": "…"} | null}]`. The
+  backend does not call billing. Without a body (or with `GET`, which stays until web has switched) the status column
+  stays empty; a posted empty array `[]` means no member has a final document yet. A malformed body answers 400 (code
+  2000). Entries for participants that are not members of the tenant from the `tenant` header are ignored; the list
+  only fills the column. Auth unchanged (`Protect`, tenant from the checked header).
+
+### Fixed
+- **Tariff validation messages reach the client (261027-mm1):** `POST /eeg/tariff` answered a rejected time-based tariff (ZVT)
+  with 400 and the body `{}` — the reason was lost because a plain Go error marshals to an empty object. It now
+  answers in the usual error format (`{"error": {"code": 4001, "message": "…"}}`) with the German reason. Pre-existing
+  defect, met while adding the joining fee validation.
+
 ## [1.11.0] – 2026-10-28
 
 ### Changed
