@@ -44,7 +44,6 @@ COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 WORKDIR /usr/src/app
-RUN env
 #RUN rm -r ./*
 
 VOLUME /opt/storage
