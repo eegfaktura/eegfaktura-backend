@@ -102,7 +102,6 @@ func GQLProtect(next http.Handler) http.Handler {
 		if err != nil {
 			logrus.WithField("error", "JWT-Token").Errorf("%v", err)
 			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte(err.Error()))
 			return
 		}
 

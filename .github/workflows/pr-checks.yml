@@ -4,8 +4,7 @@
 #
 # A fresh checkout does not compile without codegen: protoc for proto/*.proto
 # (the tracked *.pb.go are stale), then go-jsonschema for model/registration_model.go.
-# Versions fixed, each release older than 7 days (checked 2026-10-21, Go 2026-10-23): Go 1.26.10 (2026-10-19;
-# 7 days old on 2026-10-26, not merged before),
+# Versions fixed, each release older than 7 days (checked 2026-10-28): Go 1.26.10 (2026-10-19),
 # protoc 29.3 (2025-01-08); protoc-gen-go, protoc-gen-go-grpc and go-jsonschema at the versions in
 # go.mod. Actions pinned by commit SHA.
 # Every job keeps its output as an artifact for 30 days (test-results-<job>),

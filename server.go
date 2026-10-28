@@ -20,7 +20,9 @@ import (
 	"at.ourproject/vfeeg-backend/energyrequest"
 	"at.ourproject/vfeeg-backend/graph"
 	"at.ourproject/vfeeg-backend/graph/generated"
+	"at.ourproject/vfeeg-backend/mailtemplate"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
+	"at.ourproject/vfeeg-backend/parser"
 	"at.ourproject/vfeeg-backend/services"
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/golang-migrate/migrate/v4"
@@ -125,6 +127,7 @@ func main() {
 	//	os.Exit(1)
 	//}
 
+	parser.WarnIgnoredVolumeTemplates()
 	StartServer(db)
 
 	err = db.CloseDB()
@@ -168,6 +171,7 @@ func StartServer(db database.Database) {
 
 	ctx := context.Background()
 
+	mailtemplate.NotifyDefaultChanges(ctx, db)
 	eda.InitEdaSubscription(ctx)
 	energyrequest.Start(ctx, db)
 	mqttclient.InitErrorSubscriptions()

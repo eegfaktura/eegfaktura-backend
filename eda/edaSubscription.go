@@ -290,11 +290,13 @@ func protocolEcReqOnlHandler(ctx context.Context, msg model.SubscribeMessage) {
 			statusCode = &codes[0]
 		} else if codesContains(REJECTED_INVALID_CODES, codes) {
 			status = model.INVALID
-			statusCode = &intersectCodes(REJECTED_INVALID_CODES, codes)[0]
+			c := rejectionCode(intersectCodes(REJECTED_INVALID_CODES, codes))
+			statusCode = &c
 		} else {
 			status = model.REJECTED
 			if len(codes) > 0 {
-				statusCode = &codes[0]
+				c := rejectionCode(codes)
+				statusCode = &c
 			}
 		}
 	case model.EBMS_ONLINE_REG_APPROVAL, model.EBMS_OFFLINE_REG_APPROVAL:
@@ -581,7 +583,7 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 						"Zählpunktliste",
 						err,
 					)}}),
-					msg.Payload.EcId, model.N_TYPE_ERROR, model.N_PROCESS_EDA_PROCESS, "ADMIN")
+					eeg.Id, model.N_TYPE_ERROR, model.N_PROCESS_EDA_PROCESS, "ADMIN")
 			}
 		}
 		if err = services.SyncMeteringPoints(msg.Tenant, &msg.Payload); err != nil {
@@ -643,7 +645,7 @@ func meteringPointPerformAnswerMsg(ctx context.Context, sendMail services.SendMa
 			})
 
 			if len(participant.MeteringPoint) > 0 {
-				if err = parser.SendActivationMailFromTemplate(sendMail,
+				if err = parser.SendActivationMailFromTemplate(sendMail, db,
 					eeg.Id, subject, eeg, participant, templateConfigName); err != nil {
 					logrus.WithField("tenant", eeg.Id).WithError(err).Error("Error Sending Mail")
 					_ = db.SaveNotificationFromMap(database.CreateNotificationMessageFromLog(
@@ -651,7 +653,7 @@ func meteringPointPerformAnswerMsg(ctx context.Context, sendMail services.SendMa
 							participant.MeteringPoint[0].MeteringPoint,
 							err,
 						)}}),
-						ecId, model.N_TYPE_ERROR, model.N_PROCESS_EDA_PROCESS, "ADMIN")
+						eeg.Id, model.N_TYPE_ERROR, model.N_PROCESS_EDA_PROCESS, "ADMIN")
 				}
 			} else {
 				logrus.WithField("tenant", eeg.Id).Warn("No MeteringPoint for activation mail")

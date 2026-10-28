@@ -82,6 +82,9 @@ CREATE TABLE IF NOT EXISTS "base"."tariff"
     "timeTariff2From"       time,
     "timeTariff2To"         time,
     "timeTariff2CentPerKWh" double precision,
+    "joiningFee"             numeric(10, 2)  DEFAULT 0                         NOT NULL,
+    "joiningFeeUseVat"       boolean         DEFAULT false                     NOT NULL,
+    "joiningFeeVatInPercent" numeric         DEFAULT 0                         NOT NULL,
     CONSTRAINT tariffpk PRIMARY KEY (id, version)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tariff ON base.tariff (id, tenant, name, type, version);
@@ -210,6 +213,9 @@ CREATE TABLE IF NOT EXISTS base.notification
     date         TIMESTAMP NOT NULL DEFAULT (now()),
     role         VARCHAR   NOT NULL DEFAULT 'ADMIN' /* 'USER' | 'ADMIN' */
 );
+CREATE INDEX IF NOT EXISTS notification_energy_request_idx ON base.notification (tenant, id) WHERE process = 'ENERGY_REQUEST';
+CREATE INDEX IF NOT EXISTS notification_summary_idx ON base.notification (tenant, id)
+    WHERE (notification->>'type') = 'ZUSAMMENFASSUNG_PT';
 
 CREATE TABLE IF NOT EXISTS base.processhistory
 (
@@ -230,6 +236,36 @@ CREATE TABLE IF NOT EXISTS base.gridoperators
     name VARCHAR NOT NULL,
     CONSTRAINT PK_GridOperators PRIMARY KEY (id, name)
 );
+
+CREATE TABLE IF NOT EXISTS base.mail_template
+(
+    tenant                   TEXT        NOT NULL,
+    mail_key                 TEXT        NOT NULL, /* consent-request | zp-active | zp-inactive */
+    subject                  TEXT        NOT NULL,
+    body_html                TEXT        NOT NULL, /* sanitised HTML, placeholders as span/div data-ph */
+    version                  INTEGER     NOT NULL DEFAULT 1,
+    default_version          INTEGER     NOT NULL, /* catalog default the version is based on */
+    notified_default_version INTEGER     NOT NULL DEFAULT 0,
+    updated_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_by               TEXT        NOT NULL,
+    attachment_file_id       UUID, /* the PDF of this version, NULL = none */
+    CONSTRAINT mail_template_pk PRIMARY KEY (tenant, mail_key)
+);
+
+CREATE TABLE IF NOT EXISTS base.mail_template_file
+(
+    id         UUID        NOT NULL PRIMARY KEY,
+    tenant     TEXT        NOT NULL,
+    mail_key   TEXT        NOT NULL,
+    kind       TEXT        NOT NULL CHECK (kind IN ('image', 'attachment')),
+    filename   TEXT        NOT NULL,
+    mime_type  TEXT        NOT NULL,
+    size       BIGINT      NOT NULL,
+    content    BYTEA       NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    committed  BOOLEAN     NOT NULL DEFAULT false /* false = draft upload, never sent */
+);
+CREATE INDEX IF NOT EXISTS idx_mail_template_file_tenant_key ON base.mail_template_file (tenant, mail_key);
 
 CREATE OR REPLACE VIEW base.activeMeteringPartition AS
 SELECT partp.metering_point_id,
@@ -283,7 +319,10 @@ SELECT id,
        "timeTariff2Name",
        to_char("timeTariff2From", 'HH24:MI') AS "timeTariff2From",
        to_char("timeTariff2To", 'HH24:MI')   AS "timeTariff2To",
-       "timeTariff2CentPerKWh"
+       "timeTariff2CentPerKWh",
+       "joiningFee",
+       "joiningFeeUseVat",
+       "joiningFeeVatInPercent"
 FROM base.tariff,
      (SELECT id as tid, MAX(version) as tversion FROM base.tariff GROUP BY id) as x
 WHERE id = x.tid
@@ -369,7 +408,10 @@ SELECT p.id                                                    AS participant_id
        COALESCE(c."bankName", ''::text)                        AS eec_bank_name,
        c.iban                                                  AS eec_bank_iban,
        c.owner                                                 AS eec_bank_owner,
-       c.creditor_id                                           AS eec_bank_creditor_id
+       c.creditor_id                                           AS eec_bank_creditor_id,
+       COALESCE(tp."joiningFee", 0::numeric)                   AS tariff_joining_fee,
+       COALESCE(tp."joiningFeeUseVat", false)                  AS tariff_joining_fee_use_vat,
+       COALESCE(tp."joiningFeeVatInPercent", 0::numeric)       AS tariff_joining_fee_vat_in_percent
 FROM base.participant p
          LEFT JOIN base.eeg c ON c.tenant::text = p.tenant::text
          LEFT JOIN base.meteringpoint pm ON pm.participant_id = p.id
