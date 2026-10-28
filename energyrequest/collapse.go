@@ -29,21 +29,23 @@ func Collapsible(content json.RawMessage) bool {
 }
 
 type collapseRun struct {
-	id        int64
-	runId     string
-	createdAt time.Time
-	own       bool // a run of the listed tenant with a summary
-	meters    map[string]bool
+	id         int64
+	runId      string
+	createdAt  time.Time
+	summarised bool // not a request for a single metering point
+	own        bool // a run of the listed tenant with a summary
+	meters     map[string]bool
 }
 
 // Collapser decides which requests (ANFORDERUNG_PT) and answers (ANTWORT_PT, ABLEHNUNG_PT) the Messages list of a
 // tenant leaves out (platform#173, decision 28.10.2026): those a live entry or a stored summary of that tenant stands
 // for. Answers carry no period and no reference to their request, so the rule is conservative: a message is left out
 // only if, for each of its metering points, every run that can still own it is a run with a summary of the listed
-// tenant. A run can own a message when it is older (lower row id), created at most CollapseWindow before it, sent the
-// metering point, and is still open or has its summary after the message. So kept are: messages of a request for a
-// single metering point (NoSummary) or of another tenant's run in a GEA, a message two such runs compete for, an answer
-// after the summary (the summary does not count it) and the messages of a run that got no summary after Deadline.
+// tenant. A run can own a message when it is older (lower row id), created at most CollapseWindow before it and sent
+// the metering point; a run with a summary only while it is open or has its summary after the message. So kept are:
+// messages a request for a single metering point (NoSummary) or another tenant's run in a GEA can own, an answer after
+// the summary (the summary does not count it) and the messages of a run that got no summary after Deadline. Metering
+// points compare exactly, as in the summary's attribution.
 type Collapser struct {
 	tenant    string
 	now       time.Time
@@ -67,10 +69,10 @@ func (c *Collapser) AddRuns(rows []Row) {
 		}
 		meters := map[string]bool{}
 		for _, m := range run.Meters {
-			meters[strings.ToUpper(m.MeteringPoint)] = true
+			meters[m.MeteringPoint] = true
 		}
 		c.runs[r.Id] = collapseRun{id: r.Id, runId: run.RunId, createdAt: time.UnixMilli(run.CreatedAt),
-			own: !run.NoSummary && strings.EqualFold(r.Tenant, c.tenant), meters: meters}
+			summarised: !run.NoSummary, own: !run.NoSummary && strings.EqualFold(r.Tenant, c.tenant), meters: meters}
 	}
 }
 
@@ -92,7 +94,7 @@ func (c *Collapser) eligible(r collapseRun, msg Message) bool {
 	if r.id >= msg.Id || msg.Date.Sub(r.createdAt) > CollapseWindow {
 		return false
 	}
-	if r.own {
+	if r.summarised {
 		if summary := c.summaries[r.runId]; summary != 0 {
 			return msg.Id < summary
 		}
@@ -117,7 +119,6 @@ func (c *Collapser) Hide(messages []Message) (hidden map[int64]bool, latest map[
 		var newest int64
 		covered := true
 		for _, mp := range m.MeteringPoints {
-			mp = strings.ToUpper(mp)
 			owners := 0
 			for _, r := range c.runs {
 				if !r.meters[mp] || !c.eligible(r, msg) {

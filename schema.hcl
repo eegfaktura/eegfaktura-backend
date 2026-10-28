@@ -571,6 +571,14 @@ table "notification" {
   primary_key {
     columns = [column.id]
   }
+  index "notification_energy_request_idx" {
+    columns = [column.tenant, column.id]
+    where   = "(process = 'ENERGY_REQUEST'::text)"
+  }
+  index "notification_summary_idx" {
+    columns = [column.tenant, column.id]
+    where   = "((notification ->> 'type'::text) = 'ZUSAMMENFASSUNG_PT'::text)"
+  }
 }
 table "participant" {
   schema = schema.base

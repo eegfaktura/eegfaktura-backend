@@ -42,7 +42,7 @@ func TestCollapser_requestsAndAnswersOfAnOpenRun(t *testing.T) {
 	hidden, latest := collapse(t, runs, nil,
 		msg(t, 9, at, "ANFORDERUNG_PT", "ZP1"), // before the run
 		msg(t, 11, at, "ANFORDERUNG_PT", "ZP1"),
-		msg(t, 12, at, "ANFORDERUNG_PT", "zp2"), // metering points compare case-insensitively
+		msg(t, 12, at, "ANFORDERUNG_PT", "zp2"), // metering points compare exactly, as in the summary's attribution
 		msg(t, 13, at, answerAccepted, "ZP1"),
 		msg(t, 14, at, answerAccepted, "ZP9"),   // not in the run
 		msg(t, 15, at, "ABSCHLUSS_ECON", "ZP1"), // another process
@@ -51,7 +51,7 @@ func TestCollapser_requestsAndAnswersOfAnOpenRun(t *testing.T) {
 		msg(t, 23, at, answerRejected, "ZP2"),
 		msg(t, 24, at, answerAccepted, "ZP1", "ZP3"), // one of its metering points is the single request's
 	)
-	assert.Equal(t, map[int64]bool{11: true, 12: true, 13: true, 23: true}, hidden)
+	assert.Equal(t, map[int64]bool{11: true, 13: true, 23: true}, hidden)
 	assert.Equal(t, map[int64]int64{10: 23}, latest)
 }
 
@@ -125,6 +125,21 @@ func TestCollapser_runOfAnotherTenantOfTheCommunity(t *testing.T) {
 		msg(t, 22, at, answerAccepted, "ZP2"),
 	)
 	assert.Equal(t, map[int64]bool{11: true}, hidden)
+}
+
+// A run of another tenant closed before the message no longer competes (GEA, review finding).
+func TestCollapser_foreignRunClosedBeforeTheMessage(t *testing.T) {
+	foreign := testRun("ZP1", "ZP2")
+	runs := []Row{
+		row(t, 10, "RC200200", RowTypeRun, foreign),
+		row(t, 30, "RC100100", RowTypeRun, testRun("ZP1", "ZP2")),
+	}
+	at := created.Add(time.Minute)
+	hidden, _ := collapse(t, runs, []Row{summaryRow(t, 20, foreign)},
+		msg(t, 11, at, "ANFORDERUNG_PT", "ZP1"), // the foreign run's: kept
+		msg(t, 31, at, "ANFORDERUNG_PT", "ZP1"), // the own run's, the foreign one is closed
+	)
+	assert.Equal(t, map[int64]bool{31: true}, hidden)
 }
 
 func TestCollapser_addRunsAndSummariesTwice(t *testing.T) {

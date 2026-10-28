@@ -210,6 +210,9 @@ CREATE TABLE IF NOT EXISTS base.notification
     date         TIMESTAMP NOT NULL DEFAULT (now()),
     role         VARCHAR   NOT NULL DEFAULT 'ADMIN' /* 'USER' | 'ADMIN' */
 );
+CREATE INDEX IF NOT EXISTS notification_energy_request_idx ON base.notification (tenant, id) WHERE process = 'ENERGY_REQUEST';
+CREATE INDEX IF NOT EXISTS notification_summary_idx ON base.notification (tenant, id)
+    WHERE (notification->>'type') = 'ZUSAMMENFASSUNG_PT';
 
 CREATE TABLE IF NOT EXISTS base.processhistory
 (

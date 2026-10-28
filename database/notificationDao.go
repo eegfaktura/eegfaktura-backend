@@ -72,9 +72,9 @@ const collapseTimeout = 30 * time.Second
 // GetNotification lists the newest notifications of tenant after id start. For admins, the requests and answers an
 // energy request with a summary of this tenant stands for are left out (energyrequest.Collapser): while the run is
 // open, a live entry (the current summary with live: true, at the run's row id and creation time) stands for them,
-// placed with the newest of its messages; once closed, the stored summary. When the rows of the live entries cannot
-// be read, the plain list comes, nothing left out (logged: a cancelled or timed out request as warning, any other
-// error as error).
+// placed with the newest of its messages; once closed, the stored summary. When the rows of the live entries, the
+// runs or the summaries cannot be read, the plain list comes, nothing left out (logged: a cancelled or timed out
+// request as warning, any other error as error).
 func (db *sqlDatabase) GetNotification(ctx context.Context, tenant string, start int64, isAdmin bool) ([]model.EegNotification, error) {
 	if !isAdmin {
 		return getNotification(db.db, tenant, start)
@@ -90,13 +90,16 @@ func (db *sqlDatabase) GetNotification(ctx context.Context, tenant string, start
 		// as before this list did not depend on ctx: answer anyway, one bounded read
 		detached, cancel := context.WithTimeout(context.WithoutCancel(ctx), collapseTimeout)
 		defer cancel()
-		n, _, err := db.collapsedNotifications(detached, tenant, start, nil, false)
+		n, _, err := db.collapsedNotifications(detached, tenant, start, false)
 		return n, err
 	}
-	live, hidden := energyrequest.Live(rows, tenant, tenants, time.Now())
-	n, latest, err := db.collapsedNotifications(ctx, tenant, start, hidden, true)
+	live, _ := energyrequest.Live(rows, tenant, tenants, time.Now())
+	n, latest, err := db.collapsedNotifications(ctx, tenant, start, true)
 	if err != nil {
-		return nil, err
+		// the runs or summaries could not be read: the plain list, without live entries
+		logrus.WithField("tenant", tenant).WithError(err).Error("notifications: energy request messages not collapsed")
+		n, _, err = db.collapsedNotifications(ctx, tenant, start, false)
+		return n, err
 	}
 	// a live entry is placed with its newest message; its id stays the run's row id
 	place := map[int64]int64{}
@@ -125,13 +128,12 @@ func (db *sqlDatabase) GetNotification(ctx context.Context, tenant string, start
 	return n, nil
 }
 
-// collapsedNotifications reads the newest admin notifications of tenant after id start in batches and leaves out
-// hidden (the answers Live assigns to an open run) and, with collapse, what an energyrequest.Collapser leaves out,
-// until a page is full. The runs and summaries come from the community's rows through the partial indexes
+// collapsedNotifications reads the newest admin notifications of tenant after id start in batches and, with
+// collapse, leaves out what an energyrequest.Collapser leaves out, until a page is full. The runs and summaries come from the community's rows through the partial indexes
 // notification_energy_request_idx and notification_summary_idx, read only for batches with requests or answers.
 // latest is as in Collapser.Hide.
 func (db *sqlDatabase) collapsedNotifications(ctx context.Context, tenant string, start int64,
-	hidden map[int64]bool, collapse bool) ([]model.EegNotification, map[int64]int64, error) {
+	collapse bool) ([]model.EegNotification, map[int64]int64, error) {
 	visible := []model.EegNotification{}
 	latest := map[int64]int64{}
 	collapser := energyrequest.NewCollapser(tenant, time.Now())
@@ -197,7 +199,7 @@ func (db *sqlDatabase) collapsedNotifications(ctx context.Context, tenant string
 			}
 		}
 		for _, b := range batch {
-			if hidden[b.Id] || left[b.Id] {
+			if left[b.Id] {
 				continue
 			}
 			visible = append(visible, b)
