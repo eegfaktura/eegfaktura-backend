@@ -3,13 +3,11 @@ FROM golang:1.26.10 AS builder
 RUN apt update && apt install -y protobuf-compiler
 WORKDIR /usr/src/app
 
-RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-RUN go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
-RUN go install github.com/atombender/go-jsonschema@latest
-
 # pre-copy/cache go.mod for pre-downloading dependencies and only redownloading them in subsequent builds if they change
 COPY go.mod go.sum ./
 RUN go mod download && go mod verify
+# the code generators at the versions in go.mod, as the CI builds with (never @latest)
+RUN go install google.golang.org/protobuf/cmd/protoc-gen-go google.golang.org/grpc/cmd/protoc-gen-go-grpc     github.com/atombender/go-jsonschema
 
 COPY . .
 
