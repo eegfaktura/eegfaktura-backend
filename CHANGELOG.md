@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.11.0] – 2026-10-28
+
 ### Changed
 - **Messages: an energy request for several metering points is one entry, also after it closed** (user decision
   28.10.2026, after a request for a whole community in prod). The notification list for admins
