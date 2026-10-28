@@ -344,3 +344,45 @@ func TestUpdateEegOnlineState(t *testing.T) {
 		assert.Equal(t, want, eeg.Online)
 	}
 }
+
+// 261028-mm1: in a GEA the tenant holding the metering point wins, an assigned row before an archived one; with one
+// tenant per community id the result is that of GetEegByEcId.
+func TestGetEegByEcIdAndMeters(t *testing.T) {
+	ctx := context.Background()
+	db, err := GetDB(ctx)
+	require.NoError(t, err)
+
+	const ecId = "AT00300000000GC000043000000000001"
+	const meter = "AT0030000000000000000000000043001"
+	for tenant, flag := range map[string]int{"GC000043": 0, "GC000043-002": 1} {
+		_, err = testDB.DbInstance.Exec(`INSERT INTO base.eeg
+			(tenant, name, description, "rcNumber", area, gridoperator_code, gridoperator_name, "communityId",
+			 street, "streetNumber", city, zip, email)
+			VALUES ($1, 'GEA-43', 'GEA-Test', 'GC000043', 'GEA', 'AT003000', 'Netz OÖ', $2,
+			 'Weg', '1', 'Linz', '4020', 'gea-43@example.org')`, tenant, ecId)
+		require.NoError(t, err)
+		// the metering point moved: archived (flag 0) in the first tenant, assigned in the second
+		_, err = testDB.DbInstance.Exec(`INSERT INTO base.meteringpoint (metering_point_id, participant_id, tenant, direction,
+			status, process_state, "modifiedAt", "modifiedBy", "registeredSince", flag)
+			VALUES ($1, 'ea1142dc-03da-15ee-b82b-5a985b4b033a', $2, 'CONSUMPTION', 'ACTIVE', 'ACTIVE', now(), 'test',
+			 '2026-10-01', $3)`, meter, tenant, flag)
+		require.NoError(t, err)
+	}
+
+	eeg, err := db.GetEegByEcIdAndMeters(ctx, ecId, []string{meter})
+	require.NoError(t, err)
+	assert.Equal(t, "GC000043-002", eeg.Id)
+
+	// no metering point held by a tenant: one tenant of the community, as GetEegByEcId
+	eeg, err = db.GetEegByEcIdAndMeters(ctx, ecId, []string{"AT0030000000000000000000000043999"})
+	require.NoError(t, err)
+	assert.Contains(t, []string{"GC000043", "GC000043-002"}, eeg.Id)
+
+	// one tenant per community id: unchanged, also for an unknown metering point
+	eeg, err = db.GetEegByEcIdAndMeters(ctx, "AT00300000000TC000001000000000001", []string{"AT0030000000000000000000000043999"})
+	require.NoError(t, err)
+	assert.Equal(t, "TE000001", eeg.Id)
+
+	_, err = db.GetEegByEcIdAndMeters(ctx, "AT00300000000XX000000000000000000", nil)
+	assert.Error(t, err)
+}

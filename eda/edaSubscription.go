@@ -180,7 +180,7 @@ func protocolCrMsgHandler(ctx context.Context, msg model.SubscribeMessage) {
 		return
 	}
 
-	eeg, err := db.GetEegByEcId(ctx, msg.Payload.EcId)
+	eeg, err := db.GetEegByEcIdAndMeters(ctx, msg.Payload.EcId, messageMeters(&msg.Payload))
 	if err != nil {
 		logrus.WithField("tenant", msg.Tenant).WithError(err).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
 		return
@@ -215,7 +215,7 @@ func protocolCrReqPtHandler(ctx context.Context, msg model.SubscribeMessage) {
 		return
 	}
 
-	eeg, err := db.GetEegByEcId(ctx, msg.Payload.EcId)
+	eeg, err := db.GetEegByEcIdAndMeters(ctx, msg.Payload.EcId, messageMeters(&msg.Payload))
 	if err != nil {
 		logrus.WithField("error", err.Error()).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
 		return
@@ -341,7 +341,7 @@ func protocolEcReqOnlHandler(ctx context.Context, msg model.SubscribeMessage) {
 		return
 	}
 
-	eeg, err := db.GetEegByEcId(ctx, msg.Payload.EcId)
+	eeg, err := db.GetEegByEcIdAndMeters(ctx, msg.Payload.EcId, messageMeters(&msg.Payload))
 	if err != nil {
 		logrus.WithError(err).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
 		return
@@ -389,7 +389,7 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 	var mailTenants []string
 	switch msg.MessageCode {
 	case model.EBMS_AUFHEBUNG_CCMS:
-		eeg, err = db.GetEegByEcId(ctx, msg.Payload.EcId)
+		eeg, err = db.GetEegByEcIdAndMeters(ctx, msg.Payload.EcId, messageMeters(&msg.Payload))
 		if err != nil {
 			logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
 			return
@@ -410,7 +410,7 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 		// (Customer Consent Management), so the data release stays active and the
 		// metering point must NOT be revoked. Only fetch the EEG so the rejection
 		// is persisted as a notification (see below) and stays visible to the user.
-		eeg, err = db.GetEegByEcId(ctx, msg.Payload.EcId)
+		eeg, err = db.GetEegByEcIdAndMeters(ctx, msg.Payload.EcId, messageMeters(&msg.Payload))
 		if err != nil {
 			logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
 			return
@@ -446,7 +446,7 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 
 	case model.EBMS_ANTWORT_CCMS:
 		// fetch the EEG for every answer, so answers without code 176 reach the history as well
-		eeg, err = db.GetEegByEcId(ctx, msg.Payload.EcId)
+		eeg, err = db.GetEegByEcIdAndMeters(ctx, msg.Payload.EcId, messageMeters(&msg.Payload))
 		if err != nil {
 			logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
 			return
@@ -517,7 +517,7 @@ func protocolEcPrtChangeHandler(ctx context.Context, msg model.SubscribeMessage)
 		return
 	}
 
-	eeg, err := db.GetEegByEcId(ctx, msg.Payload.EcId)
+	eeg, err := db.GetEegByEcIdAndMeters(ctx, msg.Payload.EcId, messageMeters(&msg.Payload))
 	if err != nil {
 		logrus.Errorf("can not fetch eeg with message -> %+v", msg.Payload)
 		return
@@ -586,8 +586,18 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 					eeg.Id, model.N_TYPE_ERROR, model.N_PROCESS_EDA_PROCESS, "ADMIN")
 			}
 		}
-		if err = services.SyncMeteringPoints(msg.Tenant, &msg.Payload); err != nil {
-			logrus.WithField("tenant", msg.Tenant).Error(err)
+		// the list covers the whole community: in a GEA (several tenants, one community id) every tenant
+		// updates the metering points it holds (261028-mm1)
+		syncTenants := []string{msg.Tenant}
+		if tenants, err := db.TenantsByEcId(ctx, msg.Payload.EcId); err != nil {
+			logrus.WithField("tenant", msg.Tenant).WithError(err).Error("can not fetch the tenants of the community id")
+		} else if len(tenants) > 1 {
+			syncTenants = tenants
+		}
+		for _, tenant := range syncTenants {
+			if err = services.SyncMeteringPoints(tenant, &msg.Payload); err != nil {
+				logrus.WithField("tenant", tenant).Error(err)
+			}
 		}
 
 	case model.EBMS_ZP_LIST_REJECTION:
@@ -596,6 +606,18 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 		return
 	}
 	_ = db.SaveHistory(msg.Tenant, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
+}
+
+// messageMeters returns the metering points of an inbound message (meter, meter list and response data), used
+// to find the tenant of a GEA the message belongs to (261028-mm1).
+func messageMeters(p *model.EbmsMessage) []string {
+	meters := p.Meters()
+	for _, rd := range p.ResponseData {
+		if rd.MeteringPoint != "" {
+			meters = append(meters, rd.MeteringPoint)
+		}
+	}
+	return meters
 }
 
 func getMeterIdSlice(meters []model.Meter) []string {
@@ -613,7 +635,7 @@ func meteringPointPerformAnswerMsg(ctx context.Context, sendMail services.SendMa
 		return err
 	}
 
-	eeg, err := db.GetEegByEcId(ctx, ecId)
+	eeg, err := db.GetEegByEcIdAndMeters(ctx, ecId, meterId)
 	if err != nil {
 		return err
 	}

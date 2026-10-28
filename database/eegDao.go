@@ -19,6 +19,7 @@ type EegRepository interface {
 	GetEegById(ctx context.Context, tenant string) (*model.Eeg, error)
 	GetEegByIdForUser(ctx context.Context, tenant string) (*model.Eeg, error)
 	GetEegByEcId(ctx context.Context, edId string) (*model.Eeg, error)
+	GetEegByEcIdAndMeters(ctx context.Context, ecId string, meters []string) (*model.Eeg, error)
 	GetTenantsByRcNumber(ctx context.Context, rcNumber string) ([]string, error)
 	UpdateEegPartial(ctx context.Context, tenant string, fields map[string]interface{}) error
 	GetGridOperators(ctx context.Context) (map[string]string, error)
@@ -51,6 +52,39 @@ func (db *sqlDatabase) GetEegByEcId(ctx context.Context, edId string) (*model.Ee
 
 // GetTenantsByRcNumber returns the tenants of an RC number (MQTT topic of incoming EDA messages).
 // A GEA owns several tenants per RC number (GC100019-001, GC100019-002, …).
+// GetEegByEcIdAndMeters returns the community of ecId that holds the metering points of an inbound message. In a
+// GEA several tenants share one community id (261028-mm1): the tenant holding one of the metering points wins, a
+// tenant with an assigned row (flag 1) before one with an archived row. With one tenant per community id, or when
+// none of the tenants holds a metering point, it returns what GetEegByEcId returns.
+func (db *sqlDatabase) GetEegByEcIdAndMeters(ctx context.Context, ecId string, meters []string) (*model.Eeg, error) {
+	tenants, err := db.TenantsByEcId(ctx, ecId)
+	if err != nil {
+		return nil, model.ErrGetEeg(err)
+	}
+	if len(tenants) < 2 {
+		return getEegByEcId(ctx, db.db, ecId)
+	}
+	owners := []string{}
+	if len(meters) > 0 {
+		query, args, err := sqlx.In(`SELECT tenant FROM base.meteringpoint WHERE tenant IN (?) AND metering_point_id IN (?)
+			GROUP BY tenant ORDER BY max(flag) DESC, tenant`, tenants, meters)
+		if err != nil {
+			return nil, model.ErrGetEeg(err)
+		}
+		if err = db.db.SelectContext(ctx, &owners, db.db.Rebind(query), args...); err != nil {
+			return nil, model.ErrGetEeg(err)
+		}
+	}
+	switch {
+	case len(owners) == 0:
+		log.WithField("ecId", ecId).Warnf("none of the tenants %v holds the metering points %v; using the community id lookup", tenants, meters)
+		return getEegByEcId(ctx, db.db, ecId)
+	case len(owners) > 1:
+		log.WithField("ecId", ecId).Warnf("the metering points %v are held by the tenants %v; applying to %s", meters, owners, owners[0])
+	}
+	return getEegById(ctx, db.db, owners[0])
+}
+
 func (db *sqlDatabase) GetTenantsByRcNumber(ctx context.Context, rcNumber string) ([]string, error) {
 	stmt, args, err := pgDialect.From(TABLE_EEG).Select("tenant").Where(goqu.Or(
 		goqu.Func("upper", goqu.I("rcNumber")).Eq(strings.ToUpper(rcNumber)),
