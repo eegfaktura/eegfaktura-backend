@@ -67,8 +67,11 @@ func TestNotificationCollapse_wholeCommunity(t *testing.T) {
 	require.NoError(t, db.SaveNotification(tenant, model.EBMS_ZP_RES, []string{other}, []string{}, model.CR_REQ_PT))
 
 	run, runRowId, meters := collapseRun(t, sdb, tenant, ecId, "AT0099990000000000000000000183", 40)
-	for _, zp := range meters {
+	for i, zp := range meters {
 		require.NoError(t, db.SaveNotification(tenant, model.EBMS_ZP_SYNC, []string{zp}, []string{}, model.CR_REQ_PT))
+		if i == 20 { // a visible entry between the run and its last messages: the live entry is placed above it
+			require.NoError(t, db.SaveNotification(tenant, model.EBMS_ZP_RES, []string{other}, []string{}, model.CR_REQ_PT))
+		}
 	}
 	for _, zp := range meters[:3] {
 		require.NoError(t, db.SaveNotification(tenant, model.EBMS_ZP_RES, []string{zp}, []string{}, model.CR_REQ_PT))
@@ -76,8 +79,9 @@ func TestNotificationCollapse_wholeCommunity(t *testing.T) {
 
 	list, err := db.GetNotification(ctx, tenant, 0, true)
 	require.NoError(t, err)
-	require.Len(t, list, 2, "the live entry, the answer before the run")
-	assert.Equal(t, runRowId, list[0].Id, "the live entry keeps the run's row id")
+	require.Len(t, list, 3, "the live entry, the answer during the run, the answer before the run")
+	assert.Equal(t, runRowId, list[0].Id, "the live entry keeps the run's row id, placed with its newest message")
+	assert.Greater(t, list[1].Id, runRowId)
 	s := summaryOf(t, list[0])
 	assert.True(t, s.Live)
 	assert.Equal(t, 40, s.Requested)
@@ -87,18 +91,25 @@ func TestNotificationCollapse_wholeCommunity(t *testing.T) {
 	collapseMaxBatches = 2
 	list, err = db.GetNotification(ctx, tenant, 0, true)
 	require.NoError(t, err)
-	require.Len(t, list, 1, "only the live entry within 7 + 11 rows")
+	require.Len(t, list, 1, "only the live entry: 7 + 11 rows hold 3 answers and 15 request echoes")
 	collapseMaxBatches = 40
 
 	// closed after the deadline: the stored summary stands for the requests and answers
 	require.NoError(t, energyrequest.Check(ctx, db, time.Now().Add(energyrequest.Deadline+time.Minute)))
 	list, err = db.GetNotification(ctx, tenant, 0, true)
 	require.NoError(t, err)
-	require.Len(t, list, 2, "the summary, the answer before the run")
+	require.Len(t, list, 3, "the summary, the two other answers")
 	s = summaryOf(t, list[0])
 	assert.False(t, s.Live)
 	assert.Equal(t, energyrequest.SummaryType, s.Type)
 	assert.Len(t, s.NoAnswer, 37)
+
+	// an answer after the summary is listed: the summary does not count it
+	require.NoError(t, db.SaveNotification(tenant, model.EBMS_ZP_REJ, []string{meters[5]}, []string{"86"}, model.CR_REQ_PT))
+	list, err = db.GetNotification(ctx, tenant, 0, true)
+	require.NoError(t, err)
+	require.Len(t, list, 4, "the late answer, the summary, the two other answers")
+	assert.Equal(t, energyrequest.SummaryType, summaryOf(t, list[1]).Type)
 
 	// 30 h later: no run younger than 24 h, the live entries' rows are not read; the run is still found
 	_, err = testDB.DbInstance.Exec(`UPDATE base.notification SET date = date - interval '30 hours' WHERE tenant = $1`, tenant)
@@ -108,8 +119,8 @@ func TestNotificationCollapse_wholeCommunity(t *testing.T) {
 	clearCommunityCache()
 	list, err = db.GetNotification(ctx, tenant, 0, true)
 	require.NoError(t, err)
-	require.Len(t, list, 2, "the summary, the answer before the run")
-	assert.Equal(t, energyrequest.SummaryType, summaryOf(t, list[0]).Type)
+	require.Len(t, list, 4, "the late answer, the summary, the two other answers")
+	assert.Equal(t, energyrequest.SummaryType, summaryOf(t, list[1]).Type)
 }
 
 // GEA: two tenants with one community id. The run of one tenant leaves out its messages in its own list; where they

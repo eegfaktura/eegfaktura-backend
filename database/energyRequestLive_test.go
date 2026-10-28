@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// An open run with a summary is listed as a live entry at its row id, its answers are left out of the list; once
+// An open run with a summary is listed as a live entry (with its row id), its answers are left out of the list; once
 // closed, the stored summary takes its place and the answers stay out (decision 28.10.2026).
 func TestEnergyRequestLiveEntry(t *testing.T) {
 	ctx := context.Background()
@@ -81,14 +81,13 @@ func TestEnergyRequestLiveEntry(t *testing.T) {
 		assert.NotEqual(t, runRowId, n.Id)
 	}
 
-	// the energy request rows cannot be read (here: cancelled context, not cached): no live entry, the run's answer
-	// stays out
+	// the energy request rows cannot be read (here: cancelled context, not cached): the plain list, nothing left out
 	clearCommunityCache()
 	cancelled, cancel := context.WithCancel(ctx)
 	cancel()
 	list, err = db.GetNotification(cancelled, tenant, 0, true)
 	require.NoError(t, err)
-	require.Len(t, list, 2, "the answers to zp9, no live entry")
+	require.Len(t, list, 3, "the three answers, no live entry")
 	for _, n := range list {
 		assert.NotEqual(t, runRowId, n.Id)
 	}

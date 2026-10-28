@@ -1,4 +1,4 @@
-h1:jrgVF9+2BLTaGrwuBvgH9iCmGdddNmxRiDOxTWGrsdo=
+h1:YZZd99kEhNxQppxMQ+dK/PvIxa1CTfqnyC4Ir2nQ3ww=
 20250603103206_activeMeterView.up.sql h1:QqDAR7Nl5WLFKtq2iweipOO4Tex62hfdWWoyAeqEyeg=
 20250603150318_create_views.up.sql h1:2XjI3rEmMfiucybCBwxzWKEkFoCODxO0IhG83++K+bU=
 20250604162024_init_grid_operators.up.sql h1:5fUr6r6VkNxuNbKfknygkM542PTZSy+A/47jNsXqcuU=
@@ -11,3 +11,4 @@ h1:jrgVF9+2BLTaGrwuBvgH9iCmGdddNmxRiDOxTWGrsdo=
 20261022120000_mail_templates.up.sql h1:ZDDXMukmSQkHiOcv1Hu1oWtZp0NtkQdxwWmwtZlpusw=
 20261023120000_mail_template_file_drafts.up.sql h1:O3cfvZmi9ub8l/9/7zUJVc4S/7OzkHf9BlSPza7qRFI=
 20261028120000_notification_energy_request_index.up.sql h1:aX7zIQ0YRtGyI7AC5EWWRfJHJzq5FR+Jx8u6vsduNeo=
+20261028120100_notification_summary_index.up.sql h1:e/CWermcVdkNdfdqw+mQSCqjW+OKOSDfFDDpPFu8DjQ=

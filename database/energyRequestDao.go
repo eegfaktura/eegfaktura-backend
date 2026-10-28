@@ -11,8 +11,9 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-// EnergyRequestRepository keeps the energy request summary (platform#173) in base.notification: no own tables. All
-// reads are id ranges on the primary key, the table has no other index.
+// EnergyRequestRepository keeps the energy request summary (platform#173) in base.notification: no own tables. The
+// evaluation reads id ranges on the primary key; the Messages list finds runs and summaries of any age through the
+// partial indexes notification_energy_request_idx and notification_summary_idx.
 type EnergyRequestRepository interface {
 	SaveEnergyRequestRow(ctx context.Context, tenant, rowType string, value interface{}) (int64, error)
 	UpdateEnergyRequestRow(ctx context.Context, id int64, value interface{}) error
@@ -208,16 +209,32 @@ func (db *sqlDatabase) communityTenants(ctx context.Context, tenant string) ([]s
 	return tenants, nil
 }
 
-// energyRequestRunsBefore returns the RUN rows of tenants with an id below before, written at since or later, for
-// the Messages list (energyrequest.Collapser). It reads the partial index notification_energy_request_idx only.
+// energyRequestRunsBefore returns the RUN rows of tenants with an id below before, written at since or later, in
+// ascending id, for the Messages list (energyrequest.Collapser). The literal process matches the partial index
+// notification_energy_request_idx, so only it is read.
 func (db *sqlDatabase) energyRequestRunsBefore(ctx context.Context, tenants []string, before int64,
 	since time.Time) ([]energyrequest.Row, error) {
 	query, args, err := sqlx.In(`SELECT id, tenant, process, type, notification::text AS notification
 		FROM base.notification
-		WHERE process = ? AND tenant IN (?) AND id < ? AND type = ?
+		WHERE process = 'ENERGY_REQUEST' AND tenant IN (?) AND id < ? AND type = ?
 		  AND date >= (to_timestamp(?) AT TIME ZONE 'utc')
-		ORDER BY id`, model.N_PROCESS_ENERGY_REQUEST, tenants, before, energyrequest.RowTypeRun,
-		float64(since.UnixMilli())/1000)
+		ORDER BY id`, tenants, before, energyrequest.RowTypeRun, float64(since.UnixMilli())/1000)
+	if err != nil {
+		return nil, err
+	}
+	rows := []energyrequest.Row{}
+	err = db.db.SelectContext(ctx, &rows, db.db.Rebind(query), args...)
+	return rows, err
+}
+
+// energyRequestSummariesFrom returns the stored summaries of tenants with a row id from from up to below to (the
+// runs' summaries are written after them), for the Messages list. The literal condition matches the partial index
+// notification_summary_idx.
+func (db *sqlDatabase) energyRequestSummariesFrom(ctx context.Context, tenants []string, from, to int64) ([]energyrequest.Row, error) {
+	query, args, err := sqlx.In(`SELECT id, tenant, process, type, notification::text AS notification
+		FROM base.notification
+		WHERE (notification->>'type') = 'ZUSAMMENFASSUNG_PT' AND tenant IN (?) AND id >= ? AND id < ?
+		ORDER BY id`, tenants, from, to)
 	if err != nil {
 		return nil, err
 	}

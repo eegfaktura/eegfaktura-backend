@@ -15,21 +15,31 @@ func msg(t *testing.T, id int64, at time.Time, typ string, meters ...string) Mes
 	return Message{Id: id, Date: at, Content: b}
 }
 
-func collapse(t *testing.T, runs []Row, messages ...Message) (map[int64]bool, map[int64]int64) {
-	c := NewCollapser("RC100100")
+func summaryRow(t *testing.T, id int64, run Run) Row {
+	return row(t, id, "RC100100", messageRow, Summary{Type: SummaryType, RunId: run.RunId})
+}
+
+// collapse evaluates messages one hour after created (runs are open) unless now is given.
+func collapse(t *testing.T, runs []Row, summaries []Row, messages ...Message) (map[int64]bool, map[int64]int64) {
+	c := NewCollapser("RC100100", created.Add(time.Hour))
 	c.AddRuns(runs)
+	c.AddSummaries(summaries)
 	return c.Hide(messages)
 }
 
-func TestCollapser_requestsAndAnswersOfARunWithSummary(t *testing.T) {
-	single := testRun("ZP3")
-	single.NoSummary = true
+func singleRun(meter string) Run {
+	r := testRun(meter)
+	r.NoSummary = true
+	return r
+}
+
+func TestCollapser_requestsAndAnswersOfAnOpenRun(t *testing.T) {
 	runs := []Row{
 		row(t, 10, "RC100100", RowTypeRun, testRun("ZP1", "ZP2")),
-		row(t, 20, "RC100100", RowTypeRun, single),
+		row(t, 20, "RC100100", RowTypeRun, singleRun("ZP3")),
 	}
 	at := created.Add(time.Minute)
-	hidden, latest := collapse(t, runs,
+	hidden, latest := collapse(t, runs, nil,
 		msg(t, 9, at, "ANFORDERUNG_PT", "ZP1"), // before the run
 		msg(t, 11, at, "ANFORDERUNG_PT", "ZP1"),
 		msg(t, 12, at, "ANFORDERUNG_PT", "zp2"), // metering points compare case-insensitively
@@ -39,63 +49,77 @@ func TestCollapser_requestsAndAnswersOfARunWithSummary(t *testing.T) {
 		msg(t, 21, at, "ANFORDERUNG_PT", "ZP3"), // the single request keeps its messages
 		msg(t, 22, at, answerRejected, "ZP3"),
 		msg(t, 23, at, answerRejected, "ZP2"),
+		msg(t, 24, at, answerAccepted, "ZP1", "ZP3"), // one of its metering points is the single request's
 	)
 	assert.Equal(t, map[int64]bool{11: true, 12: true, 13: true, 23: true}, hidden)
 	assert.Equal(t, map[int64]int64{10: 23}, latest)
 }
 
-func TestCollapser_aLaterSingleRequestTakesOverItsMeteringPoint(t *testing.T) {
-	single := testRun("ZP1")
-	single.NoSummary = true
+// A single request and a run compete for a metering point: answers carry no period, so its messages stay (review
+// finding: the summary may count the answer for the single request).
+func TestCollapser_aSingleRequestCompetingForAMeteringPoint(t *testing.T) {
 	runs := []Row{
-		row(t, 10, "RC100100", RowTypeRun, testRun("ZP1", "ZP2")),
-		row(t, 20, "RC100100", RowTypeRun, single),
+		row(t, 10, "RC100100", RowTypeRun, singleRun("ZP1")),
+		row(t, 20, "RC100100", RowTypeRun, testRun("ZP1", "ZP2")),
+		row(t, 30, "RC100100", RowTypeRun, singleRun("ZP2")),
 	}
 	at := created.Add(time.Minute)
-	hidden, _ := collapse(t, runs,
-		msg(t, 11, at, "ANFORDERUNG_PT", "ZP1"),
-		msg(t, 21, at, answerAccepted, "ZP1"),
-		msg(t, 22, at, answerAccepted, "ZP2"),
+	hidden, _ := collapse(t, runs, nil,
+		msg(t, 11, at, answerAccepted, "ZP1"), // only the single request before it
+		msg(t, 21, at, answerAccepted, "ZP1"), // single request and run
+		msg(t, 22, at, answerAccepted, "ZP2"), // only the run
+		msg(t, 31, at, answerAccepted, "ZP2"), // run and later single request
 	)
-	assert.Equal(t, map[int64]bool{11: true, 22: true}, hidden)
+	assert.Equal(t, map[int64]bool{22: true}, hidden)
 }
 
-// An earlier single request keeps its messages, also when a run with a summary follows (F1 of the review).
-func TestCollapser_anEarlierSingleRequestKeepsItsMessages(t *testing.T) {
-	single := testRun("ZP1")
-	single.NoSummary = true
+// A run closed before the message cannot own it: a later run of the same metering points (Smart re-request) does.
+func TestCollapser_aRunClosedBeforeTheMessage(t *testing.T) {
+	first, second := testRun("ZP1", "ZP2"), testRun("ZP1", "ZP2")
 	runs := []Row{
-		row(t, 10, "RC100100", RowTypeRun, single),
-		row(t, 20, "RC100100", RowTypeRun, testRun("ZP1", "ZP2")),
+		row(t, 10, "RC100100", RowTypeRun, first),
+		row(t, 30, "RC100100", RowTypeRun, second),
 	}
 	at := created.Add(time.Minute)
-	hidden, _ := collapse(t, runs,
-		msg(t, 11, at, "ANFORDERUNG_PT", "ZP1"),
-		msg(t, 12, at, answerAccepted, "ZP1"),
-		msg(t, 21, at, answerAccepted, "ZP1"),
+	hidden, latest := collapse(t, runs, []Row{summaryRow(t, 20, first)},
+		msg(t, 11, at, answerAccepted, "ZP1"), // before the first summary
+		msg(t, 25, at, answerAccepted, "ZP2"), // after it, before the second run: the summary does not count it
+		msg(t, 31, at, "ANFORDERUNG_PT", "ZP1"),
 	)
-	assert.Equal(t, map[int64]bool{21: true}, hidden)
+	assert.Equal(t, map[int64]bool{11: true, 31: true}, hidden)
+	assert.Equal(t, map[int64]int64{10: 11, 30: 31}, latest)
+}
+
+// Without a summary after Deadline (Check could not close the run), its messages come back.
+func TestCollapser_noSummaryAfterTheDeadline(t *testing.T) {
+	runs := []Row{row(t, 10, "RC100100", RowTypeRun, testRun("ZP1", "ZP2"))}
+	c := NewCollapser("RC100100", created.Add(Deadline))
+	c.AddRuns(runs)
+	hidden, _ := c.Hide([]Message{msg(t, 11, created.Add(time.Minute), answerAccepted, "ZP1")})
+	assert.Empty(t, hidden)
 }
 
 func TestCollapser_onlyWithinTheWindowAfterTheRun(t *testing.T) {
-	runs := []Row{row(t, 10, "RC100100", RowTypeRun, testRun("ZP1", "ZP2"))}
-	hidden, latest := collapse(t, runs,
+	run := testRun("ZP1", "ZP2")
+	runs := []Row{row(t, 10, "RC100100", RowTypeRun, run)}
+	c := NewCollapser("RC100100", created.Add(2*CollapseWindow))
+	c.AddRuns(runs)
+	c.AddSummaries([]Row{summaryRow(t, 20, run)})
+	hidden, _ := c.Hide([]Message{
 		msg(t, 11, created.Add(CollapseWindow), answerAccepted, "ZP1"),
 		msg(t, 12, created.Add(CollapseWindow+time.Minute), answerAccepted, "ZP2"),
-	)
+	})
 	assert.Equal(t, map[int64]bool{11: true}, hidden)
-	assert.Equal(t, map[int64]int64{10: 11}, latest)
 }
 
-// GEA: the messages of another tenant's run stay in this tenant's list (that tenant has the live entry and summary),
-// and that run still owns them against an older run of this tenant.
+// GEA: the messages of another tenant's run stay in this tenant's list (that tenant has the live entry and summary).
 func TestCollapser_runOfAnotherTenantOfTheCommunity(t *testing.T) {
 	runs := []Row{
 		row(t, 10, "RC100100", RowTypeRun, testRun("ZP1", "ZP2")),
 		row(t, 20, "RC200200", RowTypeRun, testRun("ZP1", "ZP2")),
 	}
 	at := created.Add(time.Minute)
-	hidden, _ := collapse(t, runs,
+	hidden, _ := collapse(t, runs, nil,
 		msg(t, 11, at, "ANFORDERUNG_PT", "ZP1"),
 		msg(t, 21, at, "ANFORDERUNG_PT", "ZP1"),
 		msg(t, 22, at, answerAccepted, "ZP2"),
@@ -103,12 +127,17 @@ func TestCollapser_runOfAnotherTenantOfTheCommunity(t *testing.T) {
 	assert.Equal(t, map[int64]bool{11: true}, hidden)
 }
 
-func TestCollapser_addRunsTwice(t *testing.T) {
-	c := NewCollapser("RC100100")
-	r := row(t, 10, "RC100100", RowTypeRun, testRun("ZP1", "ZP2"))
+func TestCollapser_addRunsAndSummariesTwice(t *testing.T) {
+	run := testRun("ZP1", "ZP2")
+	c := NewCollapser("RC100100", created.Add(time.Hour))
+	r := row(t, 10, "RC100100", RowTypeRun, run)
 	c.AddRuns([]Row{r})
 	c.AddRuns([]Row{r, answerRow(t, 11, "RC100100", answerAccepted, "ZP1")}) // not a run: ignored
-	hidden, _ := c.Hide([]Message{msg(t, 12, created.Add(time.Minute), answerAccepted, "ZP1")})
+	c.AddSummaries([]Row{r, summaryRow(t, 20, run)})                         // the run row is not a summary
+	hidden, _ := c.Hide([]Message{
+		msg(t, 12, created.Add(time.Minute), answerAccepted, "ZP1"),
+		msg(t, 21, created.Add(time.Minute), answerAccepted, "ZP2"),
+	})
 	assert.Equal(t, map[int64]bool{12: true}, hidden)
 }
 

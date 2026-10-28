@@ -12,19 +12,24 @@ this changelog highlights the changes relevant for overview and operations.
 - **Messages: an energy request for several metering points is one entry, also after it closed** (user decision
   28.10.2026, after a request for a whole community in prod). The notification list for admins
   (`GET /eeg/notifications/{start}`) leaves out the request echoes (`ANFORDERUNG_PT`) and the answers
-  (`ANTWORT_PT`, `ABLEHNUNG_PT`) of a run with a summary of the same tenant; the live entry stands for them while the
-  run is open, the stored summary after it closed. Before, only the answers of an open run were left out, every
-  request echo was listed, and once the summary was written all answers came back. A message belongs to the newest
-  run of the community before it that sent one of its metering points, at most 25 h earlier
-  (`energyrequest.Collapser`). Kept: requests for a single metering point, and in a GEA the messages of another
-  tenant's run (that tenant has the live entry and the summary). Response shape unchanged, no web change; the details
-  stay in the summary and the process history.
-- The admin list reads in batches (30, then 500, at most 40) until a page is full; reaching the limit is logged.
+  (`ANTWORT_PT`, `ABLEHNUNG_PT`) a live entry or a stored summary of the same tenant stands for; the live entry while
+  the run is open, the stored summary after it closed. Before, only the answers of an open run were left out, every
+  request echo was listed, and once the summary was written all answers came back. Answers carry no period and no
+  reference to their request, so the rule (`energyrequest.Collapser`) is conservative: a message is left out only if,
+  for each of its metering points, every run that can still own it (older, created at most 25 h before, sent the
+  metering point, open or with its summary after the message) is a run with a summary of the listed tenant. Kept:
+  messages of a request for a single metering point, messages a single request and a run compete for, in a GEA the
+  messages of another tenant's run (that tenant has the live entry and the summary), an answer after the summary (the
+  summary does not count it) and the messages of a run that got no summary 24 h after it started. Response shape
+  unchanged, no web change.
+- The admin list reads in batches (30, then 500, at most 40) until a page is full; reaching the limit is logged. When
+  the rows of the live entries cannot be read, it is the plain list as before.
 
 ### Added
-- Migration `20261028120000_notification_energy_request_index`: partial index `notification_energy_request_idx` on
-  `base.notification (tenant, id) WHERE process = 'ENERGY_REQUEST'` (the hidden RUN rows, one per request), built
-  `CONCURRENTLY`, so the list finds the runs of a community at any age. No data change; down drops it.
+- Migrations `20261028120000_notification_energy_request_index` and `20261028120100_notification_summary_index`:
+  partial indexes on `base.notification (tenant, id)` for the hidden RUN rows (`process = 'ENERGY_REQUEST'`, one per
+  request) and the stored summaries (`notification->>'type' = 'ZUSAMMENFASSUNG_PT'`, one per closed request), built
+  `CONCURRENTLY`, so the list finds both at any age. No data change; the down migrations drop them.
 
 ### Fixed
 - **The live entry of a request for a whole community did not show** (28.10.2026, prod): it was placed at the run's
