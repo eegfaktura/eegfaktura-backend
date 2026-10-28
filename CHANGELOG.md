@@ -14,6 +14,14 @@ this changelog highlights the changes relevant for overview and operations.
   It fixes CVE-2026-111943 / GO-2026-6809 (HIGH, `crypto/x509` trusted untrusted intermediate certificates; reached
   through the outgoing HTTPS calls). A patch release: language version, GODEBUG defaults and garbage collector are
   unchanged.
+- **Slim runtime image** (prod image scan 2026-10-28): the final stage was the full `golang` image (Go toolchain,
+  git, ssh, curl, gnupg, compilers); it is now `debian:trixie-20261020-slim` (the Debian release of the build image)
+  with only `ca-certificates` and `tzdata`. The image keeps the binary `/usr/local/bin/vfeeg-backend`,
+  `/etc/backend/config.yaml`, `/usr/local/bin/entrypoint.sh` (needs `/bin/sh`), `TZ=Europe/Berlin`, user 1000, the
+  volume `/opt/storage`, the working directory, entry point and command; mail templates and migrations are embedded
+  in the binary. **Not in the image any more:** `curl`, `git`, `ssh`, `go`. eegfaktura-docker-compose wraps the
+  entry point in `url-poller.sh`, which calls `curl` inside this container: it must be adapted before it moves to
+  an image with this change (the Kubernetes manifests do not use it).
 
 ## [1.12.0] – 2026-10-28
 

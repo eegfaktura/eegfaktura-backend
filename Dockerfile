@@ -25,7 +25,15 @@ RUN go generate ./...
 RUN go install ./...
 RUN go build -o /usr/local/bin/vfeeg-backend -ldflags="-s -w" server.go
 
-FROM golang:1.26.10
+# Laufzeit: schlankes Debian derselben Release wie das Build-Image (golang:1.26.10 = trixie), ohne
+# Go-Toolchain, git, ssh, curl. Das Binary ist dynamisch gegen glibc gelinkt (cgo an), daher kein
+# scratch/static. Gebraucht werden nur CA-Zertifikate (ausgehendes HTTPS, SMTP mit TLS) und Zonendaten
+# (TZ, time.Local). Datierter Tag = unveraenderlich; veroeffentlicht 2026-10-21.
+FROM debian:trixie-20261020-slim
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates tzdata \
+ && rm -rf /var/lib/apt/lists/*
 
 ENV TZ="Europe/Berlin"
 
