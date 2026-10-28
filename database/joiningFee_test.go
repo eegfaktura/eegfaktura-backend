@@ -17,6 +17,7 @@ import (
 
 // version before 20261028130000_joining_fee
 const migrationBeforeJoiningFee = 20261028120100
+const joiningFeeMigration = 20261028130000
 
 var joiningFeeViewColumns = []string{"tariff_joining_fee", "tariff_joining_fee_use_vat", "tariff_joining_fee_vat_in_percent"}
 
@@ -68,7 +69,8 @@ func migrationDB(t *testing.T, name string) (*sqlx.DB, *migrate.Migrate) {
 // down migration restores the views as after ZVT and keeps the columns with their values (/grill-me 27.10.2026).
 func TestJoiningFeeMigrationUpDown(t *testing.T) {
 	dbx, m := migrationDB(t, "joining_fee_migration_test")
-	require.NoError(t, m.Up())
+	// exactly up to this migration: a later one that appends view columns must not break the checks below
+	require.NoError(t, m.Migrate(joiningFeeMigration))
 
 	var tariffCols []struct {
 		Name      string  `db:"column_name"`
@@ -126,7 +128,7 @@ func TestJoiningFeeMigrationUpDown(t *testing.T) {
 	assert.Equal(t, "49.90/t/20", kept, "down keeps the columns and their values")
 
 	// up again finds the existing columns
-	require.NoError(t, m.Up())
+	require.NoError(t, m.Migrate(joiningFeeMigration))
 	assert.Equal(t, columnNames(billing), columnNames(viewColumns(t, dbx, "billing_masterdata")))
 	var fee string
 	require.NoError(t, dbx.Get(&fee, `SELECT "joiningFee"::text FROM base.activetariff WHERE id = $1`, tariffId))

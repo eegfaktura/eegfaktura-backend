@@ -133,6 +133,8 @@ func TestValidateJoiningFee(t *testing.T) {
 		{"EEG VAT without use flag", Tariff{Type: EEG, JoiningFee: 50, JoiningFeeVatInPercent: 13}, false},
 		{"EEG negative", Tariff{Type: EEG, JoiningFee: -0.01}, true},
 		{"EEG three decimals", Tariff{Type: EEG, JoiningFee: 49.999}, true},
+		{"EEG largest amount of numeric(10,2)", Tariff{Type: EEG, JoiningFee: 99999999.99}, false},
+		{"EEG above numeric(10,2) (review 28.10.2026: a database error instead of a message)", Tariff{Type: EEG, JoiningFee: 100000000}, true},
 		{"EEG VAT above 100", Tariff{Type: EEG, JoiningFee: 50, JoiningFeeVatInPercent: 101}, true},
 		{"EEG VAT negative", Tariff{Type: EEG, JoiningFee: 50, JoiningFeeVatInPercent: -1}, true},
 		{"VZP zero", Tariff{Type: VZP}, false},

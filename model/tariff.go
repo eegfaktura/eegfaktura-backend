@@ -101,9 +101,13 @@ type Tariff struct {
 	JoiningFeeVatInPercent IntOrString `json:"joiningFeeVatInPercent" db:"joiningFeeVatInPercent"`
 }
 
+// maxJoiningFee is the largest amount the column "joiningFee" numeric(10,2) holds; above it the INSERT would fail
+// with a database error instead of a message.
+const maxJoiningFee = 99999999.99
+
 // ValidateJoiningFee enforces the joining fee rules server-side (konzept-beitrittsgebuehr.md,
 // Tech Design B): only EEG tariffs carry a fee (other types must send 0/false), the amount
-// is >= 0 with at most 2 decimals, the VAT rate lies in 0..100.
+// is >= 0 with at most 2 decimals and fits numeric(10,2), the VAT rate lies in 0..100.
 func (t *Tariff) ValidateJoiningFee() error {
 	if t.Type != EEG {
 		if t.JoiningFee != 0 || t.JoiningFeeUseVat || t.JoiningFeeVatInPercent != 0 {
@@ -113,6 +117,9 @@ func (t *Tariff) ValidateJoiningFee() error {
 	}
 	if t.JoiningFee < 0 {
 		return fmt.Errorf("Beitrittsgebühr darf nicht negativ sein")
+	}
+	if t.JoiningFee > maxJoiningFee {
+		return fmt.Errorf("Beitrittsgebühr darf höchstens 99.999.999,99 € betragen")
 	}
 	if cents := t.JoiningFee * 100; math.Abs(cents-math.Round(cents)) > 1e-6 {
 		return fmt.Errorf("Beitrittsgebühr: höchstens 2 Nachkommastellen")

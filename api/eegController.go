@@ -220,12 +220,15 @@ func (h *EegHandler) uploadMasterData() middleware.JWTHandlerFunc {
 	}
 }
 
+// maxJoiningFeeStateBytes bounds the list web posts with the member export (about 200 bytes per member).
+const maxJoiningFeeStateBytes = 8 << 20
+
 func (h *EegHandler) exportMasterData() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
 		// optional body: billing's joiningFeeState list, passed on by web; no body = status column stays empty
 		var feeStates []model.JoiningFeeState
 		if r.Method == http.MethodPost {
-			if err := json.NewDecoder(r.Body).Decode(&feeStates); err != nil && !errors.Is(err, io.EOF) {
+			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJoiningFeeStateBytes)).Decode(&feeStates); err != nil && !errors.Is(err, io.EOF) {
 				respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 				return
 			}
