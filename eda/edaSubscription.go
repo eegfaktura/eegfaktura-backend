@@ -603,6 +603,8 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 		}
 
 	case model.EBMS_ZP_LIST_REJECTION:
+		// the request is answered: a later list must not go to this requester (261028-mm1)
+		mqttclient.TakeZpListRequester(msg.Payload.EcId)
 	default:
 		logrus.WithField("tenant", msg.Tenant).Warnf("Unknown Messagecode: %v", msg)
 		return

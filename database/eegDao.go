@@ -52,9 +52,10 @@ func (db *sqlDatabase) GetEegByEcId(ctx context.Context, edId string) (*model.Ee
 }
 
 // GetEegByEcIdAndMeters returns the community of ecId that holds the metering points of an inbound message. In a
-// GEA several tenants share one community id (261028-mm1): the tenant holding one of the metering points wins, a
-// tenant with an assigned row (flag 1) before one with only a moved (0) or archived (2) row. With one tenant per community id, or when
-// none of the tenants holds a metering point, the GEA's base tenant (GetBaseEegByEcId).
+// GEA several tenants share one community id (261028-mm1): the tenant holding one of the metering points wins — a
+// live assigned row (flag 1, not INACTIVE, e.g. a registration running) before an ended one (revoked, still flag 1),
+// before only a moved (0) or archived (2) row. When none of the tenants holds a metering point: the GEA's base tenant
+// (GetBaseEegByEcId). With one tenant per community id: GetEegByEcId, as before.
 func (db *sqlDatabase) GetEegByEcIdAndMeters(ctx context.Context, ecId string, meters []string) (*model.Eeg, error) {
 	tenants, err := db.TenantsByEcId(ctx, ecId)
 	if err != nil {
@@ -66,7 +67,7 @@ func (db *sqlDatabase) GetEegByEcIdAndMeters(ctx context.Context, ecId string, m
 	owners := []string{}
 	if len(meters) > 0 {
 		query, args, err := sqlx.In(`SELECT tenant FROM base.meteringpoint WHERE tenant IN (?) AND metering_point_id IN (?)
-			GROUP BY tenant ORDER BY bool_or(flag = 1) DESC, tenant`, tenants, meters)
+			GROUP BY tenant ORDER BY bool_or(flag = 1 AND status <> 'INACTIVE') DESC, bool_or(flag = 1) DESC, tenant`, tenants, meters)
 		if err != nil {
 			return nil, model.ErrGetEeg(err)
 		}

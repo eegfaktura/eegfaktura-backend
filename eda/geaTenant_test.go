@@ -67,11 +67,11 @@ func TestInboundMessage_geaTenantByMeteringPoint(t *testing.T) {
 		`"meter":{"meteringPoint":"`+meter+`"},"responseData":[{"meteringPoint":"`+meter+`","responseCode":[99]}]`))
 	assert.Equal(t, []string{second}, historyTenant("GC000041202610280000000000000000002"))
 
-	// a metering point that none of the tenants holds: still recorded under one tenant of the community, as before
+	// a metering point that none of the tenants holds: recorded under the base tenant named like the RC number
 	protocolCrReqPtHandler(context.Background(), message(model.CR_REQ_PT, model.EBMS_ZP_RES,
 		"GC000041202610280000000000000000003",
 		`"meter":{"meteringPoint":"AT0030000000000000000000000041999"},"responseData":[{"meteringPoint":"AT0030000000000000000000000041999","responseCode":[99]}]`))
-	assert.Len(t, historyTenant("GC000041202610280000000000000000003"), 1)
+	assert.Equal(t, []string{first}, historyTenant("GC000041202610280000000000000000003"))
 }
 
 // 261028-mm1: the metering point list (SENDEN_ECP) covers the whole community; in a GEA every tenant updates the

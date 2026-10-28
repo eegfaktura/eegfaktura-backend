@@ -373,6 +373,19 @@ func TestGetEegByEcIdAndMeters(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "GC000043-002", eeg.Id)
 
+	// revoked in the base tenant (row stays flag 1, INACTIVE) and registering again in the third: the live row wins
+	const moved = "AT0030000000000000000000000043002"
+	for tenant, status := range map[string]string{"GC000043": "INACTIVE", "GC000043-003": "INIT"} {
+		_, err = testDB.DbInstance.Exec(`INSERT INTO base.meteringpoint (metering_point_id, participant_id, tenant, direction,
+			status, process_state, "modifiedAt", "modifiedBy", "registeredSince", flag)
+			VALUES ($1, 'ea1142dc-03da-15ee-b82b-5a985b4b033a', $2, 'CONSUMPTION', $3, 'PENDING', now(), 'test',
+			 '2026-10-01', 1)`, moved, tenant, status)
+		require.NoError(t, err)
+	}
+	eeg, err = db.GetEegByEcIdAndMeters(ctx, ecId, []string{moved})
+	require.NoError(t, err)
+	assert.Equal(t, "GC000043-003", eeg.Id)
+
 	// no metering point held by a tenant: the base tenant (named like the RC number), every time
 	eeg, err = db.GetEegByEcIdAndMeters(ctx, ecId, []string{"AT0030000000000000000000000043999"})
 	require.NoError(t, err)
