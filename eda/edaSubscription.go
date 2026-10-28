@@ -546,6 +546,7 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 		return
 	}
 
+	historyTenant := msg.Tenant
 	switch msg.MessageCode {
 	case model.EBMS_ZP_LIST:
 	case model.EBMS_ZP_LIST_RESPONSE:
@@ -554,11 +555,12 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 			return
 		}
 
-		eeg, err := db.GetEegByEcId(ctx, msg.Payload.EcId)
+		eeg, err := zpListEeg(ctx, db, msg.Payload.EcId)
 		if err != nil {
 			logrus.Errorf("can not fetch eeg with message %+v", msg.Payload)
 			return
 		}
+		historyTenant = eeg.Id
 
 		if eeg.Email.Valid {
 			now := time.Now()
@@ -605,7 +607,24 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 		logrus.WithField("tenant", msg.Tenant).Warnf("Unknown Messagecode: %v", msg)
 		return
 	}
-	_ = db.SaveHistory(msg.Tenant, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
+	_ = db.SaveHistory(historyTenant, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
+}
+
+// zpListEeg returns the community a metering point list belongs to. In a GEA the list covers every tenant of the
+// community id, so its mail goes to the tenant that asked for it — never to all, each would get the other tenants'
+// members — else to the GEA's base tenant (decided 28.10.2026, 261028-mm1). One tenant: as before.
+func zpListEeg(ctx context.Context, db database.Database, ecId string) (*model.Eeg, error) {
+	requester, asked := mqttclient.TakeZpListRequester(ecId)
+	tenants, err := db.TenantsByEcId(ctx, ecId)
+	if err != nil || len(tenants) < 2 {
+		return db.GetEegByEcId(ctx, ecId)
+	}
+	for _, t := range tenants {
+		if asked && t == requester {
+			return db.GetEegById(ctx, t)
+		}
+	}
+	return db.GetBaseEegByEcId(ctx, ecId)
 }
 
 // messageMeters returns the metering points of an inbound message (meter, meter list and response data), used

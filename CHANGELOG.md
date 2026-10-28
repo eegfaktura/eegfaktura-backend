@@ -12,11 +12,13 @@ this changelog highlights the changes relevant for overview and operations.
 - **GEA: inbound EDA messages reach the tenant of the metering point** (261028-mm1): in a GEA several tenants share
   one community id, and the inbound handlers (CR_MSG, CR_REQ_PT, EC_REQ_ONL/EC_REQ_OFF, the CCMS revocation messages,
   EC_PRTFACT_CHANGE, member mails) applied status, notification, history, mail and partition factor to whichever
-  tenant the community id lookup returned. They now use the tenant that holds the message's metering point (an
-  assigned row before an archived one). With one tenant per community id, or when no tenant holds the metering point,
-  the result is unchanged (the latter is logged). The metering point list (SENDEN_ECP) of a GEA now updates the
-  metering points of every tenant of the community id, not only the one named like the receiving RC number. Nothing
-  sent to grid operators changes.
+  tenant the community id lookup returned. They now use the tenant that holds the message's metering point (a tenant
+  with the assigned row before one with only a moved or archived row). When no tenant of a GEA holds the metering
+  point, the message goes to the GEA's base tenant (named like the RC number) instead of an arbitrary one, and this is
+  logged; with one tenant per community id nothing changes. The metering point list (SENDEN_ECP) of a GEA now updates
+  the metering points of every tenant of the community id; its Excel mail, notification and history go to the tenant
+  that asked for the list (remembered in memory when the request is sent), else to the base tenant — never to every
+  tenant, the list holds the members of all of them (decided 28.10.2026). Nothing sent to grid operators changes.
 
 ## [1.12.0] – 2026-10-28
 

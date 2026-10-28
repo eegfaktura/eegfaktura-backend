@@ -373,10 +373,13 @@ func TestGetEegByEcIdAndMeters(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "GC000043-002", eeg.Id)
 
-	// no metering point held by a tenant: one tenant of the community, as GetEegByEcId
+	// no metering point held by a tenant: the base tenant (named like the RC number), every time
 	eeg, err = db.GetEegByEcIdAndMeters(ctx, ecId, []string{"AT0030000000000000000000000043999"})
 	require.NoError(t, err)
-	assert.Contains(t, []string{"GC000043", "GC000043-002", "GC000043-003"}, eeg.Id)
+	assert.Equal(t, "GC000043", eeg.Id)
+	eeg, err = db.GetBaseEegByEcId(ctx, ecId)
+	require.NoError(t, err)
+	assert.Equal(t, "GC000043", eeg.Id)
 
 	// one tenant per community id: unchanged, also for an unknown metering point
 	eeg, err = db.GetEegByEcIdAndMeters(ctx, "AT00300000000TC000001000000000001", []string{"AT0030000000000000000000000043999"})

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"at.ourproject/vfeeg-backend/model"
+	mqttclient "at.ourproject/vfeeg-backend/mqtt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -99,7 +100,16 @@ func TestPodList_geaSyncsEveryTenant(t *testing.T) {
 		{"meteringPoint":"%s","direction":"CONSUMPTION","from":1759269600000,"partFact":100},
 		{"meteringPoint":"%s","direction":"CONSUMPTION","from":1759269600000,"partFact":100}]}`,
 		first, ecId, meters[first], meters[second])), &msg.Payload))
+	// the second tenant asked for the list: the answer (mail, notification, history) goes to it, not to the base tenant
+	mqttclient.RememberZpListRequester(ecId, second)
 	protocolEcPodListHandler(context.Background(), msg)
+	assert.Equal(t, 1, historyCount(t, second, "GC000042202610280000000000000000001"))
+	assert.Equal(t, 0, historyCount(t, first, "GC000042202610280000000000000000001"))
+
+	// nobody asked (e.g. after a restart): the base tenant named like the RC number
+	msg.Payload.ConversationId = "GC000042202610280000000000000000002"
+	protocolEcPodListHandler(context.Background(), msg)
+	assert.Equal(t, 1, historyCount(t, first, "GC000042202610280000000000000000002"))
 
 	for tenant, meter := range meters {
 		var status string
@@ -107,4 +117,11 @@ func TestPodList_geaSyncsEveryTenant(t *testing.T) {
 			WHERE tenant = $1 AND metering_point_id = $2`, tenant, meter))
 		assert.Equal(t, "ACTIVE", status, tenant)
 	}
+}
+
+func historyCount(t *testing.T, tenant, conversationId string) int {
+	var n int
+	require.NoError(t, testDB.DbInstance.Get(&n, `SELECT count(*) FROM base.processhistory
+		WHERE tenant = $1 AND "conversationId" = $2`, tenant, conversationId))
+	return n
 }

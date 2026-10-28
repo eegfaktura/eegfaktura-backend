@@ -20,6 +20,7 @@ type EegRepository interface {
 	GetEegByIdForUser(ctx context.Context, tenant string) (*model.Eeg, error)
 	GetEegByEcId(ctx context.Context, edId string) (*model.Eeg, error)
 	GetEegByEcIdAndMeters(ctx context.Context, ecId string, meters []string) (*model.Eeg, error)
+	GetBaseEegByEcId(ctx context.Context, ecId string) (*model.Eeg, error)
 	GetTenantsByRcNumber(ctx context.Context, rcNumber string) ([]string, error)
 	UpdateEegPartial(ctx context.Context, tenant string, fields map[string]interface{}) error
 	GetGridOperators(ctx context.Context) (map[string]string, error)
@@ -53,7 +54,7 @@ func (db *sqlDatabase) GetEegByEcId(ctx context.Context, edId string) (*model.Ee
 // GetEegByEcIdAndMeters returns the community of ecId that holds the metering points of an inbound message. In a
 // GEA several tenants share one community id (261028-mm1): the tenant holding one of the metering points wins, a
 // tenant with an assigned row (flag 1) before one with only a moved (0) or archived (2) row. With one tenant per community id, or when
-// none of the tenants holds a metering point, it returns what GetEegByEcId returns.
+// none of the tenants holds a metering point, the GEA's base tenant (GetBaseEegByEcId).
 func (db *sqlDatabase) GetEegByEcIdAndMeters(ctx context.Context, ecId string, meters []string) (*model.Eeg, error) {
 	tenants, err := db.TenantsByEcId(ctx, ecId)
 	if err != nil {
@@ -75,12 +76,23 @@ func (db *sqlDatabase) GetEegByEcIdAndMeters(ctx context.Context, ecId string, m
 	}
 	switch {
 	case len(owners) == 0:
-		log.WithField("ecId", ecId).Warnf("none of the tenants %v holds the metering points %v; using the community id lookup", tenants, meters)
-		return getEegByEcId(ctx, db.db, ecId)
+		log.WithField("ecId", ecId).Warnf("none of the tenants %v holds the metering points %v; using the base tenant", tenants, meters)
+		return db.GetBaseEegByEcId(ctx, ecId)
 	case len(owners) > 1:
 		log.WithField("ecId", ecId).Warnf("the metering points %v are held by the tenants %v; applying to %s", meters, owners, owners[0])
 	}
 	return getEegById(ctx, db.db, owners[0])
+}
+
+// GetBaseEegByEcId returns the base tenant of a community id: the tenant named like its RC number (a GEA's
+// GCxxxxxx beside GCxxxxxx-00n), else the first by name. Deterministic, unlike GetEegByEcId (261028-mm1).
+func (db *sqlDatabase) GetBaseEegByEcId(ctx context.Context, ecId string) (*model.Eeg, error) {
+	var tenant string
+	if err := db.db.GetContext(ctx, &tenant, `SELECT tenant FROM base.eeg WHERE "communityId" = $1
+		ORDER BY upper(tenant) = upper("rcNumber") DESC, tenant LIMIT 1`, ecId); err != nil {
+		return nil, model.ErrGetEeg(err)
+	}
+	return getEegById(ctx, db.db, tenant)
 }
 
 // GetTenantsByRcNumber returns the tenants of an RC number (MQTT topic of incoming EDA messages).
