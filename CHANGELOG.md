@@ -13,12 +13,17 @@ this changelog highlights the changes relevant for overview and operations.
   one community id, and the inbound handlers (CR_MSG, CR_REQ_PT, EC_REQ_ONL/EC_REQ_OFF, the CCMS revocation messages,
   EC_PRTFACT_CHANGE, member mails) applied status, notification, history, mail and partition factor to whichever
   tenant the community id lookup returned. They now use the tenant that holds the message's metering point (a tenant
-  with the assigned row before one with only a moved or archived row). When no tenant of a GEA holds the metering
+  with a live assigned row before one whose row ended (revoked, INACTIVE), before one with only a moved or archived
+  row). When no tenant of a GEA holds the metering
   point, the message goes to the GEA's base tenant (named like the RC number) instead of an arbitrary one, and this is
   logged; with one tenant per community id nothing changes. The metering point list (SENDEN_ECP) of a GEA now updates
   the metering points of every tenant of the community id; its Excel mail, notification and history go to the tenant
   that asked for the list (remembered in memory when the request is sent), else to the base tenant — never to every
-  tenant, the list holds the members of all of them (decided 28.10.2026). Nothing sent to grid operators changes.
+  tenant, the list holds the members of all of them (decided 28.10.2026); a rejection (ABLEHNUNG_ECP) forgets the
+  remembered request. Nothing sent to grid operators changes.
+- **Metering point list of a community whose only tenant is named unlike its RC number** (pre-existing): SENDEN_ECP
+  synced the tenant named like the RC number of the MQTT topic, which does not exist then, so the metering points
+  stayed INIT/PENDING. Every tenant of the community id is synced now.
 
 ## [1.12.0] – 2026-10-28
 

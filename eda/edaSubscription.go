@@ -588,12 +588,12 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 					eeg.Id, model.N_TYPE_ERROR, model.N_PROCESS_EDA_PROCESS, "ADMIN")
 			}
 		}
-		// the list covers the whole community: in a GEA (several tenants, one community id) every tenant
-		// updates the metering points it holds (261028-mm1)
+		// the list covers the whole community: every tenant of the community id updates the metering points it holds
+		// (a GEA has several, 261028-mm1; a sole tenant may be named unlike the RC number of the topic)
 		syncTenants := []string{msg.Tenant}
 		if tenants, err := db.TenantsByEcId(ctx, msg.Payload.EcId); err != nil {
 			logrus.WithField("tenant", msg.Tenant).WithError(err).Error("can not fetch the tenants of the community id")
-		} else if len(tenants) > 1 {
+		} else if len(tenants) > 0 {
 			syncTenants = tenants
 		}
 		for _, tenant := range syncTenants {
