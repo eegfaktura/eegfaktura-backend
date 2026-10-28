@@ -131,6 +131,7 @@ func Test_joiningFeeStatus(t *testing.T) {
 		{"paid outside with note", &model.JoiningFeeState{EnergyBilled: true, PaidExternally: paid}, 50, "außerhalb bezahlt am 01.03.2025 (bar beim Beitritt)"},
 		{"paid outside without note, no fee", &model.JoiningFeeState{PaidExternally: &model.JoiningFeePaidExternal{PaidOn: "2025-03-01"}}, 0, "außerhalb bezahlt am 01.03.2025"},
 		{"requested", &model.JoiningFeeState{EnergyBilled: true, Requested: true}, 50, "zur Verrechnung im nächsten Abrechnungslauf vorgemerkt"},
+		{"requested, but the tariff has no fee (any more): nothing will be charged, as in web", &model.JoiningFeeState{EnergyBilled: true, Requested: true}, 0, ""},
 		{"open: never billed with energy", &model.JoiningFeeState{}, 50, "offen – wird mit der ersten Energieabrechnung verrechnet"},
 		{"open: no entry in the list", nil, 50, "offen – wird mit der ersten Energieabrechnung verrechnet"},
 		{"not billed: already billed with energy", &model.JoiningFeeState{EnergyBilled: true}, 50, "nicht verrechnet – Mitglied wurde schon abgerechnet"},

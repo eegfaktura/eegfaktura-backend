@@ -355,8 +355,11 @@ func germanDate(s string) string {
 }
 
 // joiningFeeStatus is the text of the column "Beitrittsgebühr Status" (konzept-beitrittsgebuehr.md, Erweiterung
-// 27.10.2026, same texts as the member details). s is the member's entry of billing's list (nil: no entry, i.e. no
-// final document yet), fee the joining fee of the member's EEG tariff.
+// 27.10.2026, same texts and order as the member details in eegfaktura-web): a final document with the fee, then a
+// payment outside eegfaktura, then the tariff (no fee: nothing will be charged, also not a request), then a request,
+// then whether the member was billed with energy. Without a fee the cell stays empty (web: „kein Tarif mit
+// Beitrittsgebühr“), so a community without joining fees gets no column full of hints. s is the member's entry of
+// billing's list (nil: no entry, i.e. no final document yet), fee the joining fee of the member's EEG tariff.
 func joiningFeeStatus(s *model.JoiningFeeState, fee float64) string {
 	if s == nil {
 		s = &model.JoiningFeeState{}
@@ -370,10 +373,10 @@ func joiningFeeStatus(s *model.JoiningFeeState, fee float64) string {
 			text += " (" + s.PaidExternally.Note + ")"
 		}
 		return text
-	case s.Requested:
-		return "zur Verrechnung im nächsten Abrechnungslauf vorgemerkt"
 	case fee <= 0:
 		return ""
+	case s.Requested:
+		return "zur Verrechnung im nächsten Abrechnungslauf vorgemerkt"
 	case !s.EnergyBilled:
 		return "offen – wird mit der ersten Energieabrechnung verrechnet"
 	default:
