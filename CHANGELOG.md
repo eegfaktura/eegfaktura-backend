@@ -9,6 +9,9 @@ this changelog highlights the changes relevant for overview and operations.
 ## [Unreleased]
 
 ### Fixed
+- **Image build: code generators pinned to go.mod** (pre-existing): the Dockerfile installed `protoc-gen-go`,
+  `protoc-gen-go-grpc` and `go-jsonschema` with `@latest`, so the image could be generated with other versions than
+  the CI checked. They are now installed after `go mod download` at the versions in `go.mod`, as the CI does.
 - **GEA: inbound EDA messages reach the tenant of the metering point** (261028-mm1): in a GEA several tenants share
   one community id, and the inbound handlers (CR_MSG, CR_REQ_PT, EC_REQ_ONL/EC_REQ_OFF, the CCMS revocation messages,
   EC_PRTFACT_CHANGE, member mails) applied status, notification, history, mail and partition factor to whichever
@@ -24,6 +27,21 @@ this changelog highlights the changes relevant for overview and operations.
 - **Metering point list of a community whose only tenant is named unlike its RC number** (pre-existing): SENDEN_ECP
   synced the tenant named like the RC number of the MQTT topic, which does not exist then, so the metering points
   stayed INIT/PENDING. Every tenant of the community id is synced now.
+
+### Security
+- **Go 1.26.10** (platform#180): the build image (`golang:1.26.10`), CI (`GO_VERSION`) and `go.mod`
+  (`toolchain go1.26.10`; the `go 1.26.0` directive is unchanged) move from 1.26.9 to 1.26.10 (released 2026-10-19).
+  It fixes CVE-2026-111943 / GO-2026-6809 (HIGH, `crypto/x509` trusted untrusted intermediate certificates; reached
+  through the outgoing HTTPS calls). A patch release: language version, GODEBUG defaults and garbage collector are
+  unchanged.
+- **Slim runtime image** (prod image scan 2026-10-28): the final stage was the full `golang` image (Go toolchain,
+  git, ssh, curl, gnupg, compilers); it is now `debian:trixie-20261020-slim` (the Debian release of the build image)
+  with only `ca-certificates` and `tzdata`. The image keeps the binary `/usr/local/bin/vfeeg-backend`,
+  `/etc/backend/config.yaml`, `/usr/local/bin/entrypoint.sh` (needs `/bin/sh`), `TZ=Europe/Berlin`, user 1000, the
+  volume `/opt/storage`, the working directory, entry point and command; mail templates and migrations are embedded
+  in the binary. **Not in the image any more:** `curl`, `git`, `ssh`, `go`. eegfaktura-docker-compose wraps the
+  entry point in `url-poller.sh`, which calls `curl` inside this container: it must be adapted before it moves to
+  an image with this change (the Kubernetes manifests do not use it).
 
 ## [1.12.0] – 2026-10-28
 
@@ -918,7 +936,6 @@ this changelog highlights the changes relevant for overview and operations.
 ### Fixed
 - `TestReadActivationMailTemplateConfig` asserted the wrong inline picture name (`Logo_Faktura.png`);
   the global activation template references `eegfaktura-logo.png`.
-
 
 ## [1.0.5] – 2026-07-04
 

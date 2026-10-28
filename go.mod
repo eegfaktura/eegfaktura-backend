@@ -2,6 +2,8 @@ module at.ourproject/vfeeg-backend
 
 go 1.26.0
 
+toolchain go1.26.10
+
 require (
 	github.com/99designs/gqlgen v0.17.90
 	github.com/BurntSushi/toml v1.6.0
