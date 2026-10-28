@@ -1,4 +1,4 @@
-FROM golang:1.26.10 AS builder
+FROM golang:1.27.2 AS builder
 
 RUN apt update && apt install -y protobuf-compiler
 WORKDIR /usr/src/app
