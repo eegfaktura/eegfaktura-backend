@@ -651,7 +651,8 @@ func updateParticipantPartial(ctx context.Context, db *sqlx.DB, participantId, n
 		if s, ok := value.(string); ok {
 			normalized, err := model.ValidateEmailList(s)
 			if err != nil {
-				return err
+				// the caller gets the reason (code 2000), as the full update does
+				return model.ErrParseJson(err)
 			}
 			if normalized == "" {
 				value = nil

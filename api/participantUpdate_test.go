@@ -106,3 +106,31 @@ func TestUpdateParticipantUnknownAndForeignIdAnswerAlike(t *testing.T) {
 		})
 	}
 }
+
+// A partial update with an invalid e-mail answers code 2000 with the reason, as the full
+// update does, instead of the generic 1102.
+func TestUpdateParticipantPartialInvalidEmailNamesTheReason(t *testing.T) {
+	const (
+		tenant = "TE000006"
+		id     = "ea1142dc-03da-11ee-b82b-5a985b4b0306"
+	)
+	db, err := database.GetDB(context.Background())
+	require.NoError(t, err)
+	h := NewParticipantHandler(db)
+
+	req, _ := http.NewRequest("PUT", "/participant/v2/"+id, strings.NewReader(`{"path":"contact.email","value":"no-address"}`))
+	req = mux.SetURLVars(req, map[string]string{"id": id})
+	w := httptest.NewRecorder()
+	h.updateParticipantPartial()(w, req, &middleware.PlatformClaims{Username: "test"}, tenant)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	var body struct {
+		Error struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body), w.Body.String())
+	assert.Equal(t, 2000, body.Error.Code)
+	assert.Contains(t, body.Error.Message, "invalid email")
+}
