@@ -11,6 +11,7 @@ import (
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
 	"at.ourproject/vfeeg-backend/util"
 	"github.com/gorilla/mux"
+	"github.com/pborman/uuid"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -65,14 +66,19 @@ func (h *ParticipantHandler) fetchParticipant() middleware.JWTHandlerFunc {
 
 func (h *ParticipantHandler) updateParticipant() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
-		//vars := mux.Vars(r)
-		//participantId := vars["id"]
+		participantId := uuid.Parse(mux.Vars(r)["id"])
 
 		var t model.EegParticipant
 		err := json.NewDecoder(r.Body).Decode(&t)
 		if err != nil {
 			log.WithField("tenant", tenant).WithError(err).Error("failed to update participant.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
+			return
+		}
+		// The path names the member that is updated; a body for another member is refused.
+		if participantId == nil || !uuid.Equal(participantId, t.Id) {
+			respondWith(w, http.StatusBadRequest, tenant,
+				model.ErrUpdateParticipant(errors.New("participant id in path and body differ")))
 			return
 		}
 

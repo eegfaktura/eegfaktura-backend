@@ -94,7 +94,16 @@ func (db *sqlDatabase) FindParticipantByMeteringPoint(ctx context.Context, tenan
 }
 
 func (db *sqlDatabase) UpdateParticipant(ctx context.Context, tenant, user string, participant *model.EegParticipant) error {
-	return updateParticipant(ctx, db.db, tenant, user, participant)
+	tx, err := db.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	err = updateParticipant(ctx, tx, tenant, user, participant)
+	if err != nil {
+		return errors.Join(err, tx.Rollback())
+	}
+	return tx.Commit()
 }
 
 func (db *sqlDatabase) UpdateParticipantPartial(ctx context.Context, tenant, participantId, name string, value interface{}) error {
@@ -146,7 +155,7 @@ const TABLE_PARTICIPANT = "base.participant"
 // Aufrufers gehoert. Bewusst als Vorabpruefung statt als zusaetzliche WHERE-Bedingung:
 // updateParticipantPartial schreibt auch in Kindtabellen (Adressen, Kontakt), dort
 // waere ein durchgereichter Mandant leicht zu uebersehen.
-func assertParticipantTenant(ctx context.Context, db *sqlx.DB, tenant, participantId string) error {
+func assertParticipantTenant(ctx context.Context, db sqlx.QueryerContext, tenant, participantId string) error {
 	if tenant == "" {
 		return model.ErrForeignTenantParticipant(errors.New("no tenant in request context"))
 	}
@@ -160,7 +169,7 @@ func assertParticipantTenant(ctx context.Context, db *sqlx.DB, tenant, participa
 	}
 
 	var owner string
-	if err := db.GetContext(ctx, &owner, stmt); err != nil {
+	if err := sqlx.GetContext(ctx, db, &owner, stmt); err != nil {
 		if errors.Is(err, dbsql.ErrNoRows) {
 			// Nicht vorhanden - die aufrufende Funktion meldet das wie bisher.
 			return nil
@@ -354,14 +363,16 @@ func enforceAddressTypes(participant *model.EegParticipant) {
 	participant.ResidentAddress.Type = model.RESIDENCE
 }
 
-func updateParticipant(ctx context.Context, db *sqlx.DB, tenant, user string, participant *model.EegParticipant) error {
+// updateParticipant runs inside the caller's transaction: a failure part-way must
+// not leave the member half updated (261005-ca1).
+func updateParticipant(ctx context.Context, tx *sqlx.Tx, tenant, user string, participant *model.EegParticipant) error {
 
 	// The child-table updates below (contactdetail, address, bankaccount) are
 	// scoped by participant_id only. Assert first that the participant belongs to
 	// the caller's tenant — otherwise a foreign id in the body would overwrite
 	// another tenant's contact, addresses and bank account. Mirrors
 	// UpdateParticipantPartial / DeleteParticipant.
-	if err := assertParticipantTenant(ctx, db, tenant, participant.Id.String()); err != nil {
+	if err := assertParticipantTenant(ctx, tx, tenant, participant.Id.String()); err != nil {
 		return err
 	}
 
@@ -386,7 +397,7 @@ func updateParticipant(ctx context.Context, db *sqlx.DB, tenant, user string, pa
 			"id":     goqu.Op{"eq": participant.Id.String()},
 		}).
 		ToSQL()
-	_, err := db.Exec(sql)
+	_, err := tx.ExecContext(ctx, sql)
 	if err != nil {
 		return err
 	}
@@ -397,7 +408,7 @@ func updateParticipant(ctx context.Context, db *sqlx.DB, tenant, user string, pa
 			"participant_id": participant.Id.String(),
 		}).
 		ToSQL()
-	_, err = db.Exec(sql)
+	_, err = tx.ExecContext(ctx, sql)
 	if err != nil {
 		return err
 	}
@@ -409,7 +420,7 @@ func updateParticipant(ctx context.Context, db *sqlx.DB, tenant, user string, pa
 			"participant_id": participant.Id.String(),
 		}).
 		ToSQL()
-	_, err = db.Exec(sql)
+	_, err = tx.ExecContext(ctx, sql)
 	if err != nil {
 		return err
 	}
@@ -421,7 +432,7 @@ func updateParticipant(ctx context.Context, db *sqlx.DB, tenant, user string, pa
 			"participant_id": participant.Id.String(),
 		}).
 		ToSQL()
-	_, err = db.Exec(sql)
+	_, err = tx.ExecContext(ctx, sql)
 	if err != nil {
 		return err
 	}
@@ -432,7 +443,7 @@ func updateParticipant(ctx context.Context, db *sqlx.DB, tenant, user string, pa
 			"participant_id": participant.Id.String(),
 		}).
 		ToSQL()
-	_, err = db.Exec(sql)
+	_, err = tx.ExecContext(ctx, sql)
 	if err != nil {
 		return err
 	}

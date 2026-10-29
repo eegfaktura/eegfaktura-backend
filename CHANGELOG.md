@@ -20,6 +20,8 @@ this changelog highlights the changes relevant for overview and operations.
   whole list of the community fail with a scan error. Such a member is now listed with empty fields. The current write
   paths always create all four rows; members without them come from older versions (before #51 a request without
   `residentAddress` stored a residence row without type) or from rows written directly into the database.
+- **Member update** (261005-ca1): security relevant — details not published. `PUT /participant/{id}` now answers 400
+  when the id in the path and the id in the body differ, and the update is written in one transaction.
 
 ## [1.13.0] – 2026-10-28
 
