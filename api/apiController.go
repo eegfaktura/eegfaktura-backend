@@ -64,6 +64,7 @@ func (h *ApiHandler) updateParticipantFactorAPI() middleware.JWTHandlerFunc {
 			if err = mqttclient.ChangePartitionFactor(eeg, request.MeteringPoints); err != nil {
 				log.WithField("tenant", tenant).WithError(err).Errorf("failed to request metering point PRTFACT. Err: %v", request)
 				respondWith(w, http.StatusInternalServerError, tenant, err)
+				return
 			}
 		} else {
 			log.WithField("tenant", tenant).Warnf("Offline EEG want to change partitions of %+v", request)

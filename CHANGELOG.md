@@ -37,6 +37,9 @@ this changelog highlights the changes relevant for overview and operations.
 - **Logging** (261008-ca1): security relevant — details not published. Without `LOG_LEVEL` (or with an unknown value)
   the backend now logs at `info` instead of `debug`; an unknown value is reported once at start. Log lines name ids
   (tenant, metering point, conversation) instead of whole objects, message payloads or SQL statements.
+- **Partition factor routes stop after a failed MQTT send** (261015-ca2, pre-existing): `POST
+  /meteringpoint/changepartitionfactor` and `POST /master/updatepartfact` answered 500 and then still wrote the success
+  status (Go logged `superfluous response.WriteHeader`). The client keeps getting the 500; the second write is gone.
 
 ## [1.13.0] – 2026-10-28
 
