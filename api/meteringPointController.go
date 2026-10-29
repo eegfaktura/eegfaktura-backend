@@ -197,7 +197,11 @@ func (h *MeteringHandler) updateMeteringPointId() middleware.JWTHandlerFunc {
 			return
 		}
 
-		value := v["newId"].(string)
+		value, ok := v["newId"].(string)
+		if !ok || value == "" {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrUpdateMeter(errors.New("newId is missing")))
+			return
+		}
 
 		if err := h.db.UpdateMeteringPointPartial(r.Context(), tenant, claims.Username, pId, mId, map[string]interface{}{"metering_point_id": value}); err != nil {
 			log.WithField("tenant", tenant).WithError(err).Error("failed to update metering point.")
@@ -335,6 +339,11 @@ func (h *MeteringHandler) registerMeteringPoint() middleware.JWTHandlerFunc {
 				meter = p
 				break
 			}
+		}
+		if meter == nil {
+			respondWith(w, http.StatusNotFound, tenant,
+				model.ErrFindMeter(fmt.Errorf("metering point %s not found at participant %s", request.MeteringPoint, participantId)))
+			return
 		}
 
 		var from int64

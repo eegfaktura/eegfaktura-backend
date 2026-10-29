@@ -25,6 +25,10 @@ this changelog highlights the changes relevant for overview and operations.
 - **Member and partition factor checks** (261005-ca4): security relevant — details not published. Requests for a member
   id that does not exist now answer 400 (error code 1106) instead of succeeding without effect;
   `POST /meteringpoint/changepartitionfactor` answers 400 (error code 3100) for a metering point that is not found.
+- **Metering point routes answer incomplete requests with 400/404 instead of crashing the request** (261005-ca6):
+  `PUT /meteringpoint/v2/{pid}/updateid/{mid}` without `newId` and `PUT /meteringpoint/{pid}/update/{mid}` without
+  `participantState` answer 400; `POST /meteringpoint/{pid}/register` for a metering point the member does not have
+  answers 404. Before, the request panicked and the proxy answered 502.
 
 ## [1.13.0] – 2026-10-28
 

@@ -516,6 +516,9 @@ func UpdateMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, par
 	// The number in the path is the row that is updated (metering_point_id is skipupdate); derive
 	// the grid operator from it, not from the body (platform#107).
 	meteringPoint.MeteringPoint = meterId
+	if meteringPoint.State == nil {
+		return model.ErrUpdateMeter(errors.New("participantState is missing"))
+	}
 	if err := applyGridOperator(ctx, db, tenant, []*model.MeteringPoint{meteringPoint}); err != nil {
 		return model.ErrUpdateMeter(err)
 	}
