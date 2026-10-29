@@ -57,7 +57,7 @@ func (db *sqlDatabase) GetTariffHistory(tenant, id string) ([]model.Tariff, erro
 	tariffHistory := []model.Tariff{}
 	err = db.db.Select(&tariffHistory, stmt)
 	if (err != nil) || len(tariffHistory) == 0 {
-		log.Errorf("GetTariffHistory err: %v: %s", err, stmt)
+		log.Errorf("GetTariffHistory err: %v", err)
 		return []model.Tariff{}, model.ErrGetTariff(err)
 	}
 
@@ -238,7 +238,7 @@ func AddTariff(db *sqlx.DB, tenant, user string, tariff *model.Tariff) error {
 	}
 	_, err = tx.Exec(stmt)
 	if err != nil {
-		log.WithField("SQL", "INSERT").Errorf("Stmt: %v", stmt)
+		log.WithError(err).WithField("SQL", "INSERT").Error("SQL statement failed")
 		return model.ErrUpdateTariff(err)
 	}
 
@@ -286,7 +286,7 @@ func UpdateTariff(dbConn OpenDbXConnection, tenant string, tariff *model.Tariff)
 	stmt, _, err := goqu.Update("base.tariff").Set(&update).Where(goqu.C("tenant").Eq(tenant)).ToSQL()
 	_, err = db.Exec(stmt)
 	if err != nil {
-		log.WithField("SQL", "UPDATE").Errorf("Stmt: %v", stmt)
+		log.WithError(err).WithField("SQL", "UPDATE").Error("SQL statement failed")
 	}
 
 	//_, err = db.NamedExec(

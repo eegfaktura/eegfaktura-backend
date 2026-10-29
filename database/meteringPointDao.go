@@ -319,7 +319,7 @@ func saveMeteringPoint(ctx context.Context, tx *sqlx.Tx, tenant string, metering
 		}
 		_, err = tx.Exec(updateExistingStmt)
 		if err != nil {
-			log.WithField("SQL", "UPDATE").Errorf("Stmt: %v", updateExistingStmt)
+			log.WithError(err).WithField("SQL", "UPDATE").Error("SQL statement failed")
 			return model.ErrSaveMeteringPoint(err)
 		}
 	}
@@ -329,9 +329,9 @@ func saveMeteringPoint(ctx context.Context, tx *sqlx.Tx, tenant string, metering
 	if err != nil {
 		return model.ErrSaveMeteringPoint(err)
 	}
-	res, err := tx.Exec(statement)
+	_, err = tx.Exec(statement)
 	if err != nil {
-		log.Errorf("Stmt: %s - %v", statement, res)
+		log.WithError(err).Error("SQL statement failed")
 		return model.ErrSaveMeteringPoint(err)
 	}
 
@@ -339,10 +339,10 @@ func saveMeteringPoint(ctx context.Context, tx *sqlx.Tx, tenant string, metering
 	if err != nil {
 		return model.ErrSaveMeteringPoint(err)
 	}
-	res, err = tx.Exec(statement)
+	_, err = tx.Exec(statement)
 
 	if err != nil {
-		log.Errorf("Stmt: %s - %v", statement, res)
+		log.WithError(err).Error("SQL statement failed")
 		return model.ErrSaveMeteringPoint(err)
 	}
 
@@ -451,7 +451,7 @@ func moveMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, sPart
 	}
 	_, err = tx.Exec(statement)
 	if err != nil {
-		log.WithField("SQL", "UPDATE").Errorf("Stmt: %v", statement)
+		log.WithError(err).WithField("SQL", "UPDATE").Error("SQL statement failed")
 		return model.ErrUpdateMeter(err)
 	}
 	return nil
@@ -506,7 +506,7 @@ func UpdateMeteringPointPartial(ctx context.Context, db *sqlx.DB, tenant, userna
 
 	_, err = db.Exec(statement)
 	if err != nil {
-		log.WithField("SQL", "UPDATE").Errorf("Stmt: %v", statement)
+		log.WithError(err).WithField("SQL", "UPDATE").Error("SQL statement failed")
 		return model.ErrUpdateMeter(err)
 	}
 	return nil
@@ -543,7 +543,7 @@ func UpdateMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, par
 	}
 	_, err = db.Exec(statement)
 	if err != nil {
-		log.WithField("SQL", "UPDATE").Errorf("Stmt: %v", statement)
+		log.WithError(err).WithField("SQL", "UPDATE").Error("SQL statement failed")
 		return model.ErrUpdateMeter(err)
 	}
 	return nil
@@ -619,11 +619,11 @@ func archiveMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, participantI
 
 	result, err := db.Exec(statement)
 	if err != nil {
-		log.WithField("SQL", "UPDATE").Errorf("Stmt: %v", statement)
+		log.WithError(err).WithField("SQL", "UPDATE").Error("SQL statement failed")
 		return model.ErrStatusMeter(err)
 	}
 	if rows, err := result.RowsAffected(); err != nil || rows == 0 {
-		log.WithField("SQL", "UPDATE").Infof("No Rows Affected. Stmt: %v", statement)
+		log.WithField("SQL", "UPDATE").Info("No Rows Affected")
 	}
 	return nil
 }
@@ -645,7 +645,7 @@ func restoreMeteringPointProcessState(ctx context.Context, db *sqlx.DB, tenant, 
 
 	_, err = db.Exec(sql)
 	if err != nil {
-		log.WithField("SQL", "UPDATE").Errorf("Stmt: %v", sql)
+		log.WithError(err).WithField("SQL", "UPDATE").Error("SQL statement failed")
 		return model.ErrStatusMeter(err)
 	}
 	return nil
@@ -753,11 +753,11 @@ func meteringPointsSetStatus(ctx context.Context, db *sqlx.DB, tenant string, pr
 
 	result, err := db.Exec(statement)
 	if err != nil {
-		log.WithField("SQL", "UPDATE").Errorf("Stmt: %v", statement)
+		log.WithError(err).WithField("SQL", "UPDATE").Error("SQL statement failed")
 		return model.ErrStatusMeter(err)
 	}
 	if rows, err := result.RowsAffected(); err != nil || rows == 0 {
-		log.WithField("SQL", "UPDATE").Infof("No Rows Affected. Stmt: %v", statement)
+		log.WithField("SQL", "UPDATE").Info("No Rows Affected")
 	}
 	return nil
 }
@@ -1015,7 +1015,7 @@ func MeteringPointChangePartFactor(ctx context.Context, db *sqlx.DB, tenant, par
 
 	res, err := tx.Exec(stmt)
 	if err != nil {
-		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", stmt)
+		log.WithError(err).WithField("SQL", "SELECT").Error("SQL statement failed")
 		return model.ErrUpdateMeter(err)
 	}
 	if n, err := res.RowsAffected(); err == nil && n < int64(len(meters)) {
@@ -1083,10 +1083,9 @@ func findAllMeteringByTenant(ctx context.Context, tx *sqlx.DB, tenant, participa
 	if err != nil {
 		return nil, model.ErrFindMeter(err)
 	}
-	log.WithField("SQL", "SELECT").Infof("Stmt: %s", stmt)
 	err = tx.SelectContext(ctx, &m, stmt)
 	if err != nil {
-		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", stmt)
+		log.WithError(err).WithField("SQL", "SELECT").Error("SQL statement failed")
 		return nil, model.ErrFindMeter(err)
 	}
 	return m, nil
@@ -1173,13 +1172,13 @@ func findMeteringByIdAndState(ctx context.Context, db *sqlx.DB, tenant string, m
 		ToSQL()
 
 	if err != nil {
-		log.WithField("tenant", tenant).Errorf("Stmt: %s", stmt)
+		log.WithError(err).WithField("tenant", tenant).Error("SQL statement failed")
 		return nil, model.ErrFindMeter(err)
 	}
 
 	err = db.SelectContext(ctx, &m, stmt)
 	if err != nil {
-		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", stmt)
+		log.WithError(err).WithField("SQL", "SELECT").Error("SQL statement failed")
 		return nil, model.ErrFindMeter(err)
 	}
 	return m, nil
@@ -1220,16 +1219,14 @@ func findAssignedMeteringById(ctx context.Context, db *sqlx.DB, tenant string, m
 		Where(whereClause).
 		ToSQL()
 
-	log.Infof("Active Meter Stmt: %s", stmt)
-
 	if err != nil {
-		log.WithField("tenant", tenant).Errorf("Stmt: %s", stmt)
+		log.WithError(err).WithField("tenant", tenant).Error("SQL statement failed")
 		return nil, model.ErrFindMeter(err)
 	}
 
 	err = db.SelectContext(ctx, &m, stmt)
 	if err != nil {
-		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", stmt)
+		log.WithError(err).WithField("SQL", "SELECT").Error("SQL statement failed")
 		return nil, model.ErrFindMeter(err)
 	}
 	return m, nil
@@ -1285,8 +1282,7 @@ func UpdateActiveMeteringPoints(ctx context.Context, db *sqlx.DB, tenant string,
 		//sql, _, _ := updateMeter.ToSQL()
 		//fmt.Printf("STATEMENT: %v\n", sql)
 		if err != nil {
-			sql, _, _ := updateMeter.ToSQL()
-			log.WithField("SQL", "UPDATE").Errorf("Stmt: %s", sql)
+			log.WithError(err).WithField("SQL", "UPDATE").Error("SQL statement failed")
 			return model.ErrUpdateMeter(err)
 		}
 
@@ -1309,8 +1305,7 @@ func UpdateActiveMeteringPoints(ctx context.Context, db *sqlx.DB, tenant string,
 
 			_, err = updatePartFact.Exec()
 			if err != nil {
-				sql, _, _ := updatePartFact.ToSQL()
-				log.WithField("SQL", "UPDATE").Errorf("Stmt: %s", sql)
+				log.WithError(err).WithField("SQL", "UPDATE").Error("SQL statement failed")
 				return model.ErrUpdateMeter(err)
 			}
 		}
@@ -1355,7 +1350,7 @@ func findMeteringPointsForTenant(ctx context.Context, db *sqlx.DB, tenant string
 	mIds := []string{}
 	err := db.SelectContext(ctx, &mIds, stmt)
 	if err != nil {
-		log.WithField("tenant", tenant).WithError(err).Errorf("Stmt: %s", stmt)
+		log.WithField("tenant", tenant).WithError(err).Error("SQL statement failed")
 		return nil, err
 	}
 	return findMeteringByIdAndState(ctx, db, tenant, mIds, nil)
@@ -1374,7 +1369,7 @@ func findMeteringPointsActivePeriod(ctx context.Context, db *sqlx.DB, tenant str
 	mIds := []string{}
 	err := db.Select(&mIds, stmt)
 	if err != nil {
-		log.WithField("tenant", tenant).WithError(err).Errorf("Stmt: %s", stmt)
+		log.WithField("tenant", tenant).WithError(err).Error("SQL statement failed")
 		return nil, err
 	}
 	return findMeteringByIdAndState(ctx, db, tenant, mIds, nil)

@@ -62,7 +62,7 @@ func (r *RegisterService) Register(ctx context.Context, eeg *protobuf.RegisterEe
 		ContactPerson: null.StringFrom(eeg.EegOwner),
 	}
 
-	log.Printf("Register EEG: %+v", newEeg)
+	log.Printf("Register EEG: %s", newEeg.Id)
 	db, err := database.GetDB(ctx)
 	if err != nil {
 		log.Errorf("Database Error: %v", err)

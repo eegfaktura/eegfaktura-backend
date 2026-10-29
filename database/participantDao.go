@@ -503,7 +503,7 @@ func confirmParticipant(ctx context.Context, db *sqlx.DB, username, participantI
 
 	_, err = db.ExecContext(ctx, sql)
 	if err != nil {
-		log.WithField("SQL", "UPDATE").WithError(err).Error(sql)
+		log.WithField("SQL", "UPDATE").WithError(err).Error("SQL statement failed")
 		return model.ErrCompleteParticipant(err)
 	}
 	return nil
@@ -575,7 +575,7 @@ func saveParticipant(ctx context.Context, tx *sqlx.Tx, tenant, username string, 
 	).ToSQL()
 
 	if err != nil {
-		log.WithField("STMT", "INSERT").WithError(err).Error(sql)
+		log.WithField("STMT", "INSERT").WithError(err).Error("SQL statement failed")
 		return model.ErrRegisterParticipant(err)
 	}
 	_, err = tx.Exec(sql)
@@ -706,7 +706,7 @@ func updateParticipantPartial(ctx context.Context, db *sqlx.DB, participantId, n
 		}
 		return nil
 	} else {
-		log.WithError(err).Errorf("Update partial participant %s", sql)
+		log.WithError(err).Error("Update partial participant failed")
 		return model.ErrUpdateParticipant(err)
 	}
 }
@@ -766,7 +766,7 @@ func insertParticipantPartial(ctx context.Context, db *sqlx.DB, participantId, n
 
 	_, err := db.Exec(sql)
 	if err != nil {
-		log.WithError(err).Errorf("Insert partial participant %s", sql)
+		log.WithError(err).Error("Insert partial participant failed")
 		return model.ErrInsertParticipant(err)
 	}
 	return nil
@@ -908,13 +908,13 @@ func findParticipantByMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, me
 
 	stmt, _, err := buildParticipantQueryStmt().Where(goqu.C("id").Eq(participantIdStmt)).ToSQL()
 	if err != nil {
-		log.WithField("SQL", "SELECT").Infof("Create Stmt: %+v, %+v", participant, participantIdStmt)
+		log.WithField("SQL", "SELECT").WithError(err).Info("SQL statement failed")
 		return nil, err
 	}
 
 	err = db.GetContext(ctx, &participant, stmt)
 	if err != nil {
-		log.WithField("SQL", "SELECT").Infof("Stmt: %s", stmt)
+		log.WithError(err).WithField("SQL", "SELECT").Info("SQL statement failed")
 		return nil, err
 	}
 	err = completeParticipant(ctx, db, &participant)

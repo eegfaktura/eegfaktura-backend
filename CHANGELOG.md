@@ -29,6 +29,9 @@ this changelog highlights the changes relevant for overview and operations.
   `PUT /meteringpoint/v2/{pid}/updateid/{mid}` without `newId` and `PUT /meteringpoint/{pid}/update/{mid}` without
   `participantState` answer 400; `POST /meteringpoint/{pid}/register` for a metering point the member does not have
   answers 404. Before, the request panicked and the proxy answered 502.
+- **Logging** (261008-ca1): security relevant — details not published. Without `LOG_LEVEL` (or with an unknown value)
+  the backend now logs at `info` instead of `debug`; an unknown value is reported once at start. Log lines name ids
+  (tenant, metering point, conversation) instead of whole objects, message payloads or SQL statements.
 
 ## [1.13.0] – 2026-10-28
 

@@ -77,7 +77,7 @@ func (h *MeteringHandler) createMeteringPoint() middleware.JWTHandlerFunc {
 		}
 
 		if m.ProcessState == model.NEW {
-			log.WithField("tenant", tenant).Infof("register Meter:  %+v ", m)
+			log.WithField("tenant", tenant).Infof("register Meter:  %s ", m.MeteringPoint)
 			eeg, err := h.db.GetEegById(r.Context(), tenant)
 			if err != nil {
 				respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
@@ -359,7 +359,7 @@ func (h *MeteringHandler) registerMeteringPoint() middleware.JWTHandlerFunc {
 			return
 		}
 
-		log.WithField("tenant", tenant).Infof("register metering point. PID: %s, request: %+v", participantId, request)
+		log.WithField("tenant", tenant).Infof("register metering point. PID: %s, meter: %s", participantId, request.MeteringPoint)
 		respondWithData(w, http.StatusCreated, participant)
 	}
 }
