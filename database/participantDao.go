@@ -171,8 +171,8 @@ func assertParticipantTenant(ctx context.Context, db sqlx.QueryerContext, tenant
 	var owner string
 	if err := sqlx.GetContext(ctx, db, &owner, stmt); err != nil {
 		if errors.Is(err, dbsql.ErrNoRows) {
-			// Nicht vorhanden - die aufrufende Funktion meldet das wie bisher.
-			return nil
+			// Nicht vorhanden: als "nicht gefunden" abweisen, nicht durchlassen (261005-ca4).
+			return model.ErrFindParticipant(fmt.Errorf("participant %s: %w", participantId, err))
 		}
 		return model.ErrGetParticipant(err)
 	}

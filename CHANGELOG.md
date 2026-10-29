@@ -22,6 +22,9 @@ this changelog highlights the changes relevant for overview and operations.
   `residentAddress` stored a residence row without type) or from rows written directly into the database.
 - **Member update** (261005-ca1): security relevant — details not published. `PUT /participant/{id}` now answers 400
   when the id in the path and the id in the body differ, and the update is written in one transaction.
+- **Member and partition factor checks** (261005-ca4): security relevant — details not published. Requests for a member
+  id that does not exist now answer 400 (error code 1106) instead of succeeding without effect;
+  `POST /meteringpoint/changepartitionfactor` answers 400 (error code 3100) for a metering point that is not found.
 
 ## [1.13.0] – 2026-10-28
 
