@@ -408,13 +408,17 @@ func updateParticipant(ctx context.Context, tx *sqlx.Tx, tenant, user string, pa
 		return err
 	}
 
+	extra := map[string]interface{}{"participant_id": participant.Id.String()}
+	resident, billing := participant.ResidentAddress, participant.BillingAddress
+	resident.Type, billing.Type = model.RESIDENCE, model.BILLING
+
 	sql, _, _ = goqu.Update("base.contactdetail").
 		Set(participant.Contact).
 		Where(goqu.Ex{
 			"participant_id": participant.Id.String(),
 		}).
 		ToSQL()
-	_, err = tx.ExecContext(ctx, sql)
+	err = execOrInsertChild(ctx, tx, sql, "base.contactdetail", toRecord(participant.Contact, extra))
 	if err != nil {
 		return err
 	}
@@ -426,7 +430,7 @@ func updateParticipant(ctx context.Context, tx *sqlx.Tx, tenant, user string, pa
 			"participant_id": participant.Id.String(),
 		}).
 		ToSQL()
-	_, err = tx.ExecContext(ctx, sql)
+	err = execOrInsertChild(ctx, tx, sql, "base.address", toRecord(resident, extra))
 	if err != nil {
 		return err
 	}
@@ -438,7 +442,7 @@ func updateParticipant(ctx context.Context, tx *sqlx.Tx, tenant, user string, pa
 			"participant_id": participant.Id.String(),
 		}).
 		ToSQL()
-	_, err = tx.ExecContext(ctx, sql)
+	err = execOrInsertChild(ctx, tx, sql, "base.address", toRecord(billing, extra))
 	if err != nil {
 		return err
 	}
@@ -449,10 +453,30 @@ func updateParticipant(ctx context.Context, tx *sqlx.Tx, tenant, user string, pa
 			"participant_id": participant.Id.String(),
 		}).
 		ToSQL()
-	_, err = tx.ExecContext(ctx, sql)
+	err = execOrInsertChild(ctx, tx, sql, "base.bankaccount", toRecord(participant.BankAccount, extra))
 	if err != nil {
 		return err
 	}
+	return err
+}
+
+// execOrInsertChild runs the UPDATE of a child row (contact, address, bank account) and
+// inserts the row when the member has none yet: such members are listed and editable,
+// so an edit must not be lost (261029-mm1). An empty statement (nothing to set) inserts
+// nothing.
+func execOrInsertChild(ctx context.Context, tx *sqlx.Tx, updateSql, table string, record goqu.Record) error {
+	res, err := tx.ExecContext(ctx, updateSql)
+	if err != nil || updateSql == "" {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil || n > 0 {
+		return err
+	}
+	sql, _, err := pgDialect.Insert(table).Rows(record).ToSQL()
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, sql)
 	return err
 }
 
