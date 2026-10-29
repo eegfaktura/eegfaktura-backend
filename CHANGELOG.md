@@ -13,6 +13,9 @@ this changelog highlights the changes relevant for overview and operations.
   builds and pushes the shipped image, but used floating tags (`@v4`, `@v3`, …); a moved tag ran in the job that holds
   the push credentials. Now every action is pinned to a commit, the same SHAs `pr-checks.yml` and `security-scan.yml` already
   use where the action is the same, otherwise the commit the floating tag pointed to on 2026-10-28.
+- **Keycloak sample configuration** (tracking 1): security relevant — details not published. The `keycloak.json` in
+  the repository is now a sample. Deployments that mount their own file via `KEYCLOAK_CONFIG` are not affected; a
+  local run without `KEYCLOAK_CONFIG` needs its own `keycloak.json` (see README, not to be committed).
 
 ### Fixed
 - **Member list no longer fails when one member has no address, bank or contact row** (261029-mm1): the list LEFT JOINs
