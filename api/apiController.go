@@ -49,6 +49,11 @@ func (h *ApiHandler) updateParticipantFactorAPI() middleware.JWTHandlerFunc {
 			return
 		}
 
+		if err = assertPartitionFactorMeters(r.Context(), h.db, tenant, request.MeteringPoints); err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, err)
+			return
+		}
+
 		eeg, err := h.db.GetEegById(r.Context(), tenant)
 		if err != nil {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))

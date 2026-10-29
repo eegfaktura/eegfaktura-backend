@@ -727,27 +727,9 @@ func (h *MeteringHandler) requestChangePartitionFactor() middleware.JWTHandlerFu
 			return
 		}
 
-		// Every metering point of the request must belong to the caller's community (261005-ca4).
-		if len(request.MeteringPoints) > 0 {
-			ids := make([]string, 0, len(request.MeteringPoints))
-			for _, m := range request.MeteringPoints {
-				ids = append(ids, m.MeteringPoint)
-			}
-			own, err := h.db.FindMeteringByIds(r.Context(), tenant, ids)
-			if err != nil {
-				respondWith(w, http.StatusBadRequest, tenant, model.ErrFindMeter(err))
-				return
-			}
-			known := map[string]bool{}
-			for _, m := range own {
-				known[m.MeteringPoint] = true
-			}
-			for _, id := range ids {
-				if !known[id] {
-					respondWith(w, http.StatusBadRequest, tenant, model.ErrFindMeter(fmt.Errorf("metering point %s not found", id)))
-					return
-				}
-			}
+		if err = assertPartitionFactorMeters(r.Context(), h.db, tenant, request.MeteringPoints); err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, err)
+			return
 		}
 
 		eeg, err := h.db.GetEegById(r.Context(), tenant)
