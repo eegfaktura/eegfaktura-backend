@@ -172,7 +172,7 @@ func assertParticipantTenant(ctx context.Context, db sqlx.QueryerContext, tenant
 	if err := sqlx.GetContext(ctx, db, &owner, stmt); err != nil {
 		if errors.Is(err, dbsql.ErrNoRows) {
 			// Nicht vorhanden: als "nicht gefunden" abweisen, nicht durchlassen (261005-ca4).
-			return model.ErrFindParticipant(fmt.Errorf("participant %s: %w", participantId, err))
+			return errParticipantNotFound()
 		}
 		return model.ErrGetParticipant(err)
 	}
@@ -186,8 +186,14 @@ func assertParticipantTenant(ctx context.Context, db sqlx.QueryerContext, tenant
 		"participantId": participantId,
 	}).Warn("cross-tenant participant access refused")
 
-	return model.ErrForeignTenantParticipant(
-		fmt.Errorf("participant %s does not belong to tenant %s", participantId, tenant))
+	return errParticipantNotFound()
+}
+
+// errParticipantNotFound is the one answer for an unknown and a foreign participant:
+// the caller must not learn that the id exists in another community. The log above
+// keeps the two apart.
+func errParticipantNotFound() error {
+	return model.ErrFindParticipant(errors.New("participant not found"))
 }
 
 func getParticipants(ctx context.Context, db *sqlx.DB, tenant string) ([]*model.EegParticipant, error) {
@@ -377,7 +383,7 @@ func updateParticipant(ctx context.Context, tx *sqlx.Tx, tenant, user string, pa
 	}
 
 	if err := enforceContactEmail(participant); err != nil {
-		return err
+		return model.ErrParseJson(err)
 	}
 
 	updateValues := struct {

@@ -26,7 +26,10 @@ this changelog highlights the changes relevant for overview and operations.
 - **Member update** (261005-ca1): security relevant — details not published. `PUT /participant/{id}` now answers 400
   when the id in the path and the id in the body differ, and the update is written in one transaction.
 - **Member and partition factor checks** (261005-ca4): security relevant — details not published. Requests for a member
-  id that does not exist now answer 400 (error code 1106) instead of succeeding without effect;
+  id that does not exist now answer 400 (error code 1106) instead of succeeding without effect. Unknown and foreign
+  member ids get the same answer (code 1106, "participant not found"; code 1108 is now only used for a request without
+  tenant). `PUT /participant/{id}` and `PUT /participant/v2/{id}` answer errors as JSON with a code and without
+  database text (before: plain text, partial update 500); an invalid e-mail in the full update answers code 2000;
   `POST /meteringpoint/changepartitionfactor` and `POST /master/updatepartfact` answer 400 (error code 3100) for a
   metering point that is not found.
 - **Metering point routes answer incomplete requests with 400/404 instead of crashing the request** (261005-ca6):
