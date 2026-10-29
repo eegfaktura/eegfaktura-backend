@@ -44,3 +44,20 @@ func TestMeteringPointRoutesDoNotPanicOnIncompleteInput(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
 }
+
+// 261005-ca6: a null entry in a partition factor request answers 400 on both routes.
+func TestPartitionFactorRoutesRefuseNullEntry(t *testing.T) {
+	mh := newTestMeteringHandler(t)
+	ah := NewApiHandler(mh.db)
+	for name, handler := range map[string]middleware.JWTHandlerFunc{
+		"changepartitionfactor": mh.requestChangePartitionFactor(),
+		"updatepartfact":        ah.updateParticipantFactorAPI(),
+	} {
+		t.Run(name, func(t *testing.T) {
+			req, _ := http.NewRequest("POST", "/"+name, strings.NewReader(`{"meteringPoints":[null]}`))
+			w := httptest.NewRecorder()
+			assert.NotPanics(t, func() { handler(w, req, nil, "TE001006") })
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+		})
+	}
+}

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"at.ourproject/vfeeg-backend/database"
@@ -17,6 +18,9 @@ func assertPartitionFactorMeters(ctx context.Context, db database.Database, tena
 	}
 	ids := make([]string, 0, len(meters))
 	for _, m := range meters {
+		if m == nil { // {"meteringPoints":[null]} (261005-ca6)
+			return model.ErrParseJson(errors.New("empty metering point entry"))
+		}
 		ids = append(ids, m.MeteringPoint)
 	}
 	own, err := db.FindMeteringByIds(ctx, tenant, ids)

@@ -32,7 +32,8 @@ this changelog highlights the changes relevant for overview and operations.
 - **Metering point routes answer incomplete requests with 400/404 instead of crashing the request** (261005-ca6):
   `PUT /meteringpoint/v2/{pid}/updateid/{mid}` without `newId` and `PUT /meteringpoint/{pid}/update/{mid}` without
   `participantState` answer 400; `POST /meteringpoint/{pid}/register` for a metering point the member does not have
-  answers 404. Before, the request panicked and the proxy answered 502.
+  answers 404; a partition factor request with an empty (`null`) metering point entry answers 400 on both routes.
+  Before, the request panicked and the proxy answered 502.
 - **Logging** (261008-ca1): security relevant — details not published. Without `LOG_LEVEL` (or with an unknown value)
   the backend now logs at `info` instead of `debug`; an unknown value is reported once at start. Log lines name ids
   (tenant, metering point, conversation) instead of whole objects, message payloads or SQL statements.
