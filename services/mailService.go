@@ -122,7 +122,7 @@ func sendHtmlInlineAttachment(sender, recipient, subject string, cc *string, htm
 		log.WithField("MAIL", "INLINE").Errorf("Send Mail With Inline Attachment Error: %v", err)
 		return err
 	}
-	log.Infof("Response from MAIL-SERVER: %v", r)
+	log.Infof("Response from MAIL-SERVER: status %d, rejected recipients %d", r.GetStatus(), len(r.GetRejectedRecipients()))
 	if r == nil {
 		return errors.New("error Send Mail")
 	}
@@ -190,7 +190,7 @@ func SendMailWithAttachment(sender, recipient, subject string, cc *string, htmlB
 		log.WithField("MAIL", "ATTACHMENT").Errorf("Send Mail With Inline Attachment Error: %v", err)
 		return err
 	}
-	log.Infof("Response from MAIL-SERVER: %v", r)
+	log.Infof("Response from MAIL-SERVER: status %d, rejected recipients %d", r.GetStatus(), len(r.GetRejectedRecipients()))
 	if r == nil {
 		return errors.New("error Send Mail")
 	}

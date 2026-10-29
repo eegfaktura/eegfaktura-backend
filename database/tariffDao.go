@@ -281,8 +281,6 @@ func UpdateTariff(dbConn OpenDbXConnection, tenant string, tariff *model.Tariff)
 
 	update := updateType{tenant, *tariff}
 
-	log.Debugf("Tarrif: %+v\n", update)
-
 	stmt, _, err := goqu.Update("base.tariff").Set(&update).Where(goqu.C("tenant").Eq(tenant)).ToSQL()
 	_, err = db.Exec(stmt)
 	if err != nil {
