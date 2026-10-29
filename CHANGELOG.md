@@ -14,6 +14,13 @@ this changelog highlights the changes relevant for overview and operations.
   the push credentials. Now every action is pinned to a commit, the same SHAs `pr-checks.yml` and `security-scan.yml` already
   use where the action is the same, otherwise the commit the floating tag pointed to on 2026-10-28.
 
+### Fixed
+- **Member list no longer fails when one member has no address, bank or contact row** (261029-mm1): the list LEFT JOINs
+  both addresses, the bank account and the contact row; a member without a billing or residence address made the
+  whole list of the community fail with a scan error. Such a member is now listed with empty fields. The current write
+  paths always create all four rows; members without them come from older versions (before #51 a request without
+  `residentAddress` stored a residence row without type) or from rows written directly into the database.
+
 ## [1.13.0] – 2026-10-28
 
 ### Fixed
