@@ -20,6 +20,8 @@ this changelog highlights the changes relevant for overview and operations.
   application pool can still serve, and saturation of the shared Postgres must not take the service out of service.
 
 ### Changed
+- **Every mail send waits 30 s for the mail server** (261030-mm7): before 5 s (30 s only above 256 KB of files;
+  the metering point list mail always 5 s). One constant `services.MailSendTimeout` for all sends.
 - **Log output is now one JSON object per line on stdout, with ECS field names** (logging concept W-261008-ca2).
   **This changes what operators, `kubectl logs` and Dynatrace receive:** before, logrus text (`time=… level=… msg=…`)
   on stderr; now e.g. `{"@timestamp":"…Z","log.level":"info","message":"…","service.name":"eegfaktura-backend",
@@ -93,6 +95,15 @@ this changelog highlights the changes relevant for overview and operations.
   records `golang.org/x/image` v0.44.0 (2026-07-08, excelize test-only). No change to import or export output.
 
 ### Fixed
+- **No more "Mailversand fehlgeschlagen" for mails that were delivered** (261030-mm7): when the mail server
+  (xp-connector) does not answer in time, the mail has been accepted and most likely sent. Such a send is now logged as
+  a warning and the admin notification reads **"Versand nicht bestätigt – die Mail wurde wahrscheinlich zugestellt,
+  bitte nicht erneut senden"** (message code `W_MAIL_UNCONFIRMED`, kind `WARNING`, same metering point / identifier as
+  before) instead of the gRPC error `rpc error: code = DeadlineExceeded …` (code `E_UNDEFINED_0`). Affects the
+  zp-active / consent-request mail, the zp-inactive mail and the metering point list mail. The test mail of the mail
+  editor answers 502 with the same text (plus ".") instead of "Die Testmail konnte nicht verschickt werden.". Real
+  failures (status other than 200, mail server unreachable, rejected recipients) keep their texts. web still puts
+  "Mailversand fehlgeschlagen:" in front of the entry until it handles `W_MAIL_UNCONFIRMED`.
 - **Member list no longer fails when one member has no address, bank or contact row** (261029-mm1): the list LEFT JOINs
   both addresses, the bank account and the contact row; a member without a billing or residence address made the
   whole list of the community fail with a scan error. Such a member is now listed with empty fields, and saving the

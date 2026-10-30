@@ -577,11 +577,11 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 				eeg.Email.String,
 				fmt.Sprintf("%s Zählpunktliste %.4d%.2d%.2d-%.2d%.2d", eeg.RcNumber, now.Year(), int(now.Month()), now.Day(), now.Hour(), now.Minute()), nil, &b, attm)
 			if err != nil {
-				logrus.WithField("tenant", msg.Tenant).Error(err)
+				logrus.WithField("tenant", msg.Tenant).Log(services.MailErrorLevel(err), err)
 				// Surface the failed ZP list mail to the tenant admins via
 				// the existing notification system instead of log-only.
 				_ = db.SaveNotificationFromMap(database.CreateNotificationMessageFromLog(
-					&model.Log{Operation: "Mail", Messages: []*model.LogMessage{model.NewLogMessageFromVfeegError(
+					&model.Log{Operation: "Mail", Messages: []*model.LogMessage{services.MailLogMessage(
 						"Zählpunktliste",
 						err,
 					)}}),
@@ -690,9 +690,9 @@ func meteringPointPerformAnswerMsg(ctx context.Context, sendMail services.SendMa
 			if len(participant.MeteringPoint) > 0 {
 				if err = parser.SendActivationMailFromTemplate(sendMail, db,
 					eeg.Id, subject, eeg, participant, templateConfigName); err != nil {
-					logrus.WithField("tenant", eeg.Id).WithError(err).Error("Error Sending Mail")
+					logrus.WithField("tenant", eeg.Id).WithError(err).Log(services.MailErrorLevel(err), "Error Sending Mail")
 					_ = db.SaveNotificationFromMap(database.CreateNotificationMessageFromLog(
-						&model.Log{Operation: "Mail", Messages: []*model.LogMessage{model.NewLogMessageFromVfeegError(
+						&model.Log{Operation: "Mail", Messages: []*model.LogMessage{services.MailLogMessage(
 							participant.MeteringPoint[0].MeteringPoint,
 							err,
 						)}}),

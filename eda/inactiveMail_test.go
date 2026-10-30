@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -14,6 +15,8 @@ import (
 	"github.com/jjeffery/civil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type capturedMail struct {
@@ -104,6 +107,12 @@ func TestInactiveMail(t *testing.T) {
 		require.NoError(t, testDB.DbInstance.Get(&n, `SELECT count(*) FROM base.notification WHERE tenant = $1`, tenant))
 		return n
 	}
+	// lastNotification is the newest notification of the tenant as stored (JSON).
+	lastNotification := func(tenant string) string {
+		var n string
+		require.NoError(t, testDB.DbInstance.Get(&n, `SELECT notification FROM base.notification WHERE tenant = $1 ORDER BY id DESC LIMIT 1`, tenant))
+		return n
+	}
 
 	t.Run("grid operator ends an active metering point: one mail with reason, date, direction, Cc", func(t *testing.T) {
 		mails := captureInactiveMails(t, nil)
@@ -182,5 +191,23 @@ func TestInactiveMail(t *testing.T) {
 		assert.Equal(t, "INACTIVE", status)
 		// one revocation notification plus one mail error notification
 		assert.Equal(t, before+2, notifications("TI000116"))
+		// a real failure keeps its text
+		n := lastNotification("TI000116")
+		assert.Contains(t, n, `"message":"smtp down"`)
+		assert.NotContains(t, n, "Versand nicht bestätigt")
+	})
+
+	t.Run("mail server answers too late: the notification says the mail was most likely delivered", func(t *testing.T) {
+		const mLate = "AT0030000000000000000000000116008"
+		meter(mLate, "a1160000-0000-0000-0000-000000000001", "TI000116", "ACTIVE", "C-LATE", "CONSUMPTION")
+		timeout := status.Error(codes.DeadlineExceeded, "context deadline exceeded")
+		mails := captureInactiveMails(t, fmt.Errorf("%w (%w)", services.ErrMailUnconfirmed, timeout))
+		protocolCmRevImpHandler(context.Background(), responseMsg(model.EBMS_AUFHEBUNG_CCMI, model.CM_REV_IMP, "ti000116", mLate, "C-LATE", "1099"))
+		assert.Len(t, *mails, 1)
+		n := lastNotification("TI000116")
+		assert.Contains(t, n, `"message":"Versand nicht bestätigt – die Mail wurde wahrscheinlich zugestellt, bitte nicht erneut senden"`)
+		assert.Contains(t, n, `"message_code":"W_MAIL_UNCONFIRMED"`)
+		assert.Contains(t, n, `"metering_point":"`+mLate+`"`)
+		assert.NotContains(t, n, "DeadlineExceeded")
 	})
 }

@@ -72,9 +72,9 @@ func sendMeteringPointInactiveMails(ctx context.Context, db database.Database, t
 			Reason:        reason,
 		})
 		if err != nil {
-			logrus.WithField("tenant", tenant).WithError(err).Error("inactive mail: error sending mail")
+			logrus.WithField("tenant", tenant).WithError(err).Log(services.MailErrorLevel(err), "inactive mail: error sending mail")
 			_ = db.SaveNotificationFromMap(database.CreateNotificationMessageFromLog(
-				&model.Log{Operation: "Mail", Messages: []*model.LogMessage{model.NewLogMessageFromVfeegError(meterId, err)}}),
+				&model.Log{Operation: "Mail", Messages: []*model.LogMessage{services.MailLogMessage(meterId, err)}}),
 				tenant, model.N_TYPE_ERROR, model.N_PROCESS_EDA_PROCESS, "ADMIN")
 			continue
 		}

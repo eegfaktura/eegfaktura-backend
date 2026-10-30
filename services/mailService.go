@@ -13,8 +13,51 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 )
+
+// MailSendTimeout is the gRPC timeout for every mail send. The mail server (xp-connector) answers
+// only after it has handed the mail on; that took more than the former 5 s at times (30.10.2026).
+const MailSendTimeout = 30 * time.Second
+
+// mailTimeout is a variable so tests can shorten it.
+var mailTimeout = MailSendTimeout
+
+// ErrMailUnconfirmed: the mail server did not answer within the timeout. It has accepted the
+// mail and most likely sent it, so the community must not be told to send it again
+// (duplicates). The error wraps the original gRPC error.
+var ErrMailUnconfirmed = errors.New("Versand nicht bestätigt – die Mail wurde wahrscheinlich zugestellt, bitte nicht erneut senden")
+
+// sendError turns the error of a mail server call into the error for the caller: a timeout
+// becomes ErrMailUnconfirmed (logged as warning), every other error stays as it is.
+func sendError(kind string, err error) error {
+	if status.Code(err) == codes.DeadlineExceeded || errors.Is(err, context.DeadlineExceeded) {
+		log.WithField("MAIL", kind).Warnf("Send Mail not confirmed by the mail server: %v", err)
+		return fmt.Errorf("%w (%w)", ErrMailUnconfirmed, err)
+	}
+	log.WithField("MAIL", kind).Errorf("Send Mail With Inline Attachment Error: %v", err)
+	return err
+}
+
+// MailErrorLevel is the log level for a failed mail send: warning when it is unconfirmed.
+func MailErrorLevel(err error) log.Level {
+	if errors.Is(err, ErrMailUnconfirmed) {
+		return log.WarnLevel
+	}
+	return log.ErrorLevel
+}
+
+// MailLogMessage is the notification entry for a failed mail send. An unconfirmed send gets the
+// text of ErrMailUnconfirmed (code W_MAIL_UNCONFIRMED) without the technical cause; every
+// other error keeps its text.
+func MailLogMessage(identifier string, err error) *model.LogMessage {
+	if errors.Is(err, ErrMailUnconfirmed) {
+		return model.NewLogMessage("WARNING", identifier, "W_MAIL_UNCONFIRMED", ErrMailUnconfirmed.Error())
+	}
+	return model.NewLogMessageFromVfeegError(identifier, err)
+}
 
 type SendMailFunc func(tenant, to, subject string, cc *string, body *bytes.Buffer, inlineContent []*Attachment, attachment *Attachment) error
 
@@ -86,7 +129,7 @@ func sendHtmlInlineAttachment(sender, recipient, subject string, cc *string, htm
 	defer conn.Close()
 	c := protobuf.NewSendMailServiceClient(conn)
 
-	ctx, cancel := context.WithTimeout(context.Background(), sendTimeout(iContent, attachment))
+	ctx, cancel := context.WithTimeout(context.Background(), mailTimeout)
 	defer cancel()
 
 	inlineContent := []*protobuf.Attachment{}
@@ -119,8 +162,7 @@ func sendHtmlInlineAttachment(sender, recipient, subject string, cc *string, htm
 
 	r, err := c.SendMailWithInlineAttachment(ctx, request)
 	if err != nil {
-		log.WithField("MAIL", "INLINE").Errorf("Send Mail With Inline Attachment Error: %v", err)
-		return err
+		return sendError("INLINE", err)
 	}
 	log.Infof("Response from MAIL-SERVER: status %d, rejected recipients %d", r.GetStatus(), len(r.GetRejectedRecipients()))
 	if r == nil {
@@ -130,27 +172,6 @@ func sendHtmlInlineAttachment(sender, recipient, subject string, cc *string, htm
 		return errors.New(*r.Message)
 	}
 	return checkRejectedRecipients(r.GetRejectedRecipients())
-}
-
-// largeMailBytes is the file size from which a mail gets the long timeout: the
-// eegfaktura logo stays below it, a community's images and PDF (up to 6 MB) need longer.
-const largeMailBytes = 256 * 1024
-
-// sendTimeout is the gRPC timeout for a mail: 5 s as before, 30 s for mails with larger files.
-func sendTimeout(inline []*Attachment, attachment *Attachment) time.Duration {
-	size := 0
-	for _, a := range inline {
-		if a != nil && a.Filecontent != nil {
-			size += a.Filecontent.Len()
-		}
-	}
-	if attachment != nil && attachment.Filecontent != nil {
-		size += attachment.Filecontent.Len()
-	}
-	if size > largeMailBytes {
-		return 30 * time.Second
-	}
-	return 5 * time.Second
 }
 
 func SendMailWithAttachment(sender, recipient, subject string, cc *string, htmlBody *bytes.Buffer, attachment *Attachment) error {
@@ -165,7 +186,7 @@ func SendMailWithAttachment(sender, recipient, subject string, cc *string, htmlB
 	defer conn.Close()
 	c := protobuf.NewSendMailServiceClient(conn)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	ctx, cancel := context.WithTimeout(context.Background(), mailTimeout)
 	defer cancel()
 
 	request := &protobuf.SendMailRequest{
@@ -187,8 +208,7 @@ func SendMailWithAttachment(sender, recipient, subject string, cc *string, htmlB
 
 	r, err := c.SendMail(ctx, request)
 	if err != nil {
-		log.WithField("MAIL", "ATTACHMENT").Errorf("Send Mail With Inline Attachment Error: %v", err)
-		return err
+		return sendError("ATTACHMENT", err)
 	}
 	log.Infof("Response from MAIL-SERVER: status %d, rejected recipients %d", r.GetStatus(), len(r.GetRejectedRecipients()))
 	if r == nil {
