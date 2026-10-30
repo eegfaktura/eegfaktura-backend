@@ -56,9 +56,10 @@ this changelog highlights the changes relevant for overview and operations.
   characters are refused with 400 and the new code 5011 („Die Begründung ist zu lang (höchstens 50 Zeichen).“) instead
   of being cut — 50 is the length of `Reason` in CMRevoke. Logged once at warn, without the text. The reason goes out
   as before in the existing MQTT field `reason` of `eda/request` (no new field).
-  **Where the reason is stored from now on:** eda-xp echoes the sent request back on its protocol topic, and the backend
-  stores that echo in the EDA process history (`db.SaveHistory`), so the reason text now lands in the stored history;
-  eda-xp also keeps it in its conversation store. Before, both held no reason because none was ever sent.
+  **Where the reason is stored from now on (user decision 2026-10-30: allowed):** eda-xp echoes the sent request back
+  on its protocol topic, and the backend stores that echo in the EDA process history (`db.SaveHistory`), so the reason
+  text now lands in the stored history; eda-xp also keeps it in its conversation store. Before, both held no reason
+  because none was ever sent. The web asks not to enter personal data in the field.
 - **Member list no longer fails when one member has no address, bank or contact row** (261029-mm1): the list LEFT JOINs
   both addresses, the bank account and the contact row; a member without a billing or residence address made the
   whole list of the community fail with a scan error. Such a member is now listed with empty fields, and saving the
