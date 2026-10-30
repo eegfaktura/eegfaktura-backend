@@ -40,7 +40,6 @@ import (
 var (
 	//go:embed migrations/*.sql
 	migrations embed.FS
-
 )
 
 func captureOsInterrupt() chan bool {
