@@ -110,7 +110,7 @@ this changelog highlights the changes relevant for overview and operations.
   again. Real failures (connection refused, status other than 200, rejected recipients) keep their texts and codes;
   a mail server that does not get ready within 5 s reads "mail server not reachable within 5s (state …)" (code
   `E_UNDEFINED_0`) instead of the gRPC timeout error. A send error is logged once, by the caller. web shows the new entry after the prefix "Mailversand nicht
-  bestätigt:" (web change pending); eda-xp gets SMTP timeouts in a companion PR (link follows).
+  bestätigt:" (eegfaktura/eegfaktura-web#251); eda-xp gets SMTP timeouts in eegfaktura/eegfaktura-eda-xp#60.
 - **Member list no longer fails when one member has no address, bank or contact row** (261029-mm1): the list LEFT JOINs
   both addresses, the bank account and the contact row; a member without a billing or residence address made the
   whole list of the community fail with a scan error. Such a member is now listed with empty fields, and saving the
