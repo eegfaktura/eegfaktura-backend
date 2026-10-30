@@ -35,6 +35,10 @@ RUN apt-get update \
 
 ENV TZ="Europe/Berlin"
 
+# service.version in every log line; the release workflow passes the image version (docker/metadata-action)
+ARG SERVICE_VERSION=dev
+ENV SERVICE_VERSION=${SERVICE_VERSION}
+
 COPY --from=builder /usr/local/bin/vfeeg-backend /usr/local/bin/vfeeg-backend
 COPY config.yaml /etc/backend/
 

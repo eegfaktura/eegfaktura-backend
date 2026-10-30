@@ -73,17 +73,18 @@ func TestGQLAdminCheck_NonAdminQueryIsLoggedAndPasses(t *testing.T) {
 	e := hits[0]
 	require.Equal(t, logrus.InfoLevel, e.Level)
 	require.Equal(t, logrus.Fields{
-		"tenant":              "TE100100",
-		"azp":                 "some-client",
-		"sub":                 "sub-123",
-		"access_groups_count": 1,
-		"is_user":             true,
-		"superuser":           false,
-		"operation_type":      "query",
-		"operation_name":      "LoadEeg",
+		"tenant":                 "TE100100",
+		"client.id":              "some-client",
+		"access_groups.class":    "user",
+		"superuser":              false,
+		"operation_type":         "query",
+		"graphql.operation.name": "LoadEeg",
 	}, e.Data)
+	// no user tracking: no user id, e-mail or name
+	require.NotContains(t, e.Data, "sub")
 	for _, v := range e.Data {
 		require.NotContains(t, fmt.Sprint(v), "@")
+		require.NotContains(t, fmt.Sprint(v), "sub-123")
 	}
 }
 
@@ -97,9 +98,9 @@ func TestGQLAdminCheck_NonAdminMutationIsLogged(t *testing.T) {
 	require.Equal(t, http.StatusOK, code)
 	require.Len(t, hits, 1)
 	require.Equal(t, "mutation", hits[0].Data["operation_type"])
-	require.Equal(t, "SaveEeg", hits[0].Data["operation_name"])
-	require.Equal(t, 0, hits[0].Data["access_groups_count"])
-	require.Equal(t, false, hits[0].Data["is_user"])
+	require.Equal(t, "SaveEeg", hits[0].Data["graphql.operation.name"])
+	require.Equal(t, "none", hits[0].Data["access_groups.class"])
+	require.NotContains(t, hits[0].Data, "sub")
 }
 
 func TestGQLAdminCheck_SuperuserWithoutAdminIsLogged(t *testing.T) {
