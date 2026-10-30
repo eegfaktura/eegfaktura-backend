@@ -2,6 +2,7 @@ package parser
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"html/template"
 	"io/fs"
@@ -10,6 +11,7 @@ import (
 	"strings"
 
 	"at.ourproject/vfeeg-backend/config"
+	"at.ourproject/vfeeg-backend/mailtemplate"
 	"at.ourproject/vfeeg-backend/model"
 	"at.ourproject/vfeeg-backend/public"
 	"at.ourproject/vfeeg-backend/services"
@@ -32,36 +34,31 @@ func ParseTemplate(fsys fs.FS, name string, data interface{}) (*bytes.Buffer, er
 	return buf, nil
 }
 
-// resolveTemplateSource decides where a mail template and its inline assets are
-// read from. Operator overrides on the data volume win — a per-tenant templates
-// dir first, then the global templates dir — so a mail can still be customised
-// by dropping files on the PVC. When neither holds the requested config file,
-// the defaults embedded in the binary (public/templates) are used, so a fresh
-// deployment renders the mail without any template being seeded onto the volume.
-func resolveTemplateSource(tenant, templateConfigName string) (fs.FS, string) {
-	base := viper.GetString("file-content.templates")
-	for _, dir := range []string{
-		filepath.Join(base, tenant, "templates"),
-		filepath.Join(base, "templates"),
-	} {
-		if _, err := os.Stat(filepath.Join(dir, templateConfigName)); err == nil {
-			return os.DirFS(dir), dir
-		}
-	}
+// embeddedTemplates returns the default mail templates and their inline assets
+// embedded in the binary (public/templates). Hand-made templates on the data
+// volume are no longer read: a community's own text is its saved version
+// (base.mail_template); cmd/mailtemplate-import converts the volume files once.
+func embeddedTemplates() fs.FS {
 	embedded, err := fs.Sub(public.Templates, "templates")
 	if err != nil {
 		// A fixed sub-path of an embed.FS never fails; fall back defensively.
-		return public.Templates, "embedded"
+		return public.Templates
 	}
-	return embedded, "embedded"
+	return embedded
 }
 
-func SendActivationMailFromTemplate(sendMail services.SendMailFunc,
+// SendActivationMailFromTemplate sends the consent-request or the zp-active mail (by template
+// config name). store holds the community's customised mails; nil sends the built-in default.
+func SendActivationMailFromTemplate(sendMail services.SendMailFunc, store mailtemplate.Store,
 	tenant, subject string, eeg *model.Eeg, participant *model.EegParticipant, templateConfigName string) error {
 
 	meterIds := []string{}
+	gridOperator := ""
 	for i := range participant.MeteringPoint {
 		meterIds = append(meterIds, participant.MeteringPoint[i].MeteringPoint)
+		if gridOperator == "" {
+			gridOperator = participant.MeteringPoint[i].GridOperatorName.String
+		}
 	}
 	templateData := struct {
 		Eeg            *model.Eeg
@@ -70,24 +67,46 @@ func SendActivationMailFromTemplate(sendMail services.SendMailFunc,
 		MeteringPoint  string
 	}{eeg, participant, meterIds, strings.Join(meterIds, ", ")}
 
-	return sendTemplateMail(sendMail, tenant, subject, templateConfigName, eeg, participant, templateData)
+	mailData := memberMailData(eeg, participant)
+	mailData.MeteringPoints = meterIds
+	mailData.GridOperator = gridOperator
+	return sendTemplateMail(sendMail, store, tenant, subject, templateConfigName, eeg, participant, templateData, mailData)
 }
 
-// sendTemplateMail renders a member mail from a template config (tenant dir, global dir, embedded
-// default) and sends it to the participant with the community in Cc. A participant without an
-// e-mail address is skipped. Shared by the activation and the inactive mail.
-func sendTemplateMail(sendMail services.SendMailFunc, tenant, subject, templateConfigName string,
-	eeg *model.Eeg, participant *model.EegParticipant, data interface{}) error {
+// memberMailData returns the placeholder values of a member mail.
+func memberMailData(eeg *model.Eeg, participant *model.EegParticipant) *mailtemplate.Data {
+	return &mailtemplate.Data{
+		FirstName: participant.FirstName,
+		LastName:  participant.LastName,
+		Number:    participant.ParticipantNumber.String,
+		Eeg:       eeg,
+	}
+}
 
-	tmplFS, source := resolveTemplateSource(tenant, templateConfigName)
+// sendTemplateMail sends a member mail to the participant with the community in Cc: the
+// community's customised version when it has one (store), else the built-in default (the
+// template config embedded in public/templates). A participant without an e-mail address is
+// skipped. Shared by the activation and the inactive mail.
+func sendTemplateMail(sendMail services.SendMailFunc, store mailtemplate.Store, tenant, subject, templateConfigName string,
+	eeg *model.Eeg, participant *model.EegParticipant, data interface{}, mailData *mailtemplate.Data) error {
+
+	if store != nil && participant.Contact.Email.Valid && strings.TrimSpace(participant.Contact.Email.String) != "" {
+		handled, err := mailtemplate.SendStored(context.Background(), store, sendMail,
+			mailtemplate.LookupByLegacyConfig(templateConfigName), tenant, participant.Contact.Email.String,
+			eeg.Email.Ptr(), mailData, strings.Join(mailData.MeteringPoints, ", "))
+		if handled {
+			return err
+		}
+	}
+
+	tmplFS := embeddedTemplates()
 	templateConfig, err := config.ReadActivationMailTemplateConfig(tmplFS, templateConfigName)
 	if err != nil {
 		return err
 	}
-	log.Infof("Mail template %q for tenant %q resolved from %s", templateConfigName, tenant, source)
 
 	if !participant.Contact.Email.Valid || strings.TrimSpace(participant.Contact.Email.String) == "" {
-		log.Warnf("Participant without email contact: %s (%s)", participant.LastName, participant.Id)
+		log.Warnf("Participant without email contact: %s", participant.Id)
 		return nil
 	}
 
@@ -96,8 +115,9 @@ func sendTemplateMail(sendMail services.SendMailFunc, tenant, subject, templateC
 		return err
 	}
 
+	// the built-in default ends with the same fixed footer as a customised mail
 	return sendMail(tenant, participant.Contact.Email.String,
-		subject, eeg.Email.Ptr(), buf,
+		subject, eeg.Email.Ptr(), bytes.NewBufferString(mailtemplate.AppendFixedFooter(buf.String())),
 		buildInlineContent(tmplFS, templateConfig.InlinePictures),
 		buildAttachment(tmplFS, templateConfig.Attachment.Name, templateConfig.Attachment.Mime),
 	)

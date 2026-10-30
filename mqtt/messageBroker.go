@@ -161,7 +161,7 @@ func (m *MessageBroker) ConfigRoutes(cl mqtt.Client) {
 	})
 
 	cl.AddRoute("eda/response/error", func(client mqtt.Client, msg mqtt.Message) {
-		log.Infof("Error Message from MQTT: Topic: %v Msg: %+v QoS: %d", msg.Topic(), string(msg.Payload()), msg.Qos())
+		log.Infof("Error Message from MQTT: Topic: %v Size: %d QoS: %d", msg.Topic(), len(msg.Payload()), msg.Qos())
 		m.ErrorC <- ErrorMessage{
 			msg.Payload()}
 	})
@@ -297,11 +297,11 @@ func (m *MessageBroker) command(cmd CommandMessage) {
 		var registerMsg model.RegisterEegRequest
 		err := json.Unmarshal(cmd.msg, &registerMsg)
 		if err != nil {
-			log.Errorf("Error from MQTT: (%s) cmd: %v - %v", cmd.tenant, cmd, err)
+			log.Errorf("Error from MQTT: (%s) cmd: %s - %v", cmd.tenant, cmd.cmd, err)
 			return
 		}
 		eeg := factory.GetEegFromRegisterEeg(registerMsg)
-		log.Printf("Register EEG: %+v", eeg)
+		log.Printf("Register EEG: %s", eeg.Id)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

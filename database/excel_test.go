@@ -260,7 +260,7 @@ func TestExportMasterdataToExcel(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ExportMasterdataToExcel(tt.args.participants, tt.args.eeg, tt.args.tariffMap)
+			got, err := ExportMasterdataToExcel(tt.args.participants, tt.args.eeg, tt.args.tariffMap, nil, nil)
 			if !tt.wantErr(t, err, fmt.Sprintf("ExportMasterdataToExcel(%v, %v, %v)", tt.args.participants, tt.args.eeg, tt.args.tariffMap)) {
 				return
 			}

@@ -46,8 +46,8 @@ var ErrArchiveParticipant = PartialWrap(1105)
 var ErrFindParticipant = PartialWrap(1106)
 var ErrDeleteParticipant = PartialWrap(1107)
 
-// Der Teilnehmer existiert, gehoert aber nicht zur Gemeinschaft des Aufrufers.
-// Bewusst eigener Code, damit sich Fremdzugriff im Log von "nicht gefunden" trennen laesst.
+// Anfrage ohne Mandant. Ein fremder Teilnehmer bekommt dieselbe Antwort wie ein unbekannter
+// (ErrFindParticipant, "participant not found"); getrennt werden die beiden nur im Log.
 var ErrForeignTenantParticipant = PartialWrap(1108)
 
 var ErrRemoveMeteringPoint = PartialWrap(1201)

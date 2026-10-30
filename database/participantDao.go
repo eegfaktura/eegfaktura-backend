@@ -94,7 +94,16 @@ func (db *sqlDatabase) FindParticipantByMeteringPoint(ctx context.Context, tenan
 }
 
 func (db *sqlDatabase) UpdateParticipant(ctx context.Context, tenant, user string, participant *model.EegParticipant) error {
-	return updateParticipant(ctx, db.db, tenant, user, participant)
+	tx, err := db.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	err = updateParticipant(ctx, tx, tenant, user, participant)
+	if err != nil {
+		return errors.Join(err, tx.Rollback())
+	}
+	return tx.Commit()
 }
 
 func (db *sqlDatabase) UpdateParticipantPartial(ctx context.Context, tenant, participantId, name string, value interface{}) error {
@@ -146,7 +155,7 @@ const TABLE_PARTICIPANT = "base.participant"
 // Aufrufers gehoert. Bewusst als Vorabpruefung statt als zusaetzliche WHERE-Bedingung:
 // updateParticipantPartial schreibt auch in Kindtabellen (Adressen, Kontakt), dort
 // waere ein durchgereichter Mandant leicht zu uebersehen.
-func assertParticipantTenant(ctx context.Context, db *sqlx.DB, tenant, participantId string) error {
+func assertParticipantTenant(ctx context.Context, db sqlx.QueryerContext, tenant, participantId string) error {
 	if tenant == "" {
 		return model.ErrForeignTenantParticipant(errors.New("no tenant in request context"))
 	}
@@ -160,10 +169,10 @@ func assertParticipantTenant(ctx context.Context, db *sqlx.DB, tenant, participa
 	}
 
 	var owner string
-	if err := db.GetContext(ctx, &owner, stmt); err != nil {
+	if err := sqlx.GetContext(ctx, db, &owner, stmt); err != nil {
 		if errors.Is(err, dbsql.ErrNoRows) {
-			// Nicht vorhanden - die aufrufende Funktion meldet das wie bisher.
-			return nil
+			// Nicht vorhanden: als "nicht gefunden" abweisen, nicht durchlassen (261005-ca4).
+			return errParticipantNotFound()
 		}
 		return model.ErrGetParticipant(err)
 	}
@@ -177,8 +186,14 @@ func assertParticipantTenant(ctx context.Context, db *sqlx.DB, tenant, participa
 		"participantId": participantId,
 	}).Warn("cross-tenant participant access refused")
 
-	return model.ErrForeignTenantParticipant(
-		fmt.Errorf("participant %s does not belong to tenant %s", participantId, tenant))
+	return errParticipantNotFound()
+}
+
+// errParticipantNotFound is the one answer for an unknown and a foreign participant:
+// the caller must not learn that the id exists in another community. The log above
+// keeps the two apart.
+func errParticipantNotFound() error {
+	return model.ErrFindParticipant(errors.New("participant not found"))
 }
 
 func getParticipants(ctx context.Context, db *sqlx.DB, tenant string) ([]*model.EegParticipant, error) {
@@ -354,19 +369,21 @@ func enforceAddressTypes(participant *model.EegParticipant) {
 	participant.ResidentAddress.Type = model.RESIDENCE
 }
 
-func updateParticipant(ctx context.Context, db *sqlx.DB, tenant, user string, participant *model.EegParticipant) error {
+// updateParticipant runs inside the caller's transaction: a failure part-way must
+// not leave the member half updated (261005-ca1).
+func updateParticipant(ctx context.Context, tx *sqlx.Tx, tenant, user string, participant *model.EegParticipant) error {
 
 	// The child-table updates below (contactdetail, address, bankaccount) are
 	// scoped by participant_id only. Assert first that the participant belongs to
 	// the caller's tenant — otherwise a foreign id in the body would overwrite
 	// another tenant's contact, addresses and bank account. Mirrors
 	// UpdateParticipantPartial / DeleteParticipant.
-	if err := assertParticipantTenant(ctx, db, tenant, participant.Id.String()); err != nil {
+	if err := assertParticipantTenant(ctx, tx, tenant, participant.Id.String()); err != nil {
 		return err
 	}
 
 	if err := enforceContactEmail(participant); err != nil {
-		return err
+		return model.ErrParseJson(err)
 	}
 
 	updateValues := struct {
@@ -386,10 +403,14 @@ func updateParticipant(ctx context.Context, db *sqlx.DB, tenant, user string, pa
 			"id":     goqu.Op{"eq": participant.Id.String()},
 		}).
 		ToSQL()
-	_, err := db.Exec(sql)
+	_, err := tx.ExecContext(ctx, sql)
 	if err != nil {
 		return err
 	}
+
+	extra := map[string]interface{}{"participant_id": participant.Id.String()}
+	resident, billing := participant.ResidentAddress, participant.BillingAddress
+	resident.Type, billing.Type = model.RESIDENCE, model.BILLING
 
 	sql, _, _ = goqu.Update("base.contactdetail").
 		Set(participant.Contact).
@@ -397,7 +418,7 @@ func updateParticipant(ctx context.Context, db *sqlx.DB, tenant, user string, pa
 			"participant_id": participant.Id.String(),
 		}).
 		ToSQL()
-	_, err = db.Exec(sql)
+	err = execOrInsertChild(ctx, tx, sql, "base.contactdetail", toRecord(participant.Contact, extra))
 	if err != nil {
 		return err
 	}
@@ -409,7 +430,7 @@ func updateParticipant(ctx context.Context, db *sqlx.DB, tenant, user string, pa
 			"participant_id": participant.Id.String(),
 		}).
 		ToSQL()
-	_, err = db.Exec(sql)
+	err = execOrInsertChild(ctx, tx, sql, "base.address", toRecord(resident, extra))
 	if err != nil {
 		return err
 	}
@@ -421,7 +442,7 @@ func updateParticipant(ctx context.Context, db *sqlx.DB, tenant, user string, pa
 			"participant_id": participant.Id.String(),
 		}).
 		ToSQL()
-	_, err = db.Exec(sql)
+	err = execOrInsertChild(ctx, tx, sql, "base.address", toRecord(billing, extra))
 	if err != nil {
 		return err
 	}
@@ -432,10 +453,30 @@ func updateParticipant(ctx context.Context, db *sqlx.DB, tenant, user string, pa
 			"participant_id": participant.Id.String(),
 		}).
 		ToSQL()
-	_, err = db.Exec(sql)
+	err = execOrInsertChild(ctx, tx, sql, "base.bankaccount", toRecord(participant.BankAccount, extra))
 	if err != nil {
 		return err
 	}
+	return err
+}
+
+// execOrInsertChild runs the UPDATE of a child row (contact, address, bank account) and
+// inserts the row when the member has none yet: such members are listed and editable,
+// so an edit must not be lost (261029-mm1). An empty statement (nothing to set) inserts
+// nothing.
+func execOrInsertChild(ctx context.Context, tx *sqlx.Tx, updateSql, table string, record goqu.Record) error {
+	res, err := tx.ExecContext(ctx, updateSql)
+	if err != nil || updateSql == "" {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil || n > 0 {
+		return err
+	}
+	sql, _, err := pgDialect.Insert(table).Rows(record).ToSQL()
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, sql)
 	return err
 }
 
@@ -492,7 +533,7 @@ func confirmParticipant(ctx context.Context, db *sqlx.DB, username, participantI
 
 	_, err = db.ExecContext(ctx, sql)
 	if err != nil {
-		log.WithField("SQL", "UPDATE").WithError(err).Error(sql)
+		log.WithField("SQL", "UPDATE").WithError(err).Error("SQL statement failed")
 		return model.ErrCompleteParticipant(err)
 	}
 	return nil
@@ -564,7 +605,7 @@ func saveParticipant(ctx context.Context, tx *sqlx.Tx, tenant, username string, 
 	).ToSQL()
 
 	if err != nil {
-		log.WithField("STMT", "INSERT").WithError(err).Error(sql)
+		log.WithField("STMT", "INSERT").WithError(err).Error("SQL statement failed")
 		return model.ErrRegisterParticipant(err)
 	}
 	_, err = tx.Exec(sql)
@@ -610,7 +651,8 @@ func updateParticipantPartial(ctx context.Context, db *sqlx.DB, participantId, n
 		if s, ok := value.(string); ok {
 			normalized, err := model.ValidateEmailList(s)
 			if err != nil {
-				return err
+				// the caller gets the reason (code 2000), as the full update does
+				return model.ErrParseJson(err)
 			}
 			if normalized == "" {
 				value = nil
@@ -695,7 +737,7 @@ func updateParticipantPartial(ctx context.Context, db *sqlx.DB, participantId, n
 		}
 		return nil
 	} else {
-		log.WithError(err).Errorf("Update partial participant %s", sql)
+		log.WithError(err).Error("Update partial participant failed")
 		return model.ErrUpdateParticipant(err)
 	}
 }
@@ -755,7 +797,7 @@ func insertParticipantPartial(ctx context.Context, db *sqlx.DB, participantId, n
 
 	_, err := db.Exec(sql)
 	if err != nil {
-		log.WithError(err).Errorf("Insert partial participant %s", sql)
+		log.WithError(err).Error("Insert partial participant failed")
 		return model.ErrInsertParticipant(err)
 	}
 	return nil
@@ -897,13 +939,13 @@ func findParticipantByMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, me
 
 	stmt, _, err := buildParticipantQueryStmt().Where(goqu.C("id").Eq(participantIdStmt)).ToSQL()
 	if err != nil {
-		log.WithField("SQL", "SELECT").Infof("Create Stmt: %+v, %+v", participant, participantIdStmt)
+		log.WithField("SQL", "SELECT").WithError(err).Info("SQL statement failed")
 		return nil, err
 	}
 
 	err = db.GetContext(ctx, &participant, stmt)
 	if err != nil {
-		log.WithField("SQL", "SELECT").Infof("Stmt: %s", stmt)
+		log.WithError(err).WithField("SQL", "SELECT").Info("SQL statement failed")
 		return nil, err
 	}
 	err = completeParticipant(ctx, db, &participant)
