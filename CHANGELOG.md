@@ -19,6 +19,13 @@ this changelog highlights the changes relevant for overview and operations.
   `too_many_connections` (SQLSTATE 53300), `/readyz` still answers `ok` and logs a warning at most once a minute: the
   application pool can still serve, and saturation of the shared Postgres must not take the service out of service.
 
+### Contract
+- **New caller of `GET /participant`: eegfaktura-energystore** (energystore 261025-ca1). energystore forwards a
+  member's bearer token (header `tenant`, once per tenant of the token) and reads `meters[].meteringPoint`, `meters[].status` (`ACTIVE`/`INACTIVE`/`INIT`/…, absent when empty), `meters[].registeredSince` and
+  `meters[].participantState.activeSince`/`inactiveSince` (yyyy-mm-dd or null) to find the member's own metering
+  points and their participation windows. A change to these fields, the route or its status codes (200 with a JSON
+  array) is a cross-component change. Contract test: `model/participant_contract_test.go`.
+
 ### Security
 - **CI: the release workflow pins its actions by commit SHA** (eegfaktura-dev tracking W-261028-mm6). `rolling-release.yml`
   builds and pushes the shipped image, but used floating tags (`@v4`, `@v3`, …); a moved tag ran in the job that holds
