@@ -31,7 +31,7 @@ this changelog highlights the changes relevant for overview and operations.
   the fields the existing calls use. No new dependency.
   - `LOG_FORMAT`: `json` (default) or `text` (`key=value`, for local runs).
   - `LOG_LEVEL`: `trace`, `debug`, `info` (default), `warn`, `error`. **An unknown value now stops the start**
-    (exit code 2, message on stderr); before, it fell back to `info` with a warning. An empty `LOG_LEVEL` or
+    (exit code 2, message on stderr) — this includes `fatal` and `panic`, which logrus accepted before; before, an unknown value fell back to `info` with a warning. An empty `LOG_LEVEL` or
     `LOG_FORMAT` is the default (same rule as energystore). Prod/pilot set `info`.
   - `SERVICE_VERSION` → `service.version`: set in the image (Dockerfile `ARG`/`ENV`, passed by the release workflow from
     the image tag); `dev` otherwise.
@@ -51,7 +51,15 @@ this changelog highlights the changes relevant for overview and operations.
   `GET - 404`); the backend's router also answers a wrong method with 404. An anonymous GraphQL operation has no
   `graphql.operation.name`. **Known limit:** GraphQL answers a refused or failed operation with HTTP 200 and an
   `errors` array; its access line says `event.outcome=success` — the outcome reflects the HTTP status only (same in
-  energystore).
+  energystore). More known limits (follow-ups, unchanged now): CORS preflights (`OPTIONS`, answered by the CORS wrapper
+  outside the access log) get no access line and no `X-Request-Id`; `X-Request-Id` is not an exposed CORS header and
+  `X-Request-Id`/`traceparent` are not in the allowed request headers, so browsers cannot send or read them; the
+  GraphQL websocket transport on `/query` is logged as one line with status 200 and the socket's lifetime as duration,
+  and operations on one socket share the operation name.
+- **A panic in a REST handler** is logged as one error line (`event.action=http.panic`, `error.type`, `error.message`,
+  `error.stack_trace`) and answered with 500; the access line says 500. Before, net/http logged `http: panic serving
+  <remote address>` with a plain stack (an IP in the log) and there was no access line. If the response had already
+  begun, the connection is aborted.
 - **A panic in a GraphQL resolver is logged as one error line** (`event.action=graphql.panic`, `error.type`,
   `error.message`, `error.stack_trace`) through the logging module, instead of gqlgen's plain-text stack on stderr. The
   client gets the same generic `internal system error` as before.
