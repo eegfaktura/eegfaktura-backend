@@ -49,6 +49,10 @@ Key configuration options:
 - `mqtt`: Connection details for the MQTT broker.
 - `grpc-provider`: Port for the gRPC server.
 
+The Keycloak clients are read from the JSON file named in `KEYCLOAK_CONFIG` (default `./keycloak.json`). The
+`keycloak.json` in the repository is a sample: provide your own file with the secret of the
+`at.ourproject.vfeeg.api` client and never commit it.
+
 ### Building
 
 You can build the project using the provided `Makefile`:

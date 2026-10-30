@@ -43,17 +43,26 @@ var (
 
 func init() {
 	lvl, ok := os.LookupEnv("LOG_LEVEL")
-	// LOG_LEVEL not set, let's default to debug
-	if !ok {
-		lvl = "debug"
+	ll, err := logLevel(lvl, ok)
+	// set global log level
+	log.SetLevel(ll)
+	if err != nil {
+		log.Warnf("unknown LOG_LEVEL %q, using info", lvl)
+	}
+}
+
+// logLevel defaults to info when LOG_LEVEL is not set or unknown: debug logs import
+// rows and other personal data (261008-ca1).
+func logLevel(lvl string, set bool) (log.Level, error) {
+	if !set {
+		return log.InfoLevel, nil
 	}
 	// parse string, this is built-in feature of logrus
 	ll, err := log.ParseLevel(lvl)
 	if err != nil {
-		ll = log.DebugLevel
+		return log.InfoLevel, err
 	}
-	// set global log level
-	log.SetLevel(ll)
+	return ll, nil
 }
 
 func captureOsInterrupt() chan bool {

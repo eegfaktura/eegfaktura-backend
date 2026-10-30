@@ -11,6 +11,7 @@ import (
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
 	"at.ourproject/vfeeg-backend/util"
 	"github.com/gorilla/mux"
+	"github.com/pborman/uuid"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -65,8 +66,7 @@ func (h *ParticipantHandler) fetchParticipant() middleware.JWTHandlerFunc {
 
 func (h *ParticipantHandler) updateParticipant() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
-		//vars := mux.Vars(r)
-		//participantId := vars["id"]
+		participantId := uuid.Parse(mux.Vars(r)["id"])
 
 		var t model.EegParticipant
 		err := json.NewDecoder(r.Body).Decode(&t)
@@ -75,15 +75,34 @@ func (h *ParticipantHandler) updateParticipant() middleware.JWTHandlerFunc {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
+		// The path names the member that is updated; a body for another member is refused.
+		if participantId == nil || !uuid.Equal(participantId, t.Id) {
+			respondWith(w, http.StatusBadRequest, tenant,
+				model.ErrUpdateParticipant(errors.New("participant id in path and body differ")))
+			return
+		}
 
 		err = h.db.UpdateParticipant(r.Context(), tenant, claims.Username, &t)
 		if err != nil {
 			log.WithField("tenant", tenant).WithError(err).Error("failed to update participant.")
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondWith(w, http.StatusBadRequest, tenant, participantWriteError(err))
 			return
 		}
 		respondWithData(w, http.StatusAccepted, t)
 	}
+}
+
+// participantWriteError answers a failed member update without database or rollback
+// text: "not found" (unknown or foreign id) and invalid input keep their code and
+// message, anything else gets a generic message. The full error is logged.
+func participantWriteError(err error) *model.VfeegError {
+	var ve *model.VfeegError
+	if errors.As(err, &ve) {
+		if ve.Code == model.ErrFindParticipant(nil).Code || ve.Code == model.ErrParseJson(nil).Code {
+			return ve
+		}
+	}
+	return model.ErrUpdateParticipant(errors.New("participant could not be updated"))
 }
 
 func (h *ParticipantHandler) updateParticipantPartial() middleware.JWTHandlerFunc {
@@ -115,7 +134,7 @@ func (h *ParticipantHandler) updateParticipantPartial() middleware.JWTHandlerFun
 		err = h.db.UpdateParticipantPartial(r.Context(), tenant, participantId, name, value)
 		if err != nil {
 			log.WithField("tenant", tenant).WithError(err).Error("failed to update partial participant.")
-			respondWith(w, http.StatusInternalServerError, tenant, err)
+			respondWith(w, http.StatusBadRequest, tenant, participantWriteError(err))
 			return
 		}
 

@@ -15,7 +15,7 @@ func GetSubsriptions() []model.Subscriptions {
 }
 
 func errorHandler(msg model.SubscribeMessage) {
-	logrus.Errorf("Receive Error from EDA COMMUNICATION. Reason: %+v", msg)
+	logrus.WithField("tenant", msg.Tenant).Errorf("Receive Error from EDA COMMUNICATION. Code: %s conversation: %s", msg.MessageCode, msg.Payload.ConversationId)
 }
 
 func InitErrorSubscriptions() {

@@ -270,7 +270,7 @@ func fetchEdaHistory(db *sqlx.DB, tenant, protocol string, start, end int64, pag
 	//fmt.Printf("STMT: %v\n", stmt)
 	err = db.Select(&h, stmt)
 	if err != nil && err != dbsql.ErrNoRows {
-		logrus.WithField("SQL", "SELECT").Errorf("Query History: %+v", stmt)
+		logrus.WithError(err).WithField("SQL", "SELECT").Error("Query History failed")
 		return nil, err
 	}
 

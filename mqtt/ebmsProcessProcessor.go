@@ -150,7 +150,7 @@ var ChangePartitionFactor = func(eeg *model.Eeg, meterReq []*model.ChangePartiti
 		ebmsMessage.EcDisModel = model.AllocationModeType(eeg.AllocationMode)
 		ebmsMessage.MeterList = v
 
-		log.WithField("tenant", eeg.Id).Infof("Change Partition Factor. %+v", v)
+		log.WithField("tenant", eeg.Id).Infof("Change Partition Factor. Grid operator %s, %d metering point(s)", k, len(v))
 		Broker().SendMessage(ebmsMessage)
 	}
 	return nil

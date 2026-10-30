@@ -157,7 +157,7 @@ func getEegById(ctx context.Context, tx *sqlx.DB, tenant string) (*model.Eeg, er
 
 	err = tx.GetContext(ctx, &eeg, stmt, args...)
 	if err != nil {
-		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", stmt)
+		log.WithError(err).WithField("SQL", "SELECT").Error("SQL statement failed")
 		return nil, model.ErrGetEeg(err)
 	}
 	return &eeg, nil
@@ -173,7 +173,7 @@ func getEegByEcId(ctx context.Context, tx *sqlx.DB, edId string) (*model.Eeg, er
 
 	err = tx.GetContext(ctx, &eeg, stmt, args...)
 	if err != nil {
-		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", stmt)
+		log.WithError(err).WithField("SQL", "SELECT").Error("SQL statement failed")
 		return nil, model.ErrGetEeg(err)
 	}
 	return &eeg, nil
@@ -198,7 +198,7 @@ func insertEeg(ctx context.Context, db *sqlx.DB, tenant string, eeg *model.Eeg) 
 	sql, _, err := pgDialect.Insert(TABLE_EEG).Rows(eeg).OnConflict(goqu.DoNothing()).ToSQL()
 	_, err = db.ExecContext(ctx, sql)
 	if err != nil {
-		log.WithField("SQL", "INSERT").Errorf("Stmt: %s", sql)
+		log.WithError(err).WithField("SQL", "INSERT").Error("SQL statement failed")
 		return err
 	}
 
@@ -257,7 +257,7 @@ func updateEegPartial(ctx context.Context, db *sqlx.DB, tenant string, fields ma
 
 	statement, _, err := pgDialect.Update(TABLE_EEG).Set(updateRecord).Where(goqu.Ex{"tenant": goqu.V(tenant)}).ToSQL()
 	if err != nil {
-		log.WithError(err).Errorf("Update EEG VALUES: %s", statement)
+		log.WithError(err).Error("Update EEG VALUES failed")
 		return err
 	}
 
@@ -285,7 +285,7 @@ func fetchTenantsName(ctx context.Context, db *sqlx.DB, tenants []string, isSupe
 		return nil, err
 	}
 	if err := db.SelectContext(ctx, &tenantsName, stmt); err != nil {
-		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", stmt)
+		log.WithError(err).WithField("SQL", "SELECT").Error("SQL statement failed")
 		return nil, err
 	}
 	return tenantsName, nil

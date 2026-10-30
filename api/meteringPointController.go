@@ -77,7 +77,7 @@ func (h *MeteringHandler) createMeteringPoint() middleware.JWTHandlerFunc {
 		}
 
 		if m.ProcessState == model.NEW {
-			log.WithField("tenant", tenant).Infof("register Meter:  %+v ", m)
+			log.WithField("tenant", tenant).Infof("register Meter:  %s ", m.MeteringPoint)
 			eeg, err := h.db.GetEegById(r.Context(), tenant)
 			if err != nil {
 				respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
@@ -197,7 +197,11 @@ func (h *MeteringHandler) updateMeteringPointId() middleware.JWTHandlerFunc {
 			return
 		}
 
-		value := v["newId"].(string)
+		value, ok := v["newId"].(string)
+		if !ok || value == "" {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrUpdateMeter(errors.New("newId is missing")))
+			return
+		}
 
 		if err := h.db.UpdateMeteringPointPartial(r.Context(), tenant, claims.Username, pId, mId, map[string]interface{}{"metering_point_id": value}); err != nil {
 			log.WithField("tenant", tenant).WithError(err).Error("failed to update metering point.")
@@ -257,7 +261,7 @@ func (h *MeteringHandler) updateMeteringPointPartFact() middleware.JWTHandlerFun
 			ms[0].PartFact = pf.PartFact
 			respondWithData(w, http.StatusAccepted, ms[0])
 		} else {
-			log.WithField("tenant", tenant).Errorf("failed to update metering point partition factor. Err: No PRTFACT specified %v", ms)
+			log.WithField("tenant", tenant).Errorf("failed to update metering point partition factor. Err: No PRTFACT specified for %s", meterId)
 			respondWith(w, http.StatusBadRequest, tenant, &model.VfeegError{Code: 999, Err: errors.New(fmt.Sprintf("No metering factor found N:%d", len(meters)))})
 		}
 	}
@@ -336,6 +340,11 @@ func (h *MeteringHandler) registerMeteringPoint() middleware.JWTHandlerFunc {
 				break
 			}
 		}
+		if meter == nil {
+			respondWith(w, http.StatusNotFound, tenant,
+				model.ErrFindMeter(fmt.Errorf("metering point %s not found at participant %s", request.MeteringPoint, participantId)))
+			return
+		}
 
 		var from int64
 		if meter.RegisteredSince.After(participant.ParticipantSince.Date) {
@@ -350,7 +359,7 @@ func (h *MeteringHandler) registerMeteringPoint() middleware.JWTHandlerFunc {
 			return
 		}
 
-		log.WithField("tenant", tenant).Infof("register metering point. PID: %s, request: %+v", participantId, request)
+		log.WithField("tenant", tenant).Infof("register metering point. PID: %s, meter: %s", participantId, request.MeteringPoint)
 		respondWithData(w, http.StatusCreated, participant)
 	}
 }
@@ -563,7 +572,7 @@ func (h *MeteringHandler) requestMeteringPointValues() middleware.JWTHandlerFunc
 			for _, s := range send {
 				m, from, to := s.meter, s.from, s.to
 				if err = mqttclient.RequestingEnergyData(eeg, m, from, to); err != nil {
-					log.WithField("tenant", tenant).Errorf("request Metering values %v (%s - %s)", m,
+					log.WithField("tenant", tenant).Errorf("request Metering values %s (%s - %s)", m.MeteringPoint,
 						time.UnixMilli(from).String(), time.UnixMilli(to).String())
 					errorList = append(errorList, fmt.Sprintf("%s: %s", m.MeteringPoint, err.Error()))
 				} else {
@@ -643,14 +652,7 @@ func (h *MeteringHandler) requestRevokeMeteringPoint() middleware.JWTHandlerFunc
 			return
 		}
 
-		getReason := func(r *string) string {
-			if r != nil {
-				return *r
-			}
-			return ""
-		}
-
-		log.WithField("tenant", tenant).Infof("revoke Metering %v (%s - %s)", request, time.UnixMilli(fromDate).String(), getReason(reason))
+		log.WithField("tenant", tenant).Infof("revoke Metering %v (%s)", meters, time.UnixMilli(fromDate).String())
 		if eeg.Online {
 			errorList := []string{}
 			meters, err := h.db.FindActiveMeteringByIds(r.Context(), tenant, meters)
@@ -660,7 +662,7 @@ func (h *MeteringHandler) requestRevokeMeteringPoint() middleware.JWTHandlerFunc
 			}
 			for _, m := range meters {
 				if err = mqttclient.RevokeMeteringPoint(eeg, m, fromDate, reason); err != nil {
-					log.WithField("tenant", tenant).Errorf("request revoke Metering %v (%d)", m, fromDate)
+					log.WithField("tenant", tenant).Errorf("request revoke Metering %s (%d)", m.MeteringPoint, fromDate)
 					errorList = append(errorList, fmt.Sprintf("%s: %s", m.MeteringPoint, err.Error()))
 				}
 			}
@@ -718,6 +720,11 @@ func (h *MeteringHandler) requestChangePartitionFactor() middleware.JWTHandlerFu
 			return
 		}
 
+		if err = assertPartitionFactorMeters(r.Context(), h.db, tenant, request.MeteringPoints); err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, err)
+			return
+		}
+
 		eeg, err := h.db.GetEegById(r.Context(), tenant)
 		if err != nil {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
@@ -726,11 +733,12 @@ func (h *MeteringHandler) requestChangePartitionFactor() middleware.JWTHandlerFu
 
 		if eeg.Online {
 			if err = mqttclient.ChangePartitionFactor(eeg, request.MeteringPoints); err != nil {
-				log.WithField("tenant", tenant).WithError(err).Errorf("failed to request metering point PRTFACT. Err: %v", request)
+				log.WithField("tenant", tenant).WithError(err).Errorf("failed to request metering point PRTFACT for %d metering point(s)", len(request.MeteringPoints))
 				respondWith(w, http.StatusInternalServerError, tenant, err)
+				return
 			}
 		} else {
-			log.WithField("tenant", tenant).Warnf("Offline EEG want to change partitions of %+v", request)
+			log.WithField("tenant", tenant).Warnf("Offline EEG want to change partitions of %d metering point(s)", len(request.MeteringPoints))
 			respondWithStatus(w, http.StatusNotFound)
 			return
 		}

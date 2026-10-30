@@ -13,6 +13,38 @@ this changelog highlights the changes relevant for overview and operations.
   builds and pushes the shipped image, but used floating tags (`@v4`, `@v3`, …); a moved tag ran in the job that holds
   the push credentials. Now every action is pinned to a commit, the same SHAs `pr-checks.yml` and `security-scan.yml` already
   use where the action is the same, otherwise the commit the floating tag pointed to on 2026-10-28.
+- **Keycloak sample configuration** (tracking 1): security relevant — details not published. The `keycloak.json` in
+  the repository is now a sample. Deployments that mount their own file via `KEYCLOAK_CONFIG` are not affected; a
+  local run without `KEYCLOAK_CONFIG` needs its own `keycloak.json` (see README, not to be committed).
+
+### Fixed
+- **Member list no longer fails when one member has no address, bank or contact row** (261029-mm1): the list LEFT JOINs
+  both addresses, the bank account and the contact row; a member without a billing or residence address made the
+  whole list of the community fail with a scan error. Such a member is now listed with empty fields, and saving the
+  member (`PUT /participant/{id}`) creates the missing row instead of losing the edit. The current write
+  paths always create all four rows; members without them come from older versions (before #51 a request without
+  `residentAddress` stored a residence row without type) or from rows written directly into the database.
+- **Member update** (261005-ca1): security relevant — details not published. `PUT /participant/{id}` now answers 400
+  when the id in the path and the id in the body differ, and the update is written in one transaction.
+- **Member and partition factor checks** (261005-ca4): security relevant — details not published. Requests for a member
+  id that does not exist now answer 400 (error code 1106) instead of succeeding without effect. Unknown and foreign
+  member ids get the same answer (code 1106, "participant not found"; code 1108 is now only used for a request without
+  tenant). `PUT /participant/{id}` and `PUT /participant/v2/{id}` answer errors as JSON with a code and without
+  database text (before: plain text, partial update 500); an invalid e-mail in the full update answers code 2000;
+  `POST /meteringpoint/changepartitionfactor` and `POST /master/updatepartfact` answer 400 (error code 3100) for a
+  metering point that is not found.
+- **Metering point routes answer incomplete requests with 400/404 instead of crashing the request** (261005-ca6):
+  `PUT /meteringpoint/v2/{pid}/updateid/{mid}` without `newId` and `PUT /meteringpoint/{pid}/update/{mid}` without
+  `participantState` answer 400; `POST /meteringpoint/{pid}/register` for a metering point the member does not have
+  answers 404; a partition factor request with an empty (`null`) metering point entry answers 400 on both routes.
+  Before, the request panicked and the proxy answered 502.
+- **Logging** (261008-ca1): security relevant — details not published. Without `LOG_LEVEL` (or with an unknown value)
+  the backend now logs at `info` instead of `debug`; an unknown value is reported once at start. Log lines name ids
+  (tenant, member, metering point, conversation, tariff) or counts instead of names, whole objects, request bodies,
+  free-text reasons, mail-server answers, message payloads or SQL statements.
+- **Partition factor routes stop after a failed MQTT send** (261015-ca2, pre-existing): `POST
+  /meteringpoint/changepartitionfactor` and `POST /master/updatepartfact` answered 500 and then still wrote the success
+  status (Go logged `superfluous response.WriteHeader`). The client keeps getting the 500; the second write is gone.
 
 ## [1.13.0] – 2026-10-28
 

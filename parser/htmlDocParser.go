@@ -106,7 +106,7 @@ func sendTemplateMail(sendMail services.SendMailFunc, store mailtemplate.Store, 
 	}
 
 	if !participant.Contact.Email.Valid || strings.TrimSpace(participant.Contact.Email.String) == "" {
-		log.Warnf("Participant without email contact: %s (%s)", participant.LastName, participant.Id)
+		log.Warnf("Participant without email contact: %s", participant.Id)
 		return nil
 	}
 

@@ -117,7 +117,7 @@ func (h *EegHandler) addTariff() middleware.JWTHandlerFunc {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
-		log.Printf("ADD TARIF: %+v Tenant: %+v", t, tenant)
+		log.Printf("ADD TARIF: %s (%s) Tenant: %s", t.Name, t.Id, tenant)
 
 		// ZVT: serverseitige Plausibilitaetspruefung der Zeitfenster
 		if err = t.ValidateTimeTariff(); err != nil {

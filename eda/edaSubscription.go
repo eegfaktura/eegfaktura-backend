@@ -182,7 +182,7 @@ func protocolCrMsgHandler(ctx context.Context, msg model.SubscribeMessage) {
 
 	eeg, err := db.GetEegByEcIdAndMeters(ctx, msg.Payload.EcId, messageMeters(&msg.Payload))
 	if err != nil {
-		logrus.WithField("tenant", msg.Tenant).WithError(err).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
+		logrus.WithField("tenant", msg.Tenant).WithError(err).Errorf("can not fetch eeg with message -> conversation %s", msg.Payload.ConversationId)
 		return
 	}
 
@@ -217,7 +217,7 @@ func protocolCrReqPtHandler(ctx context.Context, msg model.SubscribeMessage) {
 
 	eeg, err := db.GetEegByEcIdAndMeters(ctx, msg.Payload.EcId, messageMeters(&msg.Payload))
 	if err != nil {
-		logrus.WithField("error", err.Error()).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
+		logrus.WithField("error", err.Error()).Errorf("can not fetch eeg with message -> conversation %s", msg.Payload.ConversationId)
 		return
 	}
 
@@ -343,7 +343,7 @@ func protocolEcReqOnlHandler(ctx context.Context, msg model.SubscribeMessage) {
 
 	eeg, err := db.GetEegByEcIdAndMeters(ctx, msg.Payload.EcId, messageMeters(&msg.Payload))
 	if err != nil {
-		logrus.WithError(err).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
+		logrus.WithError(err).Errorf("can not fetch eeg with message -> conversation %s", msg.Payload.ConversationId)
 		return
 	}
 
@@ -391,12 +391,12 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 	case model.EBMS_AUFHEBUNG_CCMS:
 		eeg, err = db.GetEegByEcIdAndMeters(ctx, msg.Payload.EcId, messageMeters(&msg.Payload))
 		if err != nil {
-			logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
+			logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg with message -> conversation %s", msg.Payload.ConversationId)
 			return
 		}
 
 		if len(meters) == 0 {
-			logrus.WithField("tenant", msg.Tenant).Errorf("no metering point in %s message -> %+v", msg.MessageCode, msg.Payload)
+			logrus.WithField("tenant", msg.Tenant).Errorf("no metering point in %s message -> conversation %s", msg.MessageCode, msg.Payload.ConversationId)
 			return
 		}
 
@@ -412,14 +412,14 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 		// is persisted as a notification (see below) and stays visible to the user.
 		eeg, err = db.GetEegByEcIdAndMeters(ctx, msg.Payload.EcId, messageMeters(&msg.Payload))
 		if err != nil {
-			logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
+			logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg with message -> conversation %s", msg.Payload.ConversationId)
 			return
 		}
 
 	case model.EBMS_AUFHEBUNG_CCMC, model.EBMS_AUFHEBUNG_CCMI:
 
 		if len(meters) == 0 {
-			logrus.WithField("tenant", msg.Tenant).Errorf("no metering point in %s message -> %+v", msg.MessageCode, msg.Payload)
+			logrus.WithField("tenant", msg.Tenant).Errorf("no metering point in %s message -> conversation %s", msg.MessageCode, msg.Payload.ConversationId)
 			return
 		}
 
@@ -448,7 +448,7 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 		// fetch the EEG for every answer, so answers without code 176 reach the history as well
 		eeg, err = db.GetEegByEcIdAndMeters(ctx, msg.Payload.EcId, messageMeters(&msg.Payload))
 		if err != nil {
-			logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg with message -> %+v", msg.Payload)
+			logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg with message -> conversation %s", msg.Payload.ConversationId)
 			return
 		}
 		// only code 176 (consent ended) revokes and notifies; other answers go to the history only
@@ -469,7 +469,7 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 		tenants = []string{eeg.Id}
 	}
 	if len(tenants) == 0 {
-		logrus.WithField("tenant", msg.Tenant).Errorf("%+v", msg.Payload)
+		logrus.WithField("tenant", msg.Tenant).Errorf("no tenant for message -> conversation %s", msg.Payload.ConversationId)
 		return
 	}
 	for _, tenant := range tenants {
@@ -507,7 +507,7 @@ func protocolEcPrtChangeHandler(ctx context.Context, msg model.SubscribeMessage)
 		meters = nil
 		break
 	default:
-		logrus.WithField("tenant", msg.Tenant).Warnf("Unknown Messagecode: %v", msg)
+		logrus.WithField("tenant", msg.Tenant).Warnf("Unknown Messagecode: %v", msg.MessageCode)
 		return
 	}
 
@@ -519,7 +519,7 @@ func protocolEcPrtChangeHandler(ctx context.Context, msg model.SubscribeMessage)
 
 	eeg, err := db.GetEegByEcIdAndMeters(ctx, msg.Payload.EcId, messageMeters(&msg.Payload))
 	if err != nil {
-		logrus.Errorf("can not fetch eeg with message -> %+v", msg.Payload)
+		logrus.Errorf("can not fetch eeg with message -> conversation %s", msg.Payload.ConversationId)
 		return
 	}
 
@@ -557,7 +557,7 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 
 		eeg, err := zpListEeg(ctx, db, msg.Payload.EcId)
 		if err != nil {
-			logrus.Errorf("can not fetch eeg with message %+v", msg.Payload)
+			logrus.Errorf("can not fetch eeg with message -> conversation %s", msg.Payload.ConversationId)
 			return
 		}
 		historyTenant = eeg.Id
@@ -606,7 +606,7 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 		// the request is answered: a later list must not go to this requester (261028-mm1)
 		mqttclient.TakeZpListRequester(msg.Payload.EcId)
 	default:
-		logrus.WithField("tenant", msg.Tenant).Warnf("Unknown Messagecode: %v", msg)
+		logrus.WithField("tenant", msg.Tenant).Warnf("Unknown Messagecode: %v", msg.MessageCode)
 		return
 	}
 	_ = db.SaveHistory(historyTenant, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
