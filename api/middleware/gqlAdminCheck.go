@@ -59,7 +59,7 @@ func GQLAdminCheckLog(ctx context.Context, next graphql.OperationHandler) graphq
 				fields["graphql.operation.name"] = op.Name
 			}
 		}
-		logrus.WithFields(fields).Info("gql-admin-check: non-admin token")
+		logrus.WithContext(ctx).WithFields(fields).Info("gql-admin-check: non-admin token")
 	}
 	return next(ctx)
 }

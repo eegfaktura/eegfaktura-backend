@@ -37,6 +37,18 @@ func TestLogLevelDefaultsToInfo(t *testing.T) {
 // wrapped in AccessLog as in StartServer) and returns the access lines.
 func accessLines(t *testing.T, claims *middleware.PlatformClaims, reqs ...*http.Request) []map[string]any {
 	t.Helper()
+	var out []map[string]any
+	for _, m := range logLines(t, claims, reqs...) {
+		if m["event.action"] == "http.access" {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// logLines is accessLines without the filter: every line logged.
+func logLines(t *testing.T, claims *middleware.PlatformClaims, reqs ...*http.Request) []map[string]any {
+	t.Helper()
 	orig := middleware.VerifyTokenClaims
 	t.Cleanup(func() { middleware.VerifyTokenClaims = orig })
 	middleware.VerifyTokenClaims = func(context.Context, string) (*middleware.PlatformClaims, error) {
@@ -69,9 +81,7 @@ func accessLines(t *testing.T, claims *middleware.PlatformClaims, reqs ...*http.
 	for _, l := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
 		var m map[string]any
 		require.NoError(t, json.Unmarshal([]byte(l), &m), l)
-		if m["event.action"] == "http.access" {
-			out = append(out, m)
-		}
+		out = append(out, m)
 	}
 	return out
 }
@@ -155,4 +165,23 @@ func TestAccessLine_AnonymousGraphQLOperation(t *testing.T) {
 	require.Len(t, ls, 1)
 	assert.EqualValues(t, 200, ls[0]["http.response.status_code"])
 	assert.NotContains(t, ls[0], "graphql.operation.name")
+}
+
+// The gql-admin-check line carries the request's request.id and trace.id.
+func TestGQLAdminCheckLine_HasRequestContext(t *testing.T) {
+	gql := authed(httptest.NewRequest("POST", "/query", strings.NewReader(`{"query":"query LoadEeg { __typename }"}`)))
+	gql.Header.Set("Content-Type", "application/json")
+	gql.Header.Set("X-Request-Id", "req-admin-check")
+	gql.Header.Set("traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+	ls := logLines(t, &middleware.PlatformClaims{Tenants: []string{"TE100100"}, Authorized: "at.ourproject.vfeeg.web"}, gql)
+
+	var found bool
+	for _, l := range ls {
+		if l["message"] == "gql-admin-check: non-admin token" {
+			found = true
+			assert.Equal(t, "req-admin-check", l["request.id"])
+			assert.Equal(t, "4bf92f3577b34da6a3ce929d0e0e4736", l["trace.id"])
+		}
+	}
+	assert.True(t, found, "gql-admin-check line logged")
 }
