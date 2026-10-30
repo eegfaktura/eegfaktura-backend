@@ -58,6 +58,9 @@ this changelog highlights the changes relevant for overview and operations.
   local run without `KEYCLOAK_CONFIG` needs its own `keycloak.json` (see README, not to be committed).
 
 ### Fixed
+- **`POST /participant/{id}/confirm` with a `null` element in the metering point array** answered with a panic; it
+  now answers 400, code 2000, before anything is written or sent (found in the review of
+  eegfaktura/eegfaktura-backend#129).
 - **Member list no longer fails when one member has no address, bank or contact row** (261029-mm1): the list LEFT JOINs
   both addresses, the bank account and the contact row; a member without a billing or residence address made the
   whole list of the community fail with a scan error. Such a member is now listed with empty fields, and saving the
