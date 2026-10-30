@@ -34,6 +34,10 @@ var connectTimeout = 5 * time.Second
 // (duplicates). The error wraps the original gRPC error. web shows it after "Mailversand nicht bestätigt:".
 var ErrMailUnconfirmed = errors.New("Zeitüberschreitung – die Mail wurde vermutlich trotzdem verschickt. Vor einem erneuten Versand bitte beim Mitglied nachfragen.")
 
+// statusUnconfirmed is the answer of the xp-connector when its SMTP read timeout hit after the mail
+// body was sent: the relay probably accepted the mail (contract with eegfaktura-eda-xp#60).
+const statusUnconfirmed = 202
+
 // sendError turns the error of a mail server call into the error for the caller: a timeout
 // becomes ErrMailUnconfirmed, every other error stays as it is. The caller logs it.
 func sendError(err error) error {
@@ -191,6 +195,9 @@ func sendHtmlInlineAttachment(sender, recipient, subject string, cc *string, htm
 	if r == nil {
 		return errors.New("error Send Mail")
 	}
+	if r.Status == statusUnconfirmed {
+		return fmt.Errorf("%w (%s)", ErrMailUnconfirmed, r.GetMessage())
+	}
 	if r.Status != 200 {
 		return errors.New(*r.Message)
 	}
@@ -239,6 +246,9 @@ func SendMailWithAttachment(sender, recipient, subject string, cc *string, htmlB
 	log.Infof("Response from MAIL-SERVER: status %d, rejected recipients %d", r.GetStatus(), len(r.GetRejectedRecipients()))
 	if r == nil {
 		return errors.New("error Send Mail")
+	}
+	if r.Status == statusUnconfirmed {
+		return fmt.Errorf("%w (%s)", ErrMailUnconfirmed, r.GetMessage())
 	}
 	if r.Status != 200 {
 		return errors.New(*r.Message)

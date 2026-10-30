@@ -74,6 +74,12 @@ this changelog highlights the changes relevant for overview and operations.
   the count of non-admin GraphQL calls stays available.
 
 ### Contract
+- **Mail server answer status 202 = unconfirmed** (261030-mm7, with eegfaktura/eegfaktura-eda-xp#60, decided
+  2026-10-30): the xp-connector answers `SendMail` / `SendMailWithInlineAttachment` with status 202 ("SMTP
+  unconfirmed: …") when its SMTP read timeout hit after the mail body was sent (the relay probably accepted it). The
+  backend treats 202 like its own timeout: `ErrMailUnconfirmed`, notification code `W_MAIL_UNCONFIRMED`, test mail 504.
+  200 = sent; every other status stays a failure with the server's message, including 504 ("SMTP timeout: …",
+  nothing delivered).
 - **New caller of `GET /participant`: eegfaktura-energystore** (energystore 261025-ca1). energystore forwards a
   member's bearer token (header `tenant`, once per tenant of the token) and reads `meters[].meteringPoint`, `meters[].status` (`ACTIVE`/`INACTIVE`/`INIT`/…, absent when empty), `meters[].registeredSince` and
   `meters[].participantState.activeSince`/`inactiveSince` (yyyy-mm-dd or null) to find the member's own metering
@@ -104,6 +110,7 @@ this changelog highlights the changes relevant for overview and operations.
   notification entry reads **"Zeitüberschreitung – die Mail wurde vermutlich trotzdem verschickt. Vor einem erneuten
   Versand bitte beim Mitglied nachfragen."** (message code `W_MAIL_UNCONFIRMED`, kind `WARNING`, same metering point /
   identifier as before) instead of the gRPC error `rpc error: code = DeadlineExceeded …` (code `E_UNDEFINED_0`).
+  The same applies when the mail server answers status 202 (see Contract).
   Affects the zp-active / consent-request mail, the zp-inactive mail and the metering point list mail. The test mail
   of the mail editor answers **504** with the same text instead of 502 "Die Testmail konnte nicht verschickt
   werden.". In a GEA, a zp-inactive mail that was not confirmed counts as sent, so the second tenant does not send it

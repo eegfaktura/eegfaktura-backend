@@ -88,10 +88,12 @@ func TestSendMail_DeadlineExceededIsUnconfirmed(t *testing.T) {
 
 func TestSendMail_RealFailuresKeepTheirText(t *testing.T) {
 	msg := "mailbox unavailable"
+	smtpTimeout := "SMTP timeout: connect to relay"
 	cases := map[string]*fakeMailServer{
 		"status != 200":    {reply: &protobuf.SendMailReply{Status: 500, Message: &msg}},
 		"gRPC error":       {err: status.Error(codes.Unavailable, "mail server down")},
 		"rejected address": {reply: &protobuf.SendMailReply{Status: 200, RejectedRecipients: []string{"x@invalid"}}},
+		"504 SMTP timeout": {reply: &protobuf.SendMailReply{Status: 504, Message: &smtpTimeout}},
 	}
 	for name, f := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -142,5 +144,21 @@ func TestSendMail_NoHandshakeIsNotUnconfirmed(t *testing.T) {
 		lm := MailLogMessage(testMeter, err)
 		assert.Equal(t, "E_UNDEFINED_0", lm.MessageCode, fn)
 		assert.Equal(t, "error", MailErrorLevel(err).String(), fn)
+	}
+}
+
+// xp-connector answers 202 when its SMTP read timeout hit after the mail body was sent (eda-xp#60):
+// the relay probably accepted the mail, so it is unconfirmed, not failed.
+func TestSendMail_Status202IsUnconfirmed(t *testing.T) {
+	msg := "SMTP unconfirmed: read timeout after DATA"
+	startFakeMailServer(t, &fakeMailServer{reply: &protobuf.SendMailReply{Status: 202, Message: &msg}})
+	for fn, err := range sendBoth() {
+		require.Error(t, err, fn)
+		assert.ErrorIs(t, err, ErrMailUnconfirmed, fn)
+		assert.Contains(t, err.Error(), msg, fn)
+		lm := MailLogMessage(testMeter, err)
+		assert.Equal(t, ErrMailUnconfirmed.Error(), lm.Message, fn)
+		assert.Equal(t, "W_MAIL_UNCONFIRMED", lm.MessageCode, fn)
+		assert.Equal(t, "warning", MailErrorLevel(err).String(), fn)
 	}
 }
