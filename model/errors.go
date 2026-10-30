@@ -59,6 +59,16 @@ var ErrEdaCommunication = PartialWrap(5000)
 var ErrRequestEnergyData = PartialWrap(5100)
 var ErrRevokeMeter = PartialWrap(5010)
 
+// The reason of a revoke is longer than CMRevoke allows (50 characters). (5010 above is the failed send; the MQTT send
+// never reports an error today, so it is not answered in practice.)
+var ErrRevokeReason = PartialWrap(5011)
+
+// A revoke request with invalid input other than the reason (no consent end, a metering point not of the member).
+var ErrRevokeRequest = PartialWrap(5012)
+
+// A revoke of which at least one metering point has no active entry of the member: nothing is sent.
+var ErrRevokeNotActive = PartialWrap(5013)
+
 var ErrFindMeter = PartialWrap(3100)
 var ErrUpdateMeter = PartialWrap(3101)
 

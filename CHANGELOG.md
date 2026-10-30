@@ -20,6 +20,13 @@ this changelog highlights the changes relevant for overview and operations.
   application pool can still serve, and saturation of the shared Postgres must not take the service out of service.
 
 ### Contract
+- **`revokemeters` reads `reason`, not `to`, and has three new 400 answers.** The only caller is eegfaktura-web
+  (`eeg.service.ts`), whose body already uses the key `reason` (its value was never filled, fixed in
+  eegfaktura/eegfaktura-web#245); `to` is no longer read. New error codes (body `{"error":{"code","error","message"}}`):
+  **5011** the reason is longer than 50 characters; **5012** the consent end (`from`) is missing, or a metering point
+  does not belong to the member `{pid}`; **5013** a metering point has no active entry of the member (nothing is sent).
+  The web shows them readable (eegfaktura/eegfaktura-web#245). Downstream eda-xp writes the reason to CMRevoke as
+  ReasonKey 0 + Reason (eegfaktura/eegfaktura-eda-xp#59).
 - **New caller of `GET /participant`: eegfaktura-energystore** (energystore 261025-ca1). energystore forwards a
   member's bearer token (header `tenant`, once per tenant of the token) and reads `meters[].meteringPoint`, `meters[].status` (`ACTIVE`/`INACTIVE`/`INIT`/…, absent when empty), `meters[].registeredSince` and
   `meters[].participantState.activeSince`/`inactiveSince` (yyyy-mm-dd or null) to find the member's own metering
@@ -36,6 +43,30 @@ this changelog highlights the changes relevant for overview and operations.
   local run without `KEYCLOAK_CONFIG` needs its own `keycloak.json` (see README, not to be committed).
 
 ### Fixed
+- **A revoke only reaches metering points of the member in the path** (pre-existing, found in the review of
+  eegfaktura/eegfaktura-backend#127). `POST /meteringpoint/{pid}/revokemeters` revoked any active metering point of
+  the community named in the body, whichever member it belonged to. Now every metering point must belong to `{pid}`,
+  otherwise 400, code 5012 „Mindestens ein Zählpunkt gehört nicht zu diesem Mitglied.“ — the same answer for an
+  unknown number. After an owner change the old member's entry still belongs to the old member, but the active entry
+  is the new member's: such a request no longer revokes the new member's consent. If any requested metering point has
+  no active entry of the member, the whole request is refused with 400, code 5013 „Keiner der Zählpunkte hat eine
+  aktive Datenfreigabe dieses Mitglieds.“ and nothing is sent — no partial revoke and no success the user would
+  misread.
+- **A revoke without consent end is refused** (pre-existing, found in the review of eegfaktura/eegfaktura-backend#127).
+  `revokemeters` without `from` (or with 0 or less) used to send CMRevoke with ConsentEnd 01.01.1970; it now answers
+  400, code 5012 „Das Ende der Datenfreigabe fehlt.“. The web always sends `from`.
+- **The optional reason of a revoke (`POST /meteringpoint/{pid}/revokemeters`) reaches eda-xp** (revoke reason,
+  2026-10-30). The handler read it from the JSON key `to`, which no caller sends, so the reason was always empty. It
+  now reads `reason` (the key eegfaktura-web sends) and cleans it like a mail subject: control characters (also line
+  breaks and tabs) become a space, format characters (U+200B, U+FEFF, U+202E …) and characters XML 1.0 does not allow
+  (U+FFFE, U+FFFF) are dropped, runs of white space become one space, the ends are trimmed — the same cleaning as
+  eda-xp; blank = no reason. More than 50 characters are refused with 400 and the new code 5011 („Die Begründung
+  ist zu lang (höchstens 50 Zeichen).“) instead of being cut — 50 is the length of `Reason` in CMRevoke. Logged once at warn, without the text. The reason goes out
+  as before in the existing MQTT field `reason` of `eda/request` (no new field).
+  **Where the reason is stored from now on (user decision 2026-10-30: allowed):** eda-xp echoes the sent request back
+  on its protocol topic, and the backend stores that echo in the EDA process history (`db.SaveHistory`), so the reason
+  text now lands in the stored history; eda-xp also keeps it in its conversation store. Before, both held no reason
+  because none was ever sent. The web asks not to enter personal data in the field.
 - **Member list no longer fails when one member has no address, bank or contact row** (261029-mm1): the list LEFT JOINs
   both addresses, the bank account and the contact row; a member without a billing or residence address made the
   whole list of the community fail with a scan error. Such a member is now listed with empty fields, and saving the

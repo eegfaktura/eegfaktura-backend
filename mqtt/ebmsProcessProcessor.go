@@ -58,7 +58,8 @@ var RequestingEnergyData = func(eeg *model.Eeg, meter *model.MeteringPoint, from
 	return nil
 }
 
-func RevokeMeteringPoint(eeg *model.Eeg, meter *model.MeteringPoint, consentEnd int64, reason *string) error {
+// a variable so that handler tests can record the call (like ChangePartitionFactor)
+var RevokeMeteringPoint = func(eeg *model.Eeg, meter *model.MeteringPoint, consentEnd int64, reason *string) error {
 
 	var reasonMsg string
 	if reason != nil {
