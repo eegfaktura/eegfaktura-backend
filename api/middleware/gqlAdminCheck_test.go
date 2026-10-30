@@ -10,7 +10,7 @@ import (
 
 	"at.ourproject/vfeeg-backend/graph/generated"
 	"github.com/99designs/gqlgen/graphql/handler"
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/sirupsen/logrus"
 	logtest "github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/require"
@@ -65,7 +65,7 @@ func TestGQLAdminCheck_NonAdminQueryIsLoggedAndPasses(t *testing.T) {
 		Email:          "member@example.org",
 		AccessGroups:   AccessGroups{"/EEG_USER"},
 		Authorized:     "some-client",
-		StandardClaims: jwt.StandardClaims{Subject: "sub-123"},
+		RegisteredClaims: jwt.RegisteredClaims{Subject: "sub-123"},
 	}, gqlQuery)
 
 	require.Equal(t, http.StatusOK, code)
@@ -92,7 +92,7 @@ func TestGQLAdminCheck_NonAdminMutationIsLogged(t *testing.T) {
 	code, hits := runGQL(t, &PlatformClaims{
 		Tenants:        []string{"TE100100"},
 		Authorized:     "x",
-		StandardClaims: jwt.StandardClaims{Subject: "sub-x"},
+		RegisteredClaims: jwt.RegisteredClaims{Subject: "sub-x"},
 	}, gqlMutation)
 
 	require.Equal(t, http.StatusOK, code)

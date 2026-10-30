@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"at.ourproject/vfeeg-backend/logging"
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/sirupsen/logrus"
 )
 
@@ -26,7 +26,7 @@ type PlatformClaims struct {
 	AccessGroups AccessGroups `json:"access_groups"`
 	Authorized   string       `json:"azp"`
 	RealmAccess  RealmRoles   `json:"realm_access"`
-	jwt.StandardClaims
+	jwt.RegisteredClaims
 }
 
 type RealmRoles struct {

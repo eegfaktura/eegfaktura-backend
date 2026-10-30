@@ -83,6 +83,14 @@ this changelog highlights the changes relevant for overview and operations.
 - **Keycloak sample configuration** (tracking 1): security relevant — details not published. The `keycloak.json` in
   the repository is now a sample. Deployments that mount their own file via `KEYCLOAK_CONFIG` are not affected; a
   local run without `KEYCLOAK_CONFIG` needs its own `keycloak.json` (see README, not to be committed).
+- **Dependency: `github.com/golang-jwt/jwt` v3.2.2 → `github.com/golang-jwt/jwt/v5` v5.3.1** (published 2026-01-28;
+  Dependabot GHSA-mh63-6h87-95cp / GO-2025-3553, no fix in v3). The backend never parsed tokens with golang-jwt —
+  bearer tokens are verified by `coreos/go-oidc` (go-jose) — it only used the claims struct, so the vulnerable parser
+  was not reached; the module is replaced to clear the alert. `PlatformClaims` now embeds `jwt.RegisteredClaims`
+  instead of `jwt.StandardClaims`; the unused `jwt.TimeFunc` override (+5 s, only read by golang-jwt's own validation,
+  which the backend never called) is dropped. One visible difference: a token whose `aud` is an array was rejected
+  with 401 before (the v3 struct held `aud` as a single string, so decoding the claims failed); it is now accepted
+  like a token with a single `aud` — the audience is not checked by the backend (`SkipClientIDCheck`), as documented.
 
 ### Fixed
 - **Member list no longer fails when one member has no address, bank or contact row** (261029-mm1): the list LEFT JOINs
