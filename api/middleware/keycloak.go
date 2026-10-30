@@ -114,7 +114,14 @@ func InitKeycloak() {
 		logrus.Errorf("E: %v", err)
 		panic(err)
 	}
-	verifier = provider.Verifier(&oidc.Config{ClientID: clientIDApp, SkipClientIDCheck: true})
+	verifier = provider.Verifier(verifierConfig(clientIDApp))
+}
+
+// verifierConfig accepts RS256 only. Without SupportedSigningAlgs go-oidc
+// accepts every asymmetric algorithm the realm advertises in its discovery
+// document (RS384, PS256, ES256, …).
+func verifierConfig(clientID string) *oidc.Config {
+	return &oidc.Config{ClientID: clientID, SkipClientIDCheck: true, SupportedSigningAlgs: []string{oidc.RS256}}
 }
 
 func readKeycloakConfig() (map[string]*keycloakConfig, error) {
@@ -163,7 +170,7 @@ func NewKeycloakClient(issuer, clientID, clientSecret, issuerUrl string, client 
 	if err != nil {
 		return nil, err
 	}
-	kc.verifier = kc.oidc.Verifier(&oidc.Config{ClientID: clientID, SkipClientIDCheck: true})
+	kc.verifier = kc.oidc.Verifier(verifierConfig(clientID))
 	return kc, nil
 }
 

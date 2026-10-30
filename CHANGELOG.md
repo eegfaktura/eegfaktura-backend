@@ -91,6 +91,8 @@ this changelog highlights the changes relevant for overview and operations.
   which the backend never called) is dropped. One visible difference: a token whose `aud` is an array was rejected
   with 401 before (the v3 struct held `aud` as a single string, so decoding the claims failed); it is now accepted
   like a token with a single `aud` — the audience is not checked by the backend (`SkipClientIDCheck`), as documented.
+- **Token verification** (tracking id pending): security relevant — details not published. The backend now accepts
+  bearer and ID tokens signed with RS256 only, as Keycloak issues them; no change for tokens Keycloak signs with RS256.
 
 ### Fixed
 - **Member list no longer fails when one member has no address, bank or contact row** (261029-mm1): the list LEFT JOINs

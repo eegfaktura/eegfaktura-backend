@@ -80,7 +80,7 @@ func (iss *testIssuer) useVerifier(t *testing.T) {
 	require.NoError(t, err)
 	origV, origHook := verifier, VerifyTokenClaims
 	t.Cleanup(func() { verifier, VerifyTokenClaims = origV, origHook })
-	verifier = provider.Verifier(&oidc.Config{ClientID: "app", SkipClientIDCheck: true})
+	verifier = provider.Verifier(verifierConfig("app"))
 	VerifyTokenClaims = nil
 }
 
@@ -143,6 +143,11 @@ func TestVerifyAndExtractClaims_Tokens(t *testing.T) {
 		{"alg none", sign(t, jwt.SigningMethodNone, "rsa1", jwt.UnsafeAllowNoneSignatureType, iss.claims()), false},
 		{"HS256 keyed with the public key", sign(t, jwt.SigningMethodHS256, "rsa1", pubPEM, iss.claims()), false},
 		{"HS256 keyed with the public key, no kid", sign(t, jwt.SigningMethodHS256, "", pubPEM, iss.claims()), false},
+		// RS256 only: other asymmetric algorithms the realm advertises are refused,
+		// even when signed by a key from the JWKS
+		{"RS384 with the realm key", sign(t, jwt.SigningMethodRS384, "rsa1", iss.rsaKey, iss.claims()), false},
+		{"PS256 with the realm key", sign(t, jwt.SigningMethodPS256, "rsa1", iss.rsaKey, iss.claims()), false},
+		{"ES256 with a realm EC key", sign(t, jwt.SigningMethodES256, "ec1", iss.ecKey, iss.claims()), false},
 		{"wrong signature", sign(t, jwt.SigningMethodRS256, "rsa1", otherKey, iss.claims()), false},
 		{"tampered payload", tamper(t, valid), false},
 		{"malformed header", "%%%." + strings.SplitN(valid, ".", 2)[1], false},
