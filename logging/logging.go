@@ -27,21 +27,21 @@ type Config struct {
 }
 
 // ConfigFromEnv reads LOG_LEVEL (default info), LOG_FORMAT (default json) and
-// SERVICE_VERSION (set by the image build, default dev). An unknown level or
-// format is an error: the backend refuses to start.
+// SERVICE_VERSION (set by the image build, default dev). An empty value is the
+// default; an unknown level or format is an error: the backend refuses to start.
 func ConfigFromEnv(lookup func(string) (string, bool)) (Config, error) {
 	cfg := Config{Level: slog.LevelInfo, JSON: true, Version: "dev"}
 	if v, ok := lookup("SERVICE_VERSION"); ok && v != "" {
 		cfg.Version = v
 	}
-	if v, ok := lookup("LOG_LEVEL"); ok {
+	if v, ok := lookup("LOG_LEVEL"); ok && strings.TrimSpace(v) != "" {
 		l, err := ParseLevel(v)
 		if err != nil {
 			return cfg, err
 		}
 		cfg.Level = l
 	}
-	if v, ok := lookup("LOG_FORMAT"); ok {
+	if v, ok := lookup("LOG_FORMAT"); ok && strings.TrimSpace(v) != "" {
 		switch strings.ToLower(strings.TrimSpace(v)) {
 		case "json":
 			cfg.JSON = true

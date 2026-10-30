@@ -65,6 +65,12 @@ func TestConfigFromEnv_Defaults(t *testing.T) {
 	cfg, err = ConfigFromEnv(env(map[string]string{"SERVICE_VERSION": "1.2.3"}))
 	require.NoError(t, err)
 	assert.Equal(t, "1.2.3", cfg.Version)
+
+	// an empty value is the default, as in energystore (alignment 2026-10-30)
+	cfg, err = ConfigFromEnv(env(map[string]string{"LOG_LEVEL": "", "LOG_FORMAT": " "}))
+	require.NoError(t, err)
+	assert.Equal(t, slog.LevelInfo, cfg.Level)
+	assert.True(t, cfg.JSON)
 }
 
 func TestConfigFromEnv_Levels(t *testing.T) {
@@ -82,7 +88,6 @@ func TestConfigFromEnv_Levels(t *testing.T) {
 func TestConfigFromEnv_UnknownValuesAreRefused(t *testing.T) {
 	for _, m := range []map[string]string{
 		{"LOG_LEVEL": "verbose"},
-		{"LOG_LEVEL": ""},
 		{"LOG_FORMAT": "xml"},
 	} {
 		_, err := ConfigFromEnv(env(m))

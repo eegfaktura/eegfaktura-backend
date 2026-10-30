@@ -145,3 +145,14 @@ func TestAccessLine_UnmatchedThroughRouter(t *testing.T) {
 		assert.Regexp(t, `^[0-9a-f]{32}$`, l["request.id"])
 	}
 }
+
+// An anonymous GraphQL operation leaves graphql.operation.name unset (same
+// convention in energystore).
+func TestAccessLine_AnonymousGraphQLOperation(t *testing.T) {
+	gql := httptest.NewRequest("POST", "/query", strings.NewReader(`{"query":"{ __typename }"}`))
+	gql.Header.Set("Content-Type", "application/json")
+	ls := accessLines(t, &middleware.PlatformClaims{Tenants: []string{"TE100100"}, AccessGroups: middleware.AccessGroups{"/EEG_ADMIN"}}, authed(gql))
+	require.Len(t, ls, 1)
+	assert.EqualValues(t, 200, ls[0]["http.response.status_code"])
+	assert.NotContains(t, ls[0], "graphql.operation.name")
+}
