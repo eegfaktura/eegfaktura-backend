@@ -30,8 +30,9 @@ this changelog highlights the changes relevant for overview and operations.
   (`logging/logging.go`, `allowedFields`): a field a log call adds that is not on the list is dropped — the list holds
   the fields the existing calls use. No new dependency.
   - `LOG_FORMAT`: `json` (default) or `text` (`key=value`, for local runs).
-  - `LOG_LEVEL`: `trace`, `debug`, `info` (default), `warn`, `error`. **An unknown or empty value now stops the start**
-    (exit code 2, message on stderr); before, it fell back to `info` with a warning. Prod/pilot set `info`.
+  - `LOG_LEVEL`: `trace`, `debug`, `info` (default), `warn`, `error`. **An unknown value now stops the start**
+    (exit code 2, message on stderr); before, it fell back to `info` with a warning. An empty `LOG_LEVEL` or
+    `LOG_FORMAT` is the default (same rule as energystore). Prod/pilot set `info`.
   - `SERVICE_VERSION` → `service.version`: set in the image (Dockerfile `ARG`/`ENV`, passed by the release workflow from
     the image tag); `dev` otherwise.
 - **Access line: one line per HTTP request** (`event.action=http.access`), written after the token check: method,
@@ -46,6 +47,14 @@ this changelog highlights the changes relevant for overview and operations.
   32 hex characters), and returned in the response header. `traceparent` is checked strictly (no version `ff`, no
   all-zero ids). The former per-request line `Access granted for tenant …` of `/query` is
   replaced by the access line. The backend had no access log with IP or user agent before.
+  Requests that match no route (404) get an access line and `X-Request-Id` too, without `http.route` (message
+  `GET - 404`); the backend's router also answers a wrong method with 404. An anonymous GraphQL operation has no
+  `graphql.operation.name`. **Known limit:** GraphQL answers a refused or failed operation with HTTP 200 and an
+  `errors` array; its access line says `event.outcome=success` — the outcome reflects the HTTP status only (same in
+  energystore).
+- **A panic in a GraphQL resolver is logged as one error line** (`event.action=graphql.panic`, `error.type`,
+  `error.message`, `error.stack_trace`) through the logging module, instead of gqlgen's plain-text stack on stderr. The
+  client gets the same generic `internal system error` as before.
 - **The temporary line `gql-admin-check: non-admin token` no longer logs the user id (`sub`)** (no user tracking,
   2026-10-29). It now holds `tenant.id`, `client.id`, `graphql.operation.name`, `operation_type`, `superuser` and
   `access_groups.class` (`user`/`none`) instead of `azp`, `sub`, `access_groups_count`, `is_user` and `operation_name`;
