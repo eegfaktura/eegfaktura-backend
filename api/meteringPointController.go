@@ -678,15 +678,28 @@ func (h *MeteringHandler) requestRevokeMeteringPoint() middleware.JWTHandlerFunc
 
 		if eeg.Online {
 			errorList := []string{}
+			requested := meters
 			meters, err := h.db.FindActiveMeteringByIds(r.Context(), tenant, meters)
 			if err != nil {
 				respondWith(w, http.StatusInternalServerError, tenant, err)
 				return
 			}
+			// only the member's own active entries are sent: after an owner change the active entry is the other
+			// member's consent. If any requested metering point has none, nothing is sent and the request is refused,
+			// so the user is not told that a revoke went out when it did not.
+			var own []*model.MeteringPoint
 			for _, m := range meters {
-				if !strings.EqualFold(m.ParticipantId, participantId) {
-					continue // after an owner change the active entry is the other member's: not this member's consent
+				if strings.EqualFold(m.ParticipantId, participantId) {
+					own = append(own, m)
 				}
+			}
+			for _, id := range requested {
+				if !slices.ContainsFunc(own, func(o *model.MeteringPoint) bool { return o.MeteringPoint == id }) {
+					rejectRevoke(w, tenant, model.ErrRevokeNotActive(errors.New("Keiner der Zählpunkte hat eine aktive Datenfreigabe dieses Mitglieds.")))
+					return
+				}
+			}
+			for _, m := range own {
 				if err = mqttclient.RevokeMeteringPoint(eeg, m, fromDate, reason); err != nil {
 					log.WithField("tenant", tenant).Errorf("request revoke Metering %s (%d)", m.MeteringPoint, fromDate)
 					errorList = append(errorList, fmt.Sprintf("%s: %s", m.MeteringPoint, err.Error()))
@@ -706,12 +719,16 @@ func (h *MeteringHandler) requestRevokeMeteringPoint() middleware.JWTHandlerFunc
 const maxRevokeReason = 50
 
 // revokeReason cleans the optional reason of a revoke like a mail subject (mailtemplate.SanitizeSubject): control
-// characters (also line breaks and tabs) become a space, runs of white space one space, the ends are trimmed. Empty
+// characters (also line breaks and tabs) become a space, format characters and characters XML 1.0 does not allow are
+// dropped, runs of white space become one space, the ends are trimmed (as eda-xp's RevokeReason). Empty
 // means none. A longer reason is refused rather than cut, so the grid operator never gets a text the user did not write.
 func revokeReason(raw string) (*string, *model.VfeegError) {
 	reason := strings.Join(strings.Fields(strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
+		switch {
+		case unicode.IsControl(r):
 			return ' '
+		case unicode.Is(unicode.Cf, r) || !xmlChar(r):
+			return -1 // format characters (U+200B, U+FEFF, U+202E …) and what XML 1.0 does not allow are dropped
 		}
 		return r
 	}, raw)), " ")
@@ -722,6 +739,12 @@ func revokeReason(raw string) (*string, *model.VfeegError) {
 		return nil, model.ErrRevokeReason(fmt.Errorf("Die Begründung ist zu lang (höchstens %d Zeichen).", maxRevokeReason))
 	}
 	return &reason, nil
+}
+
+// xmlChar reports whether XML 1.0 allows the character (Char production); eda-xp drops the same ones.
+func xmlChar(r rune) bool {
+	return r == 0x9 || r == 0xA || r == 0xD || (r >= 0x20 && r <= 0xD7FF) || (r >= 0xE000 && r <= 0xFFFD) ||
+		(r >= 0x10000 && r <= 0x10FFFF)
 }
 
 // rejectRevoke answers a revoke request with invalid input: 400, logged once at warn (the input itself is not logged).

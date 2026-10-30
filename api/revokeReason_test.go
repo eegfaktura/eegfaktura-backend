@@ -27,7 +27,10 @@ func TestRevokeReason(t *testing.T) {
 		{"trimmed", "  Auszug des Mitglieds ", revokeReasonOf("Auszug des Mitglieds")},
 		{"control characters and line breaks become one space", "Auszug\u0001des\r\nMitglieds\t(Test)",
 			revokeReasonOf("Auszug des Mitglieds (Test)")},
-		{"non-breaking space at the ends is trimmed", " Auszug ", revokeReasonOf("Auszug")},
+		{"non-breaking space at the ends is trimmed", "\u00a0Auszug\u00a0", revokeReasonOf("Auszug")},
+		{"format characters are dropped", "\u200bAus\ufeffzug\u202e", revokeReasonOf("Auszug")},
+		{"characters XML 1.0 does not allow are dropped", "Aus\ufffezug\uffff", revokeReasonOf("Auszug")},
+		{"only format characters are none", "\u200b\ufeff", nil},
 		{"50 characters", fifty, revokeReasonOf(fifty)},
 		{"50 characters after cleaning", " " + fifty + "\n", revokeReasonOf(fifty)},
 	} {

@@ -12,6 +12,7 @@ import (
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
 	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type revokeSent struct {
@@ -72,15 +73,40 @@ func TestRevokeRefusesMeterOfAnotherMember(t *testing.T) {
 	}
 }
 
+const notActiveBody = `{"error":{"code":5013,"error":"Keiner der Zählpunkte hat eine aktive Datenfreigabe dieses Mitglieds.",
+	"message":"Keiner der Zählpunkte hat eine aktive Datenfreigabe dieses Mitglieds."}}`
+
 // After an owner change the old member's entry is its own, but the active entry is the new member's: the old member
-// cannot revoke the new member's consent.
-func TestRevokeByOldOwnerSendsNothing(t *testing.T) {
+// cannot revoke the new member's consent. Nothing is sent, and the answer says so instead of a success.
+func TestRevokeByOldOwnerIsRefused(t *testing.T) {
 	const zp = "AT0030000000000000000000000953104"
 	ownerChange(t, zp, "2025-01-01", "2025-06-15", "2025-06-16", 0)
 	oldOwner := "c1050000-0000-0000-0000-" + zp[len(zp)-12:]
 
 	w, sent := revoke(t, oldOwner, revokeRequest(zp, ""))
 
-	assert.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.JSONEq(t, notActiveBody, w.Body.String())
+	assert.Empty(t, sent)
+}
+
+// One metering point with the member's active consent and one without: the whole request is refused, nothing is sent
+// (no partial revoke the user would take for a complete one).
+func TestRevokePartlyActiveIsRefusedWhole(t *testing.T) {
+	const active, ended = "AT0030000000000000000000000953105", "AT0030000000000000000000000953106"
+	ownerChange(t, active, "2025-01-01", "2025-06-15", "2025-06-16", 0)
+	ownerChange(t, ended, "2025-01-01", "2025-06-15", "2025-06-16", 0)
+	member := "c1050001-0000-0000-0000-" + active[len(active)-12:]
+	// the member also owns the old (inactive) entry of the second metering point
+	_, err := testDB.DbInstance.Exec(`UPDATE base.meteringpoint SET participant_id = $1 WHERE metering_point_id = $2
+		AND participant_id = $3`, member, ended, "c1050000-0000-0000-0000-"+ended[len(ended)-12:])
+	require.NoError(t, err)
+
+	body := fmt.Sprintf(`{"meteringPoints":[{"meter":%q,"direction":"CONSUMPTION"},{"meter":%q,"direction":"CONSUMPTION"}],"from":1793574000000}`,
+		active, ended)
+	w, sent := revoke(t, member, body)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.JSONEq(t, notActiveBody, w.Body.String())
 	assert.Empty(t, sent)
 }
