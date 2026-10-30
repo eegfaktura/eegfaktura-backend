@@ -21,7 +21,10 @@ this changelog highlights the changes relevant for overview and operations.
 
 ### Changed
 - **Every mail send waits 30 s for the mail server** (261030-mm7): before 5 s (30 s only above 256 KB of files;
-  the metering point list mail always 5 s). One constant `services.MailSendTimeout` for all sends.
+  the metering point list mail always 5 s). One constant `services.MailSendTimeout` for all sends. Before the
+  request, the backend now waits up to 5 s for the connection to the mail server; a server that does not get ready
+  in that time is a failed send. A slow mail server therefore holds the EDA message handling (activation and
+  inactive mails) and the test mail of the mail editor up to 35 s per mail instead of 5 s.
 - **Log output is now one JSON object per line on stdout, with ECS field names** (logging concept W-261008-ca2).
   **This changes what operators, `kubectl logs` and Dynatrace receive:** before, logrus text (`time=… level=… msg=…`)
   on stderr; now e.g. `{"@timestamp":"…Z","log.level":"info","message":"…","service.name":"eegfaktura-backend",
@@ -95,15 +98,19 @@ this changelog highlights the changes relevant for overview and operations.
   records `golang.org/x/image` v0.44.0 (2026-07-08, excelize test-only). No change to import or export output.
 
 ### Fixed
-- **No more "Mailversand fehlgeschlagen" for mails that were delivered** (261030-mm7): when the mail server
-  (xp-connector) does not answer in time, the mail has been accepted and most likely sent. Such a send is now logged as
-  a warning and the admin notification reads **"Versand nicht bestätigt – die Mail wurde wahrscheinlich zugestellt,
-  bitte nicht erneut senden"** (message code `W_MAIL_UNCONFIRMED`, kind `WARNING`, same metering point / identifier as
-  before) instead of the gRPC error `rpc error: code = DeadlineExceeded …` (code `E_UNDEFINED_0`). Affects the
-  zp-active / consent-request mail, the zp-inactive mail and the metering point list mail. The test mail of the mail
-  editor answers 502 with the same text (plus ".") instead of "Die Testmail konnte nicht verschickt werden.". Real
-  failures (status other than 200, mail server unreachable, rejected recipients) keep their texts. web still puts
-  "Mailversand fehlgeschlagen:" in front of the entry until it handles `W_MAIL_UNCONFIRMED`.
+- **A mail server timeout is no longer reported as "Mailversand fehlgeschlagen"** (261030-mm7): when the request
+  reached the mail server (xp-connector) but it did not answer within 30 s, the mail was probably sent anyway, and
+  communities that sent it again produced duplicates. Such a send is now logged as a warning and the admin
+  notification entry reads **"Zeitüberschreitung – die Mail wurde vermutlich trotzdem verschickt. Vor einem erneuten
+  Versand bitte beim Mitglied nachfragen."** (message code `W_MAIL_UNCONFIRMED`, kind `WARNING`, same metering point /
+  identifier as before) instead of the gRPC error `rpc error: code = DeadlineExceeded …` (code `E_UNDEFINED_0`).
+  Affects the zp-active / consent-request mail, the zp-inactive mail and the metering point list mail. The test mail
+  of the mail editor answers **504** with the same text instead of 502 "Die Testmail konnte nicht verschickt
+  werden.". In a GEA, a zp-inactive mail that was not confirmed counts as sent, so the second tenant does not send it
+  again. Real failures (connection refused, status other than 200, rejected recipients) keep their texts and codes;
+  a mail server that does not get ready within 5 s reads "mail server not reachable within 5s (state …)" (code
+  `E_UNDEFINED_0`) instead of the gRPC timeout error. A send error is logged once, by the caller. web shows the new entry after the prefix "Mailversand nicht
+  bestätigt:" (web change pending); eda-xp gets SMTP timeouts in a companion PR (link follows).
 - **Member list no longer fails when one member has no address, bank or contact row** (261029-mm1): the list LEFT JOINs
   both addresses, the bank account and the contact row; a member without a billing or residence address made the
   whole list of the community fail with a scan error. Such a member is now listed with empty fields, and saving the
