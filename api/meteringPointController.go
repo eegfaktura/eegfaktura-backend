@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"at.ourproject/vfeeg-backend/database"
@@ -613,12 +614,18 @@ func (h *MeteringHandler) requestRevokeMeteringPoint() middleware.JWTHandlerFunc
 				ConsentId string              `json:"consentId"`
 			} `json:"meteringPoints"`
 			From   int64  `json:"from"`
-			Reason string `json:"to"`
+			Reason string `json:"reason"`
 		}{}
 		err := json.NewDecoder(r.Body).Decode(&request)
 		if err != nil {
 			log.WithField("tenant", tenant).WithError(err).Error("failed to revoke metering point.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
+			return
+		}
+		reason, err := revokeReason(request.Reason)
+		if err != nil {
+			log.WithField("tenant", tenant).WithError(err).Error("failed to revoke metering point.")
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrRevokeMeter(err))
 			return
 		}
 
@@ -636,10 +643,6 @@ func (h *MeteringHandler) requestRevokeMeteringPoint() middleware.JWTHandlerFunc
 		}
 
 		fromDate := util.TruncateToStartOfDay(time.UnixMilli(request.From)).UnixMilli()
-		var reason *string
-		if len(strings.TrimSpace(request.Reason)) > 0 {
-			reason = &request.Reason
-		}
 
 		var meters []string
 		for _, m := range request.MeteringPoints {
@@ -674,6 +677,22 @@ func (h *MeteringHandler) requestRevokeMeteringPoint() middleware.JWTHandlerFunc
 		}
 		respondWithData(w, http.StatusCreated, participant)
 	}
+}
+
+// maxRevokeReason is the length of ProcessDirectory/Reason in the CMRevoke schema (eda-xp CMRevoke_01p10.xsd).
+const maxRevokeReason = 50
+
+// revokeReason trims the optional reason of a revoke; empty means none. A longer reason is refused rather than cut,
+// so the grid operator never gets a text the user did not write.
+func revokeReason(raw string) (*string, error) {
+	reason := strings.TrimSpace(raw)
+	if reason == "" {
+		return nil, nil
+	}
+	if n := utf8.RuneCountInString(reason); n > maxRevokeReason {
+		return nil, fmt.Errorf("the reason may have at most %d characters, it has %d", maxRevokeReason, n)
+	}
+	return &reason, nil
 }
 
 func (h *MeteringHandler) removeMeteringPoint() middleware.JWTHandlerFunc {
