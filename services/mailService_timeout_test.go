@@ -79,7 +79,7 @@ func TestSendMail_DeadlineExceededIsUnconfirmed(t *testing.T) {
 		assert.ErrorIs(t, err, ErrMailUnconfirmed, fn)
 		assert.Equal(t, codes.DeadlineExceeded, status.Code(err), fn+": the original error is kept")
 		lm := MailLogMessage(testMeter, err)
-		assert.Equal(t, "Versand nicht bestätigt – die Mail wurde wahrscheinlich zugestellt, bitte nicht erneut senden", lm.Message, fn)
+		assert.Equal(t, "Zeitüberschreitung – die Mail wurde vermutlich trotzdem verschickt. Vor einem erneuten Versand bitte beim Mitglied nachfragen.", lm.Message, fn)
 		assert.Equal(t, "W_MAIL_UNCONFIRMED", lm.MessageCode, fn)
 		assert.Equal(t, testMeter, lm.Identifier, fn)
 		assert.Equal(t, "warning", MailErrorLevel(err).String(), fn)
@@ -120,5 +120,27 @@ func TestSendMail_ConnectionRefusedIsNotUnconfirmed(t *testing.T) {
 		require.Error(t, err, fn)
 		assert.NotErrorIs(t, err, ErrMailUnconfirmed, fn)
 		assert.Equal(t, codes.Unavailable, status.Code(err), fn)
+	}
+}
+
+// A mail server that takes the TCP connection but never answers the gRPC handshake: the request never
+// reached it, so this is a real failure, not an unconfirmed send (review of backend#132).
+func TestSendMail_NoHandshakeIsNotUnconfirmed(t *testing.T) {
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err) // never accepts: the kernel completes the TCP handshake, gRPC gets no server preface
+	origAddr, origTimeout, origConnect := viper.GetString("services.mail-server"), mailTimeout, connectTimeout
+	viper.Set("services.mail-server", lis.Addr().String())
+	mailTimeout, connectTimeout = 100*time.Millisecond, 100*time.Millisecond
+	t.Cleanup(func() {
+		_ = lis.Close()
+		viper.Set("services.mail-server", origAddr)
+		mailTimeout, connectTimeout = origTimeout, origConnect
+	})
+	for fn, err := range sendBoth() {
+		require.Error(t, err, fn)
+		assert.NotErrorIs(t, err, ErrMailUnconfirmed, fn)
+		lm := MailLogMessage(testMeter, err)
+		assert.Equal(t, "E_UNDEFINED_0", lm.MessageCode, fn)
+		assert.Equal(t, "error", MailErrorLevel(err).String(), fn)
 	}
 }

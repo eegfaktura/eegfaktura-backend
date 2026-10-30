@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 )
@@ -25,20 +26,39 @@ const MailSendTimeout = 30 * time.Second
 // mailTimeout is a variable so tests can shorten it.
 var mailTimeout = MailSendTimeout
 
-// ErrMailUnconfirmed: the mail server did not answer within the timeout. It has accepted the
-// mail and most likely sent it, so the community must not be told to send it again
-// (duplicates). The error wraps the original gRPC error.
-var ErrMailUnconfirmed = errors.New("Versand nicht bestätigt – die Mail wurde wahrscheinlich zugestellt, bitte nicht erneut senden")
+// connectTimeout is how long a send waits for the connection to the mail server (variable for tests).
+var connectTimeout = 5 * time.Second
+
+// ErrMailUnconfirmed: the request reached the mail server, but it did not answer within the
+// timeout. The mail was probably sent anyway, so the community must not simply send it again
+// (duplicates). The error wraps the original gRPC error. web shows it after "Mailversand nicht bestätigt:".
+var ErrMailUnconfirmed = errors.New("Zeitüberschreitung – die Mail wurde vermutlich trotzdem verschickt. Vor einem erneuten Versand bitte beim Mitglied nachfragen.")
 
 // sendError turns the error of a mail server call into the error for the caller: a timeout
-// becomes ErrMailUnconfirmed (logged as warning), every other error stays as it is.
-func sendError(kind string, err error) error {
+// becomes ErrMailUnconfirmed, every other error stays as it is. The caller logs it.
+func sendError(err error) error {
 	if status.Code(err) == codes.DeadlineExceeded || errors.Is(err, context.DeadlineExceeded) {
-		log.WithField("MAIL", kind).Warnf("Send Mail not confirmed by the mail server: %v", err)
 		return fmt.Errorf("%w (%w)", ErrMailUnconfirmed, err)
 	}
-	log.WithField("MAIL", kind).Errorf("Send Mail With Inline Attachment Error: %v", err)
 	return err
+}
+
+// waitReady connects to the mail server before the request is sent, so a later timeout means the
+// request reached it. A server that does not get ready within connectTimeout is a real failure. A
+// failed connect attempt (e.g. connection refused) is left to the request, which fails at once.
+func waitReady(conn *grpc.ClientConn) error {
+	ctx, cancel := context.WithTimeout(context.Background(), connectTimeout)
+	defer cancel()
+	conn.Connect()
+	for {
+		s := conn.GetState()
+		if s == connectivity.Ready || s == connectivity.TransientFailure {
+			return nil
+		}
+		if !conn.WaitForStateChange(ctx, s) {
+			return fmt.Errorf("mail server not reachable within %v (state %s)", connectTimeout, s)
+		}
+	}
 }
 
 // MailErrorLevel is the log level for a failed mail send: warning when it is unconfirmed.
@@ -127,6 +147,9 @@ func sendHtmlInlineAttachment(sender, recipient, subject string, cc *string, htm
 		return err
 	}
 	defer conn.Close()
+	if err := waitReady(conn); err != nil {
+		return err
+	}
 	c := protobuf.NewSendMailServiceClient(conn)
 
 	ctx, cancel := context.WithTimeout(context.Background(), mailTimeout)
@@ -162,7 +185,7 @@ func sendHtmlInlineAttachment(sender, recipient, subject string, cc *string, htm
 
 	r, err := c.SendMailWithInlineAttachment(ctx, request)
 	if err != nil {
-		return sendError("INLINE", err)
+		return sendError(err)
 	}
 	log.Infof("Response from MAIL-SERVER: status %d, rejected recipients %d", r.GetStatus(), len(r.GetRejectedRecipients()))
 	if r == nil {
@@ -184,6 +207,9 @@ func SendMailWithAttachment(sender, recipient, subject string, cc *string, htmlB
 		return err
 	}
 	defer conn.Close()
+	if err := waitReady(conn); err != nil {
+		return err
+	}
 	c := protobuf.NewSendMailServiceClient(conn)
 
 	ctx, cancel := context.WithTimeout(context.Background(), mailTimeout)
@@ -208,7 +234,7 @@ func SendMailWithAttachment(sender, recipient, subject string, cc *string, htmlB
 
 	r, err := c.SendMail(ctx, request)
 	if err != nil {
-		return sendError("ATTACHMENT", err)
+		return sendError(err)
 	}
 	log.Infof("Response from MAIL-SERVER: status %d, rejected recipients %d", r.GetStatus(), len(r.GetRejectedRecipients()))
 	if r == nil {
