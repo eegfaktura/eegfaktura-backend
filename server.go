@@ -95,6 +95,7 @@ func InitRouters(db database.Database) *mux.Router {
 	s = api.InitMeteringRouter(s, db)
 	s = api.InitProcessRouter(s, db)
 	s = api.InitApiRouter(s, db)
+	s = api.InitHealthRouter(s, database.Ping)
 
 	return s
 }
