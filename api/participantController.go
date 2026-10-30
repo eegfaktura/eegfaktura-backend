@@ -182,6 +182,12 @@ func (h *ParticipantHandler) confirmParticipant() middleware.JWTHandlerFunc {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
+		for _, qm := range meters {
+			if qm == nil {
+				respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(errors.New("null metering point in request")))
+				return
+			}
+		}
 
 		eeg, err := h.db.GetEegById(r.Context(), tenant)
 		if err != nil {

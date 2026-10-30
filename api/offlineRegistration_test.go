@@ -153,6 +153,16 @@ func TestConfirmParticipant_activationMode(t *testing.T) {
 		assert.NotEqual(t, "offline-confirm-test", lastModifiedBy(t), "participant must not be written")
 	})
 
+	t.Run("null element is a parse error, nothing written", func(t *testing.T) {
+		calls := countRegistrations(t)
+		var w *httptest.ResponseRecorder
+		require.NotPanics(t, func() { w = confirm(t, "null-confirm-test", `[{"meteringPoint":"`+offMeter+`"},null]`) })
+
+		assertErrorCode(t, w, 2000, "null metering point")
+		assert.Equal(t, 0, *calls, "registrations sent via MQTT")
+		assert.NotEqual(t, "null-confirm-test", lastModifiedBy(t), "participant must not be written")
+	})
+
 	t.Run("missing mode registers online", func(t *testing.T) {
 		calls := countRegistrations(t)
 		w := confirm(t, "test", `[{"meteringPoint":"`+offMeter+`"}]`)
