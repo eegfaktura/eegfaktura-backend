@@ -15,7 +15,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// probeRouter mirrors InitRouters in server.go: the probes next to a protected router.
+// probeRouter registers the probes the way InitRouters (server.go) does: on the
+// same "/" subrouter as the protected routers (here only the EEG router), but
+// with a fake ping. server_health_test.go covers the real InitRouters.
 func probeRouter(t *testing.T, ping func(context.Context) error) *mux.Router {
 	db, _, err := database.InitMockDatabase()
 	require.NoError(t, err)
@@ -93,6 +95,15 @@ func TestReadyz_pingsAgainAfterReuseWindow(t *testing.T) {
 	serve(r, "/readyz")
 
 	require.Equal(t, int32(2), pings.Load())
+}
+
+func TestReadyz_tooManyConnectionsCountsAsReady(t *testing.T) {
+	r := probeRouter(t, func(context.Context) error { return database.ErrTooManyConnections })
+
+	w := serve(r, "/readyz")
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "ok", w.Body.String())
 }
 
 func TestProbes_otherPathsStillNeedToken(t *testing.T) {

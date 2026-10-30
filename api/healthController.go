@@ -2,19 +2,24 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sync"
 	"time"
 
+	"at.ourproject/vfeeg-backend/database"
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
 )
 
 const (
-	// readyzTimeout is a backstop; the ping's driver timeouts end it earlier.
-	readyzTimeout = 5 * time.Second
+	// readyzTimeout is a backstop below the probe's timeoutSeconds; the ping's
+	// driver timeouts end it earlier.
+	readyzTimeout = 4 * time.Second
 	// readyzReuse lets concurrent and closely following /readyz calls share one ping.
 	readyzReuse = time.Second
+	// saturatedLogEvery rate-limits the warning for a saturated database.
+	saturatedLogEvery = time.Minute
 )
 
 // InitHealthRouter registers the Kubernetes probe endpoints. Both are
@@ -38,9 +43,10 @@ func healthz(w http.ResponseWriter, _ *http.Request) {
 type readiness struct {
 	ping func(context.Context) error
 
-	mu  sync.Mutex
-	at  time.Time
-	err error
+	mu           sync.Mutex
+	at           time.Time
+	err          error
+	saturatedLog time.Time
 }
 
 func (rd *readiness) check() error {
@@ -54,6 +60,15 @@ func (rd *readiness) check() error {
 	defer cancel()
 	rd.err = rd.ping(ctx)
 	rd.at = time.Now()
+	if errors.Is(rd.err, database.ErrTooManyConnections) {
+		// The app pool still holds its connections; saturation of the shared
+		// Postgres must not take the service out of the load balancer.
+		if time.Since(rd.saturatedLog) >= saturatedLogEvery {
+			log.Warnf("readyz: %v; reporting ready", rd.err)
+			rd.saturatedLog = time.Now()
+		}
+		rd.err = nil
+	}
 	if rd.err != nil {
 		log.Warnf("readyz: database not ready: %v", rd.err)
 	}
