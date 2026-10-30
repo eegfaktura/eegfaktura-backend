@@ -19,14 +19,6 @@ var RegistrationForParticipation = func(eeg *model.Eeg, meter *model.MeteringPoi
 	return sendRegistrationForParticipation(eeg, meter, from, ebmsMessage)
 }
 
-var OfflineRegistrationForParticipation = func(eeg *model.Eeg, meter *model.MeteringPoint, from *int64) error {
-	ebmsMessage := createEbmsMessage(eeg, meter, model.EBMS_OFFLINE_REG_INIT)
-	ebmsMessage.Meter = &model.Meter{MeteringPoint: meter.MeteringPoint, Direction: meter.Direction, PartFact: meter.PartFact, ConsentID: meter.ActivationCode}
-
-	log.WithField("tenant", eeg.Id).Infof("Start Meteringpoint %s OFFLINE registration", meter.MeteringPoint)
-	return sendRegistrationForParticipation(eeg, meter, from, ebmsMessage)
-}
-
 func sendRegistrationForParticipation(eeg *model.Eeg, meter *model.MeteringPoint, from *int64, ebmsMessage model.EbmsMessage) error {
 	if from != nil {
 		ebmsMessage.Meter.From = *from

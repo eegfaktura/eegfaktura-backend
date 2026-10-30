@@ -68,7 +68,29 @@ this changelog highlights the changes relevant for overview and operations.
   `access_groups.class` (`user`/`none`) instead of `azp`, `sub`, `access_groups_count`, `is_user` and `operation_name`;
   the count of non-admin GraphQL calls stays available.
 
+### Removed
+- **Offline registration of metering points (`ANFORDERUNG_ECOF` with activation code)** — the grid operators no
+  longer support it (decision 2026-10-30; behaviour change towards the grid operators). The backend no longer sends
+  `ANFORDERUNG_ECOF`. On `PUT /meteringpoint/{pid}/create`, `POST /meteringpoint/{pid}/register` and
+  `POST /participant/{id}/confirm` a missing or empty `activationMode` now means `ONLINE` (before: `register`
+  answered 400 code 1204; `create` for an active member of an online EEG did the same, but only after the metering
+  point was saved; `confirm` sent an offline registration). For an **online EEG**, `activationMode: "OFFLINE"` is
+  answered with 400, code **1205**, message "Offline-Registrierung wird von den Netzbetreibern nicht mehr
+  unterstützt"; any other unknown value with 400, code 1204. In both cases nothing is written and nothing is sent —
+  on `confirm` the whole request is checked before the participant is confirmed; on `create` only a NEW metering
+  point of an active member is checked (other metering points are not registered, so the mode is ignored, as
+  before). **Non-online EEGs** never send a registration and keep ignoring the mode on all three routes.
+  eegfaktura-web master has no text for code 1205 yet and shows the raw key
+  `E_1205_Offline-Registrierung wird von den Netzbetreibern nicht mehr unterstützt`. `activationCode` is no longer read (removed from
+  the request models; a client that still sends it is not rejected). Inbound `ANTWORT_ECOF`, `ZUSTIMMUNG_ECOF`,
+  `ABLEHNUNG_ECOF`, `ABSCHLUSS_ECOF` and `ABBRUCH_ECOF` are still processed, so offline registrations sent before
+  this release still complete. Web counterpart: eegfaktura/eegfaktura-web#246.
+
 ### Contract
+- **`activationMode` on `create`/`register`/`confirm` (see Removed):** callers are eegfaktura-web (master still
+  offers the offline checkbox and sends `OFFLINE` + `activationCode`; eegfaktura-web#246 always sends `ONLINE`).
+  eegfaktura-admin, eegfaktura-admin-backend and eegfaktura-eda-xp do not call these routes. Tests:
+  `api/offlineRegistration_test.go`, `eda/edaEcofInbound_test.go`.
 - **New caller of `GET /participant`: eegfaktura-energystore** (energystore 261025-ca1). energystore forwards a
   member's bearer token (header `tenant`, once per tenant of the token) and reads `meters[].meteringPoint`, `meters[].status` (`ACTIVE`/`INACTIVE`/`INIT`/…, absent when empty), `meters[].registeredSince` and
   `meters[].participantState.activeSince`/`inactiveSince` (yyyy-mm-dd or null) to find the member's own metering
@@ -93,6 +115,9 @@ this changelog highlights the changes relevant for overview and operations.
   records `golang.org/x/image` v0.44.0 (2026-07-08, excelize test-only). No change to import or export output.
 
 ### Fixed
+- **`POST /participant/{id}/confirm` with a `null` element in the metering point array** answered with a panic; it
+  now answers 400, code 2000, before anything is written or sent (found in the review of
+  eegfaktura/eegfaktura-backend#129).
 - **Member list no longer fails when one member has no address, bank or contact row** (261029-mm1): the list LEFT JOINs
   both addresses, the bank account and the contact row; a member without a billing or residence address made the
   whole list of the community fail with a scan error. Such a member is now listed with empty fields, and saving the
