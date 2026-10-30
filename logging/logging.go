@@ -134,9 +134,9 @@ var allowedFields = map[string]bool{
 	// db pool stats (database.go)
 	"open": true, "inUse": true, "idle": true, "maxOpen": true, "waitCount": true, "waitDuration": true,
 	"maxIdleClosed": true, "maxLifetimeClosed": true,
-	// gql-admin-check, temporary F1 log (api/middleware/gqlAdminCheck.go)
-	"azp": true, "sub": true, "access_groups_count": true, "is_user": true, "superuser": true,
-	"operation_type": true, "operation_name": true,
+	// gql-admin-check, temporary F1 log (api/middleware/gqlAdminCheck.go); no "sub"
+	// (user id) — no user tracking, 2026-10-29
+	"access_groups.class": true, "superuser": true, "operation_type": true,
 }
 
 // contextHandler drops fields outside allowedFields and adds request.id,

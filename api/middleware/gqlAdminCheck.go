@@ -14,24 +14,31 @@ import (
 
 var gqlNonAdminCtxKey = &contextKey{"gql-non-admin"}
 
-// gqlNonAdmin holds the token data that is logged. No e-mail, no username,
-// no token.
+// gqlNonAdmin holds the token data that is logged. No user id (sub), no
+// e-mail, no username, no token (no user tracking, 2026-10-29).
 type gqlNonAdmin struct {
-	sub               string
-	azp               string
-	accessGroupsCount int
-	isUser            bool
-	superuser         bool
+	azp         string
+	accessClass string
+	superuser   bool
 }
 
 func withGQLNonAdmin(ctx context.Context, claims *PlatformClaims, superuser bool) context.Context {
 	return context.WithValue(ctx, gqlNonAdminCtxKey, &gqlNonAdmin{
-		sub:               claims.Subject,
-		azp:               claims.Authorized,
-		accessGroupsCount: len(claims.AccessGroups),
-		isUser:            claims.AccessGroups.IsUser(),
-		superuser:         superuser,
+		azp:         claims.Authorized,
+		accessClass: accessClass(claims.AccessGroups),
+		superuser:   superuser,
 	})
+}
+
+// accessClass is the role class of the access groups: admin, user or none.
+func accessClass(ag AccessGroups) string {
+	switch {
+	case ag.IsAdmin():
+		return "admin"
+	case ag.IsUser():
+		return "user"
+	}
+	return "none"
 }
 
 // GQLAdminCheckLog is a gqlgen operation middleware (handler.Server.AroundOperations).
@@ -42,16 +49,14 @@ func GQLAdminCheckLog(ctx context.Context, next graphql.OperationHandler) graphq
 	if m, ok := ctx.Value(gqlNonAdminCtxKey).(*gqlNonAdmin); ok {
 		fields := logrus.Fields{
 			"tenant":              ForContextTenant(ctx),
-			"azp":                 m.azp,
-			"sub":                 m.sub,
-			"access_groups_count": m.accessGroupsCount,
-			"is_user":             m.isUser,
+			"client.id":           m.azp,
+			"access_groups.class": m.accessClass,
 			"superuser":           m.superuser,
 		}
 		if graphql.HasOperationContext(ctx) {
 			if op := graphql.GetOperationContext(ctx).Operation; op != nil {
 				fields["operation_type"] = string(op.Operation)
-				fields["operation_name"] = op.Name
+				fields["graphql.operation.name"] = op.Name
 			}
 		}
 		logrus.WithFields(fields).Info("gql-admin-check: non-admin token")

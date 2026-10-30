@@ -152,11 +152,14 @@ func TestText_SameFields(t *testing.T) {
 // Fields outside the allowlist are dropped, from logrus and from slog.
 func TestUnknownFieldsAreDropped(t *testing.T) {
 	buf := setup(t, Config{Level: slog.LevelInfo, JSON: true})
-	logrus.WithField("email", "max.mustermann@example.org").WithField("ecId", "AT00300000000RC100181000000000001").Info("a")
+	logrus.WithField("email", "max.mustermann@example.org").WithField("sub", "f81d4fae-7dec-11d0-a765-00a0c91e6bf6").
+		WithField("ecId", "AT00300000000RC100181000000000001").Info("a")
 	slog.Info("b", "iban", "AT611904300234573201", "tenant.id", "TE100100")
 	ls := lines(t, buf)
 	require.Len(t, ls, 2)
 	assert.NotContains(t, buf.String(), "example.org")
+	assert.NotContains(t, buf.String(), "f81d4fae", "sub (user id) never appears")
+	assert.NotContains(t, allowedFields, "sub")
 	assert.NotContains(t, buf.String(), "AT611904300234573201")
 	assert.Equal(t, "AT00300000000RC100181000000000001", ls[0]["ecId"])
 	assert.Equal(t, "TE100100", ls[1]["tenant.id"])

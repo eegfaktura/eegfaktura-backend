@@ -46,6 +46,10 @@ this changelog highlights the changes relevant for overview and operations.
   32 hex characters), and returned in the response header. `traceparent` is checked strictly (no version `ff`, no
   all-zero ids). The former per-request line `Access granted for tenant …` of `/query` is
   replaced by the access line. The backend had no access log with IP or user agent before.
+- **The temporary line `gql-admin-check: non-admin token` no longer logs the user id (`sub`)** (no user tracking,
+  2026-10-29). It now holds `tenant.id`, `client.id`, `graphql.operation.name`, `operation_type`, `superuser` and
+  `access_groups.class` (`user`/`none`) instead of `azp`, `sub`, `access_groups_count`, `is_user` and `operation_name`;
+  the count of non-admin GraphQL calls stays available.
 
 ### Contract
 - **New caller of `GET /participant`: eegfaktura-energystore** (energystore 261025-ca1). energystore forwards a
