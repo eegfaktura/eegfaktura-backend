@@ -182,18 +182,21 @@ func (h *ParticipantHandler) confirmParticipant() middleware.JWTHandlerFunc {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
-		for _, qm := range meters {
-			if err = checkActivationMode(qm.ActivationMode); err != nil {
-				respondWith(w, http.StatusBadRequest, tenant, err)
-				return
-			}
-		}
 
 		eeg, err := h.db.GetEegById(r.Context(), tenant)
 		if err != nil {
 			log.WithField("tenant", tenant).WithError(err).Error("failed to confirm participant.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
 			return
+		}
+		// only an online EEG sends registrations; check every meter before the participant is confirmed
+		if eeg.Online {
+			for _, qm := range meters {
+				if err = checkActivationMode(qm.ActivationMode); err != nil {
+					respondWith(w, http.StatusBadRequest, tenant, err)
+					return
+				}
+			}
 		}
 		participant, err := h.db.QueryParticipant(r.Context(), tenant, participantId)
 		if err != nil {

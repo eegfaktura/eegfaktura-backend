@@ -161,3 +161,62 @@ func TestConfirmParticipant_activationMode(t *testing.T) {
 		assert.Equal(t, 1, *calls, "online registration sent via MQTT")
 	})
 }
+
+// deleteMeter removes a metering point a test created, so the test also passes with -count=2.
+func deleteMeter(t *testing.T, meter string) {
+	t.Helper()
+	t.Cleanup(func() {
+		_, _ = testDB.DbInstance.Exec(`DELETE FROM base.metering_partition_factor WHERE metering_point_id = $1`, meter)
+		_, _ = testDB.DbInstance.Exec(`DELETE FROM base.meteringpoint WHERE metering_point_id = $1`, meter)
+	})
+}
+
+// A non-online EEG never sends a registration, so the mode is ignored there as before.
+func TestActivationMode_ignoredForNonOnlineEeg(t *testing.T) {
+	const tenant = "TE000003" // online = false
+	const participant = "ea9942dc-03da-11ee-b82b-5a985b4b033a"
+	claims := &middleware.PlatformClaims{Username: "test"}
+
+	t.Run("create with OFFLINE is saved", func(t *testing.T) {
+		const meter = "AT0030000000000000000000000099003"
+		deleteMeter(t, meter)
+		calls := countRegistrations(t)
+		body := `{"meteringPoint":"` + meter + `","direction":"CONSUMPTION","status":"INIT","processState":"NEW","activationMode":"OFFLINE"}`
+		req, _ := http.NewRequest("PUT", "/meteringpoint/"+participant+"/create", strings.NewReader(body))
+		req = mux.SetURLVars(req, map[string]string{"pid": participant})
+		w := httptest.NewRecorder()
+
+		newTestMeteringHandler(t).createMeteringPoint()(w, req, claims, tenant)
+
+		require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+		assert.Equal(t, 0, *calls, "registrations sent via MQTT")
+	})
+
+	t.Run("register with OFFLINE sends nothing", func(t *testing.T) {
+		calls := countRegistrations(t)
+		body := `{"meteringPoint":"AT0030000000000000000000000003011","direction":"CONSUMPTION","activationMode":"OFFLINE"}`
+		req, _ := http.NewRequest("POST", "/meteringpoint/"+participant+"/register", strings.NewReader(body))
+		req = mux.SetURLVars(req, map[string]string{"pid": participant})
+		w := httptest.NewRecorder()
+
+		newTestMeteringHandler(t).registerMeteringPoint()(w, req, claims, tenant)
+
+		require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+		assert.Equal(t, 0, *calls, "registrations sent via MQTT")
+	})
+
+	t.Run("confirm with OFFLINE confirms", func(t *testing.T) {
+		db, err := database.GetDB(context.Background())
+		require.NoError(t, err)
+		calls := countRegistrations(t)
+		body := `[{"meteringPoint":"AT0030000000000000000000000003011","activationMode":"OFFLINE","activationCode":"ABC123"}]`
+		req, _ := http.NewRequest("POST", "/participant/"+participant+"/confirm", strings.NewReader(body))
+		req = mux.SetURLVars(req, map[string]string{"id": participant})
+		w := httptest.NewRecorder()
+
+		NewParticipantHandler(db).confirmParticipant()(w, req, claims, tenant)
+
+		require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+		assert.Equal(t, 0, *calls, "registrations sent via MQTT")
+	})
+}

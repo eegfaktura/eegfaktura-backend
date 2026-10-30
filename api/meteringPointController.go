@@ -62,9 +62,24 @@ func (h *MeteringHandler) createMeteringPoint() middleware.JWTHandlerFunc {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
-		if err = checkActivationMode(m.ActivationMode); err != nil {
-			respondWith(w, http.StatusBadRequest, tenant, err)
-			return
+		// The mode only matters where a registration is sent below: a NEW meter (empty becomes NEW on insert) of an
+		// active member of an online EEG. There it is rejected before the meter is saved; elsewhere it is ignored.
+		if modeErr := checkActivationMode(m.ActivationMode); modeErr != nil && (m.ProcessState == "" || m.ProcessState == model.NEW) {
+			eeg, err := h.db.GetEegById(r.Context(), tenant)
+			if err != nil {
+				respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
+				return
+			}
+			participant, err := h.db.QueryParticipant(r.Context(), tenant, participantId)
+			if err != nil {
+				log.WithField("tenant", tenant).WithError(err).Error("failed to register metering point. Cannot find appropriate participant.")
+				respondWith(w, http.StatusBadRequest, tenant, err)
+				return
+			}
+			if eeg.Online && participant.Status == model.ACTIVE {
+				respondWith(w, http.StatusBadRequest, tenant, modeErr)
+				return
+			}
 		}
 
 		m.ModifiedAt = civil.Now()
@@ -321,16 +336,19 @@ func (h *MeteringHandler) registerMeteringPoint() middleware.JWTHandlerFunc {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
-		if err = checkActivationMode(request.ActivationMode); err != nil {
-			respondWith(w, http.StatusBadRequest, tenant, err)
-			return
-		}
 
 		eeg, err := h.db.GetEegById(r.Context(), tenant)
 		if err != nil {
 			log.WithField("tenant", tenant).WithError(err).Error("failed to register metering point.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
 			return
+		}
+		// only an online EEG sends a registration; elsewhere the mode is ignored
+		if eeg.Online {
+			if err = checkActivationMode(request.ActivationMode); err != nil {
+				respondWith(w, http.StatusBadRequest, tenant, err)
+				return
+			}
 		}
 		participant, err := h.db.QueryParticipant(r.Context(), tenant, participantId)
 		if err != nil {
@@ -756,7 +774,8 @@ func (h *MeteringHandler) requestChangePartitionFactor() middleware.JWTHandlerFu
 const offlineRegistrationUnsupported = "Offline-Registrierung wird von den Netzbetreibern nicht mehr unterstützt"
 
 // checkActivationMode accepts a missing activationMode and ONLINE (both register online).
-// OFFLINE and any other value are rejected; callers check before they write or send anything.
+// OFFLINE and any other value are rejected. Callers check only where a registration would be sent (online EEG),
+// before they write or send anything.
 func checkActivationMode(mode model.RegistrationMode) error {
 	switch mode {
 	case "", model.ONLINE:
