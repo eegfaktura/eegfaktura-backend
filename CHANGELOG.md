@@ -19,6 +19,55 @@ this changelog highlights the changes relevant for overview and operations.
   `too_many_connections` (SQLSTATE 53300), `/readyz` still answers `ok` and logs a warning at most once a minute: the
   application pool can still serve, and saturation of the shared Postgres must not take the service out of service.
 
+### Changed
+- **Log output is now one JSON object per line on stdout, with ECS field names** (logging concept W-261008-ca2).
+  **This changes what operators, `kubectl logs` and Dynatrace receive:** before, logrus text (`time=… level=… msg=…`)
+  on stderr; now e.g. `{"@timestamp":"…Z","log.level":"info","message":"…","service.name":"eegfaktura-backend",
+  "service.version":"1.14.0","tenant.id":"…"}` on stdout. Parse rules or dashboards on the old text format must be
+  redone. One logging module (`logging/`, Go `log/slog`) writes every line; the existing logrus calls are routed into it
+  unchanged in content. Field mapping: logrus `tenant` → `tenant.id`, `WithError` → `error.type` + `error.message`, the
+  caller → `log.origin.function`/`log.origin.file.name`/`log.origin.file.line`. Only listed fields are written
+  (`logging/logging.go`, `allowedFields`): a field a log call adds that is not on the list is dropped — the list holds
+  the fields the existing calls use. No new dependency.
+  - `LOG_FORMAT`: `json` (default) or `text` (`key=value`, for local runs).
+  - `LOG_LEVEL`: `trace`, `debug`, `info` (default), `warn`, `error`. **An unknown value now stops the start**
+    (exit code 2, message on stderr) — this includes `fatal` and `panic`, which logrus accepted before; before, an unknown value fell back to `info` with a warning. An empty `LOG_LEVEL` or
+    `LOG_FORMAT` is the default (same rule as energystore). Prod/pilot set `info`.
+  - `SERVICE_VERSION` → `service.version`: set in the image (Dockerfile `ARG`/`ENV`, passed by the release workflow from
+    the image tag); `dev` otherwise.
+- **Access line: one line per HTTP request** (`event.action=http.access`), written after the token check: method,
+  route template (`http.route`, e.g. `/eeg/tariff/{id}` — no ids, no query), status, `event.duration` (nanoseconds,
+  ECS), `event.outcome` (`success` for 2xx/3xx, `refused` for 401/403 at level warn, `failure` for any other status ≥ 400),
+  message `<method> <route> <status>`, `request.id`,
+  `tenant.id` (the tenant the request was allowed for; absent on refusals), `client.id` (the token's `azp` — the
+  Keycloak client, not a person) and, on `/query`, `graphql.operation.name`. `trace.id`/`span.id` when the request
+  has a W3C `traceparent`. **No user id, user name, e-mail, user agent, IP or query value** (no user tracking,
+  2026-10-29); a test guards the field list. `/healthz` and `/readyz` are not logged. `X-Request-Id` is taken from
+  the request when it is 1–128 characters of `[A-Za-z0-9._:-]` (ingress-nginx sends one), otherwise generated (UUID v4 as
+  32 hex characters), and returned in the response header. `traceparent` is checked strictly (no version `ff`, no
+  all-zero ids). The former per-request line `Access granted for tenant …` of `/query` is
+  replaced by the access line. The backend had no access log with IP or user agent before.
+  Requests that match no route (404) get an access line and `X-Request-Id` too, without `http.route` (message
+  `GET - 404`); the backend's router also answers a wrong method with 404. An anonymous GraphQL operation has no
+  `graphql.operation.name`. **Known limit:** GraphQL answers a refused or failed operation with HTTP 200 and an
+  `errors` array; its access line says `event.outcome=success` — the outcome reflects the HTTP status only (same in
+  energystore). More known limits (follow-ups, unchanged now): CORS preflights (`OPTIONS`, answered by the CORS wrapper
+  outside the access log) get no access line and no `X-Request-Id`; `X-Request-Id` is not an exposed CORS header and
+  `X-Request-Id`/`traceparent` are not in the allowed request headers, so browsers cannot send or read them; the
+  GraphQL websocket transport on `/query` is logged as one line with status 200 and the socket's lifetime as duration,
+  and operations on one socket share the operation name.
+- **A panic in a REST handler** is logged as one error line (`event.action=http.panic`, `error.type`, `error.message`,
+  `error.stack_trace`) and answered with 500; the access line says 500. Before, net/http logged `http: panic serving
+  <remote address>` with a plain stack (an IP in the log) and there was no access line. If the response had already
+  begun, the connection is aborted.
+- **A panic in a GraphQL resolver is logged as one error line** (`event.action=graphql.panic`, `error.type`,
+  `error.message`, `error.stack_trace`) through the logging module, instead of gqlgen's plain-text stack on stderr. The
+  client gets the same generic `internal system error` as before.
+- **The temporary line `gql-admin-check: non-admin token` no longer logs the user id (`sub`)** (no user tracking,
+  2026-10-29). It now holds `tenant.id`, `client.id`, `graphql.operation.name`, `operation_type`, `superuser` and
+  `access_groups.class` (`user`/`none`) instead of `azp`, `sub`, `access_groups_count`, `is_user` and `operation_name`;
+  the count of non-admin GraphQL calls stays available.
+
 ### Removed
 - **Offline registration of metering points (`ANFORDERUNG_ECOF` with activation code)** — the grid operators no
   longer support it (decision 2026-10-30; behaviour change towards the grid operators). The backend no longer sends

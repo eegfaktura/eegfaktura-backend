@@ -99,6 +99,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags || 'latest' }}
           labels: ${{ steps.meta.outputs.labels || '' }}
           annotations: ${{ steps.meta.outputs.annotations }}
+          build-args: |
+            SERVICE_VERSION=${{ steps.meta.outputs.version }}
 
       - name: Generate artifact attestation
         if: github.event_name == 'push'

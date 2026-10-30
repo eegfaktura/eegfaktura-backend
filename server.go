@@ -20,6 +20,7 @@ import (
 	"at.ourproject/vfeeg-backend/energyrequest"
 	"at.ourproject/vfeeg-backend/graph"
 	"at.ourproject/vfeeg-backend/graph/generated"
+	"at.ourproject/vfeeg-backend/logging"
 	"at.ourproject/vfeeg-backend/mailtemplate"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
 	"at.ourproject/vfeeg-backend/parser"
@@ -39,31 +40,8 @@ import (
 var (
 	//go:embed migrations/*.sql
 	migrations embed.FS
+
 )
-
-func init() {
-	lvl, ok := os.LookupEnv("LOG_LEVEL")
-	ll, err := logLevel(lvl, ok)
-	// set global log level
-	log.SetLevel(ll)
-	if err != nil {
-		log.Warnf("unknown LOG_LEVEL %q, using info", lvl)
-	}
-}
-
-// logLevel defaults to info when LOG_LEVEL is not set or unknown: debug logs import
-// rows and other personal data (261008-ca1).
-func logLevel(lvl string, set bool) (log.Level, error) {
-	if !set {
-		return log.InfoLevel, nil
-	}
-	// parse string, this is built-in feature of logrus
-	ll, err := log.ParseLevel(lvl)
-	if err != nil {
-		return log.InfoLevel, err
-	}
-	return ll, nil
-}
 
 func captureOsInterrupt() chan bool {
 	quit := make(chan bool)
@@ -96,8 +74,18 @@ func InitRouters(db database.Database) *mux.Router {
 	s = api.InitProcessRouter(s, db)
 	s = api.InitApiRouter(s, db)
 	s = api.InitHealthRouter(s, database.Ping)
+	s.Use(logging.MuxRoute)
 
 	return s
+}
+
+// InitGraphQL registers /query on the router.
+func InitGraphQL(r *mux.Router) {
+	gqlSrv := handler.NewDefaultServer(generated.NewExecutableSchema(generated.Config{Resolvers: &graph.Resolver{}}))
+	gqlSrv.SetRecoverFunc(middleware.GQLRecover)
+	gqlSrv.AroundOperations(middleware.GQLAdminCheckLog)
+	gqlSrv.AroundOperations(middleware.GQLAccessOperation)
+	r.Handle("/query", middleware.GQLProtect(gqlSrv))
 }
 
 type driver struct {
@@ -114,6 +102,15 @@ func (d *driver) Open(rawURL string) (source.Driver, error) {
 }
 
 func main() {
+	// LOG_LEVEL (default info), LOG_FORMAT (default json), SERVICE_VERSION (image build);
+	// an unknown value stops the start. Debug logs import rows and other personal data (261008-ca1).
+	logCfg, err := logging.ConfigFromEnv(os.LookupEnv)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	logging.Setup(os.Stdout, logCfg)
+
 	var configPath = flag.String("configPath", ".", "Configfile Path")
 	flag.Parse()
 	config.ReadConfig(*configPath)
@@ -189,9 +186,7 @@ func StartServer(db database.Database) {
 	quit := captureOsInterrupt()
 	r := InitRouters(db)
 
-	gqlSrv := handler.NewDefaultServer(generated.NewExecutableSchema(generated.Config{Resolvers: &graph.Resolver{}}))
-	gqlSrv.AroundOperations(middleware.GQLAdminCheckLog)
-	r.Handle("/query", middleware.GQLProtect(gqlSrv))
+	InitGraphQL(r)
 
 	allowedOrigins := handlers.AllowedOrigins([]string{"*"})
 	allowedHeaders := handlers.AllowedHeaders(
@@ -230,7 +225,7 @@ func StartServer(db database.Database) {
 	log.Infof("VFEEG BACKEND is going to listen on %s", fmt.Sprintf("127.0.0.1:%d", viper.GetInt("port")))
 
 	srv := &http.Server{
-		Handler: handlers.CORS(allowedOrigins, allowedHeaders, allowedMethods, allowedCredentials)(r),
+		Handler: handlers.CORS(allowedOrigins, allowedHeaders, allowedMethods, allowedCredentials)(logging.AccessLog(r)),
 		Addr:    fmt.Sprintf("0.0.0.0:%d", viper.GetInt("port")),
 		// Good practice: enforce timeouts for servers you create!
 		WriteTimeout: 180 * time.Second,
@@ -253,5 +248,5 @@ func StartServer(db database.Database) {
 	//repository.CloseRepositories()
 	log.Println("final")
 
-	fmt.Println("STOP PROGRAM")
+	log.Println("STOP PROGRAM")
 }
