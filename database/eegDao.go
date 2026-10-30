@@ -19,6 +19,8 @@ type EegRepository interface {
 	GetEegById(ctx context.Context, tenant string) (*model.Eeg, error)
 	GetEegByIdForUser(ctx context.Context, tenant string) (*model.Eeg, error)
 	GetEegByEcId(ctx context.Context, edId string) (*model.Eeg, error)
+	GetEegByEcIdAndMeters(ctx context.Context, ecId string, meters []string) (*model.Eeg, error)
+	GetBaseEegByEcId(ctx context.Context, ecId string) (*model.Eeg, error)
 	GetTenantsByRcNumber(ctx context.Context, rcNumber string) ([]string, error)
 	UpdateEegPartial(ctx context.Context, tenant string, fields map[string]interface{}) error
 	GetGridOperators(ctx context.Context) (map[string]string, error)
@@ -47,6 +49,51 @@ func (db *sqlDatabase) GetEegByIdForUser(ctx context.Context, tenant string) (*m
 
 func (db *sqlDatabase) GetEegByEcId(ctx context.Context, edId string) (*model.Eeg, error) {
 	return getEegByEcId(ctx, db.db, edId)
+}
+
+// GetEegByEcIdAndMeters returns the community of ecId that holds the metering points of an inbound message. In a
+// GEA several tenants share one community id (261028-mm1): the tenant holding one of the metering points wins — a
+// live assigned row (flag 1, not INACTIVE, e.g. a registration running) before an ended one (revoked, still flag 1),
+// before only a moved (0) or archived (2) row. When none of the tenants holds a metering point: the GEA's base tenant
+// (GetBaseEegByEcId). With one tenant per community id: GetEegByEcId, as before.
+func (db *sqlDatabase) GetEegByEcIdAndMeters(ctx context.Context, ecId string, meters []string) (*model.Eeg, error) {
+	tenants, err := db.TenantsByEcId(ctx, ecId)
+	if err != nil {
+		return nil, model.ErrGetEeg(err)
+	}
+	if len(tenants) < 2 {
+		return getEegByEcId(ctx, db.db, ecId)
+	}
+	owners := []string{}
+	if len(meters) > 0 {
+		query, args, err := sqlx.In(`SELECT tenant FROM base.meteringpoint WHERE tenant IN (?) AND metering_point_id IN (?)
+			GROUP BY tenant ORDER BY bool_or(flag = 1 AND status <> 'INACTIVE') DESC, bool_or(flag = 1) DESC, tenant`, tenants, meters)
+		if err != nil {
+			return nil, model.ErrGetEeg(err)
+		}
+		if err = db.db.SelectContext(ctx, &owners, db.db.Rebind(query), args...); err != nil {
+			return nil, model.ErrGetEeg(err)
+		}
+	}
+	switch {
+	case len(owners) == 0:
+		log.WithField("ecId", ecId).Warnf("none of the tenants %v holds the metering points %v; using the base tenant", tenants, meters)
+		return db.GetBaseEegByEcId(ctx, ecId)
+	case len(owners) > 1:
+		log.WithField("ecId", ecId).Warnf("the metering points %v are held by the tenants %v; applying to %s", meters, owners, owners[0])
+	}
+	return getEegById(ctx, db.db, owners[0])
+}
+
+// GetBaseEegByEcId returns the base tenant of a community id: the tenant named like its RC number (a GEA's
+// GCxxxxxx beside GCxxxxxx-00n), else the first by name. Deterministic, unlike GetEegByEcId (261028-mm1).
+func (db *sqlDatabase) GetBaseEegByEcId(ctx context.Context, ecId string) (*model.Eeg, error) {
+	var tenant string
+	if err := db.db.GetContext(ctx, &tenant, `SELECT tenant FROM base.eeg WHERE "communityId" = $1
+		ORDER BY upper(tenant) = upper("rcNumber") DESC, tenant LIMIT 1`, ecId); err != nil {
+		return nil, model.ErrGetEeg(err)
+	}
+	return getEegById(ctx, db.db, tenant)
 }
 
 // GetTenantsByRcNumber returns the tenants of an RC number (MQTT topic of incoming EDA messages).
@@ -110,7 +157,7 @@ func getEegById(ctx context.Context, tx *sqlx.DB, tenant string) (*model.Eeg, er
 
 	err = tx.GetContext(ctx, &eeg, stmt, args...)
 	if err != nil {
-		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", stmt)
+		log.WithError(err).WithField("SQL", "SELECT").Error("SQL statement failed")
 		return nil, model.ErrGetEeg(err)
 	}
 	return &eeg, nil
@@ -126,7 +173,7 @@ func getEegByEcId(ctx context.Context, tx *sqlx.DB, edId string) (*model.Eeg, er
 
 	err = tx.GetContext(ctx, &eeg, stmt, args...)
 	if err != nil {
-		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", stmt)
+		log.WithError(err).WithField("SQL", "SELECT").Error("SQL statement failed")
 		return nil, model.ErrGetEeg(err)
 	}
 	return &eeg, nil
@@ -151,7 +198,7 @@ func insertEeg(ctx context.Context, db *sqlx.DB, tenant string, eeg *model.Eeg) 
 	sql, _, err := pgDialect.Insert(TABLE_EEG).Rows(eeg).OnConflict(goqu.DoNothing()).ToSQL()
 	_, err = db.ExecContext(ctx, sql)
 	if err != nil {
-		log.WithField("SQL", "INSERT").Errorf("Stmt: %s", sql)
+		log.WithError(err).WithField("SQL", "INSERT").Error("SQL statement failed")
 		return err
 	}
 
@@ -210,7 +257,7 @@ func updateEegPartial(ctx context.Context, db *sqlx.DB, tenant string, fields ma
 
 	statement, _, err := pgDialect.Update(TABLE_EEG).Set(updateRecord).Where(goqu.Ex{"tenant": goqu.V(tenant)}).ToSQL()
 	if err != nil {
-		log.WithError(err).Errorf("Update EEG VALUES: %s", statement)
+		log.WithError(err).Error("Update EEG VALUES failed")
 		return err
 	}
 
@@ -238,7 +285,7 @@ func fetchTenantsName(ctx context.Context, db *sqlx.DB, tenants []string, isSupe
 		return nil, err
 	}
 	if err := db.SelectContext(ctx, &tenantsName, stmt); err != nil {
-		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", stmt)
+		log.WithError(err).WithField("SQL", "SELECT").Error("SQL statement failed")
 		return nil, err
 	}
 	return tenantsName, nil

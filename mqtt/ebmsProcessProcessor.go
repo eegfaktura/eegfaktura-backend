@@ -3,6 +3,7 @@ package mqttclient
 import (
 	"errors"
 	"strings"
+	"sync"
 
 	"at.ourproject/vfeeg-backend/model"
 	"at.ourproject/vfeeg-backend/util"
@@ -96,7 +97,27 @@ func RequestingMeteringPointList(eeg *model.Eeg, receiver string, from, to int64
 	//	return model.ErrEdaCommunication(err)
 	//}
 	Broker().SendMessage(ebmsMessage)
+	RememberZpListRequester(eeg.CommunityId, eeg.Id)
 	return nil
+}
+
+// zpListRequesters remembers which tenant asked for the metering point list of a community id. In a GEA several
+// tenants share the community id and the answer carries only that, so the answer goes to the tenant that asked
+// (261028-mm1). Kept in memory: after a restart the answer goes to the GEA's base tenant.
+var zpListRequesters sync.Map
+
+// RememberZpListRequester notes that tenant asked for the metering point list of ecId.
+func RememberZpListRequester(ecId, tenant string) {
+	zpListRequesters.Store(ecId, tenant)
+}
+
+// TakeZpListRequester returns and forgets the tenant that last asked for the metering point list of ecId.
+func TakeZpListRequester(ecId string) (string, bool) {
+	v, ok := zpListRequesters.LoadAndDelete(ecId)
+	if !ok {
+		return "", false
+	}
+	return v.(string), true
 }
 
 var ChangePartitionFactor = func(eeg *model.Eeg, meterReq []*model.ChangePartitionFactorRequest) error {
@@ -129,7 +150,7 @@ var ChangePartitionFactor = func(eeg *model.Eeg, meterReq []*model.ChangePartiti
 		ebmsMessage.EcDisModel = model.AllocationModeType(eeg.AllocationMode)
 		ebmsMessage.MeterList = v
 
-		log.WithField("tenant", eeg.Id).Infof("Change Partition Factor. %+v", v)
+		log.WithField("tenant", eeg.Id).Infof("Change Partition Factor. Grid operator %s, %d metering point(s)", k, len(v))
 		Broker().SendMessage(ebmsMessage)
 	}
 	return nil

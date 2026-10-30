@@ -63,7 +63,7 @@ func sendMeteringPointInactiveMails(ctx context.Context, db database.Database, t
 		if m, err := db.FindAssignedMeteringById(ctx, tenant, meterId); err == nil && m != nil {
 			direction = parser.DirectionText(m.Direction)
 		}
-		err = parser.SendMeteringPointInactiveMail(sendInactiveMail, tenant, parser.InactiveMailData{
+		err = parser.SendMeteringPointInactiveMail(sendInactiveMail, db, tenant, parser.InactiveMailData{
 			Eeg:           eeg,
 			Participant:   participant,
 			MeteringPoint: meterId,

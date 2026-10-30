@@ -38,6 +38,7 @@ type Database interface {
 	TariffRepository
 	MqttRepository
 	EnergyRequestRepository
+	MailTemplateRepository
 }
 
 type MqttRepository interface {
@@ -50,11 +51,7 @@ func initDB(ctx context.Context) error {
 
 	sqlDB := sqlDatabase{}
 
-	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
-		"password=%s dbname=%s sslmode=disable",
-		viper.GetString("database.host"), viper.GetInt("database.port"), viper.GetString("database.user"),
-		viper.GetString("database.password"), viper.GetString("database.dbname"))
-	sqlDB.db, err = sqlx.ConnectContext(ctx, "postgres", psqlInfo)
+	sqlDB.db, err = sqlx.ConnectContext(ctx, "postgres", connInfo())
 	if err != nil {
 		return err
 	}
@@ -88,6 +85,14 @@ func initDB(ctx context.Context) error {
 	db.Database = &sqlDB
 
 	return nil
+}
+
+// connInfo is the connection string of the configured database.
+func connInfo() string {
+	return fmt.Sprintf("host=%s port=%d user=%s "+
+		"password=%s dbname=%s sslmode=disable",
+		viper.GetString("database.host"), viper.GetInt("database.port"), viper.GetString("database.user"),
+		viper.GetString("database.password"), viper.GetString("database.dbname"))
 }
 
 // logPoolStats periodically writes the connection pool counters to the log until

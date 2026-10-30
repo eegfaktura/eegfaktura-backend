@@ -54,6 +54,18 @@ const (
 	RESIDENCE AddressType = "RESIDENCE"
 )
 
+// Scan reads NULL as an empty type. The member list LEFT JOINs both addresses, so
+// a member without one of them yields NULL here; that must not fail the whole list
+// (261029-mm1).
+func (t *AddressType) Scan(src any) error {
+	var s null.String
+	if err := s.Scan(src); err != nil {
+		return err
+	}
+	*t = AddressType(s.String)
+	return nil
+}
+
 type Address struct {
 	Type         AddressType `json:"type,omitempty" goqu:"skipupdate"`
 	Street       null.String `json:"street,omitempty"  goqu:"omitempty,omitnil"`

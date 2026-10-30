@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"at.ourproject/vfeeg-backend/model"
@@ -318,7 +319,7 @@ func saveMeteringPoint(ctx context.Context, tx *sqlx.Tx, tenant string, metering
 		}
 		_, err = tx.Exec(updateExistingStmt)
 		if err != nil {
-			log.WithField("SQL", "UPDATE").Errorf("Stmt: %v", updateExistingStmt)
+			log.WithError(err).WithField("SQL", "UPDATE").Error("SQL statement failed")
 			return model.ErrSaveMeteringPoint(err)
 		}
 	}
@@ -328,9 +329,9 @@ func saveMeteringPoint(ctx context.Context, tx *sqlx.Tx, tenant string, metering
 	if err != nil {
 		return model.ErrSaveMeteringPoint(err)
 	}
-	res, err := tx.Exec(statement)
+	_, err = tx.Exec(statement)
 	if err != nil {
-		log.Errorf("Stmt: %s - %v", statement, res)
+		log.WithError(err).Error("SQL statement failed")
 		return model.ErrSaveMeteringPoint(err)
 	}
 
@@ -338,10 +339,10 @@ func saveMeteringPoint(ctx context.Context, tx *sqlx.Tx, tenant string, metering
 	if err != nil {
 		return model.ErrSaveMeteringPoint(err)
 	}
-	res, err = tx.Exec(statement)
+	_, err = tx.Exec(statement)
 
 	if err != nil {
-		log.Errorf("Stmt: %s - %v", statement, res)
+		log.WithError(err).Error("SQL statement failed")
 		return model.ErrSaveMeteringPoint(err)
 	}
 
@@ -450,7 +451,7 @@ func moveMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, sPart
 	}
 	_, err = tx.Exec(statement)
 	if err != nil {
-		log.WithField("SQL", "UPDATE").Errorf("Stmt: %v", statement)
+		log.WithError(err).WithField("SQL", "UPDATE").Error("SQL statement failed")
 		return model.ErrUpdateMeter(err)
 	}
 	return nil
@@ -505,7 +506,7 @@ func UpdateMeteringPointPartial(ctx context.Context, db *sqlx.DB, tenant, userna
 
 	_, err = db.Exec(statement)
 	if err != nil {
-		log.WithField("SQL", "UPDATE").Errorf("Stmt: %v", statement)
+		log.WithError(err).WithField("SQL", "UPDATE").Error("SQL statement failed")
 		return model.ErrUpdateMeter(err)
 	}
 	return nil
@@ -515,6 +516,9 @@ func UpdateMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, par
 	// The number in the path is the row that is updated (metering_point_id is skipupdate); derive
 	// the grid operator from it, not from the body (platform#107).
 	meteringPoint.MeteringPoint = meterId
+	if meteringPoint.State == nil {
+		return model.ErrUpdateMeter(errors.New("participantState is missing"))
+	}
 	if err := applyGridOperator(ctx, db, tenant, []*model.MeteringPoint{meteringPoint}); err != nil {
 		return model.ErrUpdateMeter(err)
 	}
@@ -539,7 +543,7 @@ func UpdateMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, par
 	}
 	_, err = db.Exec(statement)
 	if err != nil {
-		log.WithField("SQL", "UPDATE").Errorf("Stmt: %v", statement)
+		log.WithError(err).WithField("SQL", "UPDATE").Error("SQL statement failed")
 		return model.ErrUpdateMeter(err)
 	}
 	return nil
@@ -615,11 +619,11 @@ func archiveMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, participantI
 
 	result, err := db.Exec(statement)
 	if err != nil {
-		log.WithField("SQL", "UPDATE").Errorf("Stmt: %v", statement)
+		log.WithError(err).WithField("SQL", "UPDATE").Error("SQL statement failed")
 		return model.ErrStatusMeter(err)
 	}
 	if rows, err := result.RowsAffected(); err != nil || rows == 0 {
-		log.WithField("SQL", "UPDATE").Infof("No Rows Affected. Stmt: %v", statement)
+		log.WithField("SQL", "UPDATE").Info("No Rows Affected")
 	}
 	return nil
 }
@@ -627,7 +631,12 @@ func archiveMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, participantI
 func restoreMeteringPointProcessState(ctx context.Context, db *sqlx.DB, tenant, meterId string) error {
 
 	sql, _, err := pgDialect.Update(TABLE_METERINGPOINT).
-		Set(goqu.Record{"process_state": goqu.COALESCE(goqu.C("last_process_state"), goqu.C("process_state"))}).
+		Set(goqu.Record{"process_state": goqu.Case().
+			// an ended participation was INACTIVE before the competing attempt (INIT); everything else
+			// stays (a registration in flight, an active metering point). last_process_state only holds
+			// a rejection that was not applied (meteringPointsSetStatus), never a state to go back to.
+			When(goqu.And(endedParticipation(), goqu.C("process_state").Eq(string(model.INIT))), string(model.INACTIVE)).
+			Else(goqu.C("process_state"))}).
 		Where(goqu.Ex{"tenant": tenant, "metering_point_id": meterId, "flag": model.F_ASSIGNED}).ToSQL()
 
 	if err != nil {
@@ -636,9 +645,24 @@ func restoreMeteringPointProcessState(ctx context.Context, db *sqlx.DB, tenant, 
 
 	_, err = db.Exec(sql)
 	if err != nil {
-		log.WithField("SQL", "UPDATE").Errorf("Stmt: %v", sql)
+		log.WithError(err).WithField("SQL", "UPDATE").Error("SQL statement failed")
+		return model.ErrStatusMeter(err)
 	}
-	return model.ErrStatusMeter(err)
+	return nil
+}
+
+// endedParticipation matches a metering point whose participation has ended (status INACTIVE with a
+// start and an end date). A rejected re-registration leaves it INACTIVE (konzept-zaehlpunkt-ausblenden.md,
+// part 2). Without activesince it never took part (e.g. revoked via CCMS before activation).
+func endedParticipation() exp.Expression {
+	return goqu.And(goqu.C("status").Eq(string(model.S_INACTIVE)), goqu.C("inactivesince").IsNotNull(),
+		goqu.C("activesince").IsNotNull())
+}
+
+// activeParticipation matches a metering point that takes part (status ACTIVE). A rejection with a
+// code of model.REJECTED_KEEP_ACTIVE_CODES leaves it ACTIVE (decision 24.10.2026).
+func activeParticipation() exp.Expression {
+	return goqu.C("status").Eq(string(model.S_ACTIVE))
 }
 
 // MeteringPointsSetStatus The MeteringPointSetStatus method handles only ECON or ECOF messages.
@@ -659,6 +683,30 @@ func meteringPointsSetStatus(ctx context.Context, db *sqlx.DB, tenant string, pr
 		"process_state": setStatus(processState),
 		"modifiedAt":    civil.Now(),
 		"modifiedBy":    "EVU",
+	}
+
+	// A rejection does not undo a participation: an ended metering point stays INACTIVE (any code), an
+	// active one stays ACTIVE when the code concerns the request only (REJECTED_KEEP_ACTIVE_CODES;
+	// INIT/PENDING/APPROVED of that request go back to ACTIVE, REVOKED and other states stay). The
+	// rejected state goes to last_process_state, the code to statusCode, the notification is written
+	// as before. Never-active (INIT) metering points, and active ones with other codes, take the
+	// rejected state. Any other message starts or ends a registration: the saved rejection no longer applies.
+	if processState == model.INVALID || processState == model.REJECTED {
+		kept := endedParticipation()
+		processCase := goqu.Case().When(endedParticipation(), string(model.INACTIVE))
+		if statusCode != nil && slices.Contains(model.REJECTED_KEEP_ACTIVE_CODES, *statusCode) {
+			kept = goqu.Or(endedParticipation(), activeParticipation())
+			// the request just rejected left INIT/PENDING/APPROVED: back to ACTIVE; any other state stays
+			processCase = processCase.
+				When(goqu.And(activeParticipation(), goqu.C("process_state").In(
+					string(model.INIT), string(model.PENDING), string(model.APPROVED))), string(model.ACTIVE)).
+				When(activeParticipation(), goqu.C("process_state"))
+		}
+		updateRecord["process_state"] = processCase.Else(goqu.V(processState))
+		// an applied rejection (the row takes INVALID/REJECTED) leaves no stale value behind
+		updateRecord["last_process_state"] = goqu.Case().When(kept, string(processState)).Else(nil)
+	} else {
+		updateRecord["last_process_state"] = nil
 	}
 
 	if processState == model.INIT {
@@ -705,11 +753,11 @@ func meteringPointsSetStatus(ctx context.Context, db *sqlx.DB, tenant string, pr
 
 	result, err := db.Exec(statement)
 	if err != nil {
-		log.WithField("SQL", "UPDATE").Errorf("Stmt: %v", statement)
+		log.WithError(err).WithField("SQL", "UPDATE").Error("SQL statement failed")
 		return model.ErrStatusMeter(err)
 	}
 	if rows, err := result.RowsAffected(); err != nil || rows == 0 {
-		log.WithField("SQL", "UPDATE").Infof("No Rows Affected. Stmt: %v", statement)
+		log.WithField("SQL", "UPDATE").Info("No Rows Affected")
 	}
 	return nil
 }
@@ -884,10 +932,18 @@ func meteringPointRevokeByConsentId(ctx context.Context, db *sqlx.DB, receiver s
 			return nil, err
 		}
 
+		// An entry that ends here (status not INIT, start and end date set) while it carries a rejection goes to
+		// INACTIVE like a rejected re-registration of an ended entry; the rejection goes to
+		// last_process_state (konzept-zaehlpunkt-ausblenden.md, part 2).
+		endsRejected := goqu.And(goqu.C("status").Neq("INIT"), goqu.C("inactivesince").IsNotNull(),
+			goqu.C("activesince").IsNotNull(), goqu.C("process_state").In(string(model.INVALID), string(model.REJECTED)))
 		_, err = tx.Update(TABLE_METERINGPOINT).
 			Set(goqu.Record{
 				"process_state": goqu.Case().
-					When(goqu.C("process_state").Eq("ACTIVE"), model.INACTIVE).Else(goqu.C("process_state")),
+					When(goqu.C("process_state").Eq("ACTIVE"), model.INACTIVE).
+					When(endsRejected, model.INACTIVE).Else(goqu.C("process_state")),
+				"last_process_state": goqu.Case().
+					When(endsRejected, goqu.C("process_state")).Else(goqu.C("last_process_state")),
 				"status": goqu.Case().
 					When(goqu.C("status").Eq("INIT"), model.S_INIT).Else(model.S_INACTIVE),
 				"modifiedAt":    civil.Now(),
@@ -959,7 +1015,7 @@ func MeteringPointChangePartFactor(ctx context.Context, db *sqlx.DB, tenant, par
 
 	res, err := tx.Exec(stmt)
 	if err != nil {
-		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", stmt)
+		log.WithError(err).WithField("SQL", "SELECT").Error("SQL statement failed")
 		return model.ErrUpdateMeter(err)
 	}
 	if n, err := res.RowsAffected(); err == nil && n < int64(len(meters)) {
@@ -1027,10 +1083,9 @@ func findAllMeteringByTenant(ctx context.Context, tx *sqlx.DB, tenant, participa
 	if err != nil {
 		return nil, model.ErrFindMeter(err)
 	}
-	log.WithField("SQL", "SELECT").Infof("Stmt: %s", stmt)
 	err = tx.SelectContext(ctx, &m, stmt)
 	if err != nil {
-		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", stmt)
+		log.WithError(err).WithField("SQL", "SELECT").Error("SQL statement failed")
 		return nil, model.ErrFindMeter(err)
 	}
 	return m, nil
@@ -1082,7 +1137,8 @@ func findMeteringByIdAndState(ctx context.Context, db *sqlx.DB, tenant string, m
 			goqu.C("activesince"),
 			goqu.C("inactivesince"),
 			goqu.C("flag"),
-			goqu.C("metering_point_id").As("mid")).
+			goqu.C("metering_point_id").As("mid"),
+			goqu.C("participant_id").As("mid_pid")).
 		Where(goqu.C("tenant").Eq(tenant))
 
 	partFactStmt := pgDialect.From(TABLE_PARTITION_FACT_VIEW).
@@ -1102,6 +1158,7 @@ func findMeteringByIdAndState(ctx context.Context, db *sqlx.DB, tenant string, m
 		"metering_point_id": goqu.Op{"in": meterIds},
 		"tenant":            tenant,
 		"mid":               goqu.C("metering_point_id"),
+		"mid_pid":           goqu.C("participant_id"), // the entry's own period, not the other owner's (owner change)
 		"mpfmid":            goqu.C("metering_point_id"),
 		"mpfpid":            goqu.C("participant_id"),
 	}
@@ -1115,13 +1172,13 @@ func findMeteringByIdAndState(ctx context.Context, db *sqlx.DB, tenant string, m
 		ToSQL()
 
 	if err != nil {
-		log.WithField("tenant", tenant).Errorf("Stmt: %s", stmt)
+		log.WithError(err).WithField("tenant", tenant).Error("SQL statement failed")
 		return nil, model.ErrFindMeter(err)
 	}
 
 	err = db.SelectContext(ctx, &m, stmt)
 	if err != nil {
-		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", stmt)
+		log.WithError(err).WithField("SQL", "SELECT").Error("SQL statement failed")
 		return nil, model.ErrFindMeter(err)
 	}
 	return m, nil
@@ -1162,16 +1219,14 @@ func findAssignedMeteringById(ctx context.Context, db *sqlx.DB, tenant string, m
 		Where(whereClause).
 		ToSQL()
 
-	log.Infof("Active Meter Stmt: %s", stmt)
-
 	if err != nil {
-		log.WithField("tenant", tenant).Errorf("Stmt: %s", stmt)
+		log.WithError(err).WithField("tenant", tenant).Error("SQL statement failed")
 		return nil, model.ErrFindMeter(err)
 	}
 
 	err = db.SelectContext(ctx, &m, stmt)
 	if err != nil {
-		log.WithField("SQL", "SELECT").Errorf("Stmt: %s", stmt)
+		log.WithError(err).WithField("SQL", "SELECT").Error("SQL statement failed")
 		return nil, model.ErrFindMeter(err)
 	}
 	return m, nil
@@ -1227,8 +1282,7 @@ func UpdateActiveMeteringPoints(ctx context.Context, db *sqlx.DB, tenant string,
 		//sql, _, _ := updateMeter.ToSQL()
 		//fmt.Printf("STATEMENT: %v\n", sql)
 		if err != nil {
-			sql, _, _ := updateMeter.ToSQL()
-			log.WithField("SQL", "UPDATE").Errorf("Stmt: %s", sql)
+			log.WithError(err).WithField("SQL", "UPDATE").Error("SQL statement failed")
 			return model.ErrUpdateMeter(err)
 		}
 
@@ -1251,8 +1305,7 @@ func UpdateActiveMeteringPoints(ctx context.Context, db *sqlx.DB, tenant string,
 
 			_, err = updatePartFact.Exec()
 			if err != nil {
-				sql, _, _ := updatePartFact.ToSQL()
-				log.WithField("SQL", "UPDATE").Errorf("Stmt: %s", sql)
+				log.WithError(err).WithField("SQL", "UPDATE").Error("SQL statement failed")
 				return model.ErrUpdateMeter(err)
 			}
 		}
@@ -1297,7 +1350,7 @@ func findMeteringPointsForTenant(ctx context.Context, db *sqlx.DB, tenant string
 	mIds := []string{}
 	err := db.SelectContext(ctx, &mIds, stmt)
 	if err != nil {
-		log.WithField("tenant", tenant).WithError(err).Errorf("Stmt: %s", stmt)
+		log.WithField("tenant", tenant).WithError(err).Error("SQL statement failed")
 		return nil, err
 	}
 	return findMeteringByIdAndState(ctx, db, tenant, mIds, nil)
@@ -1316,7 +1369,7 @@ func findMeteringPointsActivePeriod(ctx context.Context, db *sqlx.DB, tenant str
 	mIds := []string{}
 	err := db.Select(&mIds, stmt)
 	if err != nil {
-		log.WithField("tenant", tenant).WithError(err).Errorf("Stmt: %s", stmt)
+		log.WithField("tenant", tenant).WithError(err).Error("SQL statement failed")
 		return nil, err
 	}
 	return findMeteringByIdAndState(ctx, db, tenant, mIds, nil)

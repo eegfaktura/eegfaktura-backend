@@ -2,7 +2,9 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -35,10 +37,12 @@ func InitEegRouter(r *mux.Router, db database.Database) *mux.Router {
 	s.HandleFunc("/tariff/{id}", middleware.Protect(h.archiveTariff())).Methods("DELETE")
 	s.HandleFunc("/sync/participants/{oid}", middleware.Protect(h.syncParticipantsEda())).Methods("POST")
 	s.HandleFunc("/import/masterdata", middleware.Protect(h.uploadMasterData())).Methods("POST")
-	s.HandleFunc("/export/masterdata", middleware.Protect(h.exportMasterData())).Methods("GET")
+	// POST carries the optional joiningFeeState list from billing (konzept-beitrittsgebuehr.md); GET stays for older web
+	s.HandleFunc("/export/masterdata", middleware.Protect(h.exportMasterData())).Methods("GET", "POST")
 	s.HandleFunc("/notifications/{id}", middleware.Protect(h.notifications())).Methods("GET")
 	s.HandleFunc("/gridoperators", middleware.Protect(h.gridOperators())).Methods("GET")
 	s.HandleFunc("/user/get-user", middleware.Protect(h.getUser())).Methods("GET")
+	initMailTemplateRoutes(s, db)
 
 	//_ = InitUserRouter(s)
 
@@ -113,11 +117,15 @@ func (h *EegHandler) addTariff() middleware.JWTHandlerFunc {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
-		log.Printf("ADD TARIF: %+v Tenant: %+v", t, tenant)
+		log.Printf("ADD TARIF: %s (%s) Tenant: %s", t.Name, t.Id, tenant)
 
 		// ZVT: serverseitige Plausibilitaetspruefung der Zeitfenster
 		if err = t.ValidateTimeTariff(); err != nil {
-			respondWith(w, http.StatusBadRequest, tenant, err)
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrUpdateTariff(err))
+			return
+		}
+		if err = t.ValidateJoiningFee(); err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, model.ErrUpdateTariff(err))
 			return
 		}
 
@@ -212,8 +220,20 @@ func (h *EegHandler) uploadMasterData() middleware.JWTHandlerFunc {
 	}
 }
 
+// maxJoiningFeeStateBytes bounds the list web posts with the member export (about 200 bytes per member).
+const maxJoiningFeeStateBytes = 8 << 20
+
 func (h *EegHandler) exportMasterData() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
+		// optional body: billing's joiningFeeState list, passed on by web; no body = status column stays empty
+		var feeStates []model.JoiningFeeState
+		if r.Method == http.MethodPost {
+			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJoiningFeeStateBytes)).Decode(&feeStates); err != nil && !errors.Is(err, io.EOF) {
+				respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
+				return
+			}
+		}
+
 		eeg, err := h.db.GetEegById(r.Context(), tenant)
 		if err != nil {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
@@ -232,7 +252,19 @@ func (h *EegHandler) exportMasterData() middleware.JWTHandlerFunc {
 			return
 		}
 
-		b, err := database.ExportMasterdataToExcel(participants, eeg, tariffMap)
+		tariffs, err := h.db.GetTariff(tenant)
+		if err != nil {
+			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1059, err.Error()))
+			return
+		}
+		joiningFees := map[string]float64{}
+		for _, t := range tariffs {
+			if t.Type == model.EEG && t.JoiningFee > 0 {
+				joiningFees[t.Id.String()] = t.JoiningFee
+			}
+		}
+
+		b, err := database.ExportMasterdataToExcel(participants, eeg, tariffMap, joiningFees, feeStates)
 
 		if err != nil {
 			log.Errorf("Create Energy Export: %v", err.Error())
@@ -274,7 +306,7 @@ func (h *EegHandler) notifications() middleware.JWTHandlerFunc {
 			return false
 		}
 
-		notifications, err := h.db.GetNotification(tenant, id, isAdmin())
+		notifications, err := h.db.GetNotification(r.Context(), tenant, id, isAdmin())
 		if err != nil {
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1055, err.Error()))
 			return
