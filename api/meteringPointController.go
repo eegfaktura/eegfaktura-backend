@@ -783,7 +783,7 @@ func checkActivationMode(mode model.RegistrationMode) error {
 	case model.OFFLINE:
 		return model.ErrOfflineRegistrationUnsupported(errors.New(offlineRegistrationUnsupported))
 	default:
-		return model.ErrWrongActivationCode(fmt.Errorf("unknown activationMode %q", mode))
+		return model.ErrUnknownActivationMode(fmt.Errorf("unknown activationMode %q", mode))
 	}
 }
 
