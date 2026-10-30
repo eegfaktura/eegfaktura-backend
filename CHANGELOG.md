@@ -8,6 +8,14 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Added
+- **Health endpoints for Kubernetes probes:** `GET /healthz` (liveness, always `ok`, no dependency checks) and
+  `GET /readyz` (readiness, `ok` when Postgres answers `SELECT 1`, otherwise 503 `unavailable`), served
+  on the main HTTP port without a bearer token. Through the public ingress they are reachable as `/api/healthz` and
+  `/api/readyz`; they answer only `ok`/`unavailable`. `/readyz` pings on its own short-lived connection outside the
+  application pool (driver timeouts: connect 2 s, statement 2 s); at most one ping runs at a time and calls within
+  1 s share its result, so callers cannot multiply the database load.
+
 ### Security
 - **CI: the release workflow pins its actions by commit SHA** (eegfaktura-dev tracking W-261028-mm6). `rolling-release.yml`
   builds and pushes the shipped image, but used floating tags (`@v4`, `@v3`, …); a moved tag ran in the job that holds
