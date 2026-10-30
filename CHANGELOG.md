@@ -25,10 +25,14 @@ this changelog highlights the changes relevant for overview and operations.
   `ANFORDERUNG_ECOF`. On `PUT /meteringpoint/{pid}/create`, `POST /meteringpoint/{pid}/register` and
   `POST /participant/{id}/confirm` a missing or empty `activationMode` now means `ONLINE` (before: `register`
   answered 400 code 1204; `create` for an active member of an online EEG did the same, but only after the metering
-  point was saved; `confirm` sent an offline registration). `activationMode: "OFFLINE"` is answered
-  with 400, code **1205**, message "Offline-Registrierung wird von den Netzbetreibern nicht mehr unterstützt";
-  any other unknown value with 400, code 1204. In both cases nothing is written and nothing is sent — on `confirm`
-  the whole request is checked before the participant is confirmed. `activationCode` is no longer read (removed from
+  point was saved; `confirm` sent an offline registration). For an **online EEG**, `activationMode: "OFFLINE"` is
+  answered with 400, code **1205**, message "Offline-Registrierung wird von den Netzbetreibern nicht mehr
+  unterstützt"; any other unknown value with 400, code 1204. In both cases nothing is written and nothing is sent —
+  on `confirm` the whole request is checked before the participant is confirmed; on `create` only a NEW metering
+  point of an active member is checked (other metering points are not registered, so the mode is ignored, as
+  before). **Non-online EEGs** never send a registration and keep ignoring the mode on all three routes.
+  eegfaktura-web master has no text for code 1205 yet and shows the raw key
+  `E_1205_Offline-Registrierung wird von den Netzbetreibern nicht mehr unterstützt`. `activationCode` is no longer read (removed from
   the request models; a client that still sends it is not rejected). Inbound `ANTWORT_ECOF`, `ZUSTIMMUNG_ECOF`,
   `ABLEHNUNG_ECOF`, `ABSCHLUSS_ECOF` and `ABBRUCH_ECOF` are still processed, so offline registrations sent before
   this release still complete. Web counterpart: eegfaktura/eegfaktura-web#246.
