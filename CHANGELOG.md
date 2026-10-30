@@ -83,6 +83,14 @@ this changelog highlights the changes relevant for overview and operations.
 - **Keycloak sample configuration** (tracking 1): security relevant — details not published. The `keycloak.json` in
   the repository is now a sample. Deployments that mount their own file via `KEYCLOAK_CONFIG` are not affected; a
   local run without `KEYCLOAK_CONFIG` needs its own `keycloak.json` (see README, not to be committed).
+- **excelize pinned to `v2.11.1-0.20261003002531-6258dcebc4e2`** (commit 6258dceb of 2026-10-03, pseudo-version up to
+  v2.12.0; the latest release v2.11.0 of 2026-07-06 lacks the fixes). Closes the Dependabot alerts GHSA-mx22-3794-2vpv,
+  GHSA-jw42-f3rr-4cc3, GHSA-r7x5-4969-99p7, GHSA-x2q3-8cjh-766f, GHSA-wp2g-vpjj-g53r, GHSA-2j4c-ffch-9f23,
+  GHSA-c85p-xxjj-2r75, GHSA-fq3v-74gv-27gm, GHSA-jrfj-fhj2-jjvm (high) and GHSA-8mcq-6wmr-jrjv, GHSA-5h23-36rv-pm65,
+  GHSA-fw94-4wwp-w8pw, GHSA-g27h-8qhm-6pff, GHSA-rxcj-4pj5-74gr, GHSA-8jjq-8j9w-m2v6 (medium): panics, endless loops
+  and unbounded allocations on crafted workbooks — relevant for the master-data Excel import. Indirect modules moved
+  with it: `xuri/efp` v0.0.1 → v0.0.2 (2026-09-21), `richardlehane/mscfb` v1.0.7 → v1.0.8 (2026-08-19); `go.sum` also
+  records `golang.org/x/image` v0.44.0 (2026-07-08, excelize test-only). No change to import or export output.
 
 ### Fixed
 - **Member list no longer fails when one member has no address, bank or contact row** (261029-mm1): the list LEFT JOINs
