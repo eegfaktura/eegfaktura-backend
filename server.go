@@ -82,6 +82,7 @@ func InitRouters(db database.Database) *mux.Router {
 // InitGraphQL registers /query on the router.
 func InitGraphQL(r *mux.Router) {
 	gqlSrv := handler.NewDefaultServer(generated.NewExecutableSchema(generated.Config{Resolvers: &graph.Resolver{}}))
+	gqlSrv.SetRecoverFunc(middleware.GQLRecover)
 	gqlSrv.AroundOperations(middleware.GQLAdminCheckLog)
 	gqlSrv.AroundOperations(middleware.GQLAccessOperation)
 	r.Handle("/query", middleware.GQLProtect(gqlSrv))
