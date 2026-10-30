@@ -2,6 +2,7 @@ package eda
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"at.ourproject/vfeeg-backend/database"
@@ -76,6 +77,10 @@ func sendMeteringPointInactiveMails(ctx context.Context, db database.Database, t
 			_ = db.SaveNotificationFromMap(database.CreateNotificationMessageFromLog(
 				&model.Log{Operation: "Mail", Messages: []*model.LogMessage{services.MailLogMessage(meterId, err)}}),
 				tenant, model.N_TYPE_ERROR, model.N_PROCESS_EDA_PROCESS, "ADMIN")
+			// a mail the server did not confirm was probably sent: the next tenant of a GEA does not send it again
+			if participant.Contact.Email.Valid && errors.Is(err, services.ErrMailUnconfirmed) {
+				sent[key] = true
+			}
 			continue
 		}
 		if participant.Contact.Email.Valid {

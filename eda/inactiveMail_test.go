@@ -194,7 +194,7 @@ func TestInactiveMail(t *testing.T) {
 		// a real failure keeps its text
 		n := lastNotification("TI000116")
 		assert.Contains(t, n, `"message":"smtp down"`)
-		assert.NotContains(t, n, "Versand nicht bestätigt")
+		assert.NotContains(t, n, "Zeitüberschreitung")
 	})
 
 	t.Run("mail server answers too late: the notification says the mail was most likely delivered", func(t *testing.T) {
@@ -205,9 +205,19 @@ func TestInactiveMail(t *testing.T) {
 		protocolCmRevImpHandler(context.Background(), responseMsg(model.EBMS_AUFHEBUNG_CCMI, model.CM_REV_IMP, "ti000116", mLate, "C-LATE", "1099"))
 		assert.Len(t, *mails, 1)
 		n := lastNotification("TI000116")
-		assert.Contains(t, n, `"message":"Versand nicht bestätigt – die Mail wurde wahrscheinlich zugestellt, bitte nicht erneut senden"`)
+		assert.Contains(t, n, `"message":"Zeitüberschreitung – die Mail wurde vermutlich trotzdem verschickt. Vor einem erneuten Versand bitte beim Mitglied nachfragen."`)
 		assert.Contains(t, n, `"message_code":"W_MAIL_UNCONFIRMED"`)
 		assert.Contains(t, n, `"metering_point":"`+mLate+`"`)
 		assert.NotContains(t, n, "DeadlineExceeded")
+	})
+
+	t.Run("GEA: a mail the server did not confirm is not sent again for the second tenant", func(t *testing.T) {
+		const mGeaLate = "AT0030000000000000000000000116009"
+		meter(mGeaLate, "a1160000-0000-0000-0000-000000000003", "GI000116-001", "ACTIVE", "C-GEA-LATE", "CONSUMPTION")
+		meter(mGeaLate, "a1160000-0000-0000-0000-000000000004", "GI000116-002", "ACTIVE", "C-GEA-LATE", "CONSUMPTION")
+		timeout := status.Error(codes.DeadlineExceeded, "context deadline exceeded")
+		mails := captureInactiveMails(t, fmt.Errorf("%w (%w)", services.ErrMailUnconfirmed, timeout))
+		protocolCmRevImpHandler(context.Background(), responseMsg(model.EBMS_AUFHEBUNG_CCMI, model.CM_REV_IMP, "gi000116", mGeaLate, "C-GEA-LATE", "1099"))
+		assert.Len(t, *mails, 1)
 	})
 }
