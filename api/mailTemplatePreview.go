@@ -123,11 +123,11 @@ func (h *MailTemplateHandler) test() middleware.JWTHandlerFunc {
 		if err := h.sendMail(tenant, to, testSubjectPrefix+rendered.Subject, nil,
 			bytes.NewBufferString(rendered.Html), rendered.Inline, rendered.Attachment); err != nil {
 			log.WithField("tenant", tenant).WithError(err).Log(services.MailErrorLevel(err), "mail template: test mail failed")
-			msg := "Die Testmail konnte nicht verschickt werden."
+			code, msg := http.StatusBadGateway, "Die Testmail konnte nicht verschickt werden."
 			if errors.Is(err, services.ErrMailUnconfirmed) {
-				msg = services.ErrMailUnconfirmed.Error() + "."
+				code, msg = http.StatusGatewayTimeout, services.ErrMailUnconfirmed.Error()
 			}
-			respondWithJSON(w, http.StatusBadGateway, map[string]string{"message": msg})
+			respondWithJSON(w, code, map[string]string{"message": msg})
 			return
 		}
 		respondWithJSON(w, http.StatusOK, map[string]string{"sentTo": to})
