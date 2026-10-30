@@ -19,7 +19,25 @@ this changelog highlights the changes relevant for overview and operations.
   `too_many_connections` (SQLSTATE 53300), `/readyz` still answers `ok` and logs a warning at most once a minute: the
   application pool can still serve, and saturation of the shared Postgres must not take the service out of service.
 
+### Removed
+- **Offline registration of metering points (`ANFORDERUNG_ECOF` with activation code)** — the grid operators no
+  longer support it (decision 2026-10-30; behaviour change towards the grid operators). The backend no longer sends
+  `ANFORDERUNG_ECOF`. On `PUT /meteringpoint/{pid}/create`, `POST /meteringpoint/{pid}/register` and
+  `POST /participant/{id}/confirm` a missing or empty `activationMode` now means `ONLINE` (before: `register`
+  answered 400 code 1204; `create` for an active member of an online EEG did the same, but only after the metering
+  point was saved; `confirm` sent an offline registration). `activationMode: "OFFLINE"` is answered
+  with 400, code **1205**, message "Offline-Registrierung wird von den Netzbetreibern nicht mehr unterstützt";
+  any other unknown value with 400, code 1204. In both cases nothing is written and nothing is sent — on `confirm`
+  the whole request is checked before the participant is confirmed. `activationCode` is no longer read (removed from
+  the request models; a client that still sends it is not rejected). Inbound `ANTWORT_ECOF`, `ZUSTIMMUNG_ECOF`,
+  `ABLEHNUNG_ECOF`, `ABSCHLUSS_ECOF` and `ABBRUCH_ECOF` are still processed, so offline registrations sent before
+  this release still complete. Web counterpart: eegfaktura/eegfaktura-web#246.
+
 ### Contract
+- **`activationMode` on `create`/`register`/`confirm` (see Removed):** callers are eegfaktura-web (master still
+  offers the offline checkbox and sends `OFFLINE` + `activationCode`; eegfaktura-web#246 always sends `ONLINE`).
+  eegfaktura-admin, eegfaktura-admin-backend and eegfaktura-eda-xp do not call these routes. Tests:
+  `api/offlineRegistration_test.go`, `eda/edaEcofInbound_test.go`.
 - **New caller of `GET /participant`: eegfaktura-energystore** (energystore 261025-ca1). energystore forwards a
   member's bearer token (header `tenant`, once per tenant of the token) and reads `meters[].meteringPoint`, `meters[].status` (`ACTIVE`/`INACTIVE`/`INIT`/…, absent when empty), `meters[].registeredSince` and
   `meters[].participantState.activeSince`/`inactiveSince` (yyyy-mm-dd or null) to find the member's own metering

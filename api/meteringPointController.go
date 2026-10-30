@@ -62,6 +62,10 @@ func (h *MeteringHandler) createMeteringPoint() middleware.JWTHandlerFunc {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
+		if err = checkActivationMode(m.ActivationMode); err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, err)
+			return
+		}
 
 		m.ModifiedAt = civil.Now()
 		if m.Status != model.S_ACTIVE {
@@ -99,7 +103,7 @@ func (h *MeteringHandler) createMeteringPoint() middleware.JWTHandlerFunc {
 					from = util.CalcProcessNullDate(participant.ParticipantSince)
 				}
 
-				if err = edaRegisterMeteringpoint(eeg, m.ActivationMode, &m, &from); err != nil {
+				if err = edaRegisterMeteringpoint(eeg, &m, &from); err != nil {
 					respondWith(w, http.StatusBadRequest, tenant, err)
 					return
 				}
@@ -299,7 +303,6 @@ type registerMeterRequestType struct {
 	Direction      model.DirectionType    `json:"direction"`
 	From           int64                  `json:"from"`
 	To             int64                  `json:"to"`
-	ActivationCode string                 `json:"activationCode,omitempty"`
 	ActivationMode model.RegistrationMode `json:"activationMode,omitempty"`
 }
 
@@ -316,6 +319,10 @@ func (h *MeteringHandler) registerMeteringPoint() middleware.JWTHandlerFunc {
 		if err != nil {
 			log.WithField("tenant", tenant).WithError(err).Error("failed to register metering point")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
+			return
+		}
+		if err = checkActivationMode(request.ActivationMode); err != nil {
+			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
 
@@ -353,8 +360,7 @@ func (h *MeteringHandler) registerMeteringPoint() middleware.JWTHandlerFunc {
 			from = util.CalcProcessNullDate(participant.ParticipantSince)
 		}
 
-		meter.ActivationCode = request.ActivationCode
-		if err = edaRegisterMeteringpoint(eeg, request.ActivationMode, meter, &from); err != nil {
+		if err = edaRegisterMeteringpoint(eeg, meter, &from); err != nil {
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
@@ -746,20 +752,26 @@ func (h *MeteringHandler) requestChangePartitionFactor() middleware.JWTHandlerFu
 	}
 }
 
-func edaRegisterMeteringpoint(eeg *model.Eeg, mode model.RegistrationMode, meter *model.MeteringPoint, from *int64) error {
-	var err error
+// offlineRegistrationUnsupported is the answer to activationMode OFFLINE (decision 2026-10-30).
+const offlineRegistrationUnsupported = "Offline-Registrierung wird von den Netzbetreibern nicht mehr unterstützt"
+
+// checkActivationMode accepts a missing activationMode and ONLINE (both register online).
+// OFFLINE and any other value are rejected; callers check before they write or send anything.
+func checkActivationMode(mode model.RegistrationMode) error {
+	switch mode {
+	case "", model.ONLINE:
+		return nil
+	case model.OFFLINE:
+		return model.ErrOfflineRegistrationUnsupported(errors.New(offlineRegistrationUnsupported))
+	default:
+		return model.ErrWrongActivationCode(fmt.Errorf("unknown activationMode %q", mode))
+	}
+}
+
+// edaRegisterMeteringpoint sends the online registration (ANFORDERUNG_ECON) for an online EEG.
+func edaRegisterMeteringpoint(eeg *model.Eeg, meter *model.MeteringPoint, from *int64) error {
 	if eeg.Online && meter != nil {
-		if mode == model.ONLINE {
-			if err = mqttclient.RegistrationForParticipation(eeg, meter, from); err != nil {
-				return err
-			}
-		} else if mode == model.OFFLINE {
-			if err = mqttclient.OfflineRegistrationForParticipation(eeg, meter, from); err != nil {
-				return err
-			}
-		} else {
-			return model.ErrWrongActivationCode(errors.New("Wrong activation code"))
-		}
+		return mqttclient.RegistrationForParticipation(eeg, meter, from)
 	}
 	return nil
 }

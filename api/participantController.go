@@ -182,6 +182,12 @@ func (h *ParticipantHandler) confirmParticipant() middleware.JWTHandlerFunc {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
+		for _, qm := range meters {
+			if err = checkActivationMode(qm.ActivationMode); err != nil {
+				respondWith(w, http.StatusBadRequest, tenant, err)
+				return
+			}
+		}
 
 		eeg, err := h.db.GetEegById(r.Context(), tenant)
 		if err != nil {
@@ -211,8 +217,6 @@ func (h *ParticipantHandler) confirmParticipant() middleware.JWTHandlerFunc {
 		if eeg.Online {
 			for _, qm := range meters {
 				if m, ok := participantMetersMap[qm.MeteringPoint]; ok {
-					m.ActivationMode = qm.ActivationMode
-					m.ActivationCode = qm.ActivationCode
 					var from int64
 					if qm.RegisteredSince.After(participant.ParticipantSince.Date) {
 						from = util.CalcProcessDate(qm.RegisteredSince)
@@ -221,18 +225,10 @@ func (h *ParticipantHandler) confirmParticipant() middleware.JWTHandlerFunc {
 					}
 
 					log.WithField("tenant", tenant).Infof("Start Meteringpoint %s registration - Active at: %+v", m.MeteringPoint, from)
-					if m.ActivationMode == model.ONLINE {
-						if err = mqttclient.RegistrationForParticipation(eeg, m, &from); err != nil {
-							log.WithField("tenant", tenant).WithError(err).Error("failed to confirm participant.")
-							respondWith(w, http.StatusBadRequest, tenant, err)
-							return
-						}
-					} else {
-						if err = mqttclient.OfflineRegistrationForParticipation(eeg, m, &from); err != nil {
-							log.WithField("tenant", tenant).WithError(err).Error("failed to confirm participant.")
-							respondWith(w, http.StatusBadRequest, tenant, err)
-							return
-						}
+					if err = mqttclient.RegistrationForParticipation(eeg, m, &from); err != nil {
+						log.WithField("tenant", tenant).WithError(err).Error("failed to confirm participant.")
+						respondWith(w, http.StatusBadRequest, tenant, err)
+						return
 					}
 				}
 			}
