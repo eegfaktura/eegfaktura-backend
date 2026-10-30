@@ -19,6 +19,34 @@ this changelog highlights the changes relevant for overview and operations.
   `too_many_connections` (SQLSTATE 53300), `/readyz` still answers `ok` and logs a warning at most once a minute: the
   application pool can still serve, and saturation of the shared Postgres must not take the service out of service.
 
+### Changed
+- **Log output is now one JSON object per line on stdout, with ECS field names** (logging concept W-261008-ca2).
+  **This changes what operators, `kubectl logs` and Dynatrace receive:** before, logrus text (`time=… level=… msg=…`)
+  on stderr; now e.g. `{"@timestamp":"…Z","log.level":"info","message":"…","service.name":"eegfaktura-backend",
+  "service.version":"1.14.0","tenant.id":"…"}` on stdout. Parse rules or dashboards on the old text format must be
+  redone. One logging module (`logging/`, Go `log/slog`) writes every line; the existing logrus calls are routed into it
+  unchanged in content. Field mapping: logrus `tenant` → `tenant.id`, `WithError` → `error.type` + `error.message`, the
+  caller → `log.origin.function`/`log.origin.file.name`/`log.origin.file.line`. Only listed fields are written
+  (`logging/logging.go`, `allowedFields`): a field a log call adds that is not on the list is dropped — the list holds
+  the fields the existing calls use. No new dependency.
+  - `LOG_FORMAT`: `json` (default) or `text` (`key=value`, for local runs).
+  - `LOG_LEVEL`: `trace`, `debug`, `info` (default), `warn`, `error`. **An unknown or empty value now stops the start**
+    (exit code 2, message on stderr); before, it fell back to `info` with a warning. Prod/pilot set `info`.
+  - `SERVICE_VERSION` → `service.version`: set in the image (Dockerfile `ARG`/`ENV`, passed by the release workflow from
+    the image tag); `dev` otherwise.
+- **Access line: one line per HTTP request** (`event.action=http.access`), written after the token check: method,
+  route template (`http.route`, e.g. `/eeg/tariff/{id}` — no ids, no query), status, `event.duration` (nanoseconds,
+  ECS), `event.outcome` (`success` for 2xx/3xx, `refused` for 401/403 at level warn, `failure` for any other status ≥ 400),
+  message `<method> <route> <status>`, `request.id`,
+  `tenant.id` (the tenant the request was allowed for; absent on refusals), `client.id` (the token's `azp` — the
+  Keycloak client, not a person) and, on `/query`, `graphql.operation.name`. `trace.id`/`span.id` when the request
+  has a W3C `traceparent`. **No user id, user name, e-mail, user agent, IP or query value** (no user tracking,
+  2026-10-29); a test guards the field list. `/healthz` and `/readyz` are not logged. `X-Request-Id` is taken from
+  the request when it is 1–128 characters of `[A-Za-z0-9._:-]` (ingress-nginx sends one), otherwise generated (UUID v4 as
+  32 hex characters), and returned in the response header. `traceparent` is checked strictly (no version `ff`, no
+  all-zero ids). The former per-request line `Access granted for tenant …` of `/query` is
+  replaced by the access line. The backend had no access log with IP or user agent before.
+
 ### Contract
 - **New caller of `GET /participant`: eegfaktura-energystore** (energystore 261025-ca1). energystore forwards a
   member's bearer token (header `tenant`, once per tenant of the token) and reads `meters[].meteringPoint`, `meters[].status` (`ACTIVE`/`INACTIVE`/`INIT`/…, absent when empty), `meters[].registeredSince` and

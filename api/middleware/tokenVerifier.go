@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"at.ourproject/vfeeg-backend/logging"
 	"github.com/golang-jwt/jwt"
 	"github.com/sirupsen/logrus"
 )
@@ -104,6 +105,7 @@ func GQLProtect(next http.Handler) http.Handler {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
+		logging.SetClient(r.Context(), claims.Authorized)
 
 		//fmt.Printf("Claims: %+v\n", claims)
 		tenant := r.Header.Get("tenant")
@@ -132,7 +134,7 @@ func GQLProtect(next http.Handler) http.Handler {
 			ctx = withGQLNonAdmin(ctx, claims, superuser)
 		}
 
-		logrus.Printf("Access granted for tenant %s (%s)", tenant, r.URL.Path)
+		logging.SetTenant(ctx, strings.ToUpper(tenant))
 		// and call the next with our new context
 		r = r.WithContext(ctx)
 		next.ServeHTTP(w, r)
@@ -151,6 +153,7 @@ func retrieveClaims(r *http.Request) (string, *PlatformClaims, error) {
 		logrus.WithField("error", "JWT-Token").Errorf("%v", err)
 		return "", nil, &VerifyError{http.StatusUnauthorized, err}
 	}
+	logging.SetClient(r.Context(), claims.Authorized)
 
 	tenant := r.Header.Get("tenant")
 	if len(tenant) == 0 {
@@ -187,8 +190,10 @@ func ConditionProtect(admin JWTHandlerFunc, user JWTHandlerFunc) http.HandlerFun
 
 		claims.Tenants = toUpper(claims.Tenants)
 		if claims.AccessGroups.IsAdmin() {
+			logging.SetTenant(r.Context(), strings.ToUpper(tenant))
 			admin(w, r, claims, strings.ToUpper(tenant))
 		} else if claims.AccessGroups.IsUser() {
+			logging.SetTenant(r.Context(), strings.ToUpper(tenant))
 			user(w, r, claims, strings.ToUpper(tenant))
 		} else {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -244,6 +249,7 @@ func ProtectApi(handler JWTHandlerFunc) http.HandlerFunc {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
+		logging.SetClient(r.Context(), claims.Authorized)
 
 		tenant := r.Header.Get("X-Tenant")
 		if !contains(claims.Tenants, tenant) {
@@ -261,6 +267,7 @@ func ProtectApi(handler JWTHandlerFunc) http.HandlerFunc {
 			return
 		}
 
+		logging.SetTenant(r.Context(), strings.ToUpper(tenant))
 		handler(w, r, &claims, strings.ToUpper(tenant))
 	}
 }
@@ -283,6 +290,7 @@ func verifyRequest(handler JWTHandlerFunc) func(w http.ResponseWriter, r *http.R
 
 		if claims.AccessGroups.IsAdmin() {
 			claims.Tenants = toUpper(claims.Tenants)
+			logging.SetTenant(r.Context(), strings.ToUpper(tenant))
 			handler(w, r, claims, strings.ToUpper(tenant))
 		} else {
 			logrus.WithField("tenant", tenant).Warnf("Unauthorized access with tenant %s - Request has no admin access group", tenant)
