@@ -20,9 +20,10 @@ this changelog highlights the changes relevant for overview and operations.
   application pool can still serve, and saturation of the shared Postgres must not take the service out of service.
 
 ### Contract
-- **`revokemeters` reads `reason`, not `to`.** The only caller is eegfaktura-web (`eeg.service.ts`), whose body
-  already uses the key `reason` (its value was never filled, fixed in the web PR); `to` is no longer read. Downstream
-  eda-xp writes the reason to CMRevoke as ReasonKey 0 + Reason (eegfaktura-eda-xp fix/revoke-reason-2026-10-30).
+- **`revokemeters` reads `reason`, not `to`, and answers 400 with code 5011 for a reason over 50 characters.** The only
+  caller is eegfaktura-web (`eeg.service.ts`), whose body already uses the key `reason` (its value was never filled,
+  fixed in eegfaktura/eegfaktura-web#245); `to` is no longer read. Downstream eda-xp writes the reason to CMRevoke as
+  ReasonKey 0 + Reason (eegfaktura/eegfaktura-eda-xp#59).
 - **New caller of `GET /participant`: eegfaktura-energystore** (energystore 261025-ca1). energystore forwards a
   member's bearer token (header `tenant`, once per tenant of the token) and reads `meters[].meteringPoint`, `meters[].status` (`ACTIVE`/`INACTIVE`/`INIT`/…, absent when empty), `meters[].registeredSince` and
   `meters[].participantState.activeSince`/`inactiveSince` (yyyy-mm-dd or null) to find the member's own metering
@@ -41,9 +42,14 @@ this changelog highlights the changes relevant for overview and operations.
 ### Fixed
 - **The optional reason of a revoke (`POST /meteringpoint/{pid}/revokemeters`) reaches eda-xp** (revoke reason,
   2026-10-30). The handler read it from the JSON key `to`, which no caller sends, so the reason was always empty. It
-  now reads `reason` (the key eegfaktura-web sends), trims it (blank = no reason) and refuses more than 50 characters
-  with 400 (code 5010) instead of cutting them — 50 is the length of `Reason` in CMRevoke. The reason goes out as
-  before in the existing MQTT field `reason` of `eda/request` (no new field).
+  now reads `reason` (the key eegfaktura-web sends) and cleans it like a mail subject: control characters (also line
+  breaks and tabs) become a space, runs of white space one space, the ends are trimmed; blank = no reason. More than 50
+  characters are refused with 400 and the new code 5011 („Die Begründung ist zu lang (höchstens 50 Zeichen).“) instead
+  of being cut — 50 is the length of `Reason` in CMRevoke. Logged once at warn, without the text. The reason goes out
+  as before in the existing MQTT field `reason` of `eda/request` (no new field).
+  **Where the reason is stored from now on:** eda-xp echoes the sent request back on its protocol topic, and the backend
+  stores that echo in the EDA process history (`db.SaveHistory`), so the reason text now lands in the stored history;
+  eda-xp also keeps it in its conversation store. Before, both held no reason because none was ever sent.
 - **Member list no longer fails when one member has no address, bank or contact row** (261029-mm1): the list LEFT JOINs
   both addresses, the bank account and the contact row; a member without a billing or residence address made the
   whole list of the community fail with a scan error. Such a member is now listed with empty fields, and saving the

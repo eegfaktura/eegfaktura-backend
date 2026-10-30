@@ -2,8 +2,8 @@ package mqttclient
 
 import (
 	"encoding/json"
-	"sync"
 	"testing"
+	"time"
 
 	"at.ourproject/vfeeg-backend/model"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -15,15 +15,30 @@ import (
 // The revoke carries the reason in the existing MQTT field "reason" (eda-xp writes it to CMRevoke); without a reason
 // the field is absent.
 func TestRevokeMeteringPointReason(t *testing.T) {
-	broker, _ := Broker().Init(newMockClient)
+	// a broker of its own (mock client) instead of the shared one of the other tests; Broker() is called first so
+	// that its once.Do cannot replace this instance later
+	shared := Broker()
+	b, err := NewMessageBroker()
+	require.NoError(t, err)
+	_, err = b.Init(newMockClient)
+	require.NoError(t, err)
+	instance = b
+	t.Cleanup(func() { instance = shared })
 
-	var payload map[string]interface{}
-	var wg sync.WaitGroup
-	broker.(*MessageBroker).cl.Subscribe("eda/request", 1, func(c mqtt.Client, m mqtt.Message) {
-		payload = map[string]interface{}{}
-		require.NoError(t, json.Unmarshal(m.Payload(), &payload))
-		wg.Done()
-	})
+	payloads := make(chan []byte, 2)
+	b.cl.Subscribe("eda/request", 1, func(c mqtt.Client, m mqtt.Message) { payloads <- m.Payload() })
+	next := func() map[string]interface{} {
+		t.Helper()
+		select {
+		case p := <-payloads:
+			msg := map[string]interface{}{}
+			require.NoError(t, json.Unmarshal(p, &msg))
+			return msg
+		case <-time.After(5 * time.Second):
+			t.Fatal("no message on eda/request")
+			return nil
+		}
+	}
 
 	eeg := &model.Eeg{Id: "TE000001", Area: "LOCAL", CommunityId: "TE00000001212000012121",
 		GridOperator: "TT009999", RcNumber: "RC100130"}
@@ -31,14 +46,11 @@ func TestRevokeMeteringPointReason(t *testing.T) {
 		ConsentId: null.StringFrom("C-1")}
 
 	reason := "Auszug des Mitglieds"
-	wg.Add(1)
 	require.NoError(t, RevokeMeteringPoint(eeg, meter, 1700000000000, &reason))
-	wg.Wait()
-	assert.Equal(t, "Auszug des Mitglieds", payload["reason"])
-	assert.Equal(t, string(model.EBMS_AUFHEBUNG_CCMS), payload["messageCode"])
+	msg := next()
+	assert.Equal(t, "Auszug des Mitglieds", msg["reason"])
+	assert.Equal(t, string(model.EBMS_AUFHEBUNG_CCMS), msg["messageCode"])
 
-	wg.Add(1)
 	require.NoError(t, RevokeMeteringPoint(eeg, meter, 1700000000000, nil))
-	wg.Wait()
-	assert.NotContains(t, payload, "reason")
+	assert.NotContains(t, next(), "reason")
 }

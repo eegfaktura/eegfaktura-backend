@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"at.ourproject/vfeeg-backend/api/middleware"
@@ -622,10 +623,9 @@ func (h *MeteringHandler) requestRevokeMeteringPoint() middleware.JWTHandlerFunc
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
-		reason, err := revokeReason(request.Reason)
-		if err != nil {
-			log.WithField("tenant", tenant).WithError(err).Error("failed to revoke metering point.")
-			respondWith(w, http.StatusBadRequest, tenant, model.ErrRevokeMeter(err))
+		reason, rerr := revokeReason(request.Reason)
+		if rerr != nil {
+			rejectRevoke(w, tenant, rerr)
 			return
 		}
 
@@ -682,17 +682,29 @@ func (h *MeteringHandler) requestRevokeMeteringPoint() middleware.JWTHandlerFunc
 // maxRevokeReason is the length of ProcessDirectory/Reason in the CMRevoke schema (eda-xp CMRevoke_01p10.xsd).
 const maxRevokeReason = 50
 
-// revokeReason trims the optional reason of a revoke; empty means none. A longer reason is refused rather than cut,
-// so the grid operator never gets a text the user did not write.
-func revokeReason(raw string) (*string, error) {
-	reason := strings.TrimSpace(raw)
+// revokeReason cleans the optional reason of a revoke like a mail subject (mailtemplate.SanitizeSubject): control
+// characters (also line breaks and tabs) become a space, runs of white space one space, the ends are trimmed. Empty
+// means none. A longer reason is refused rather than cut, so the grid operator never gets a text the user did not write.
+func revokeReason(raw string) (*string, *model.VfeegError) {
+	reason := strings.Join(strings.Fields(strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, raw)), " ")
 	if reason == "" {
 		return nil, nil
 	}
-	if n := utf8.RuneCountInString(reason); n > maxRevokeReason {
-		return nil, fmt.Errorf("the reason may have at most %d characters, it has %d", maxRevokeReason, n)
+	if utf8.RuneCountInString(reason) > maxRevokeReason {
+		return nil, model.ErrRevokeReason(fmt.Errorf("Die Begründung ist zu lang (höchstens %d Zeichen).", maxRevokeReason))
 	}
 	return &reason, nil
+}
+
+// rejectRevoke answers a revoke request with invalid input: 400, logged once at warn (the input itself is not logged).
+func rejectRevoke(w http.ResponseWriter, tenant string, e *model.VfeegError) {
+	log.WithField("tenant", tenant).WithField("code", e.Code).Warn("revoke refused: " + e.Error())
+	respondWithHttpError(w, http.StatusBadRequest, &HttpError{Error: e.Error(), Code: e.Code, Message: e.Error()})
 }
 
 func (h *MeteringHandler) removeMeteringPoint() middleware.JWTHandlerFunc {

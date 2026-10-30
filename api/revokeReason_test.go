@@ -23,37 +23,59 @@ func TestRevokeReason(t *testing.T) {
 	}{
 		{"empty is none", "", nil},
 		{"blanks are none", "  \t ", nil},
-		{"trimmed", "  Auszug des Mitglieds ", ptr("Auszug des Mitglieds")},
-		{"50 characters", fifty, ptr(fifty)},
+		{"control characters only are none", "\u0001\n", nil},
+		{"trimmed", "  Auszug des Mitglieds ", revokeReasonOf("Auszug des Mitglieds")},
+		{"control characters and line breaks become one space", "Auszug\u0001des\r\nMitglieds\t(Test)",
+			revokeReasonOf("Auszug des Mitglieds (Test)")},
+		{"non-breaking space at the ends is trimmed", " Auszug ", revokeReasonOf("Auszug")},
+		{"50 characters", fifty, revokeReasonOf(fifty)},
+		{"50 characters after cleaning", " " + fifty + "\n", revokeReasonOf(fifty)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := revokeReason(tc.raw)
-			require.NoError(t, err)
+			require.Nil(t, err)
 			assert.Equal(t, tc.want, got)
 		})
 	}
 
 	_, err := revokeReason(fifty + "x")
-	assert.EqualError(t, err, "the reason may have at most 50 characters, it has 51")
+	require.NotNil(t, err)
+	assert.Equal(t, 5011, err.Code)
+	assert.EqualError(t, err, "Die Begründung ist zu lang (höchstens 50 Zeichen).")
 }
 
-// A reason over 50 characters is refused with 400 before anything is looked up or sent; it is not cut.
-func TestRevokeRefusesLongReason(t *testing.T) {
-	const pid = "ea1142dc-03da-11ee-b82b-5a985b4b0306"
-	body, _ := json.Marshal(map[string]interface{}{
+func revokeBody(t *testing.T, fields map[string]interface{}) *strings.Reader {
+	t.Helper()
+	body := map[string]interface{}{
 		"meteringPoints": []map[string]string{{"meter": "AT0030000000000000000000099999998", "direction": "CONSUMPTION"}},
 		"from":           1700000000000,
-		"reason":         strings.Repeat("x", 51),
-	})
-	req, _ := http.NewRequest("POST", "/meteringpoint/"+pid+"/revokemeters", strings.NewReader(string(body)))
-	req = mux.SetURLVars(req, map[string]string{"pid": pid})
-	w := httptest.NewRecorder()
-
-	// no database: the handler must answer before it touches one
-	NewMeteringHandler(nil).requestRevokeMeteringPoint()(w, req, &middleware.PlatformClaims{Username: "test"}, "TE000006")
-
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-	assert.Contains(t, w.Body.String(), "at most 50 characters")
+	}
+	for k, v := range fields {
+		body[k] = v
+	}
+	b, err := json.Marshal(body)
+	require.NoError(t, err)
+	return strings.NewReader(string(b))
 }
 
-func ptr(s string) *string { return &s }
+// An input error of a revoke is refused with 400 before anything is looked up or sent (no database here).
+func revokeWithoutDB(t *testing.T, fields map[string]interface{}) *httptest.ResponseRecorder {
+	t.Helper()
+	const pid = "ea1142dc-03da-11ee-b82b-5a985b4b0306"
+	req, _ := http.NewRequest("POST", "/meteringpoint/"+pid+"/revokemeters", revokeBody(t, fields))
+	req = mux.SetURLVars(req, map[string]string{"pid": pid})
+	w := httptest.NewRecorder()
+	NewMeteringHandler(nil).requestRevokeMeteringPoint()(w, req, &middleware.PlatformClaims{Username: "test"}, "TE000006")
+	return w
+}
+
+// A reason over 50 characters is refused with its own code; it is not cut.
+func TestRevokeRefusesLongReason(t *testing.T) {
+	w := revokeWithoutDB(t, map[string]interface{}{"reason": strings.Repeat("x", 51)})
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.JSONEq(t, `{"error":{"code":5011,"error":"Die Begründung ist zu lang (höchstens 50 Zeichen).",
+		"message":"Die Begründung ist zu lang (höchstens 50 Zeichen)."}}`, w.Body.String())
+}
+
+func revokeReasonOf(s string) *string { return &s }
