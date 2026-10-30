@@ -159,7 +159,13 @@ func (h contextHandler) Handle(ctx context.Context, r slog.Record) error {
 }
 
 func (h contextHandler) WithAttrs(as []slog.Attr) slog.Handler {
-	return contextHandler{h.Handler.WithAttrs(as)}
+	var kept []slog.Attr
+	for _, a := range as {
+		if allowedFields[a.Key] {
+			kept = append(kept, a)
+		}
+	}
+	return contextHandler{h.Handler.WithAttrs(kept)}
 }
 
 func (h contextHandler) WithGroup(name string) slog.Handler {

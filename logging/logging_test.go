@@ -164,3 +164,14 @@ func TestUnknownFieldsAreDropped(t *testing.T) {
 	assert.Equal(t, "AT00300000000RC100181000000000001", ls[0]["ecId"])
 	assert.Equal(t, "TE100100", ls[1]["tenant.id"])
 }
+
+// slog.With / Logger.With: the allowlist applies to those fields as well.
+func TestUnknownFieldsAreDropped_With(t *testing.T) {
+	buf := setup(t, Config{Level: slog.LevelInfo, JSON: true})
+	slog.Default().With("user.email", "max.mustermann@example.org", "tenant.id", "TE100100").Info("c")
+	ls := lines(t, buf)
+	require.Len(t, ls, 1)
+	assert.NotContains(t, buf.String(), "example.org")
+	assert.NotContains(t, ls[0], "user.email")
+	assert.Equal(t, "TE100100", ls[0]["tenant.id"])
+}
