@@ -74,7 +74,7 @@ func InitRouters(db database.Database) *mux.Router {
 	s = api.InitProcessRouter(s, db)
 	s = api.InitApiRouter(s, db)
 	s = api.InitHealthRouter(s, database.Ping)
-	s.Use(logging.AccessLog)
+	s.Use(logging.MuxRoute)
 
 	return s
 }
@@ -224,7 +224,7 @@ func StartServer(db database.Database) {
 	log.Infof("VFEEG BACKEND is going to listen on %s", fmt.Sprintf("127.0.0.1:%d", viper.GetInt("port")))
 
 	srv := &http.Server{
-		Handler: handlers.CORS(allowedOrigins, allowedHeaders, allowedMethods, allowedCredentials)(r),
+		Handler: handlers.CORS(allowedOrigins, allowedHeaders, allowedMethods, allowedCredentials)(logging.AccessLog(r)),
 		Addr:    fmt.Sprintf("0.0.0.0:%d", viper.GetInt("port")),
 		// Good practice: enforce timeouts for servers you create!
 		WriteTimeout: 180 * time.Second,

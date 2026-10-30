@@ -33,8 +33,8 @@ func TestLogLevelDefaultsToInfo(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// accessLines sends requests through the real router (InitRouters + InitGraphQL)
-// and returns the access lines.
+// accessLines sends requests through the real router (InitRouters + InitGraphQL,
+// wrapped in AccessLog as in StartServer) and returns the access lines.
 func accessLines(t *testing.T, claims *middleware.PlatformClaims, reqs ...*http.Request) []map[string]any {
 	t.Helper()
 	orig := middleware.VerifyTokenClaims
@@ -60,8 +60,9 @@ func accessLines(t *testing.T, claims *middleware.PlatformClaims, reqs ...*http.
 	require.NoError(t, err)
 	r := InitRouters(db)
 	InitGraphQL(r)
+	h := logging.AccessLog(r)
 	for _, req := range reqs {
-		r.ServeHTTP(httptest.NewRecorder(), req)
+		h.ServeHTTP(httptest.NewRecorder(), req)
 	}
 
 	var out []map[string]any
@@ -123,5 +124,24 @@ func TestAccessLine_ThroughRouter(t *testing.T) {
 	raw, _ := json.Marshal(ls)
 	for _, s := range []string{"max.mustermann", "example.org", "secret-token", "secret-agent", "query-value", "4711"} {
 		assert.NotContains(t, string(raw), s)
+	}
+}
+
+// A request the router answers itself (no route; the backend's subrouter also
+// answers a wrong method with 404) gets an access line without http.route.
+// 405 from a plain mux router: logging/access_test.go.
+func TestAccessLine_UnmatchedThroughRouter(t *testing.T) {
+	ls := accessLines(t, &middleware.PlatformClaims{},
+		authed(httptest.NewRequest("GET", "/no/such/route/4711", nil)),
+		authed(httptest.NewRequest("PATCH", "/eeg/tariff/4711", nil)),
+	)
+	require.Len(t, ls, 2)
+	assert.Equal(t, "GET - 404", ls[0]["message"])
+	assert.Equal(t, "PATCH - 404", ls[1]["message"])
+	for _, l := range ls {
+		assert.EqualValues(t, 404, l["http.response.status_code"])
+		assert.NotContains(t, l, "http.route")
+		assert.Equal(t, "failure", l["event.outcome"])
+		assert.Regexp(t, `^[0-9a-f]{32}$`, l["request.id"])
 	}
 }

@@ -23,13 +23,14 @@ var accessFields = []string{
 	"request.id", "trace.id", "span.id", "tenant.id", "client.id", "graphql.operation.name",
 }
 
-func router(h http.HandlerFunc) *mux.Router {
+// router is set up as in server.go: MuxRoute on the router, AccessLog around it.
+func router(h http.HandlerFunc) http.Handler {
 	r := mux.NewRouter()
 	s := r.PathPrefix("/").Subrouter()
 	s.HandleFunc("/participant/{id}", h).Methods("GET")
 	s.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {}).Methods("GET")
-	s.Use(AccessLog)
-	return s
+	s.Use(MuxRoute)
+	return AccessLog(s)
 }
 
 func serve(r http.Handler, req *http.Request) *httptest.ResponseRecorder {
@@ -133,6 +134,35 @@ func TestAccessLog_RefusalWithoutTenant(t *testing.T) {
 	assert.Equal(t, "warn", l["log.level"])
 	assert.NotContains(t, l, "tenant.id")
 	assert.Equal(t, "at.ourproject.vfeeg.web", l["client.id"])
+}
+
+// Requests that match no route (404) or no method (405) get a line and an
+// X-Request-Id too, without http.route and without the raw path.
+func TestAccessLog_UnmatchedRoutes(t *testing.T) {
+	buf := setup(t, Config{Level: slog.LevelInfo, JSON: true})
+	w404 := serve(router(nil), httptest.NewRequest("GET", "/nowhere/AT0030000000000000000000000012345", nil))
+	// a plain mux router answers a wrong method with 405 (the backend's
+	// subrouter answers 404, see server_test.go)
+	plain := mux.NewRouter()
+	plain.HandleFunc("/participant/{id}", func(w http.ResponseWriter, r *http.Request) {}).Methods("GET")
+	plain.Use(MuxRoute)
+	w405 := serve(AccessLog(plain), httptest.NewRequest("DELETE", "/participant/1", nil))
+
+	assert.Equal(t, http.StatusNotFound, w404.Code)
+	assert.Equal(t, http.StatusMethodNotAllowed, w405.Code)
+	assert.NotEmpty(t, w404.Header().Get("X-Request-Id"))
+	assert.NotEmpty(t, w405.Header().Get("X-Request-Id"))
+	ls := lines(t, buf)
+	require.Len(t, ls, 2)
+	assert.Equal(t, "GET - 404", ls[0]["message"])
+	assert.Equal(t, "DELETE - 405", ls[1]["message"])
+	for _, l := range ls {
+		assert.Equal(t, "http.access", l["event.action"])
+		assert.Equal(t, "failure", l["event.outcome"])
+		assert.NotContains(t, l, "http.route")
+	}
+	assert.NotContains(t, buf.String(), "nowhere")
+	assert.NotContains(t, buf.String(), "AT0030000000000000000000000012345")
 }
 
 func TestAccessLog_ProbesAreSkipped(t *testing.T) {

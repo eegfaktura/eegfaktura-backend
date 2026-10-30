@@ -38,10 +38,12 @@ var (
 
 type accessCtxKey struct{}
 
-// accessInfo travels in the request context. The token check fills tenant
-// and client; GraphQL fills the operation name.
+// accessInfo travels in the request context. The router fills the route
+// template (MuxRoute), the token check fills tenant and client, GraphQL fills
+// the operation name.
 type accessInfo struct {
 	requestID, traceID, spanID  string
+	route                       string
 	tenant, clientID, operation string
 }
 
@@ -83,11 +85,12 @@ func SetOperation(ctx context.Context, name string) {
 	}
 }
 
-// AccessLog is a gorilla/mux middleware (Router.Use).
+// AccessLog wraps the whole router, so requests that match no route (404,
+// 405) get an access line and an X-Request-Id too. The route template comes
+// from MuxRoute.
 func AccessLog(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		route := routeTemplate(r)
-		if skipRoutes[route] {
+		if skipRoutes[r.URL.Path] {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -123,10 +126,10 @@ func AccessLog(next http.Handler) http.Handler {
 			slog.Int("http.response.status_code", status),
 			slog.Int64("event.duration", duration.Nanoseconds()),
 		}
-		msgRoute := "-"
-		if route != "" {
-			attrs = append(attrs, slog.String("http.route", route))
-			msgRoute = route
+		msgRoute := "-" // unmatched: no http.route
+		if ai.route != "" {
+			attrs = append(attrs, slog.String("http.route", ai.route))
+			msgRoute = ai.route
 		}
 		if ai.tenant != "" {
 			attrs = append(attrs, slog.String("tenant.id", ai.tenant))
@@ -144,13 +147,18 @@ func AccessLog(next http.Handler) http.Handler {
 	})
 }
 
-func routeTemplate(r *http.Request) string {
-	if cr := mux.CurrentRoute(r); cr != nil {
-		if t, err := cr.GetPathTemplate(); err == nil {
-			return t
+// MuxRoute is a gorilla/mux middleware (Router.Use) that records the route
+// template ("/eeg/tariff/{id}") for the access line, never the raw path.
+// mux runs it only for matched routes.
+func MuxRoute(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if ai := fromContext(r.Context()); ai != nil {
+			if cr := mux.CurrentRoute(r); cr != nil {
+				ai.route, _ = cr.GetPathTemplate()
+			}
 		}
-	}
-	return ""
+		next.ServeHTTP(w, r)
+	})
 }
 
 // newRequestID is a random (version 4) UUID as 32 hex characters.
