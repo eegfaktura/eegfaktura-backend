@@ -113,6 +113,7 @@ func TestCreateMeteringPoint_missingModeRegistersOnline(t *testing.T) {
 	const tenant = "TE001006"
 	const participant = "04583ce3-5802-40b9-afd9-29d09b908f1f"
 	const meter = "AT0030000000000000000000000099002"
+	deleteMeter(t, meter)
 	calls := countRegistrations(t)
 	body := `{"meteringPoint":"` + meter + `","direction":"CONSUMPTION","status":"INIT","processState":"NEW"}`
 	req, _ := http.NewRequest("PUT", "/meteringpoint/"+participant+"/create", strings.NewReader(body))
