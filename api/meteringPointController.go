@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -661,6 +662,20 @@ func (h *MeteringHandler) requestRevokeMeteringPoint() middleware.JWTHandlerFunc
 		}
 
 		log.WithField("tenant", tenant).Infof("revoke Metering %v (%s)", meters, time.UnixMilli(fromDate).String())
+		// every metering point must belong to the member of the path; an unknown one gets the same answer as one of
+		// another member (before, any metering point of the community was revoked under any member)
+		owned, err := h.db.FindAllMeteringByTenant(r.Context(), tenant, participantId, meters)
+		if err != nil {
+			respondWith(w, http.StatusInternalServerError, tenant, err)
+			return
+		}
+		for _, m := range meters {
+			if !slices.ContainsFunc(owned, func(o *model.MeteringPoint) bool { return o.MeteringPoint == m }) {
+				rejectRevoke(w, tenant, model.ErrRevokeRequest(errors.New("Mindestens ein Zählpunkt gehört nicht zu diesem Mitglied.")))
+				return
+			}
+		}
+
 		if eeg.Online {
 			errorList := []string{}
 			meters, err := h.db.FindActiveMeteringByIds(r.Context(), tenant, meters)
@@ -669,6 +684,9 @@ func (h *MeteringHandler) requestRevokeMeteringPoint() middleware.JWTHandlerFunc
 				return
 			}
 			for _, m := range meters {
+				if !strings.EqualFold(m.ParticipantId, participantId) {
+					continue // after an owner change the active entry is the other member's: not this member's consent
+				}
 				if err = mqttclient.RevokeMeteringPoint(eeg, m, fromDate, reason); err != nil {
 					log.WithField("tenant", tenant).Errorf("request revoke Metering %s (%d)", m.MeteringPoint, fromDate)
 					errorList = append(errorList, fmt.Sprintf("%s: %s", m.MeteringPoint, err.Error()))

@@ -40,6 +40,12 @@ this changelog highlights the changes relevant for overview and operations.
   local run without `KEYCLOAK_CONFIG` needs its own `keycloak.json` (see README, not to be committed).
 
 ### Fixed
+- **A revoke only reaches metering points of the member in the path** (pre-existing, found in the review of
+  eegfaktura/eegfaktura-backend#127). `POST /meteringpoint/{pid}/revokemeters` revoked any active metering point of
+  the community named in the body, whichever member it belonged to. Now every metering point must belong to `{pid}`,
+  otherwise 400, code 5012 „Mindestens ein Zählpunkt gehört nicht zu diesem Mitglied.“ — the same answer for an
+  unknown number. After an owner change the old member's entry still belongs to the old member, but the active entry
+  is the new member's: such a request sends nothing (201) instead of revoking the new member's consent.
 - **A revoke without consent end is refused** (pre-existing, found in the review of eegfaktura/eegfaktura-backend#127).
   `revokemeters` without `from` (or with 0 or less) used to send CMRevoke with ConsentEnd 01.01.1970; it now answers
   400, code 5012 „Das Ende der Datenfreigabe fehlt.“. The web always sends `from`.
