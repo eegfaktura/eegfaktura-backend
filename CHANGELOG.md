@@ -10,9 +10,9 @@ this changelog highlights the changes relevant for overview and operations.
 
 ### Contract
 - **New caller of `GET /participant`: eegfaktura-energystore** (energystore 261025-ca1). energystore forwards a
-  member's bearer token (header `tenant`, once per tenant of the token) and reads `meters[].meteringPoint`,
-  `meters[].processState` and `meters[].participantState.activeSince`/`inactiveSince` (yyyy-mm-dd or null) to find
-  the member's own metering points and their participation windows. A change to these fields, the route or its status codes (200 with a JSON
+  member's bearer token (header `tenant`, once per tenant of the token) and reads `meters[].meteringPoint`, `meters[].registeredSince` and
+  `meters[].participantState.activeSince`/`inactiveSince` (yyyy-mm-dd or null) to find the member's own metering
+  points and their participation windows. A change to these fields, the route or its status codes (200 with a JSON
   array) is a cross-component change. Contract test: `model/participant_contract_test.go`.
 
 ### Security
