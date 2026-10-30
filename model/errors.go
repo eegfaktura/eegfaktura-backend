@@ -62,6 +62,9 @@ var ErrRevokeMeter = PartialWrap(5010)
 // The reason of a revoke is longer than CMRevoke allows (50 characters); 5010 stays the failed send.
 var ErrRevokeReason = PartialWrap(5011)
 
+// A revoke request with invalid input other than the reason (no consent end, a metering point not of the member).
+var ErrRevokeRequest = PartialWrap(5012)
+
 var ErrFindMeter = PartialWrap(3100)
 var ErrUpdateMeter = PartialWrap(3101)
 

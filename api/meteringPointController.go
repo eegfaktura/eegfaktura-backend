@@ -628,6 +628,11 @@ func (h *MeteringHandler) requestRevokeMeteringPoint() middleware.JWTHandlerFunc
 			rejectRevoke(w, tenant, rerr)
 			return
 		}
+		// without "from" the consent end was 01.01.1970 (time.UnixMilli(0)) and went out like that
+		if request.From <= 0 {
+			rejectRevoke(w, tenant, model.ErrRevokeRequest(errors.New("Das Ende der Datenfreigabe fehlt.")))
+			return
+		}
 
 		eeg, err := h.db.GetEegById(r.Context(), tenant)
 		if err != nil {

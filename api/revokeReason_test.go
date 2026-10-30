@@ -78,4 +78,15 @@ func TestRevokeRefusesLongReason(t *testing.T) {
 		"message":"Die Begründung ist zu lang (höchstens 50 Zeichen)."}}`, w.Body.String())
 }
 
+// Without "from" the consent end used to go out as 01.01.1970; it is refused now.
+func TestRevokeRefusesMissingConsentEnd(t *testing.T) {
+	for _, from := range []interface{}{nil, 0, -1} {
+		w := revokeWithoutDB(t, map[string]interface{}{"from": from})
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		assert.JSONEq(t, `{"error":{"code":5012,"error":"Das Ende der Datenfreigabe fehlt.",
+			"message":"Das Ende der Datenfreigabe fehlt."}}`, w.Body.String())
+	}
+}
+
 func revokeReasonOf(s string) *string { return &s }

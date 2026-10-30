@@ -40,6 +40,9 @@ this changelog highlights the changes relevant for overview and operations.
   local run without `KEYCLOAK_CONFIG` needs its own `keycloak.json` (see README, not to be committed).
 
 ### Fixed
+- **A revoke without consent end is refused** (pre-existing, found in the review of eegfaktura/eegfaktura-backend#127).
+  `revokemeters` without `from` (or with 0 or less) used to send CMRevoke with ConsentEnd 01.01.1970; it now answers
+  400, code 5012 „Das Ende der Datenfreigabe fehlt.“. The web always sends `from`.
 - **The optional reason of a revoke (`POST /meteringpoint/{pid}/revokemeters`) reaches eda-xp** (revoke reason,
   2026-10-30). The handler read it from the JSON key `to`, which no caller sends, so the reason was always empty. It
   now reads `reason` (the key eegfaktura-web sends) and cleans it like a mail subject: control characters (also line
