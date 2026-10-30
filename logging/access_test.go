@@ -203,3 +203,44 @@ func TestAccessLog_NeverLogsRequestData(t *testing.T) {
 	sort.Strings(extra)
 	assert.Empty(t, extra, "fields outside the access-line allowlist")
 }
+
+// A handler panic: one error line with error.* (no remote address), an access
+// line with 500, and the client gets 500.
+func TestAccessLog_HandlerPanic(t *testing.T) {
+	buf := setup(t, Config{Level: slog.LevelInfo, JSON: true})
+	req := httptest.NewRequest("GET", "/participant/1", nil)
+	req.RemoteAddr = "203.0.113.7:4711"
+	w := serve(router(func(w http.ResponseWriter, r *http.Request) { panic("boom") }), req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	ls := lines(t, buf)
+	require.Len(t, ls, 2)
+	assert.Equal(t, "error", ls[0]["log.level"])
+	assert.Equal(t, "http.panic", ls[0]["event.action"])
+	assert.Equal(t, "string", ls[0]["error.type"])
+	assert.Equal(t, "boom", ls[0]["error.message"])
+	assert.Contains(t, ls[0]["error.stack_trace"], "TestAccessLog_HandlerPanic")
+	assert.Equal(t, ls[1]["request.id"], ls[0]["request.id"])
+	assert.Equal(t, "http.access", ls[1]["event.action"])
+	assert.EqualValues(t, 500, ls[1]["http.response.status_code"])
+	assert.Equal(t, "failure", ls[1]["event.outcome"])
+	assert.Equal(t, "GET /participant/{id} 500", ls[1]["message"])
+	assert.NotContains(t, buf.String(), "203.0.113.7")
+}
+
+// After the response has begun, the connection is aborted with
+// http.ErrAbortHandler (net/http logs nothing for it); the access line says 500.
+func TestAccessLog_HandlerPanicAfterWrite(t *testing.T) {
+	buf := setup(t, Config{Level: slog.LevelInfo, JSON: true})
+	h := router(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		panic("late")
+	})
+	assert.PanicsWithValue(t, http.ErrAbortHandler, func() {
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/participant/1", nil))
+	})
+	ls := lines(t, buf)
+	require.Len(t, ls, 2)
+	assert.Equal(t, "late", ls[0]["error.message"])
+	assert.EqualValues(t, 500, ls[1]["http.response.status_code"])
+}

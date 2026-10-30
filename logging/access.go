@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"regexp"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -104,10 +105,30 @@ func AccessLog(next http.Handler) http.Handler {
 
 		sw := &statusWriter{ResponseWriter: w}
 		start := time.Now()
-		next.ServeHTTP(sw, r.WithContext(context.WithValue(r.Context(), accessCtxKey{}, ai)))
+		p, stack := serveRecovered(next, sw, r.WithContext(context.WithValue(r.Context(), accessCtxKey{}, ai)))
 		duration := time.Since(start)
 
 		status := sw.status
+		// A handler panic: one error line through the module instead of net/http's
+		// "http: panic serving <ip>" with a plain stack, then 500. If the response
+		// had begun (or the handler aborted on purpose), the connection is aborted
+		// with http.ErrAbortHandler, which net/http does not log.
+		abort := false
+		if p != nil {
+			abort = status != 0 || p == http.ErrAbortHandler
+			if p != http.ErrAbortHandler {
+				slog.Default().LogAttrs(context.WithValue(context.Background(), accessCtxKey{}, ai), slog.LevelError,
+					"HTTP handler panicked",
+					slog.String("event.action", "http.panic"),
+					slog.String("error.type", fmt.Sprintf("%T", p)),
+					slog.String("error.message", fmt.Sprint(p)),
+					slog.String("error.stack_trace", string(stack)))
+			}
+			if !abort {
+				sw.WriteHeader(http.StatusInternalServerError)
+			}
+			status = http.StatusInternalServerError
+		}
 		if status == 0 {
 			status = http.StatusOK
 		}
@@ -144,7 +165,21 @@ func AccessLog(next http.Handler) http.Handler {
 		// the request context carries request.id, trace.id and span.id (contextHandler)
 		ctx := context.WithValue(context.Background(), accessCtxKey{}, ai)
 		slog.Default().LogAttrs(ctx, level, fmt.Sprintf("%s %s %d", r.Method, msgRoute, status), attrs...)
+		if abort {
+			panic(http.ErrAbortHandler)
+		}
 	})
+}
+
+// serveRecovered runs the handler and returns a panic value and its stack.
+func serveRecovered(next http.Handler, w http.ResponseWriter, r *http.Request) (p any, stack []byte) {
+	defer func() {
+		if p = recover(); p != nil {
+			stack = debug.Stack()
+		}
+	}()
+	next.ServeHTTP(w, r)
+	return nil, nil
 }
 
 // MuxRoute is a gorilla/mux middleware (Router.Use) that records the route
