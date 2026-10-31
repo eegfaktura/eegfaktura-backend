@@ -62,6 +62,25 @@ func (h *MeteringHandler) createMeteringPoint() middleware.JWTHandlerFunc {
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
+		// The mode only matters where a registration is sent below: a NEW meter (empty becomes NEW on insert) of an
+		// active member of an online EEG. There it is rejected before the meter is saved; elsewhere it is ignored.
+		if modeErr := checkActivationMode(m.ActivationMode); modeErr != nil && (m.ProcessState == "" || m.ProcessState == model.NEW) {
+			eeg, err := h.db.GetEegById(r.Context(), tenant)
+			if err != nil {
+				respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
+				return
+			}
+			participant, err := h.db.QueryParticipant(r.Context(), tenant, participantId)
+			if err != nil {
+				log.WithField("tenant", tenant).WithError(err).Error("failed to register metering point. Cannot find appropriate participant.")
+				respondWith(w, http.StatusBadRequest, tenant, err)
+				return
+			}
+			if eeg.Online && participant.Status == model.ACTIVE {
+				respondWith(w, http.StatusBadRequest, tenant, modeErr)
+				return
+			}
+		}
 
 		m.ModifiedAt = civil.Now()
 		if m.Status != model.S_ACTIVE {
@@ -99,7 +118,7 @@ func (h *MeteringHandler) createMeteringPoint() middleware.JWTHandlerFunc {
 					from = util.CalcProcessNullDate(participant.ParticipantSince)
 				}
 
-				if err = edaRegisterMeteringpoint(eeg, m.ActivationMode, &m, &from); err != nil {
+				if err = edaRegisterMeteringpoint(eeg, &m, &from); err != nil {
 					respondWith(w, http.StatusBadRequest, tenant, err)
 					return
 				}
@@ -299,7 +318,6 @@ type registerMeterRequestType struct {
 	Direction      model.DirectionType    `json:"direction"`
 	From           int64                  `json:"from"`
 	To             int64                  `json:"to"`
-	ActivationCode string                 `json:"activationCode,omitempty"`
 	ActivationMode model.RegistrationMode `json:"activationMode,omitempty"`
 }
 
@@ -324,6 +342,13 @@ func (h *MeteringHandler) registerMeteringPoint() middleware.JWTHandlerFunc {
 			log.WithField("tenant", tenant).WithError(err).Error("failed to register metering point.")
 			respondWith(w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
 			return
+		}
+		// only an online EEG sends a registration; elsewhere the mode is ignored
+		if eeg.Online {
+			if err = checkActivationMode(request.ActivationMode); err != nil {
+				respondWith(w, http.StatusBadRequest, tenant, err)
+				return
+			}
 		}
 		participant, err := h.db.QueryParticipant(r.Context(), tenant, participantId)
 		if err != nil {
@@ -353,8 +378,7 @@ func (h *MeteringHandler) registerMeteringPoint() middleware.JWTHandlerFunc {
 			from = util.CalcProcessNullDate(participant.ParticipantSince)
 		}
 
-		meter.ActivationCode = request.ActivationCode
-		if err = edaRegisterMeteringpoint(eeg, request.ActivationMode, meter, &from); err != nil {
+		if err = edaRegisterMeteringpoint(eeg, meter, &from); err != nil {
 			respondWith(w, http.StatusBadRequest, tenant, err)
 			return
 		}
@@ -746,20 +770,27 @@ func (h *MeteringHandler) requestChangePartitionFactor() middleware.JWTHandlerFu
 	}
 }
 
-func edaRegisterMeteringpoint(eeg *model.Eeg, mode model.RegistrationMode, meter *model.MeteringPoint, from *int64) error {
-	var err error
+// offlineRegistrationUnsupported is the answer to activationMode OFFLINE (decision 2026-10-30).
+const offlineRegistrationUnsupported = "Offline-Registrierung wird von den Netzbetreibern nicht mehr unterstützt"
+
+// checkActivationMode accepts a missing activationMode and ONLINE (both register online).
+// OFFLINE and any other value are rejected. Callers check only where a registration would be sent (online EEG),
+// before they write or send anything.
+func checkActivationMode(mode model.RegistrationMode) error {
+	switch mode {
+	case "", model.ONLINE:
+		return nil
+	case model.OFFLINE:
+		return model.ErrOfflineRegistrationUnsupported(errors.New(offlineRegistrationUnsupported))
+	default:
+		return model.ErrUnknownActivationMode(fmt.Errorf("unknown activationMode %q", mode))
+	}
+}
+
+// edaRegisterMeteringpoint sends the online registration (ANFORDERUNG_ECON) for an online EEG.
+func edaRegisterMeteringpoint(eeg *model.Eeg, meter *model.MeteringPoint, from *int64) error {
 	if eeg.Online && meter != nil {
-		if mode == model.ONLINE {
-			if err = mqttclient.RegistrationForParticipation(eeg, meter, from); err != nil {
-				return err
-			}
-		} else if mode == model.OFFLINE {
-			if err = mqttclient.OfflineRegistrationForParticipation(eeg, meter, from); err != nil {
-				return err
-			}
-		} else {
-			return model.ErrWrongActivationCode(errors.New("Wrong activation code"))
-		}
+		return mqttclient.RegistrationForParticipation(eeg, meter, from)
 	}
 	return nil
 }

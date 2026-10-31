@@ -130,7 +130,6 @@ func Test_confirmParticipantOnline(t *testing.T) {
 				State:            nil,
 				PartFact:         10,
 				ActivationMode:   model.ONLINE,
-				ActivationCode:   "",
 			},
 		}
 		b, err := json.Marshal(meters)
