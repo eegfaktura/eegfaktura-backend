@@ -8,6 +8,42 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Fixed
+- **Registering an existing tenant is refused** (261015-ca1). The gRPC `register` answered 201 for a tenant that already
+  existed, dropped the given community data and admin-backend attached the new admin to that community. Now nothing is
+  written and the reply carries status 409; the comparison is case-insensitive. The same goes for a new tenant on an
+  existing RC number, except when it is registered with area GEA (stem and sub communities share the RC number). The MQTT
+  command `register-eeg` uses the same insert: it now
+  logs an error for an existing tenant instead of nothing, it writes and publishes nothing either way.
+- **Tariff list with a decimal `baseFee`** (261026-mm1). `base.tariff."baseFee"` is `double precision`, the model read it
+  as an integer, so one tariff with e.g. 2.25 failed the list of the whole community. The field is now a decimal type:
+  the amount is read and saved unchanged, which is also what billing reads from the view. A whole amount looks the same
+  in the JSON as before.
+- **A failing tariff query no longer looks like an empty list.** `GetTariff` returned an empty list without an error when
+  the query failed on the first row (with 261026-mm1 this hid the scan error for a community whose first tariff had
+  decimals). **This also reaches the Excel master-data export:** `GetTariffNameMap` reads the same list, so when the first
+  tariff of a community cannot be read, `GET /eeg/tariff` and the export answer an error instead of working with no tariffs.
+
+- **A member with a metering point that took part can no longer be deleted** (261005-ca10). `DELETE /participant/v2/{id}`
+  had no check and the delete cascaded to active and past metering points with their partition factors. It now answers
+  **409** with error code 1109 and deletes nothing, unless every metering point has status `INIT`, no `activesince` and
+  process state `INVALID`, `NEW` or `REJECTED`. `PENDING` is refused: the grid operator answered, the activation mail is out
+  and the member can still approve. A member without metering points can be deleted as before.
+- **Removing a single metering point no longer reports success when nothing was removed** (261005-ca10). In state `PENDING`
+  it is now refused for the same reason. Every refused state answered 202 and web dropped the metering point from the view
+  until the next load; it now answers 400 with code 1201 and web shows its error text.
+
+### Contract
+- `DELETE /participant/v2/{id}`: new answer 409 with code 1109. Caller: eegfaktura-web, which shows its own text with
+  the matching version; an older web shows its general error message. No rollout order needed.
+- gRPC `RegisterEegService.register`: `RegisteredEegReply.status` can be **409** (tenant exists, no gRPC error). Caller:
+  admin-backend, which stops the registration on it (admin-backend PR of 261015-ca1). The proto is unchanged. Rollout
+  order: admin-backend, then backend, then admin. A new backend with an old admin-backend treats 409 as a failed
+  registration, without a Keycloak change, but still writes Ponton for the existing community.
+- REST `/eeg/tariff` (and the tariff history): `baseFee` can carry decimals, in the answer and on save (number or
+  string, as before). Whole amounts are unchanged. Web has no input for it and no display reads it (`TariffHelper`'s
+  `amountInEuro` has no caller), so there is no functional effect there. Billing reads the view, unchanged.
+
 ## [1.14.0] – 2026-10-31
 
 ### Added

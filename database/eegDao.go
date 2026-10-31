@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -14,6 +15,9 @@ import (
 
 const TABLE_EEG = "base.eeg"
 const TABLE_EEG_ADDRESS = "base.address"
+
+// ErrEegExists: the tenant is already registered; nothing was written (261015-ca1).
+var ErrEegExists = errors.New("eeg already exists")
 
 type EegRepository interface {
 	GetEegById(ctx context.Context, tenant string) (*model.Eeg, error)
@@ -181,6 +185,18 @@ func getEegByEcId(ctx context.Context, tx *sqlx.DB, edId string) (*model.Eeg, er
 
 func insertEeg(ctx context.Context, db *sqlx.DB, tenant string, eeg *model.Eeg) error {
 
+	// Tenants compare case-insensitively, the primary key only sees the exact spelling. Outside GEA an RC number
+	// belongs to one community: a new tenant on it would reach that community's login and Ponton account.
+	var exists bool
+	if err := db.GetContext(ctx, &exists, `SELECT EXISTS (SELECT 1 FROM base.eeg WHERE upper(tenant) = upper($1)
+		OR ($2 AND upper("rcNumber") = upper($3)))`, eeg.Id, eeg.Area != model.AreaType("GEA"), eeg.RcNumber); err != nil {
+		log.WithError(err).WithField("SQL", "SELECT").Error("SQL statement failed")
+		return err
+	}
+	if exists {
+		return ErrEegExists
+	}
+
 	// Same shared address rule as updateEegPartial — the create path
 	// must not be the one write that skips enforcement.
 	if eeg.Contact.Email.Valid {
@@ -196,13 +212,24 @@ func insertEeg(ctx context.Context, db *sqlx.DB, tenant string, eeg *model.Eeg) 
 	}
 
 	sql, _, err := pgDialect.Insert(TABLE_EEG).Rows(eeg).OnConflict(goqu.DoNothing()).ToSQL()
-	_, err = db.ExecContext(ctx, sql)
+	if err != nil {
+		return err
+	}
+	res, err := db.ExecContext(ctx, sql)
 	if err != nil {
 		log.WithError(err).WithField("SQL", "INSERT").Error("SQL statement failed")
 		return err
 	}
+	// a parallel registration in the same spelling was faster
+	inserted, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if inserted == 0 {
+		return ErrEegExists
+	}
 
-	return err
+	return nil
 }
 
 // eegProtectedUpdateFields must never be set through the generic EEG update:

@@ -50,6 +50,9 @@ var ErrDeleteParticipant = PartialWrap(1107)
 // (ErrFindParticipant, "participant not found"); getrennt werden die beiden nur im Log.
 var ErrForeignTenantParticipant = PartialWrap(1108)
 
+// A metering point of the member was active or is on its way there: the delete would take its history along.
+var ErrParticipantHasActivatedMeter = PartialWrap(1109)
+
 var ErrRemoveMeteringPoint = PartialWrap(1201)
 var ErrStatusMeter = PartialWrap(1202)
 var ErrSaveMeteringPoint = PartialWrap(1203)

@@ -3,6 +3,7 @@ package database
 import (
 	"at.ourproject/vfeeg-backend/model"
 	"context"
+	"errors"
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
@@ -28,6 +29,22 @@ import (
 //	}()
 //	os.Exit(m.Run())
 //}
+
+// A failing query is an error, not an empty tariff list.
+func TestGetTariffReportsAQueryError(t *testing.T) {
+	mockDb, err := GetDatabaseMock()
+	require.NoError(t, err)
+	dbx := sqlx.NewDb(mockDb.db, "mock")
+
+	mockDb.Mock.ExpectQuery("SELECT (.+) FROM base.activetariff (.+)").WillReturnError(errors.New("query failed"))
+	_, err = GetTariff(dbx, "TE000001")
+	assert.Error(t, err)
+
+	mockDb.Mock.ExpectQuery("SELECT (.+) FROM base.activetariff (.+)").WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	tariffs, err := GetTariff(dbx, "TE000001")
+	assert.NoError(t, err)
+	assert.Equal(t, []model.Tariff{}, tariffs)
+}
 
 func TestAddTariff(t *testing.T) {
 	tariff := model.Tariff{Version: 0, Name: "Sepp", UseVat: false, BillingPeriod: "monthly", FreeKWh: null.IntFrom(100), CentPerKWh: 12}

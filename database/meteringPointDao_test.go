@@ -1308,7 +1308,10 @@ func TestRemoveMeteringPoint(t *testing.T) {
 	require.NotNil(t, m)
 
 	assert.NoError(t, db.MeteringPointsSetStatus(context.Background(), "TE000001", model.REVOKED, nil, []string{"AT0030000000000000000000030000999"}, nil, nil))
-	assert.NoError(t, db.RemoveMeteringPoint(context.Background(), "TE000001", "ea9942da-03da-11ee-b82b-5a985b4b033a", "AT0030000000000000000000030000999"))
+	assert.Error(t, db.RemoveMeteringPoint(context.Background(), "TE000001", "ea9942da-03da-11ee-b82b-5a985b4b033a", "AT0030000000000000000000030000999"))
+
+	assert.NoError(t, db.MeteringPointsSetStatus(context.Background(), "TE000001", model.PENDING, nil, []string{"AT0030000000000000000000030000999"}, nil, nil))
+	assert.Error(t, db.RemoveMeteringPoint(context.Background(), "TE000001", "ea9942da-03da-11ee-b82b-5a985b4b033a", "AT0030000000000000000000030000999"))
 
 	m, err = db.FindMeteringByStatus(context.Background(), "TE000001", "AT0030000000000000000000030000999", model.S_INIT)
 	require.NoError(t, err)

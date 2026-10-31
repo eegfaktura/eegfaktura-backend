@@ -84,13 +84,12 @@ func GetTariff(db *sqlx.DB, tenant string) ([]model.Tariff, error) {
 		`"useTimeTariff", "timeTariff1Active", "timeTariff1Name", "timeTariff1From", "timeTariff1To", "timeTariff1CentPerKWh", "timeTariff2Active", "timeTariff2Name", "timeTariff2From", "timeTariff2To", "timeTariff2CentPerKWh", `+
 		`"joiningFee", "joiningFeeUseVat", "joiningFeeVatInPercent" `+
 		`FROM base.activetariff WHERE tenant = $1`, tenant)
-	if errors.Is(err, sql.ErrNoRows) || tariff == nil {
-		return []model.Tariff{}, nil
-	}
-
-	if err != nil {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		log.WithField("tenant", tenant).Errorf("Error Query Tariff! %s", err.Error())
 		return tariff, model.ErrGetTariff(err)
+	}
+	if tariff == nil {
+		return []model.Tariff{}, nil
 	}
 	return tariff, nil
 }
