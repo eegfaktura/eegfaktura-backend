@@ -187,13 +187,29 @@ func TestMailWorker_AfterStopAMailIsReported(t *testing.T) {
 }
 
 func TestMailWorker_PanicKeepsTheWorkerRunning(t *testing.T) {
+	n := &fakeNotifier{}
 	w := NewMailWorker(2)
 	w.Start()
 	sent := false
-	w.Enqueue(oneMail(&fakeNotifier{}, func() error { panic("bad template") }))
-	w.Enqueue(oneMail(&fakeNotifier{}, func() error { sent = true; return nil }))
+	w.Enqueue(oneMail(n, func() error { panic("bad template") }))
+	w.Enqueue(oneMail(n, func() error { sent = true; return nil }))
 	assert.Equal(t, 0, w.Stop(mailTestWait, mailTestWait))
 	assert.True(t, sent)
+	require.Len(t, n.entries, 1, "the community hears about the mail that panicked")
+	assert.Equal(t, errMailPanic.Error(), n.entries[0].Message)
+	assert.Equal(t, "AT001", n.entries[0].Identifier)
+}
+
+// A panic ends one attempt, not the job: the next tenant of a GEA still gets its turn.
+func TestMailJob_PanicEndsOneAttempt(t *testing.T) {
+	n := &fakeNotifier{}
+	sends := 0
+	MailJob{Ctx: context.Background(), Notifier: n, Attempts: []MailAttempt{
+		{Tenant: "GC000001-001", Identifier: "AT001", DedupeKey: "a@example.org|AT001", Send: func() error { panic("bad template") }},
+		{Tenant: "GC000001-002", Identifier: "AT001", DedupeKey: "a@example.org|AT001", Send: func() error { sends++; return nil }},
+	}}.run()
+	assert.Equal(t, 1, sends, "a panicked attempt does not count as sent")
+	assert.Equal(t, []string{"GC000001-001"}, n.tenants)
 }
 
 func TestMailJob_Dedupe(t *testing.T) {

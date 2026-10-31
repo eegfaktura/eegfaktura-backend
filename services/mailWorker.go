@@ -28,6 +28,9 @@ const (
 // the mail server, so the mail did not go out.
 var ErrMailNotQueued = errors.New("Die Mail wurde nicht verschickt: die Warteschlange ist voll oder der Dienst wird beendet.")
 
+// errMailPanic is what the community reads when sending panicked; the cause is only logged.
+var errMailPanic = errors.New("Mail konnte nicht gesendet werden.")
+
 // MailNotifier stores the notification for a mail that was not sent.
 type MailNotifier interface {
 	SaveNotificationFromMap(notificationValue map[string]interface{}, tenant string, notificationType model.NotificationType, process model.NotificationProcess, role string) error
@@ -135,27 +138,34 @@ func (w *MailWorker) Stop(limit, reportLimit time.Duration) int {
 }
 
 func (j MailJob) run() {
-	// same as the broker loop: one bad job must not take the process down
-	defer func() {
-		if r := recover(); r != nil {
-			log.WithContext(j.Ctx).Errorf("recovered from panic while sending a mail: %v\n%s", r, debug.Stack())
-		}
-	}()
-
 	sent := map[string]bool{}
 	for _, a := range j.Attempts {
 		if a.DedupeKey != "" && sent[a.DedupeKey] {
 			continue
 		}
-		err := a.Send()
-		if err != nil {
-			j.report(a, err)
-		}
-		// a mail the server did not confirm was probably sent
-		if err == nil || errors.Is(err, ErrMailUnconfirmed) {
+		if j.attempt(a) {
 			sent[a.DedupeKey] = true
 		}
 	}
+}
+
+// attempt sends one mail and reports a failure. It returns whether the mail counts as sent.
+func (j MailJob) attempt(a MailAttempt) (sent bool) {
+	// same as the broker loop: one bad mail must not take the process down, nor the rest of the job
+	defer func() {
+		if r := recover(); r != nil {
+			log.WithContext(j.Ctx).WithField("tenant", a.Tenant).Errorf("recovered from panic while sending a mail: %v\n%s", r, debug.Stack())
+			j.report(a, errMailPanic)
+			sent = false
+		}
+	}()
+
+	err := a.Send()
+	if err != nil {
+		j.report(a, err)
+	}
+	// a mail the server did not confirm was probably sent
+	return err == nil || errors.Is(err, ErrMailUnconfirmed)
 }
 
 // report writes the log line and the notification for the community.
