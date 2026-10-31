@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.14.0] – 2026-10-31
+
 ### Added
 - **Health endpoints for Kubernetes probes:** `GET /healthz` (liveness, always `ok`, no dependency checks) and
   `GET /readyz` (readiness, `ok` when Postgres answers `SELECT 1`, otherwise 503 `unavailable`), served
@@ -104,8 +106,9 @@ this changelog highlights the changes relevant for overview and operations.
   on `confirm` the whole request is checked before the participant is confirmed; on `create` only a NEW metering
   point of an active member is checked (other metering points are not registered, so the mode is ignored, as
   before). **Non-online EEGs** never send a registration and keep ignoring the mode on all three routes.
-  eegfaktura-web master has no text for code 1205 yet and shows the raw key
-  `E_1205_Offline-Registrierung wird von den Netzbetreibern nicht mehr unterstützt`. `activationCode` is no longer read (removed from
+  eegfaktura-web has no text for code 1205 and shows the raw key
+  `E_1205_Offline-Registrierung wird von den Netzbetreibern nicht mehr unterstützt`; web 1.19.0 always sends `ONLINE`,
+  so only a tab still open on an older web gets it (**roll out web 1.19.0 first**). `activationCode` is no longer read (removed from
   the request models; a client that still sends it is not rejected). Inbound `ANTWORT_ECOF`, `ZUSTIMMUNG_ECOF`,
   `ABLEHNUNG_ECOF`, `ABSCHLUSS_ECOF` and `ABBRUCH_ECOF` are still processed, so offline registrations sent before
   this release still complete. Web counterpart: eegfaktura/eegfaktura-web#246.
@@ -117,8 +120,8 @@ this changelog highlights the changes relevant for overview and operations.
   backend treats 202 like its own timeout: `ErrMailUnconfirmed`, notification code `W_MAIL_UNCONFIRMED`, test mail 504.
   200 = sent; every other status stays a failure with the server's message, including 504 ("SMTP timeout: …",
   nothing delivered).
-- **`activationMode` on `create`/`register`/`confirm` (see Removed):** callers are eegfaktura-web (master still
-  offers the offline checkbox and sends `OFFLINE` + `activationCode`; eegfaktura-web#246 always sends `ONLINE`).
+- **`activationMode` on `create`/`register`/`confirm` (see Removed):** callers are eegfaktura-web (before 1.19.0 it
+  offers the offline checkbox and sends `OFFLINE` + `activationCode`; 1.19.0, eegfaktura-web#246, always sends `ONLINE`).
   eegfaktura-admin, eegfaktura-admin-backend and eegfaktura-eda-xp do not call these routes. Tests:
   `api/offlineRegistration_test.go`, `eda/edaEcofInbound_test.go`.
 - **New caller of `GET /participant`: eegfaktura-energystore** (energystore 261025-ca1). energystore forwards a
@@ -165,6 +168,7 @@ this changelog highlights the changes relevant for overview and operations.
   roles are unchanged. A uniform `azp`/client rule across the services is an open point (eegfaktura-dev tracking
   W-261030-mm2). The unused `jwt.TimeFunc` override is removed (nothing called the v3 validation). New regression
   tests cover the validation paths without a live Keycloak.
+- `github.com/go-jose/go-jose/v4` 4.1.4 → 4.1.6 (indirect, Dependabot).
 
 ### Fixed
 - Test only: `TestAccessLine_ThroughRouter` failed at random when a generated `request.id` contained `4711`, the value the test forbids in a line (261031-mm1). Generated values are now left out of that check.
@@ -218,8 +222,8 @@ this changelog highlights the changes relevant for overview and operations.
   `participantState` answer 400; `POST /meteringpoint/{pid}/register` for a metering point the member does not have
   answers 404; a partition factor request with an empty (`null`) metering point entry answers 400 on both routes.
   Before, the request panicked and the proxy answered 502.
-- **Logging** (261008-ca1): security relevant — details not published. Without `LOG_LEVEL` (or with an unknown value)
-  the backend now logs at `info` instead of `debug`; an unknown value is reported once at start. Log lines name ids
+- **Logging** (261008-ca1): security relevant — details not published. Without `LOG_LEVEL`
+  the backend now logs at `info` instead of `debug`; an unknown value stops the start (see Changed). Log lines name ids
   (tenant, member, metering point, conversation, tariff) or counts instead of names, whole objects, request bodies,
   free-text reasons, mail-server answers, message payloads or SQL statements.
 - **Partition factor routes stop after a failed MQTT send** (261015-ca2, pre-existing): `POST
