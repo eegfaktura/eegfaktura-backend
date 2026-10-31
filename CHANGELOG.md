@@ -18,6 +18,9 @@ this changelog highlights the changes relevant for overview and operations.
   as an integer, so one tariff with e.g. 2.25 failed the list of the whole community. The field is now a decimal type:
   the amount is read and saved unchanged, which is also what billing reads from the view. A whole amount looks the same
   in the JSON as before.
+- **A failing tariff query no longer looks like an empty list.** `GetTariff` returned an empty list without an error when
+  the query failed on the first row (with 261026-mm1 this hid the scan error for a community whose first tariff had
+  decimals).
 
 ### Contract
 - gRPC `RegisterEegService.register`: `RegisteredEegReply.status` can be **409** (tenant exists, no gRPC error). Caller:
