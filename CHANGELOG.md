@@ -26,9 +26,9 @@ this changelog highlights the changes relevant for overview and operations.
 
 ### Contract
 - gRPC `RegisterEegService.register`: `RegisteredEegReply.status` can be **409** (tenant exists, no gRPC error). Caller:
-  admin-backend, which stops the registration on it (admin-backend PR of 261015-ca1). The proto is unchanged. Deploy
-  order: free. Until admin-backend is updated it treats 409 as a failed registration: no Keycloak change, but it still
-  calls Ponton.
+  admin-backend, which stops the registration on it (admin-backend PR of 261015-ca1). The proto is unchanged. Rollout
+  order: admin-backend, then backend, then admin. A new backend with an old admin-backend treats 409 as a failed
+  registration, without a Keycloak change, but still writes Ponton for the existing community.
 - REST `/eeg/tariff` (and the tariff history): `baseFee` can carry decimals, in the answer and on save (number or
   string, as before). Whole amounts are unchanged. Web has no input for it and no display reads it (`TariffHelper`'s
   `amountInEuro` has no caller), so there is no functional effect there. Billing reads the view, unchanged.
