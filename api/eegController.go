@@ -84,7 +84,7 @@ func (h *EegHandler) updateEEG() middleware.JWTHandlerFunc {
 		}
 
 		if err = h.db.UpdateEegPartial(r.Context(), tenant, e); err != nil {
-			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1002, err.Error()))
+			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1002, model.UserText(err)))
 			return
 		}
 		eeg, err := h.db.GetEegById(r.Context(), tenant)

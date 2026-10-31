@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"at.ourproject/vfeeg-backend/model"
 	protobuf "at.ourproject/vfeeg-backend/proto"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -102,12 +104,38 @@ func TestSendMail_RealFailuresKeepTheirText(t *testing.T) {
 				require.Error(t, err, fn)
 				assert.NotErrorIs(t, err, ErrMailUnconfirmed, fn)
 				lm := MailLogMessage(testMeter, err)
-				assert.Equal(t, err.Error(), lm.Message, fn)
+				assert.Equal(t, model.UserText(err), lm.Message, fn)
 				assert.Equal(t, "E_UNDEFINED_0", lm.MessageCode, fn)
 				assert.Equal(t, "error", MailErrorLevel(err).String(), fn)
 			}
 		})
 	}
+}
+
+// 261031-mm7: the community reads the address, the log does not. Both address errors of the send path.
+func TestMailAddressesStayOutOfTheLog(t *testing.T) {
+	var logged bytes.Buffer
+	logger := log.StandardLogger()
+	orig := logger.Out
+	logger.SetOutput(&logged)
+	t.Cleanup(func() { logger.SetOutput(orig) })
+
+	rejected := checkRejectedRecipients([]string{"x@invalid"})
+	invalid := SendMail("RC100001", "kaputt@adresse", "Betreff", nil, bytes.NewBufferString("<p>Hallo</p>"), nil, nil)
+	require.Error(t, invalid)
+
+	n := &fakeNotifier{}
+	for _, err := range []error{rejected, invalid} {
+		MailJob{Ctx: context.Background(), Notifier: n, Attempts: []MailAttempt{{Tenant: "TE000001", Identifier: testMeter, Send: func() error { return err }}}}.run()
+	}
+
+	require.Len(t, n.entries, 2)
+	assert.Contains(t, n.entries[0].Message, "x@invalid")
+	assert.Contains(t, n.entries[0].Message, "kein erneuter Versand", "the text of the notification stays")
+	assert.Contains(t, n.entries[1].Message, "kaputt@adresse")
+	assert.Contains(t, logged.String(), "error sending mail", "the failure is logged")
+	assert.NotContains(t, logged.String(), "x@invalid")
+	assert.NotContains(t, logged.String(), "kaputt@adresse")
 }
 
 // 261031-mm6: the proto field is optional; a failure answer without a message must not panic.

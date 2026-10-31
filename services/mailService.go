@@ -34,6 +34,9 @@ var connectTimeout = 5 * time.Second
 // (duplicates). The error wraps the original gRPC error. web shows it after "Mailversand nicht bestätigt:".
 var ErrMailUnconfirmed = errors.New("Zeitüberschreitung – die Mail wurde vermutlich trotzdem verschickt. Vor einem erneuten Versand bitte beim Empfänger nachfragen.")
 
+// ErrMailPartlyDelivered: the mail server delivered the mail but refused some recipients.
+var ErrMailPartlyDelivered = errors.New("mail delivered, some recipients rejected")
+
 // statusUnconfirmed is the answer of the xp-connector when its SMTP read timeout hit after the mail
 // body was sent: the relay probably accepted the mail (contract with eegfaktura-eda-xp#60).
 const statusUnconfirmed = 202
@@ -136,10 +139,14 @@ func normalizedRecipients(to string, cc *string) (string, *string, error) {
 // callers can raise an admin notification instead of losing them
 // silently. IMPORTANT: delivery to the remaining recipients has already
 // happened — the message must read as a partial delivery, not as a
-// failed send, or admins will re-send and produce duplicates.
+// failed send, or admins will re-send and produce duplicates. The
+// addresses are for the notification, not for the log (model.AddressError).
 func checkRejectedRecipients(rejected []string) error {
 	if len(rejected) > 0 {
-		return fmt.Errorf("Mail an gültige Empfänger zugestellt, aber NICHT an (Adresse ungültig): %s — Adresse korrigieren, kein erneuter Versand an die übrigen Empfänger nötig", strings.Join(rejected, ";"))
+		return &model.AddressError{
+			Safe:   ErrMailPartlyDelivered,
+			Detail: fmt.Sprintf("Mail an gültige Empfänger zugestellt, aber NICHT an (Adresse ungültig): %s — Adresse korrigieren, kein erneuter Versand an die übrigen Empfänger nötig", strings.Join(rejected, ";")),
+		}
 	}
 	return nil
 }
