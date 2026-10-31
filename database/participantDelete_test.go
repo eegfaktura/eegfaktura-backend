@@ -62,7 +62,7 @@ func TestDeleteParticipantGuard(t *testing.T) {
 		{"no metering point", nil, false},
 		{"new", map[string][3]interface{}{meter: never}, false},
 		{"invalid", map[string][3]interface{}{meter: {"INIT", "INVALID", nil}}, false},
-		{"pending", map[string][3]interface{}{meter: {"INIT", "PENDING", nil}}, false},
+		{"answered by the grid operator, the member can still approve", map[string][3]interface{}{meter: {"INIT", "PENDING", nil}}, true},
 		{"rejected by the grid operator", map[string][3]interface{}{meter: {"INIT", "REJECTED", nil}}, false},
 		{"request running at the grid operator", map[string][3]interface{}{meter: {"INIT", "INIT", nil}}, true},
 		{"approved", map[string][3]interface{}{meter: {"INIT", "APPROVED", nil}}, true},

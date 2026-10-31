@@ -27,7 +27,11 @@ this changelog highlights the changes relevant for overview and operations.
 - **A member with a metering point that took part can no longer be deleted** (261005-ca10). `DELETE /participant/v2/{id}`
   had no check and the delete cascaded to active and past metering points with their partition factors. It now answers
   **409** with error code 1109 and deletes nothing, unless every metering point has status `INIT`, no `activesince` and
-  process state `INVALID`, `NEW`, `PENDING` or `REJECTED`. A member without metering points can be deleted as before.
+  process state `INVALID`, `NEW` or `REJECTED`. `PENDING` is refused: the grid operator answered, the activation mail is out
+  and the member can still approve. A member without metering points can be deleted as before.
+- **Removing a single metering point no longer reports success when nothing was removed** (261005-ca10). In state `PENDING`
+  it is now refused for the same reason. Every refused state answered 202 and web dropped the metering point from the view
+  until the next load; it now answers 400 with code 1201 and web shows its error text.
 
 ### Contract
 - `DELETE /participant/v2/{id}`: new answer 409 with code 1109. Caller: eegfaktura-web, which shows its own text with

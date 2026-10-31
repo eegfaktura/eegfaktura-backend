@@ -551,6 +551,7 @@ func UpdateMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, par
 
 // RemoveMeteringPoint Deletes metering point in the database. All relations to any participants will be gone.
 // A metering point can only be removed even no activation was ever be established. The status column must be in state INIT.
+// Not PENDING: the grid operator answered and the member can still approve. No matching row is an error, not a success.
 // This indicates a metering point waiting for to be part of a community.
 // In case of the metering point is revoked by the net operator the status flag is switching to INACTIVE.
 // !!Never set the status to INIT once it has been activated!
@@ -560,7 +561,7 @@ func removeMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, participantId
 			"tenant":            goqu.Op{"eq": tenant},
 			"metering_point_id": goqu.Op{"eq": meterId},
 			"participant_id":    goqu.Op{"eq": participantId},
-			"process_state":     goqu.Op{"in": []string{"INVALID", "NEW", "PENDING"}},
+			"process_state":     goqu.Op{"in": []string{"INVALID", "NEW"}},
 			"status":            goqu.Op{"eq": "INIT"},
 		}).
 		ToSQL()
@@ -568,11 +569,18 @@ func removeMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, participantId
 		return model.ErrRemoveMeteringPoint(err)
 	}
 
-	_, err = db.Exec(statement)
+	res, err := db.Exec(statement)
 	if err != nil {
 		return model.ErrRemoveMeteringPoint(err)
 	}
-	return err
+	removed, err := res.RowsAffected()
+	if err != nil {
+		return model.ErrRemoveMeteringPoint(err)
+	}
+	if removed == 0 {
+		return model.ErrRemoveMeteringPoint(errors.New("metering point cannot be removed in its state"))
+	}
+	return nil
 }
 
 //func ActivateMeteringPoints(tenant string, meterId []string) error {
