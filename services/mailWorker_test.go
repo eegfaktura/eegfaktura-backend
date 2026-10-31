@@ -61,7 +61,7 @@ func TestMailWorker_SendsAndReportsNothing(t *testing.T) {
 	w.Start()
 	sent := false
 	w.Enqueue(oneMail(n, func() error { sent = true; return nil }))
-	assert.Equal(t, 0, w.Stop(mailTestWait))
+	assert.Equal(t, 0, w.Stop(mailTestWait, mailTestWait))
 	assert.True(t, sent)
 	assert.Empty(t, n.entries)
 }
@@ -73,7 +73,7 @@ func TestMailWorker_KeepsTheOrder(t *testing.T) {
 	for i := range 100 {
 		w.Enqueue(oneMail(&fakeNotifier{}, func() error { order = append(order, i); return nil }))
 	}
-	assert.Equal(t, 0, w.Stop(mailTestWait))
+	assert.Equal(t, 0, w.Stop(mailTestWait, mailTestWait))
 	require.Len(t, order, 100)
 	for i, v := range order {
 		assert.Equal(t, i, v)
@@ -86,7 +86,7 @@ func TestMailWorker_ResultHandling(t *testing.T) {
 	w.Start()
 	w.Enqueue(oneMail(n, func() error { return errors.New("smtp down") }))
 	w.Enqueue(oneMail(n, func() error { return fmt.Errorf("%w (late)", ErrMailUnconfirmed) }))
-	assert.Equal(t, 0, w.Stop(mailTestWait))
+	assert.Equal(t, 0, w.Stop(mailTestWait, mailTestWait))
 
 	require.Len(t, n.entries, 2)
 	assert.Equal(t, "smtp down", n.entries[0].Message)
@@ -128,7 +128,7 @@ func TestMailWorker_FullQueueDoesNotBlockAndIsReported(t *testing.T) {
 	}
 
 	release()
-	assert.Equal(t, 0, w.Stop(mailTestWait))
+	assert.Equal(t, 0, w.Stop(mailTestWait, mailTestWait))
 	assert.True(t, queued)
 	assert.False(t, dropped)
 	require.Len(t, n.entries, 1)
@@ -145,26 +145,42 @@ func TestMailWorker_StopDrainsTheQueue(t *testing.T) {
 		w.Enqueue(oneMail(n, func() error { sent++; return nil }))
 	}
 	release()
-	assert.Equal(t, 0, w.Stop(mailTestWait))
+	assert.Equal(t, 0, w.Stop(mailTestWait, mailTestWait))
 	assert.Equal(t, 3, sent)
 }
 
 func TestMailWorker_StopGivesUpAtTheLimit(t *testing.T) {
 	n := &fakeNotifier{}
 	w, _ := blockedWorker(t, 2, n)
+	notSent := func() error { t.Error("must not be sent"); return nil }
+	w.Enqueue(oneMail(n, notSent))
+	w.Enqueue(oneMail(n, notSent))
+
+	began := time.Now()
+	assert.Equal(t, 2, w.Stop(20*time.Millisecond, mailTestWait))
+	assert.Less(t, time.Since(began), mailTestWait)
+
+	// what could not be sent is reported, so the community knows
+	require.Len(t, n.entries, 2)
+	assert.Equal(t, ErrMailNotQueued.Error(), n.entries[0].Message)
+	assert.Equal(t, []string{"TE000001", "TE000001"}, n.tenants)
+}
+
+func TestMailWorker_ReportingEndsAtItsLimit(t *testing.T) {
+	n := &fakeNotifier{}
+	w, _ := blockedWorker(t, 2, n)
 	w.Enqueue(oneMail(n, func() error { return nil }))
 	w.Enqueue(oneMail(n, func() error { return nil }))
 
-	began := time.Now()
-	assert.Equal(t, 2, w.Stop(20*time.Millisecond))
-	assert.Less(t, time.Since(began), mailTestWait)
+	assert.Equal(t, 2, w.Stop(20*time.Millisecond, -time.Second))
+	assert.Empty(t, n.entries)
 }
 
 func TestMailWorker_AfterStopAMailIsReported(t *testing.T) {
 	n := &fakeNotifier{}
 	w := NewMailWorker(1)
 	w.Start()
-	assert.Equal(t, 0, w.Stop(mailTestWait))
+	assert.Equal(t, 0, w.Stop(mailTestWait, mailTestWait))
 	w.Enqueue(oneMail(n, func() error { t.Error("must not be sent"); return nil }))
 	require.Len(t, n.entries, 1)
 	assert.Equal(t, ErrMailNotQueued.Error(), n.entries[0].Message)
@@ -176,7 +192,7 @@ func TestMailWorker_PanicKeepsTheWorkerRunning(t *testing.T) {
 	sent := false
 	w.Enqueue(oneMail(&fakeNotifier{}, func() error { panic("bad template") }))
 	w.Enqueue(oneMail(&fakeNotifier{}, func() error { sent = true; return nil }))
-	assert.Equal(t, 0, w.Stop(mailTestWait))
+	assert.Equal(t, 0, w.Stop(mailTestWait, mailTestWait))
 	assert.True(t, sent)
 }
 

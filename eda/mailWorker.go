@@ -19,7 +19,8 @@ func StartMailWorker() {
 	mailWorker.Start()
 }
 
-// StopMailWorker sends what is queued within services.MailStopLimit; call it after the broker stopped.
+// StopMailWorker sends what is queued within services.MailStopLimit and reports the rest; call it
+// after the broker stopped and before the database closes.
 func StopMailWorker() {
-	mailWorker.Stop(services.MailStopLimit)
+	mailWorker.Stop(services.MailStopLimit, services.MailReportLimit)
 }

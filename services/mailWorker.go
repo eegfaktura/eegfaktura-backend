@@ -17,9 +17,11 @@ const (
 	// holds what it needs in memory, so the queue must not grow without limit while the mail server
 	// is slow.
 	MailQueueSize = 1000
-	// MailStopLimit is how long a stop waits for queued mails. Below the 30 s Kubernetes gives the
-	// pod after SIGTERM (no terminationGracePeriodSeconds in the gitops manifest).
-	MailStopLimit = 20 * time.Second
+	// MailStopLimit is how long a stop waits for queued mails, MailReportLimit how long it then
+	// reports the jobs that are left. Kubernetes gives the pod 30 s after SIGTERM (no
+	// terminationGracePeriodSeconds in the gitops manifest), shared with the HTTP server and the broker.
+	MailStopLimit   = 14 * time.Second
+	MailReportLimit = 3 * time.Second
 )
 
 // ErrMailNotQueued: the mail was not sent because the worker takes no more jobs. Nothing went to
@@ -100,9 +102,10 @@ func (w *MailWorker) tryQueue(job MailJob) bool {
 	}
 }
 
-// Stop takes no more jobs and waits up to limit for the queued ones. It returns the number of jobs
-// still queued at the limit; they are lost when the process exits.
-func (w *MailWorker) Stop(limit time.Duration) int {
+// Stop takes no more jobs and waits up to limit for the queued ones. The jobs still queued then are
+// not sent: each is reported with ErrMailNotQueued, for up to reportLimit, so the database must
+// still be open. It returns the number of jobs that were not sent.
+func (w *MailWorker) Stop(limit, reportLimit time.Duration) int {
 	w.mu.Lock()
 	w.closed = true
 	close(w.queue)
@@ -112,10 +115,23 @@ func (w *MailWorker) Stop(limit time.Duration) int {
 	case <-w.done:
 		return 0
 	case <-time.After(limit):
-		lost := len(w.queue)
-		log.Errorf("mail worker: stopped after %v, %d queued mail jobs are lost and the one being sent has no known result", limit, lost)
-		return lost
 	}
+
+	deadline := time.Now().Add(reportLimit)
+	reported, unreported := 0, 0
+	for job := range w.queue {
+		if time.Now().After(deadline) {
+			unreported = 1 + len(w.queue)
+			break
+		}
+		for _, a := range job.Attempts {
+			job.report(a, ErrMailNotQueued)
+		}
+		reported++
+	}
+	log.Errorf("mail worker: stopped after %v, %d queued mail jobs not sent and reported, %d lost without a report; the mail being sent has no known result",
+		limit, reported, unreported)
+	return reported + unreported
 }
 
 func (j MailJob) run() {
