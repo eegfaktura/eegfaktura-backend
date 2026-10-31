@@ -55,6 +55,32 @@ func (i *IntOrString) UnmarshalJSON(data []byte) error {
 	return fmt.Errorf("IntOrString: invalid data %s", string(data))
 }
 
+// FloatOrString is IntOrString for an amount with decimals (261026-mm1).
+type FloatOrString float64
+
+func (f *FloatOrString) UnmarshalJSON(data []byte) error {
+	var floatVal float64
+	if err := json.Unmarshal(data, &floatVal); err == nil {
+		*f = FloatOrString(floatVal)
+		return nil
+	}
+
+	var strVal string
+	if err := json.Unmarshal(data, &strVal); err == nil {
+		floatVal, err := strconv.ParseFloat(strVal, 64)
+		if err != nil {
+			return err
+		}
+		if math.IsNaN(floatVal) || math.IsInf(floatVal, 0) {
+			return fmt.Errorf("FloatOrString: invalid amount %s", strVal)
+		}
+		*f = FloatOrString(floatVal)
+		return nil
+	}
+
+	return fmt.Errorf("FloatOrString: invalid data %s", string(data))
+}
+
 type Tariff struct {
 	Id                   uuid.UUID       `json:"id" goqu:"defaultifempty"`
 	Version              int             `json:"version" db:"version"`
@@ -67,7 +93,7 @@ type Tariff struct {
 	AccountNetAmount     IntOrString     `json:"accountNetAmount" db:"accountNetAmount"`
 	AccountGrossAmount   IntOrString     `json:"accountGrossAmount"  db:"accountGrossAmount"`
 	ParticipantFee       float32         `json:"participantFee" db:"participantFee"`
-	BaseFee              IntOrString     `json:"baseFee" db:"baseFee"`
+	BaseFee              FloatOrString   `json:"baseFee" db:"baseFee"`
 	BusinessNr           null.Int        `json:"businessNr,string" db:"businessNr"`
 	CentPerKWh           float32         `json:"centPerKWh" db:"centPerKWh"`
 	FreeKWh              null.Int        `json:"freeKWh,omitempty,omitzero" db:"freeKWh"`

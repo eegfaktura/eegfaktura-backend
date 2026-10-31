@@ -178,3 +178,44 @@ func TestTariffJoiningFeeJSON(t *testing.T) {
 		t.Fatalf("round trip: %s", b)
 	}
 }
+
+// What the web sends and receives for baseFee (261026-mm1): number or string, a whole amount looks as before.
+func TestTariffBaseFeeJSON(t *testing.T) {
+	cases := []struct {
+		body string
+		want FloatOrString
+	}{
+		{`{"baseFee":3}`, 3},
+		{`{"baseFee":"3"}`, 3},
+		{`{"baseFee":2.25}`, 2.25},
+		{`{"baseFee":"2.25"}`, 2.25},
+	}
+	for _, c := range cases {
+		var tariff Tariff
+		if err := json.Unmarshal([]byte(c.body), &tariff); err != nil {
+			t.Fatalf("%s: %v", c.body, err)
+		}
+		if tariff.BaseFee != c.want {
+			t.Fatalf("%s: got %v", c.body, tariff.BaseFee)
+		}
+	}
+
+	for _, body := range []string{`{"baseFee":""}`, `{"baseFee":"abc"}`, `{"baseFee":"NaN"}`, `{"baseFee":"Inf"}`, `{"baseFee":true}`} {
+		var tariff Tariff
+		if err := json.Unmarshal([]byte(body), &tariff); err == nil {
+			t.Fatalf("%s: accepted as %v", body, tariff.BaseFee)
+		}
+	}
+
+	var whole map[string]interface{}
+	b, err := json.Marshal(Tariff{BaseFee: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(b, &whole); err != nil {
+		t.Fatal(err)
+	}
+	if whole["baseFee"] != float64(3) {
+		t.Fatalf("whole amount: %s", b)
+	}
+}

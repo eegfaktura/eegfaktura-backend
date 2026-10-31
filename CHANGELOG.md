@@ -14,12 +14,18 @@ this changelog highlights the changes relevant for overview and operations.
   written and the reply carries status 409; the comparison is case-insensitive. A new tenant of an existing RC number
   (GEA: stem and sub communities share it) stays possible. The MQTT command `register-eeg` uses the same insert: it now
   logs an error for an existing tenant instead of nothing, it writes and publishes nothing either way.
+- **Tariff list with a decimal `baseFee`** (261026-mm1). `base.tariff."baseFee"` is `double precision`, the model read it
+  as an integer, so one tariff with e.g. 2.25 failed the list of the whole community. The field is now a decimal type:
+  the amount is read and saved unchanged, which is also what billing reads from the view. A whole amount looks the same
+  in the JSON as before.
 
 ### Contract
 - gRPC `RegisterEegService.register`: `RegisteredEegReply.status` can be **409** (tenant exists, no gRPC error). Caller:
   admin-backend, which stops the registration on it (admin-backend PR of 261015-ca1). The proto is unchanged. Deploy
   order: free. Until admin-backend is updated it treats 409 as a failed registration: no Keycloak change, but it still
   calls Ponton.
+- REST `/eeg/tariff` (and the tariff history): `baseFee` can carry decimals, in the answer and on save (number or
+  string, as before). Caller: web, which reads it with `Number()`. Whole amounts are unchanged.
 
 ## [1.14.0] – 2026-10-31
 
