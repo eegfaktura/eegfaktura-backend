@@ -110,6 +110,15 @@ func TestSendMail_RealFailuresKeepTheirText(t *testing.T) {
 	}
 }
 
+// 261031-mm6: the proto field is optional; a failure answer without a message must not panic.
+func TestSendMail_FailureWithoutMessage(t *testing.T) {
+	startFakeMailServer(t, &fakeMailServer{reply: &protobuf.SendMailReply{Status: 500}})
+	for fn, err := range sendBoth() {
+		require.Error(t, err, fn)
+		assert.NotErrorIs(t, err, ErrMailUnconfirmed, fn)
+	}
+}
+
 func TestSendMail_ConnectionRefusedIsNotUnconfirmed(t *testing.T) {
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)

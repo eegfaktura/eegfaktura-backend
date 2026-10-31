@@ -199,7 +199,7 @@ func sendHtmlInlineAttachment(sender, recipient, subject string, cc *string, htm
 		return fmt.Errorf("%w (%s)", ErrMailUnconfirmed, r.GetMessage())
 	}
 	if r.Status != 200 {
-		return errors.New(*r.Message)
+		return errors.New(r.GetMessage())
 	}
 	return checkRejectedRecipients(r.GetRejectedRecipients())
 }
@@ -251,7 +251,7 @@ func SendMailWithAttachment(sender, recipient, subject string, cc *string, htmlB
 		return fmt.Errorf("%w (%s)", ErrMailUnconfirmed, r.GetMessage())
 	}
 	if r.Status != 200 {
-		return errors.New(*r.Message)
+		return errors.New(r.GetMessage())
 	}
 	return checkRejectedRecipients(r.GetRejectedRecipients())
 }
