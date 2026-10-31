@@ -26,7 +26,7 @@ const (
 
 // ErrMailNotQueued: the mail was not sent because the worker takes no more jobs. Nothing went to
 // the mail server, so the mail did not go out.
-var ErrMailNotQueued = errors.New("Die Mail wurde nicht verschickt: die Warteschlange ist voll oder der Dienst wird beendet.")
+var ErrMailNotQueued = errors.New("Die Mail wurde nicht verschickt, weil gerade zu viele Mails anstehen oder der Dienst neu startet. Bitte später noch einmal versuchen.")
 
 // errMailPanic is what the community reads when sending panicked; the cause is only logged.
 var errMailPanic = errors.New("Mail konnte nicht gesendet werden.")

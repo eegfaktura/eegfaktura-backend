@@ -132,7 +132,7 @@ func TestMailWorker_FullQueueDoesNotBlockAndIsReported(t *testing.T) {
 	assert.True(t, queued)
 	assert.False(t, dropped)
 	require.Len(t, n.entries, 1)
-	assert.Equal(t, ErrMailNotQueued.Error(), n.entries[0].Message)
+	assert.Equal(t, "Die Mail wurde nicht verschickt, weil gerade zu viele Mails anstehen oder der Dienst neu startet. Bitte später noch einmal versuchen.", n.entries[0].Message)
 	assert.Equal(t, "AT001", n.entries[0].Identifier)
 	assert.NotEqual(t, "W_MAIL_UNCONFIRMED", n.entries[0].MessageCode, "nothing went out: a failure, not an unconfirmed send")
 }
