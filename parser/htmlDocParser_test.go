@@ -475,7 +475,6 @@ func TestManualSending(t *testing.T) {
 				State:            nil,
 				PartFact:         0,
 				ActivationMode:   "",
-				ActivationCode:   "",
 				AllocationFactor: null.Float{},
 			}},
 			TariffId: null.String{},

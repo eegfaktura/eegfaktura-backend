@@ -197,7 +197,6 @@ type MeteringPoint struct {
 	State            *MeterState       `json:"participantState" goqu:"skipupdate"`
 	PartFact         int               `json:"partFact,omitempty" db:"partFact" goqu:"skipupdate,skipinsert"`
 	ActivationMode   RegistrationMode  `json:"activationMode,omitempty" goqu:"skipupdate,skipinsert" db:"-"`
-	ActivationCode   string            `json:"activationCode,omitempty" goqu:"skipupdate,skipinsert" db:"-"`
 	AllocationFactor null.Float        `json:"allocationFactor,omitempty" db:"allocation_factor" goqu:"omitempty"`
 }
 
