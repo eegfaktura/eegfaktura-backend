@@ -4,6 +4,7 @@ import (
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
 	"at.ourproject/vfeeg-backend/services"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -31,6 +32,13 @@ func TestMain(m *testing.M) {
 		_ = db.CloseDB()
 		testDB.TearDown()
 	}()
+	// no test talks to a mail server; a test that looks at mails replaces its sender
+	noMail := func(string, string, string, *string, *bytes.Buffer, []*services.Attachment, *services.Attachment) error {
+		return nil
+	}
+	sendActivationMail, sendInactiveMail = noMail, noMail
+	sendZpListMail = func(string, string, string, *string, *bytes.Buffer, *services.Attachment) error { return nil }
+	StartMailWorker()
 	os.Exit(m.Run())
 }
 

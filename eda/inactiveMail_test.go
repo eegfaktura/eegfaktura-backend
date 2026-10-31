@@ -102,6 +102,11 @@ func TestInactiveMail(t *testing.T) {
 			"responseData":[{"meteringPoint":"`+meterId+`","responseCode":[`+codes+`],"consentEnd":1759269600000,"consentId":"`+consent+`"}]}`), &msg.Payload))
 		return msg
 	}
+	// handle runs the handler and waits for the mail worker: mails and their notifications come after it
+	handle := func(msg model.SubscribeMessage) {
+		protocolCmRevImpHandler(context.Background(), msg)
+		flushMails(t)
+	}
 	notifications := func(tenant string) int {
 		var n int
 		require.NoError(t, testDB.DbInstance.Get(&n, `SELECT count(*) FROM base.notification WHERE tenant = $1`, tenant))
@@ -116,7 +121,7 @@ func TestInactiveMail(t *testing.T) {
 
 	t.Run("grid operator ends an active metering point: one mail with reason, date, direction, Cc", func(t *testing.T) {
 		mails := captureInactiveMails(t, nil)
-		protocolCmRevImpHandler(context.Background(), responseMsg(model.EBMS_AUFHEBUNG_CCMI, model.CM_REV_IMP, "ti000116", mActive, "C-ACTIVE", "1099"))
+		handle(responseMsg(model.EBMS_AUFHEBUNG_CCMI, model.CM_REV_IMP, "ti000116", mActive, "C-ACTIVE", "1099"))
 		require.Len(t, *mails, 1)
 		m := (*mails)[0]
 		assert.Equal(t, "anna@example.org", m.to)
@@ -133,13 +138,13 @@ func TestInactiveMail(t *testing.T) {
 
 	t.Run("redelivery of the same message: no second mail", func(t *testing.T) {
 		mails := captureInactiveMails(t, nil)
-		protocolCmRevImpHandler(context.Background(), responseMsg(model.EBMS_AUFHEBUNG_CCMI, model.CM_REV_IMP, "ti000116", mActive, "C-ACTIVE", "1099"))
+		handle(responseMsg(model.EBMS_AUFHEBUNG_CCMI, model.CM_REV_IMP, "ti000116", mActive, "C-ACTIVE", "1099"))
 		assert.Empty(t, *mails)
 	})
 
 	t.Run("metering point not active yet (INIT): no mail", func(t *testing.T) {
 		mails := captureInactiveMails(t, nil)
-		protocolCmRevImpHandler(context.Background(), responseMsg(model.EBMS_AUFHEBUNG_CCMC, model.CM_REV_CUS, "ti000116", mInit, "C-INIT", "1099"))
+		handle(responseMsg(model.EBMS_AUFHEBUNG_CCMC, model.CM_REV_CUS, "ti000116", mInit, "C-INIT", "1099"))
 		assert.Empty(t, *mails)
 	})
 
@@ -147,14 +152,14 @@ func TestInactiveMail(t *testing.T) {
 		const mMember = "AT0030000000000000000000000116007"
 		meter(mMember, "a1160000-0000-0000-0000-000000000001", "TI000116", "ACTIVE", "C-MEMBER", "CONSUMPTION")
 		mails := captureInactiveMails(t, nil)
-		protocolCmRevImpHandler(context.Background(), responseMsg(model.EBMS_AUFHEBUNG_CCMC, model.CM_REV_CUS, "ti000116", mMember, "C-MEMBER", "1099"))
+		handle(responseMsg(model.EBMS_AUFHEBUNG_CCMC, model.CM_REV_CUS, "ti000116", mMember, "C-MEMBER", "1099"))
 		require.Len(t, *mails, 1)
 		assert.Contains(t, (*mails)[0].body, "Du hast die Datenfreigabe für diesen Zählpunkt beendet")
 	})
 
 	t.Run("member without e-mail: revocation applied, no mail", func(t *testing.T) {
 		mails := captureInactiveMails(t, nil)
-		protocolCmRevImpHandler(context.Background(), responseMsg(model.EBMS_AUFHEBUNG_CCMC, model.CM_REV_CUS, "ti000116", mNoMail, "C-NOMAIL", "1099"))
+		handle(responseMsg(model.EBMS_AUFHEBUNG_CCMC, model.CM_REV_CUS, "ti000116", mNoMail, "C-NOMAIL", "1099"))
 		assert.Empty(t, *mails)
 		var status string
 		require.NoError(t, testDB.DbInstance.Get(&status, `SELECT status FROM base.meteringpoint WHERE metering_point_id = $1`, mNoMail))
@@ -163,13 +168,13 @@ func TestInactiveMail(t *testing.T) {
 
 	t.Run("EEG deregistration: no mail for its own request, one mail with the confirmation", func(t *testing.T) {
 		mails := captureInactiveMails(t, nil)
-		protocolCmRevImpHandler(context.Background(), responseMsg(model.EBMS_AUFHEBUNG_CCMS, model.CM_REV_SP, "ti000116", mCcms, "C-CCMS", "1099"))
+		handle(responseMsg(model.EBMS_AUFHEBUNG_CCMS, model.CM_REV_SP, "ti000116", mCcms, "C-CCMS", "1099"))
 		assert.Empty(t, *mails, "AUFHEBUNG_CCMS is the community's own request")
-		protocolCmRevImpHandler(context.Background(), responseMsg(model.EBMS_ABLEHNUNG_CCMS, model.CM_REV_SP, "ti000116", mCcms, "C-CCMS", "56"))
+		handle(responseMsg(model.EBMS_ABLEHNUNG_CCMS, model.CM_REV_SP, "ti000116", mCcms, "C-CCMS", "56"))
 		assert.Empty(t, *mails, "a rejection sends no mail")
-		protocolCmRevImpHandler(context.Background(), responseMsg(model.EBMS_ANTWORT_CCMS, model.CM_REV_SP, "ti000116", mCcms, "C-CCMS", "99"))
+		handle(responseMsg(model.EBMS_ANTWORT_CCMS, model.CM_REV_SP, "ti000116", mCcms, "C-CCMS", "99"))
 		assert.Empty(t, *mails, "an answer without 176 sends no mail")
-		protocolCmRevImpHandler(context.Background(), responseMsg(model.EBMS_ANTWORT_CCMS, model.CM_REV_SP, "ti000116", mCcms, "C-CCMS", "176"))
+		handle(responseMsg(model.EBMS_ANTWORT_CCMS, model.CM_REV_SP, "ti000116", mCcms, "C-CCMS", "176"))
 		require.Len(t, *mails, 1)
 		assert.Contains(t, (*mails)[0].body, "Deine Energiegemeinschaft hat diesen Zählpunkt abgemeldet.")
 		assert.Contains(t, (*mails)[0].body, "(Einspeisung)")
@@ -177,14 +182,14 @@ func TestInactiveMail(t *testing.T) {
 
 	t.Run("GEA: the same member in two tenants of one RC number gets one mail", func(t *testing.T) {
 		mails := captureInactiveMails(t, nil)
-		protocolCmRevImpHandler(context.Background(), responseMsg(model.EBMS_AUFHEBUNG_CCMI, model.CM_REV_IMP, "gi000116", mGea, "C-GEA", "1099"))
+		handle(responseMsg(model.EBMS_AUFHEBUNG_CCMI, model.CM_REV_IMP, "gi000116", mGea, "C-GEA", "1099"))
 		assert.Len(t, *mails, 1)
 	})
 
 	t.Run("mail fails: revocation stays applied, the community gets an error notification", func(t *testing.T) {
 		mails := captureInactiveMails(t, errors.New("smtp down"))
 		before := notifications("TI000116")
-		protocolCmRevImpHandler(context.Background(), responseMsg(model.EBMS_AUFHEBUNG_CCMI, model.CM_REV_IMP, "ti000116", mFailing, "C-FAIL", "1099"))
+		handle(responseMsg(model.EBMS_AUFHEBUNG_CCMI, model.CM_REV_IMP, "ti000116", mFailing, "C-FAIL", "1099"))
 		assert.Len(t, *mails, 1)
 		var status string
 		require.NoError(t, testDB.DbInstance.Get(&status, `SELECT status FROM base.meteringpoint WHERE metering_point_id = $1`, mFailing))
@@ -202,10 +207,10 @@ func TestInactiveMail(t *testing.T) {
 		meter(mLate, "a1160000-0000-0000-0000-000000000001", "TI000116", "ACTIVE", "C-LATE", "CONSUMPTION")
 		timeout := status.Error(codes.DeadlineExceeded, "context deadline exceeded")
 		mails := captureInactiveMails(t, fmt.Errorf("%w (%w)", services.ErrMailUnconfirmed, timeout))
-		protocolCmRevImpHandler(context.Background(), responseMsg(model.EBMS_AUFHEBUNG_CCMI, model.CM_REV_IMP, "ti000116", mLate, "C-LATE", "1099"))
+		handle(responseMsg(model.EBMS_AUFHEBUNG_CCMI, model.CM_REV_IMP, "ti000116", mLate, "C-LATE", "1099"))
 		assert.Len(t, *mails, 1)
 		n := lastNotification("TI000116")
-		assert.Contains(t, n, `"message":"Zeitüberschreitung – die Mail wurde vermutlich trotzdem verschickt. Vor einem erneuten Versand bitte beim Mitglied nachfragen."`)
+		assert.Contains(t, n, `"message":"Zeitüberschreitung – die Mail wurde vermutlich trotzdem verschickt. Vor einem erneuten Versand bitte beim Empfänger nachfragen."`)
 		assert.Contains(t, n, `"message_code":"W_MAIL_UNCONFIRMED"`)
 		assert.Contains(t, n, `"metering_point":"`+mLate+`"`)
 		assert.NotContains(t, n, "DeadlineExceeded")
@@ -217,7 +222,7 @@ func TestInactiveMail(t *testing.T) {
 		meter(mGeaLate, "a1160000-0000-0000-0000-000000000004", "GI000116-002", "ACTIVE", "C-GEA-LATE", "CONSUMPTION")
 		timeout := status.Error(codes.DeadlineExceeded, "context deadline exceeded")
 		mails := captureInactiveMails(t, fmt.Errorf("%w (%w)", services.ErrMailUnconfirmed, timeout))
-		protocolCmRevImpHandler(context.Background(), responseMsg(model.EBMS_AUFHEBUNG_CCMI, model.CM_REV_IMP, "gi000116", mGeaLate, "C-GEA-LATE", "1099"))
+		handle(responseMsg(model.EBMS_AUFHEBUNG_CCMI, model.CM_REV_IMP, "gi000116", mGeaLate, "C-GEA-LATE", "1099"))
 		assert.Len(t, *mails, 1)
 	})
 }

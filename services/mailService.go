@@ -32,7 +32,7 @@ var connectTimeout = 5 * time.Second
 // ErrMailUnconfirmed: the request reached the mail server, but it did not answer within the
 // timeout. The mail was probably sent anyway, so the community must not simply send it again
 // (duplicates). The error wraps the original gRPC error. web shows it after "Mailversand nicht bestätigt:".
-var ErrMailUnconfirmed = errors.New("Zeitüberschreitung – die Mail wurde vermutlich trotzdem verschickt. Vor einem erneuten Versand bitte beim Mitglied nachfragen.")
+var ErrMailUnconfirmed = errors.New("Zeitüberschreitung – die Mail wurde vermutlich trotzdem verschickt. Vor einem erneuten Versand bitte beim Empfänger nachfragen.")
 
 // statusUnconfirmed is the answer of the xp-connector when its SMTP read timeout hit after the mail
 // body was sent: the relay probably accepted the mail (contract with eegfaktura-eda-xp#60).

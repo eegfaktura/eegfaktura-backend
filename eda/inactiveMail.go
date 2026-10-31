@@ -2,7 +2,6 @@ package eda
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	"at.ourproject/vfeeg-backend/database"
@@ -37,12 +36,14 @@ func inactiveReasonFor(code model.EbMsMessageType) string {
 	}
 }
 
-// sendMeteringPointInactiveMails tells the members of the given tenants that the metering point is
-// no longer part of their community. It runs after the revocation is committed and never undoes
-// it: a failed mail becomes an error notification for the community. One mail per member address
-// and metering point, so a GEA with several tenants per RC number sends it once.
+// sendMeteringPointInactiveMails queues the mail that tells the members of the given tenants that the
+// metering point is no longer part of their community. It runs after the revocation is committed and
+// never undoes it: a failed mail becomes an error notification for the community. One mail per member
+// address and metering point, so a GEA with several tenants per RC number sends it once: all tenants
+// are one job, which tries them in turn and knows each result before the next (services.MailJob).
 func sendMeteringPointInactiveMails(ctx context.Context, db database.Database, tenants []string, meterId string, consentEnd civil.Date, reason string) {
-	sent := map[string]bool{}
+	send := sendInactiveMail
+	attempts := []services.MailAttempt{}
 	for _, tenant := range tenants {
 		eeg, err := db.GetEegById(ctx, tenant)
 		if err != nil {
@@ -54,8 +55,8 @@ func sendMeteringPointInactiveMails(ctx context.Context, db database.Database, t
 			logrus.WithField("tenant", tenant).Warnf("inactive mail: no participant for %s: %v", meterId, err)
 			continue
 		}
-		key := strings.ToLower(strings.TrimSpace(participant.Contact.Email.String)) + "|" + meterId
-		if participant.Contact.Email.Valid && sent[key] {
+		if !participant.Contact.Email.Valid {
+			logrus.WithField("tenant", tenant).Warn("inactive mail: member without e-mail address")
 			continue
 		}
 
@@ -64,27 +65,24 @@ func sendMeteringPointInactiveMails(ctx context.Context, db database.Database, t
 		if m, err := db.FindAssignedMeteringById(ctx, tenant, meterId); err == nil && m != nil {
 			direction = parser.DirectionText(m.Direction)
 		}
-		err = parser.SendMeteringPointInactiveMail(sendInactiveMail, db, tenant, parser.InactiveMailData{
+		data := parser.InactiveMailData{
 			Eeg:           eeg,
 			Participant:   participant,
 			MeteringPoint: meterId,
 			Direction:     direction,
 			EndDate:       parser.FormatDate(consentEnd),
 			Reason:        reason,
+		}
+		attempts = append(attempts, services.MailAttempt{
+			Tenant:     tenant,
+			Identifier: meterId,
+			DedupeKey:  strings.ToLower(strings.TrimSpace(participant.Contact.Email.String)) + "|" + meterId,
+			Send: func() error {
+				return parser.SendMeteringPointInactiveMail(send, db, tenant, data)
+			},
 		})
-		if err != nil {
-			logrus.WithField("tenant", tenant).WithError(err).Log(services.MailErrorLevel(err), "inactive mail: error sending mail")
-			_ = db.SaveNotificationFromMap(database.CreateNotificationMessageFromLog(
-				&model.Log{Operation: "Mail", Messages: []*model.LogMessage{services.MailLogMessage(meterId, err)}}),
-				tenant, model.N_TYPE_ERROR, model.N_PROCESS_EDA_PROCESS, "ADMIN")
-			// a mail the server did not confirm was probably sent: the next tenant of a GEA does not send it again
-			if participant.Contact.Email.Valid && errors.Is(err, services.ErrMailUnconfirmed) {
-				sent[key] = true
-			}
-			continue
-		}
-		if participant.Contact.Email.Valid {
-			sent[key] = true
-		}
+	}
+	if len(attempts) > 0 {
+		mailWorker.Enqueue(services.MailJob{Ctx: ctx, Notifier: db, Attempts: attempts})
 	}
 }

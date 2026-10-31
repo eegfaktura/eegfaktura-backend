@@ -178,6 +178,7 @@ func StartServer(db database.Database) {
 	ctx := context.Background()
 
 	mailtemplate.NotifyDefaultChanges(ctx, db)
+	eda.StartMailWorker()
 	eda.InitEdaSubscription(ctx)
 	energyrequest.Start(ctx, db)
 	mqttclient.InitErrorSubscriptions()
@@ -244,6 +245,7 @@ func StartServer(db database.Database) {
 	}
 
 	broker.Stop()
+	eda.StopMailWorker()
 	//repository.CloseRepositories()
 	log.Println("final")
 

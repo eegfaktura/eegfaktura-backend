@@ -26,7 +26,7 @@ func TestMailTemplates_TestMailUnconfirmed(t *testing.T) {
 
 	timeout := status.Error(codes.DeadlineExceeded, "context deadline exceeded")
 	c.sendErr = fmt.Errorf("%w (%w)", services.ErrMailUnconfirmed, timeout)
-	assert.Equal(t, "Zeitüberschreitung – die Mail wurde vermutlich trotzdem verschickt. Vor einem erneuten Versand bitte beim Mitglied nachfragen.", send(http.StatusGatewayTimeout)["message"])
+	assert.Equal(t, "Zeitüberschreitung – die Mail wurde vermutlich trotzdem verschickt. Vor einem erneuten Versand bitte beim Empfänger nachfragen.", send(http.StatusGatewayTimeout)["message"])
 
 	c.sendErr = errors.New("mailbox unavailable")
 	assert.Equal(t, "Die Testmail konnte nicht verschickt werden.", send(http.StatusBadGateway)["message"])

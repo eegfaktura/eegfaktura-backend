@@ -79,7 +79,7 @@ func TestSendMail_DeadlineExceededIsUnconfirmed(t *testing.T) {
 		assert.ErrorIs(t, err, ErrMailUnconfirmed, fn)
 		assert.Equal(t, codes.DeadlineExceeded, status.Code(err), fn+": the original error is kept")
 		lm := MailLogMessage(testMeter, err)
-		assert.Equal(t, "Zeitüberschreitung – die Mail wurde vermutlich trotzdem verschickt. Vor einem erneuten Versand bitte beim Mitglied nachfragen.", lm.Message, fn)
+		assert.Equal(t, "Zeitüberschreitung – die Mail wurde vermutlich trotzdem verschickt. Vor einem erneuten Versand bitte beim Empfänger nachfragen.", lm.Message, fn)
 		assert.Equal(t, "W_MAIL_UNCONFIRMED", lm.MessageCode, fn)
 		assert.Equal(t, testMeter, lm.Identifier, fn)
 		assert.Equal(t, "warning", MailErrorLevel(err).String(), fn)

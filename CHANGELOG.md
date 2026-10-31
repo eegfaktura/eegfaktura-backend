@@ -23,8 +23,18 @@ this changelog highlights the changes relevant for overview and operations.
 - **Every mail send waits 30 s for the mail server** (261030-mm7): before 5 s (30 s only above 256 KB of files;
   the metering point list mail always 5 s). One constant `services.MailSendTimeout` for all sends. Before the
   request, the backend now waits up to 5 s for the connection to the mail server; a server that does not get ready
-  in that time is a failed send. A slow mail server therefore holds the EDA message handling (activation and
-  inactive mails) and the test mail of the mail editor up to 35 s per mail instead of 5 s.
+  in that time is a failed send. A slow mail server therefore holds the test mail of the mail editor up to 35 s
+  instead of 5 s, and the mail worker (next entry) up to 35 s per mail.
+- **Mails from the EDA handlers go through a background worker** (261030-mm7, user decision 2026-10-31): the activation,
+  zp-active, zp-inactive and metering point list mails were sent inside the single MQTT broker loop, so one slow mail
+  held every EDA message and API-triggered EDA request behind it. One in-process worker now sends them one at a
+  time, in order, after the handler's writes (`services.MailQueueSize` 1000 jobs, no new dependency or table). A GEA
+  zp-inactive mail is one job, so a member still gets it once. Results are reported as before, only later. A full
+  queue blocks nothing: the mail is not sent, and the community gets an error notification "Die Mail wurde nicht
+  verschickt: die Warteschlange ist voll oder der Dienst wird beendet." plus an error log line. On SIGTERM the server
+  sends what is queued for up to 20 s (`services.MailStopLimit`, the pod has 30 s).
+  **The queue is in memory:** a crash, a kill or a stop past the limit loses the queued mails, without a notification
+  (a stop past the limit logs how many); the mail being sent then has no known result. There are no retries.
 - **Log output is now one JSON object per line on stdout, with ECS field names** (logging concept W-261008-ca2).
   **This changes what operators, `kubectl logs` and Dynatrace receive:** before, logrus text (`time=… level=… msg=…`)
   on stderr; now e.g. `{"@timestamp":"…Z","log.level":"info","message":"…","service.name":"eegfaktura-backend",
@@ -145,7 +155,7 @@ this changelog highlights the changes relevant for overview and operations.
   reached the mail server (xp-connector) but it did not answer within 30 s, the mail was probably sent anyway, and
   communities that sent it again produced duplicates. Such a send is now logged as a warning and the admin
   notification entry reads **"Zeitüberschreitung – die Mail wurde vermutlich trotzdem verschickt. Vor einem erneuten
-  Versand bitte beim Mitglied nachfragen."** (message code `W_MAIL_UNCONFIRMED`, kind `WARNING`, same metering point /
+  Versand bitte beim Empfänger nachfragen."** (message code `W_MAIL_UNCONFIRMED`, kind `WARNING`, same metering point /
   identifier as before) instead of the gRPC error `rpc error: code = DeadlineExceeded …` (code `E_UNDEFINED_0`).
   The same applies when the mail server answers status 202 (see Contract).
   Affects the zp-active / consent-request mail, the zp-inactive mail and the metering point list mail. The test mail
