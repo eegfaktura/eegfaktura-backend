@@ -94,10 +94,10 @@ func NewLogMessageFromVfeegError(identifier string, err error) *LogMessage {
 	switch {
 	case errors.As(err, &e):
 		lm.MessageCode = fmt.Sprintf("E_DB_%d", e.Code)
-		lm.Message = e.Err.Error()
+		lm.Message = UserText(e.Err)
 	default:
 		lm.MessageCode = "E_UNDEFINED_0"
-		lm.Message = err.Error()
+		lm.Message = UserText(err)
 	}
 	return lm
 }

@@ -255,6 +255,14 @@ func protocolEcReqOnlHandler(ctx context.Context, msg model.SubscribeMessage) {
 		return &cId
 	}
 
+	// the mails are queued after the status is written below, also on its early returns
+	var queueMails func()
+	defer func() {
+		if queueMails != nil {
+			queueMails()
+		}
+	}()
+
 	codes, meters, consentIds, _ := extractResponseCodeAndMeteringPoint(&msg.Payload)
 	var status model.ProcessStatusType
 	var statusCode *int16
@@ -271,8 +279,10 @@ func protocolEcReqOnlHandler(ctx context.Context, msg model.SubscribeMessage) {
 			activeSince = civil.NullDateFrom(&ax)
 			consentId = completeMeters[0].consentId
 			status = model.ACTIVE
-			if err := meteringPointPerformAnswerMsg(ctx, services.SendMail, msg.Payload.EcId, meters, "Dein Zählpunkt ist aktiv", "zp-complete-mail-template.toml"); err != nil {
-				logrus.WithField("tenant", msg.Tenant).Errorf("complete mail message for %+v return with error. %v", meters, err.Error())
+			queueMails = func() {
+				if err := meteringPointPerformAnswerMsg(ctx, sendActivationMail, msg.Payload.EcId, meters, "Dein Zählpunkt ist aktiv", "zp-complete-mail-template.toml"); err != nil {
+					logrus.WithField("tenant", msg.Tenant).Errorf("complete mail message for %+v return with error. %v", meters, err.Error())
+				}
 			}
 		} else {
 			status = ""
@@ -314,8 +324,11 @@ func protocolEcReqOnlHandler(ctx context.Context, msg model.SubscribeMessage) {
 		for _, c := range codes {
 			if c == MESSAGE_RECEIVED {
 				status = model.PENDING
-				if err := meteringPointPerformAnswerMsg(ctx, services.SendMail, msg.Payload.EcId, meters, "Aktivierung im Serviceportal", "activation-mail-template.toml"); err != nil {
-					logrus.WithField("tenant", msg.Tenant).Errorf("Perform Answer Message %+v. %v", meters, err.Error())
+				// one code per metering point of the message, one pass over all of them (261031-mm4)
+				queueMails = func() {
+					if err := meteringPointPerformAnswerMsg(ctx, sendActivationMail, msg.Payload.EcId, meters, "Aktivierung im Serviceportal", "activation-mail-template.toml"); err != nil {
+						logrus.WithField("tenant", msg.Tenant).Errorf("Perform Answer Message %+v. %v", meters, err.Error())
+					}
 				}
 			} else if c == NO_REMOTELY_READABLE_METER_INSTALLED_YET || c == SUM_OF_REPORTED_ALLOCATION_KEYS_EXCEEDS_100 {
 				status = model.INVALID
@@ -562,32 +575,6 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 		}
 		historyTenant = eeg.Id
 
-		if eeg.Email.Valid {
-			now := time.Now()
-			attm := &services.Attachment{
-				Type:        "DEFAULT",
-				Filename:    fmt.Sprintf("%s_%.4d%.2d%.2d-%.2d%.2d_ZP_PODLIST.xlsx", eeg.RcNumber, now.Year(), int(now.Month()), now.Day(), now.Hour(), now.Minute()),
-				Filecontent: buf,
-				MimeType:    "application/vnd.ms-excel",
-				ContentId:   nil,
-			}
-			var b bytes.Buffer
-			b.WriteString(fmt.Sprintf("Zählpunktlist für EEG - %s", eeg.RcNumber))
-			err = services.SendMailWithAttachment(fmt.Sprintf("%s@eegfaktura.at", eeg.RcNumber),
-				eeg.Email.String,
-				fmt.Sprintf("%s Zählpunktliste %.4d%.2d%.2d-%.2d%.2d", eeg.RcNumber, now.Year(), int(now.Month()), now.Day(), now.Hour(), now.Minute()), nil, &b, attm)
-			if err != nil {
-				logrus.WithField("tenant", msg.Tenant).Error(err)
-				// Surface the failed ZP list mail to the tenant admins via
-				// the existing notification system instead of log-only.
-				_ = db.SaveNotificationFromMap(database.CreateNotificationMessageFromLog(
-					&model.Log{Operation: "Mail", Messages: []*model.LogMessage{model.NewLogMessageFromVfeegError(
-						"Zählpunktliste",
-						err,
-					)}}),
-					eeg.Id, model.N_TYPE_ERROR, model.N_PROCESS_EDA_PROCESS, "ADMIN")
-			}
-		}
 		// the list covers the whole community: every tenant of the community id updates the metering points it holds
 		// (a GEA has several, 261028-mm1; a sole tenant may be named unlike the RC number of the topic)
 		syncTenants := []string{msg.Tenant}
@@ -600,6 +587,29 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 			if err = services.SyncMeteringPoints(tenant, &msg.Payload); err != nil {
 				logrus.WithField("tenant", tenant).Error(err)
 			}
+		}
+
+		if eeg.Email.Valid {
+			now := time.Now()
+			attm := &services.Attachment{
+				Type:        "DEFAULT",
+				Filename:    fmt.Sprintf("%s_%.4d%.2d%.2d-%.2d%.2d_ZP_PODLIST.xlsx", eeg.RcNumber, now.Year(), int(now.Month()), now.Day(), now.Hour(), now.Minute()),
+				Filecontent: buf,
+				MimeType:    "application/vnd.ms-excel",
+				ContentId:   nil,
+			}
+			var b bytes.Buffer
+			b.WriteString(fmt.Sprintf("Zählpunktlist für EEG - %s", eeg.RcNumber))
+			send := sendZpListMail
+			mailWorker.Enqueue(services.MailJob{Ctx: ctx, Notifier: db, Attempts: []services.MailAttempt{{
+				Tenant:     eeg.Id,
+				Identifier: "Zählpunktliste",
+				Send: func() error {
+					return send(fmt.Sprintf("%s@eegfaktura.at", eeg.RcNumber),
+						eeg.Email.String,
+						fmt.Sprintf("%s Zählpunktliste %.4d%.2d%.2d-%.2d%.2d", eeg.RcNumber, now.Year(), int(now.Month()), now.Day(), now.Hour(), now.Minute()), nil, &b, attm)
+				},
+			}}})
 		}
 
 	case model.EBMS_ZP_LIST_REJECTION:
@@ -688,16 +698,13 @@ func meteringPointPerformAnswerMsg(ctx context.Context, sendMail services.SendMa
 			})
 
 			if len(participant.MeteringPoint) > 0 {
-				if err = parser.SendActivationMailFromTemplate(sendMail, db,
-					eeg.Id, subject, eeg, participant, templateConfigName); err != nil {
-					logrus.WithField("tenant", eeg.Id).WithError(err).Error("Error Sending Mail")
-					_ = db.SaveNotificationFromMap(database.CreateNotificationMessageFromLog(
-						&model.Log{Operation: "Mail", Messages: []*model.LogMessage{model.NewLogMessageFromVfeegError(
-							participant.MeteringPoint[0].MeteringPoint,
-							err,
-						)}}),
-						eeg.Id, model.N_TYPE_ERROR, model.N_PROCESS_EDA_PROCESS, "ADMIN")
-				}
+				mailWorker.Enqueue(services.MailJob{Ctx: ctx, Notifier: db, Attempts: []services.MailAttempt{{
+					Tenant:     eeg.Id,
+					Identifier: mid,
+					Send: func() error {
+						return parser.SendActivationMailFromTemplate(sendMail, db, eeg.Id, subject, eeg, participant, templateConfigName)
+					},
+				}}})
 			} else {
 				logrus.WithField("tenant", eeg.Id).Warn("No MeteringPoint for activation mail")
 			}

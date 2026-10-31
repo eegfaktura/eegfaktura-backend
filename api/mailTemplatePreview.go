@@ -10,6 +10,7 @@ import (
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"at.ourproject/vfeeg-backend/mailtemplate"
 	"at.ourproject/vfeeg-backend/model"
+	"at.ourproject/vfeeg-backend/services"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -121,8 +122,12 @@ func (h *MailTemplateHandler) test() middleware.JWTHandlerFunc {
 		}
 		if err := h.sendMail(tenant, to, testSubjectPrefix+rendered.Subject, nil,
 			bytes.NewBufferString(rendered.Html), rendered.Inline, rendered.Attachment); err != nil {
-			log.WithField("tenant", tenant).WithError(err).Error("mail template: test mail failed")
-			respondWithJSON(w, http.StatusBadGateway, map[string]string{"message": "Die Testmail konnte nicht verschickt werden."})
+			log.WithField("tenant", tenant).WithError(err).Log(services.MailErrorLevel(err), "mail template: test mail failed")
+			code, msg := http.StatusBadGateway, "Die Testmail konnte nicht verschickt werden."
+			if errors.Is(err, services.ErrMailUnconfirmed) {
+				code, msg = http.StatusGatewayTimeout, services.ErrMailUnconfirmed.Error()
+			}
+			respondWithJSON(w, code, map[string]string{"message": msg})
 			return
 		}
 		respondWithJSON(w, http.StatusOK, map[string]string{"sentTo": to})

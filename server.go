@@ -167,6 +167,20 @@ func MigrateDatabase(db *sqlx.DB) error {
 	return nil
 }
 
+// httpShutdownLimit is the share of the requests in the 30 s the pod has after SIGTERM: they, the
+// broker (2.5 s) and the mail worker (services.MailStopLimit + services.MailReportLimit) run in turn.
+const httpShutdownLimit = 8 * time.Second
+
+// shutdownHTTP waits up to limit for running requests; what is still running then is cut off.
+func shutdownHTTP(srv *http.Server, limit time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), limit)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Errorf("http server: requests still running after %v are cut off: %v", limit, err)
+		_ = srv.Close()
+	}
+}
+
 func StartServer(db database.Database) {
 	log.Info("Start server ...")
 	middleware.InitKeycloak()
@@ -178,6 +192,7 @@ func StartServer(db database.Database) {
 	ctx := context.Background()
 
 	mailtemplate.NotifyDefaultChanges(ctx, db)
+	eda.StartMailWorker()
 	eda.InitEdaSubscription(ctx)
 	energyrequest.Start(ctx, db)
 	mqttclient.InitErrorSubscriptions()
@@ -239,11 +254,10 @@ func StartServer(db database.Database) {
 
 	<-quit
 	log.Println("got interruption signal")
-	if err := srv.Shutdown(context.Background()); err != nil {
-		log.Printf("server shutdown returned an err: %v\n", err)
-	}
+	shutdownHTTP(srv, httpShutdownLimit)
 
 	broker.Stop()
+	eda.StopMailWorker()
 	//repository.CloseRepositories()
 	log.Println("final")
 

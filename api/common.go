@@ -88,7 +88,8 @@ func respondWith(w http.ResponseWriter, httpCode int, tenant string, data interf
 	switch e := data.(type) {
 	case *model.VfeegError:
 		log.WithField("tenant", tenant).WithField("code", e.Code).WithError(e).Error(e.Error())
-		respondWithHttpError(w, httpCode, &HttpError{Error: e.Error(), Code: e.Code, Message: e.Error()})
+		text := model.UserText(e)
+		respondWithHttpError(w, httpCode, &HttpError{Error: text, Code: e.Code, Message: text})
 		return
 	default:
 		respondWithJSON(w, httpCode, data)

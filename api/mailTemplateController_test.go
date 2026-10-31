@@ -36,9 +36,10 @@ type mtSent struct {
 }
 
 type mtClient struct {
-	t      *testing.T
-	router *mux.Router
-	sent   []mtSent
+	t       *testing.T
+	router  *mux.Router
+	sent    []mtSent
+	sendErr error // returned by the mail sender
 }
 
 func newMailTemplateClient(t *testing.T) *mtClient {
@@ -79,7 +80,7 @@ func newMailTemplateClient(t *testing.T) *mtClient {
 	registerMailTemplateRoutes(s, &MailTemplateHandler{db: db, sendMail: func(tenant, to, subject string, cc *string,
 		body *bytes.Buffer, inline []*services.Attachment, att *services.Attachment) error {
 		c.sent = append(c.sent, mtSent{tenant, to, subject, cc, body.String(), len(inline), att != nil})
-		return nil
+		return c.sendErr
 	}})
 	return c
 }

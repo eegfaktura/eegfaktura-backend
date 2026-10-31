@@ -20,6 +20,29 @@ this changelog highlights the changes relevant for overview and operations.
   application pool can still serve, and saturation of the shared Postgres must not take the service out of service.
 
 ### Changed
+- **Every mail send waits 30 s for the mail server** (261030-mm7): before 5 s (30 s only above 256 KB of files;
+  the metering point list mail always 5 s). One constant `services.MailSendTimeout` for all sends. Before the
+  request, the backend now waits up to 5 s for the connection to the mail server; a server that does not get ready
+  in that time is a failed send. A slow mail server therefore holds the test mail of the mail editor up to 35 s
+  instead of 5 s, and the mail worker (next entry) up to 35 s per mail.
+- **Mails from the EDA handlers go through a background worker** (261030-mm7, user decision 2026-10-31): the activation,
+  zp-active, zp-inactive and metering point list mails were sent inside the single MQTT broker loop, so one slow mail
+  held every EDA message and API-triggered EDA request behind it. One in-process worker now sends them one at a
+  time, in order, after the handler's writes (`services.MailQueueSize` 1000 jobs, no new dependency or table). A GEA
+  zp-inactive mail is one job, so a member still gets it once. Results are reported as before, only later.
+  **In normal operation members see no change; during a relay outage their mails arrive later:** a job can take up to
+  35 s, so 100 queued mails can take about an hour (with the eda-xp#60 timeouts usually less) and nothing goes out
+  in between. A full queue blocks nothing: the mail is not sent, and the community gets an error notification "Die
+  Mail wurde nicht verschickt, weil gerade zu viele Mails anstehen oder der Dienst neu startet. Bitte später noch
+  einmal versuchen." plus an error log line. On SIGTERM the server gives running requests 8 s (the rest is cut off and
+  logged), waits up to 2 s for the broker handler, sends what is queued for up to 14 s (`services.MailStopLimit`) and
+  reports what is left the same way for up to 3 s (`services.MailReportLimit`), all before the database closes. The
+  pod has 30 s.
+  **The queue is in memory:** a crash or kill loses the queued mails, without a notification and without a retry; the
+  mail being sent then has no known result. There are no retries.
+  **Rollout: eegfaktura/eegfaktura-eda-xp#60 before this release.** With an old eda-xp, which has no SMTP timeouts, a
+  relay hanging before DATA runs into the backend's 30 s and reads as "vermutlich verschickt", although nothing was
+  delivered.
 - **Log output is now one JSON object per line on stdout, with ECS field names** (logging concept W-261008-ca2).
   **This changes what operators, `kubectl logs` and Dynatrace receive:** before, logrus text (`time=… level=… msg=…`)
   on stderr; now e.g. `{"@timestamp":"…Z","log.level":"info","message":"…","service.name":"eegfaktura-backend",
@@ -88,6 +111,12 @@ this changelog highlights the changes relevant for overview and operations.
   this release still complete. Web counterpart: eegfaktura/eegfaktura-web#246.
 
 ### Contract
+- **Mail server answer status 202 = unconfirmed** (261030-mm7, with eegfaktura/eegfaktura-eda-xp#60, decided
+  2026-10-30): the xp-connector answers `SendMail` / `SendMailWithInlineAttachment` with status 202 ("SMTP
+  unconfirmed: …") when its SMTP read timeout hit after the mail body was sent (the relay probably accepted it). The
+  backend treats 202 like its own timeout: `ErrMailUnconfirmed`, notification code `W_MAIL_UNCONFIRMED`, test mail 504.
+  200 = sent; every other status stays a failure with the server's message, including 504 ("SMTP timeout: …",
+  nothing delivered).
 - **`activationMode` on `create`/`register`/`confirm` (see Removed):** callers are eegfaktura-web (master still
   offers the offline checkbox and sends `OFFLINE` + `activationCode`; eegfaktura-web#246 always sends `ONLINE`).
   eegfaktura-admin, eegfaktura-admin-backend and eegfaktura-eda-xp do not call these routes. Tests:
@@ -130,9 +159,34 @@ this changelog highlights the changes relevant for overview and operations.
   tests cover the validation paths without a live Keycloak.
 
 ### Fixed
+- Test only: `TestAccessLine_ThroughRouter` failed at random when a generated `request.id` contained `4711`, the value the test forbids in a line (261031-mm1). Generated values are now left out of that check.
+- Test only: six `eda` tests left fixed rows behind and failed at `-count=2` (261031-mm3); they now clean up.
+- **The consent-request mail goes out once per metering point** (261031-mm4): an answer with two metering points
+  carries code 99 twice and sent two mails per metering point.
+- **A partial delivery counts as sent for the next GEA tenant** (261031-mm5): the valid recipients already have the mail, so the second tenant no longer sends it again. The notification about the rejected address stays.
+- **A mail server failure answer without a message no longer panics** (261031-mm6).
+- **No e-mail addresses in the log from rejected or invalid addresses** (261031-mm7): the rejected-recipient error and
+  the `ValidateEmailList` text were logged in full. API answers on the REST routes and admin notifications keep the
+  address. **Changed for gRPC callers (admin-backend):** their error now reads "invalid email" without the address.
+- **A mail server timeout is no longer reported as "Mailversand fehlgeschlagen"** (261030-mm7): when the request
+  reached the mail server (xp-connector) but it did not answer within 30 s, the mail was probably sent anyway, and
+  communities that sent it again produced duplicates. Such a send is now logged as a warning and the admin
+  notification entry reads **"Zeitüberschreitung – die Mail wurde vermutlich trotzdem verschickt. Vor einem erneuten
+  Versand bitte beim Empfänger nachfragen."** (message code `W_MAIL_UNCONFIRMED`, kind `WARNING`, same metering point /
+  identifier as before) instead of the gRPC error `rpc error: code = DeadlineExceeded …` (code `E_UNDEFINED_0`).
+  The same applies when the mail server answers status 202 (see Contract).
+  Affects the zp-active / consent-request mail, the zp-inactive mail and the metering point list mail. The test mail
+  of the mail editor answers **504** with the same text instead of 502 "Die Testmail konnte nicht verschickt
+  werden.". In a GEA, a zp-inactive mail that was not confirmed counts as sent, so the second tenant does not send it
+  again. Real failures (connection refused, status other than 200, rejected recipients) keep their texts and codes;
+  a mail server that does not get ready within 5 s reads "mail server not reachable within 5s (state …)" (code
+  `E_UNDEFINED_0`) instead of the gRPC timeout error. A send error is logged once, by the caller. web shows the new entry after the prefix "Mailversand nicht
+  bestätigt:" (eegfaktura/eegfaktura-web#251); eda-xp gets SMTP timeouts in eegfaktura/eegfaktura-eda-xp#60.
+
 - **`service.version` in the log names the build.** Images built from a branch carried the branch name (`master`), which
   cannot tell builds apart, and a promoted prod/pilot image keeps what was set at build time. It is now the commit, or
   the version without `v` for a `v*` tag build; same as billing.
+
 - **`POST /participant/{id}/confirm` with a `null` element in the metering point array** answered with a panic; it
   now answers 400, code 2000, before anything is written or sent (found in the review of
   eegfaktura/eegfaktura-backend#129).
