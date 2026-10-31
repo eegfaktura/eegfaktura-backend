@@ -221,6 +221,7 @@ func TestMailJob_Dedupe(t *testing.T) {
 	}{
 		"sent: the next tenant does not send it again":        {nil, 1, 0},
 		"not confirmed: the next tenant does not send it":     {unconfirmed, 1, 1},
+		"partly delivered (261031-mm5): not sent again":       {checkRejectedRecipients([]string{"x@invalid"}), 1, 1},
 		"real failure: the next tenant tries, so it can work": {errors.New("smtp down"), 2, 1},
 	} {
 		t.Run(name, func(t *testing.T) {

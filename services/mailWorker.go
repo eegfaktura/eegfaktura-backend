@@ -164,8 +164,8 @@ func (j MailJob) attempt(a MailAttempt) (sent bool) {
 	if err != nil {
 		j.report(a, err)
 	}
-	// a mail the server did not confirm was probably sent
-	return err == nil || errors.Is(err, ErrMailUnconfirmed)
+	// a mail the server did not confirm was probably sent; a partial delivery reached the valid recipients
+	return err == nil || errors.Is(err, ErrMailUnconfirmed) || errors.Is(err, ErrMailPartlyDelivered)
 }
 
 // report writes the log line and the notification for the community.
