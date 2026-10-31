@@ -42,6 +42,18 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+// cleanupCommunities removes what a test with fixed tenants leaves behind, so it survives -count=2.
+func cleanupCommunities(t *testing.T, tenants ...string) {
+	t.Cleanup(func() {
+		for _, tenant := range tenants {
+			for _, table := range []string{"notification", "processhistory", "metering_partition_factor", "meteringpoint", "eeg"} {
+				_, err := testDB.DbInstance.Exec(`DELETE FROM base.`+table+` WHERE tenant = $1`, tenant)
+				require.NoError(t, err)
+			}
+		}
+	})
+}
+
 type RecorderMock struct {
 	mock.Mock
 	dbOpen database.OpenDbXConnection
@@ -668,6 +680,10 @@ func TestProtocolCmRevImpHandler_historyOnly(t *testing.T) {
 				Payload:     model.EbmsMessage{},
 			}
 			require.NoError(t, json.Unmarshal([]byte(tt.msg), &msg.Payload))
+			t.Cleanup(func() {
+				_, err := testDB.DbInstance.Exec(`DELETE FROM base.processhistory WHERE "conversationId" = $1`, msg.Payload.ConversationId)
+				require.NoError(t, err)
+			})
 
 			notifications := count(t, `SELECT count(*) FROM base.notification WHERE tenant = 'TE000016'`)
 			var stateBefore string
@@ -688,6 +704,7 @@ func TestProtocolCmRevImpHandler_historyOnly(t *testing.T) {
 // notification and history of every tenant of that RC number — also when it cannot be applied.
 func TestProtocolCmRevImpHandler_gea(t *testing.T) {
 	const meter = "AT0030000000000000000000000153099"
+	cleanupCommunities(t, "GC000030-001", "GC000030-002")
 	for _, tenant := range []string{"GC000030-001", "GC000030-002"} {
 		_, err := testDB.DbInstance.Exec(`INSERT INTO base.eeg
 			(tenant, name, description, "rcNumber", area, gridoperator_code, gridoperator_name, "communityId",
@@ -970,6 +987,7 @@ func TestMeteringPointRevokeActivationFlow(t *testing.T) {
 func TestProtocolEcReqOnlHandler_approvalRefused(t *testing.T) {
 	const tenant = "TE000172"
 	const ecId = "AT00300000000TC000172000000000001"
+	cleanupCommunities(t, tenant)
 	_, err := testDB.DbInstance.Exec(`INSERT INTO base.eeg
 		(tenant, name, description, "rcNumber", area, gridoperator_code, gridoperator_name, "communityId",
 		 street, "streetNumber", city, zip, email)
