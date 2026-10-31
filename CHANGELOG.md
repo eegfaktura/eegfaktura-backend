@@ -126,6 +126,7 @@ this changelog highlights the changes relevant for overview and operations.
   records `golang.org/x/image` v0.44.0 (2026-07-08, excelize test-only). No change to import or export output.
 
 ### Fixed
+- Test only: `TestAccessLine_ThroughRouter` failed at random when a generated `request.id` contained `4711`, the value the test forbids in a line (261031-mm1). Generated values are now left out of that check.
 - **A mail server timeout is no longer reported as "Mailversand fehlgeschlagen"** (261030-mm7): when the request
   reached the mail server (xp-connector) but it did not answer within 30 s, the mail was probably sent anyway, and
   communities that sent it again produced duplicates. Such a send is now logged as a warning and the admin

@@ -131,6 +131,12 @@ func TestAccessLine_ThroughRouter(t *testing.T) {
 	assert.NotContains(t, refused, "tenant.id")
 
 	// no user tracking: no name, e-mail, token, user agent or query value
+	// (generated values are left out: a random request id can contain "4711")
+	for _, l := range ls {
+		delete(l, "request.id")
+		delete(l, "event.duration")
+		delete(l, "@timestamp")
+	}
 	raw, _ := json.Marshal(ls)
 	for _, s := range []string{"max.mustermann", "example.org", "secret-token", "secret-agent", "query-value", "4711"} {
 		assert.NotContains(t, string(raw), s)
