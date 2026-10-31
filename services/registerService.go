@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
@@ -11,6 +12,10 @@ import (
 	"google.golang.org/grpc/status"
 	"gopkg.in/guregu/null.v4"
 )
+
+// statusEegExists in RegisteredEegReply.status: the tenant is already registered, nothing was written.
+// admin-backend stops the registration on it (261015-ca1).
+const statusEegExists = 409
 
 type RegisterService struct {
 	protobuf.UnimplementedRegisterEegServiceServer
@@ -69,7 +74,14 @@ func (r *RegisterService) Register(ctx context.Context, eeg *protobuf.RegisterEe
 		return &protobuf.RegisteredEegReply{Status: 500}, err
 	}
 
-	err = db.InsertEeg(ctx, eeg.RcNumber, &newEeg)
+	return registerReply(db.InsertEeg(ctx, eeg.RcNumber, &newEeg))
+}
+
+func registerReply(err error) (*protobuf.RegisteredEegReply, error) {
+	if errors.Is(err, database.ErrEegExists) {
+		log.Warn("Register EEG refused: the tenant is already registered")
+		return &protobuf.RegisteredEegReply{Status: statusEegExists}, nil
+	}
 	if err != nil {
 		log.Errorf("Could not create an EEG! %v", err.Error())
 		return &protobuf.RegisteredEegReply{Status: 500},

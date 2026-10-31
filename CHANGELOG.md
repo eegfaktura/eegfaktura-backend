@@ -8,6 +8,19 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Fixed
+- **Registering an existing tenant is refused** (261015-ca1). The gRPC `register` answered 201 for a tenant that already
+  existed, dropped the given community data and admin-backend attached the new admin to that community. Now nothing is
+  written and the reply carries status 409; the comparison is case-insensitive. A new tenant of an existing RC number
+  (GEA: stem and sub communities share it) stays possible. The MQTT command `register-eeg` uses the same insert: it now
+  logs an error for an existing tenant instead of nothing, it writes and publishes nothing either way.
+
+### Contract
+- gRPC `RegisterEegService.register`: `RegisteredEegReply.status` can be **409** (tenant exists, no gRPC error). Caller:
+  admin-backend, which stops the registration on it (admin-backend PR of 261015-ca1). The proto is unchanged. Deploy
+  order: free. Until admin-backend is updated it treats 409 as a failed registration: no Keycloak change, but it still
+  calls Ponton.
+
 ## [1.14.0] – 2026-10-31
 
 ### Added

@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -14,6 +15,9 @@ import (
 
 const TABLE_EEG = "base.eeg"
 const TABLE_EEG_ADDRESS = "base.address"
+
+// ErrEegExists: the tenant is already registered; nothing was written (261015-ca1).
+var ErrEegExists = errors.New("eeg already exists")
 
 type EegRepository interface {
 	GetEegById(ctx context.Context, tenant string) (*model.Eeg, error)
@@ -195,14 +199,35 @@ func insertEeg(ctx context.Context, db *sqlx.DB, tenant string, eeg *model.Eeg) 
 		}
 	}
 
+	// Tenants compare case-insensitively, the primary key only sees the exact spelling.
+	var exists bool
+	if err := db.GetContext(ctx, &exists, `SELECT EXISTS (SELECT 1 FROM base.eeg WHERE upper(tenant) = upper($1))`, eeg.Id); err != nil {
+		log.WithError(err).WithField("SQL", "SELECT").Error("SQL statement failed")
+		return err
+	}
+	if exists {
+		return ErrEegExists
+	}
+
 	sql, _, err := pgDialect.Insert(TABLE_EEG).Rows(eeg).OnConflict(goqu.DoNothing()).ToSQL()
-	_, err = db.ExecContext(ctx, sql)
+	if err != nil {
+		return err
+	}
+	res, err := db.ExecContext(ctx, sql)
 	if err != nil {
 		log.WithError(err).WithField("SQL", "INSERT").Error("SQL statement failed")
 		return err
 	}
+	// a parallel registration of the same tenant was faster
+	inserted, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if inserted == 0 {
+		return ErrEegExists
+	}
 
-	return err
+	return nil
 }
 
 // eegProtectedUpdateFields must never be set through the generic EEG update:
