@@ -43,6 +43,17 @@ func TestInactiveMail(t *testing.T) {
 		_, err := testDB.DbInstance.Exec(q, args...)
 		require.NoError(t, err)
 	}
+	// fixed ids and state: the test leaves nothing behind, so it survives -count=2
+	t.Cleanup(func() {
+		const tenants = `('TI000116', 'GI000116-001', 'GI000116-002')`
+		for _, table := range []string{"notification", "processhistory", "metering_partition_factor", "meteringpoint"} {
+			exec(`DELETE FROM base.` + table + ` WHERE tenant IN ` + tenants)
+		}
+		for _, table := range []string{"contactdetail", "address"} {
+			exec(`DELETE FROM base.` + table + ` WHERE participant_id IN (SELECT id FROM base.participant WHERE tenant IN ` + tenants + `)`)
+		}
+		exec(`DELETE FROM base.participant WHERE tenant IN ` + tenants)
+	})
 	eeg := func(tenant, rc, ecId string) {
 		exec(`INSERT INTO base.eeg (tenant, name, description, "rcNumber", area, gridoperator_code, gridoperator_name,
 			"communityId", street, "streetNumber", city, zip, email)
