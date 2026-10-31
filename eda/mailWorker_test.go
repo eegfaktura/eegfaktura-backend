@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -187,4 +188,33 @@ func TestActivationMail_AfterTheStatusIsWritten(t *testing.T) {
 
 	assert.Equal(t, "activation@example.org", to)
 	assert.Equal(t, string(model.PENDING), state)
+}
+
+// 261031-mm4: an answer with two metering points carries code 99 twice; each metering point gets
+// one consent-request mail, not one per code (four mails in all).
+func TestConsentRequestMail_OncePerMeteringPoint(t *testing.T) {
+	const tenant, ecId = "TM000204", "AT00300000000TM000204000000000001"
+	const meter1, meter2 = "AT0030000000000000000000000204001", "AT0030000000000000000000000204002"
+	mailFixture(t, tenant, ecId, meter1, "consent@example.org", "INIT")
+	mailFixture(t, tenant, ecId, meter2, "consent@example.org", "INIT")
+
+	var bodies []string
+	orig := sendActivationMail
+	sendActivationMail = func(_, _, _ string, _ *string, body *bytes.Buffer, _ []*services.Attachment, _ *services.Attachment) error {
+		bodies = append(bodies, body.String())
+		return nil
+	}
+	t.Cleanup(func() { sendActivationMail = orig })
+
+	msg := model.SubscribeMessage{MessageCode: model.EBMS_ONLINE_REG_ANSWER, Protocol: model.EC_REQ_ONL, Tenant: tenant}
+	require.NoError(t, json.Unmarshal([]byte(fmt.Sprintf(`{"conversationId":"C%s","sender":"AT003000","messageCode":"%s","ecId":"%s",
+		"responseData":[{"meteringPoint":"%s","responseCode":[99]},{"meteringPoint":"%s","responseCode":[99]}]}`,
+		meter1, model.EBMS_ONLINE_REG_ANSWER, ecId, meter1, meter2)), &msg.Payload))
+	protocolEcReqOnlHandler(context.Background(), msg)
+	flushMails(t)
+
+	require.Len(t, bodies, 2)
+	all := strings.Join(bodies, "\n")
+	assert.Equal(t, 1, strings.Count(all, meter1))
+	assert.Equal(t, 1, strings.Count(all, meter2))
 }

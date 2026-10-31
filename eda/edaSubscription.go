@@ -256,10 +256,10 @@ func protocolEcReqOnlHandler(ctx context.Context, msg model.SubscribeMessage) {
 	}
 
 	// the mails are queued after the status is written below, also on its early returns
-	var queueMails []func()
+	var queueMails func()
 	defer func() {
-		for _, queue := range queueMails {
-			queue()
+		if queueMails != nil {
+			queueMails()
 		}
 	}()
 
@@ -279,11 +279,11 @@ func protocolEcReqOnlHandler(ctx context.Context, msg model.SubscribeMessage) {
 			activeSince = civil.NullDateFrom(&ax)
 			consentId = completeMeters[0].consentId
 			status = model.ACTIVE
-			queueMails = append(queueMails, func() {
+			queueMails = func() {
 				if err := meteringPointPerformAnswerMsg(ctx, sendActivationMail, msg.Payload.EcId, meters, "Dein Zählpunkt ist aktiv", "zp-complete-mail-template.toml"); err != nil {
 					logrus.WithField("tenant", msg.Tenant).Errorf("complete mail message for %+v return with error. %v", meters, err.Error())
 				}
-			})
+			}
 		} else {
 			status = ""
 			meters = []string{}
@@ -324,11 +324,12 @@ func protocolEcReqOnlHandler(ctx context.Context, msg model.SubscribeMessage) {
 		for _, c := range codes {
 			if c == MESSAGE_RECEIVED {
 				status = model.PENDING
-				queueMails = append(queueMails, func() {
+				// one code per metering point of the message, one pass over all of them (261031-mm4)
+				queueMails = func() {
 					if err := meteringPointPerformAnswerMsg(ctx, sendActivationMail, msg.Payload.EcId, meters, "Aktivierung im Serviceportal", "activation-mail-template.toml"); err != nil {
 						logrus.WithField("tenant", msg.Tenant).Errorf("Perform Answer Message %+v. %v", meters, err.Error())
 					}
-				})
+				}
 			} else if c == NO_REMOTELY_READABLE_METER_INSTALLED_YET || c == SUM_OF_REPORTED_ALLOCATION_KEYS_EXCEEDS_100 {
 				status = model.INVALID
 				statusCode = &c
