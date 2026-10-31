@@ -29,12 +29,20 @@ this changelog highlights the changes relevant for overview and operations.
   zp-active, zp-inactive and metering point list mails were sent inside the single MQTT broker loop, so one slow mail
   held every EDA message and API-triggered EDA request behind it. One in-process worker now sends them one at a
   time, in order, after the handler's writes (`services.MailQueueSize` 1000 jobs, no new dependency or table). A GEA
-  zp-inactive mail is one job, so a member still gets it once. Results are reported as before, only later. A full
-  queue blocks nothing: the mail is not sent, and the community gets an error notification "Die Mail wurde nicht
-  verschickt: die Warteschlange ist voll oder der Dienst wird beendet." plus an error log line. On SIGTERM the server
-  sends what is queued for up to 20 s (`services.MailStopLimit`, the pod has 30 s).
-  **The queue is in memory:** a crash, a kill or a stop past the limit loses the queued mails, without a notification
-  (a stop past the limit logs how many); the mail being sent then has no known result. There are no retries.
+  zp-inactive mail is one job, so a member still gets it once. Results are reported as before, only later.
+  **In normal operation members see no change; during a relay outage their mails arrive later:** a job can take up to
+  35 s, so 100 queued mails can take about an hour (with the eda-xp#60 timeouts usually less) and nothing goes out
+  in between. A full queue blocks nothing: the mail is not sent, and the community gets an error notification "Die
+  Mail wurde nicht verschickt, weil gerade zu viele Mails anstehen oder der Dienst neu startet. Bitte später noch
+  einmal versuchen." plus an error log line. On SIGTERM the server gives running requests 8 s (the rest is cut off and
+  logged), waits up to 2 s for the broker handler, sends what is queued for up to 14 s (`services.MailStopLimit`) and
+  reports what is left the same way for up to 3 s (`services.MailReportLimit`), all before the database closes. The
+  pod has 30 s.
+  **The queue is in memory:** a crash or kill loses the queued mails, without a notification and without a retry; the
+  mail being sent then has no known result. There are no retries.
+  **Rollout: eegfaktura/eegfaktura-eda-xp#60 before this release.** With an old eda-xp, which has no SMTP timeouts, a
+  relay hanging before DATA runs into the backend's 30 s and reads as "vermutlich verschickt", although nothing was
+  delivered.
 - **Log output is now one JSON object per line on stdout, with ECS field names** (logging concept W-261008-ca2).
   **This changes what operators, `kubectl logs` and Dynatrace receive:** before, logrus text (`time=… level=… msg=…`)
   on stderr; now e.g. `{"@timestamp":"…Z","log.level":"info","message":"…","service.name":"eegfaktura-backend",
@@ -152,6 +160,14 @@ this changelog highlights the changes relevant for overview and operations.
 
 ### Fixed
 - Test only: `TestAccessLine_ThroughRouter` failed at random when a generated `request.id` contained `4711`, the value the test forbids in a line (261031-mm1). Generated values are now left out of that check.
+- Test only: six `eda` tests left fixed rows behind and failed at `-count=2` (261031-mm3); they now clean up.
+- **The consent-request mail goes out once per metering point** (261031-mm4): an answer with two metering points
+  carries code 99 twice and sent two mails per metering point.
+- **A partial delivery counts as sent for the next GEA tenant** (261031-mm5): the valid recipients already have the mail, so the second tenant no longer sends it again. The notification about the rejected address stays.
+- **A mail server failure answer without a message no longer panics** (261031-mm6).
+- **No e-mail addresses in the log from rejected or invalid addresses** (261031-mm7): the rejected-recipient error and
+  the `ValidateEmailList` text were logged in full. API answers on the REST routes and admin notifications keep the
+  address. **Changed for gRPC callers (admin-backend):** their error now reads "invalid email" without the address.
 - **A mail server timeout is no longer reported as "Mailversand fehlgeschlagen"** (261030-mm7): when the request
   reached the mail server (xp-connector) but it did not answer within 30 s, the mail was probably sent anyway, and
   communities that sent it again produced duplicates. Such a send is now logged as a warning and the admin
