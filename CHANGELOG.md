@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.14.0] – 2026-10-31
+
 ### Added
 - **Health endpoints for Kubernetes probes:** `GET /healthz` (liveness, always `ok`, no dependency checks) and
   `GET /readyz` (readiness, `ok` when Postgres answers `SELECT 1`, otherwise 503 `unavailable`), served
