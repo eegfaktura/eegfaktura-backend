@@ -23,7 +23,7 @@ this changelog highlights the changes relevant for overview and operations.
 - **Log output is now one JSON object per line on stdout, with ECS field names** (logging concept W-261008-ca2).
   **This changes what operators, `kubectl logs` and Dynatrace receive:** before, logrus text (`time=… level=… msg=…`)
   on stderr; now e.g. `{"@timestamp":"…Z","log.level":"info","message":"…","service.name":"eegfaktura-backend",
-  "service.version":"1.14.0","tenant.id":"…"}` on stdout. Parse rules or dashboards on the old text format must be
+  "service.version":"<commit>","tenant.id":"…"}` on stdout. Parse rules or dashboards on the old text format must be
   redone. One logging module (`logging/`, Go `log/slog`) writes every line; the existing logrus calls are routed into it
   unchanged in content. Field mapping: logrus `tenant` → `tenant.id`, `WithError` → `error.type` + `error.message`, the
   caller → `log.origin.function`/`log.origin.file.name`/`log.origin.file.line`. Only listed fields are written
@@ -33,8 +33,9 @@ this changelog highlights the changes relevant for overview and operations.
   - `LOG_LEVEL`: `trace`, `debug`, `info` (default), `warn`, `error`. **An unknown value now stops the start**
     (exit code 2, message on stderr) — this includes `fatal` and `panic`, which logrus accepted before; before, an unknown value fell back to `info` with a warning. An empty `LOG_LEVEL` or
     `LOG_FORMAT` is the default (same rule as energystore). Prod/pilot set `info`.
-  - `SERVICE_VERSION` → `service.version`: set in the image (Dockerfile `ARG`/`ENV`, passed by the release workflow from
-    the image tag); `dev` otherwise.
+  - `SERVICE_VERSION` → `service.version`: set in the image (Dockerfile `ARG`/`ENV`, passed by the release workflow: the
+    commit, or the version for a `v*` tag build); `dev` otherwise. A promoted prod/pilot image is the same digest
+    re-tagged, so it keeps its commit: the release version is the image tag, not `service.version`.
 - **Access line: one line per HTTP request** (`event.action=http.access`), written after the token check: method,
   route template (`http.route`, e.g. `/eeg/tariff/{id}` — no ids, no query), status, `event.duration` (nanoseconds,
   ECS), `event.outcome` (`success` for 2xx/3xx, `refused` for 401/403 at level warn, `failure` for any other status ≥ 400),
@@ -129,6 +130,9 @@ this changelog highlights the changes relevant for overview and operations.
   tests cover the validation paths without a live Keycloak.
 
 ### Fixed
+- **`service.version` in the log names the build.** Images built from a branch carried the branch name (`master`), which
+  cannot tell builds apart, and a promoted prod/pilot image keeps what was set at build time. It is now the commit, or
+  the version without `v` for a `v*` tag build; same as billing.
 - **`POST /participant/{id}/confirm` with a `null` element in the metering point array** answered with a panic; it
   now answers 400, code 2000, before anything is written or sent (found in the review of
   eegfaktura/eegfaktura-backend#129).

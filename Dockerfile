@@ -35,7 +35,7 @@ RUN apt-get update \
 
 ENV TZ="Europe/Berlin"
 
-# service.version in every log line; the release workflow passes the image version (docker/metadata-action)
+# service.version in every log line; the release workflow passes the commit (the version for a tag build)
 ARG SERVICE_VERSION=dev
 ENV SERVICE_VERSION=${SERVICE_VERSION}
 
