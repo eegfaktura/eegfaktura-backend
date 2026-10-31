@@ -143,12 +143,20 @@ this changelog highlights the changes relevant for overview and operations.
   and unbounded allocations on crafted workbooks — relevant for the master-data Excel import. Indirect modules moved
   with it: `xuri/efp` v0.0.1 → v0.0.2 (2026-09-21), `richardlehane/mscfb` v1.0.7 → v1.0.8 (2026-08-19); `go.sum` also
   records `golang.org/x/image` v0.44.0 (2026-07-08, excelize test-only). No change to import or export output.
+- **Bearer tokens: RS256 only** (platform#191). Both go-oidc verifiers took the allowed signing algorithms from
+  the Keycloak discovery (HS* and `none` were already dropped); they now accept RS256 only, as required.
+  - App verifier (`Protect`, `GQLProtect`, `ConditionProtect`): a client-supplied bearer token signed with
+    RS384/RS512/PS*/ES*/EdDSA under a realm key was accepted; it is now rejected (401).
+  - API verifier (`ProtectApi`): it only checks the ID token the backend fetches itself via password grant, so a
+    client cannot choose its algorithm. Effect: if the ID-token signature algorithm of the api client in
+    Keycloak were ever set to something other than RS256, every `ProtectApi` call would fail with 403.
+  - The Keycloak realms sign with one RS256 key, so logins are not affected.
 - **JWT library: `github.com/golang-jwt/jwt` v3.2.2+incompatible → `github.com/golang-jwt/jwt/v5` v5.3.1**
   (platform#191). v3 is unmaintained (GO-2025-3553, no fix in v3). The library only decodes the token claims;
-  token validation (signature, `iss`, `exp`, `nbf`) is done by go-oidc. Two differences from the claim decoding: a
-  token with `aud` as an array and a fractional `exp` now decode and reach the tenant and admin checks. v3 failed to
-  decode them: 401 on the bearer paths (`Protect`, `GQLProtect`, `ConditionProtect`), 403 on `ProtectApi` (Basic
-  auth). Keycloak issues integer `exp`.
+  token validation (signature, `iss`, `exp`, `nbf`) is done by go-oidc and is unchanged by this entry (for the
+  allowed algorithms see "RS256 only" above). Two differences from the claim decoding: a token with `aud` as an
+  array and a fractional `exp` now decode and reach the tenant and admin checks. v3 failed to decode them: 401 on the bearer
+  paths (`Protect`, `GQLProtect`, `ConditionProtect`), 403 on `ProtectApi` (Basic auth). Keycloak issues integer `exp`.
   **Behaviour change (accepted 2026-10-30): tokens of the admin frontend client `at.ourproject.vfeeg.admin` are now
   accepted.** Its audience mapper gives `aud = [at.ourproject.vfeeg.admin, account]`; v3 refused these tokens with
   401 only because the claims struct could not decode an array, not by design. The Go services deliberately check
