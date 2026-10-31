@@ -53,7 +53,11 @@ var ErrForeignTenantParticipant = PartialWrap(1108)
 var ErrRemoveMeteringPoint = PartialWrap(1201)
 var ErrStatusMeter = PartialWrap(1202)
 var ErrSaveMeteringPoint = PartialWrap(1203)
-var ErrWrongActivationCode = PartialWrap(1204)
+var ErrUnknownActivationMode = PartialWrap(1204)
+
+// activationMode OFFLINE (ANFORDERUNG_ECOF with activation code): the grid operators no longer
+// support it (decision 2026-10-30). Rejected before anything is written or sent.
+var ErrOfflineRegistrationUnsupported = PartialWrap(1205)
 
 var ErrEdaCommunication = PartialWrap(5000)
 var ErrRequestEnergyData = PartialWrap(5100)
