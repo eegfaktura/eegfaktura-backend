@@ -146,7 +146,10 @@ func (db *sqlDatabase) DeleteParticipant(ctx context.Context, tenant, participan
 	if err = deleteParticipant(ctx, tx, participantId); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err = tx.Commit(); err != nil {
+		return model.ErrDeleteParticipant(err)
+	}
+	return nil
 }
 
 const TABLE_PARTICIPANT = "base.participant"
@@ -549,10 +552,16 @@ func confirmParticipant(ctx context.Context, db *sqlx.DB, username, participantI
 
 // deleteParticipant deletes a member whose metering points never took part (261005-ca10): the rows cascade, also
 // the history of active ones. Same rule as removeMeteringPoint, plus REJECTED: a rejected metering point could
-// otherwise neither go alone nor with its member. The rows stay locked so an EDA answer cannot activate one in between.
+// otherwise neither go alone nor with its member. The member's row is locked first: a metering point moved or imported
+// onto it waits or is seen. The rows stay locked so an EDA answer cannot activate one in between.
 func deleteParticipant(ctx context.Context, tx *sqlx.Tx, participantId string) error {
 	var deletable []bool
-	err := tx.SelectContext(ctx, &deletable, `SELECT status = 'INIT' AND activesince IS NULL
+	var id string
+	err := tx.GetContext(ctx, &id, `SELECT id FROM `+TABLE_PARTICIPANT+` WHERE id = $1 FOR UPDATE`, participantId)
+	if err != nil {
+		return model.ErrDeleteParticipant(err)
+	}
+	err = tx.SelectContext(ctx, &deletable, `SELECT status = 'INIT' AND activesince IS NULL
 			AND process_state IN ('INVALID', 'NEW', 'PENDING', 'REJECTED')
 		FROM `+TABLE_METERINGPOINT+` WHERE participant_id = $1 FOR UPDATE`, participantId)
 	if err != nil {
