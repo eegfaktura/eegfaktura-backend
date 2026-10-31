@@ -138,7 +138,15 @@ func (db *sqlDatabase) DeleteParticipant(ctx context.Context, tenant, participan
 	if err := assertParticipantTenant(ctx, db.db, tenant, participantId); err != nil {
 		return err
 	}
-	return deleteParticipant(ctx, db.db, participantId)
+	tx, err := db.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return model.ErrDeleteParticipant(err)
+	}
+	defer func() { _ = tx.Rollback() }() // no-op after the commit; a joined error would lose its code for the client
+	if err = deleteParticipant(ctx, tx, participantId); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 const TABLE_PARTICIPANT = "base.participant"
@@ -539,13 +547,29 @@ func confirmParticipant(ctx context.Context, db *sqlx.DB, username, participantI
 	return nil
 }
 
-func deleteParticipant(ctx context.Context, db *sqlx.DB, participantId string) error {
+// deleteParticipant deletes a member whose metering points never took part (261005-ca10): the rows cascade, also
+// the history of active ones. Same rule as removeMeteringPoint, plus REJECTED: a rejected metering point could
+// otherwise neither go alone nor with its member. The rows stay locked so an EDA answer cannot activate one in between.
+func deleteParticipant(ctx context.Context, tx *sqlx.Tx, participantId string) error {
+	var deletable []bool
+	err := tx.SelectContext(ctx, &deletable, `SELECT status = 'INIT' AND activesince IS NULL
+			AND process_state IN ('INVALID', 'NEW', 'PENDING', 'REJECTED')
+		FROM `+TABLE_METERINGPOINT+` WHERE participant_id = $1 FOR UPDATE`, participantId)
+	if err != nil {
+		return model.ErrDeleteParticipant(err)
+	}
+	for _, ok := range deletable {
+		if !ok {
+			return model.ErrParticipantHasActivatedMeter(errors.New("participant has an activated metering point"))
+		}
+	}
+
 	stmt, _, err := pgDialect.Delete(TABLE_PARTICIPANT).
 		Where(goqu.Ex{"id": participantId}).ToSQL()
 	if err != nil {
 		return model.ErrDeleteParticipant(err)
 	}
-	_, err = db.ExecContext(ctx, stmt)
+	_, err = tx.ExecContext(ctx, stmt)
 	if err != nil {
 		return model.ErrDeleteParticipant(err)
 	}

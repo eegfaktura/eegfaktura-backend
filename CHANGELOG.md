@@ -24,7 +24,14 @@ this changelog highlights the changes relevant for overview and operations.
   decimals). **This also reaches the Excel master-data export:** `GetTariffNameMap` reads the same list, so when the first
   tariff of a community cannot be read, `GET /eeg/tariff` and the export answer an error instead of working with no tariffs.
 
+- **A member with a metering point that took part can no longer be deleted** (261005-ca10). `DELETE /participant/v2/{id}`
+  had no check and the delete cascaded to active and past metering points with their partition factors. It now answers
+  **409** with error code 1109 and deletes nothing, unless every metering point has status `INIT`, no `activesince` and
+  process state `INVALID`, `NEW`, `PENDING` or `REJECTED`. A member without metering points can be deleted as before.
+
 ### Contract
+- `DELETE /participant/v2/{id}`: new answer 409 with code 1109. Caller: eegfaktura-web, which shows its own text with
+  the matching version; an older web shows its general error message. No rollout order needed.
 - gRPC `RegisterEegService.register`: `RegisteredEegReply.status` can be **409** (tenant exists, no gRPC error). Caller:
   admin-backend, which stops the registration on it (admin-backend PR of 261015-ca1). The proto is unchanged. Rollout
   order: admin-backend, then backend, then admin. A new backend with an old admin-backend treats 409 as a failed

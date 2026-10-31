@@ -265,7 +265,12 @@ func (h *ParticipantHandler) deleteParticipant() middleware.JWTHandlerFunc {
 
 		if err := h.db.DeleteParticipant(r.Context(), tenant, idStr); err != nil {
 			log.WithField("tenant", tenant).WithError(err).Error("failed to delete participant.")
-			respondWith(w, http.StatusBadRequest, tenant, err)
+			status := http.StatusBadRequest
+			var ve *model.VfeegError
+			if errors.As(err, &ve) && ve.Code == model.ErrParticipantHasActivatedMeter(nil).Code {
+				status = http.StatusConflict
+			}
+			respondWith(w, status, tenant, err)
 			return
 		}
 		respondWithData(w, http.StatusAccepted, map[string]interface{}{"id": idStr})
