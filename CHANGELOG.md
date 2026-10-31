@@ -113,6 +113,20 @@ this changelog highlights the changes relevant for overview and operations.
   and unbounded allocations on crafted workbooks — relevant for the master-data Excel import. Indirect modules moved
   with it: `xuri/efp` v0.0.1 → v0.0.2 (2026-09-21), `richardlehane/mscfb` v1.0.7 → v1.0.8 (2026-08-19); `go.sum` also
   records `golang.org/x/image` v0.44.0 (2026-07-08, excelize test-only). No change to import or export output.
+- **JWT library: `github.com/golang-jwt/jwt` v3.2.2+incompatible → `github.com/golang-jwt/jwt/v5` v5.3.1**
+  (platform#191). v3 is unmaintained (GO-2025-3553, no fix in v3). The library only decodes the token claims;
+  token validation (signature, `iss`, `exp`, `nbf`) is done by go-oidc. Two differences from the claim decoding: a
+  token with `aud` as an array and a fractional `exp` now decode and reach the tenant and admin checks. v3 failed to
+  decode them: 401 on the bearer paths (`Protect`, `GQLProtect`, `ConditionProtect`), 403 on `ProtectApi` (Basic
+  auth). Keycloak issues integer `exp`.
+  **Behaviour change (accepted 2026-10-30): tokens of the admin frontend client `at.ourproject.vfeeg.admin` are now
+  accepted.** Its audience mapper gives `aud = [at.ourproject.vfeeg.admin, account]`; v3 refused these tokens with
+  401 only because the claims struct could not decode an array, not by design. The Go services deliberately check
+  neither `aud` nor `azp` (eegfaktura-docs `docs/architecture/auth.md`); filestore already accepts such tokens
+  (`aud` contains `account`). No new privilege for the user: the tenant and admin checks on the token's `tenant` and
+  roles are unchanged. A uniform `azp`/client rule across the services is an open point (eegfaktura-dev tracking
+  W-261030-mm2). The unused `jwt.TimeFunc` override is removed (nothing called the v3 validation). New regression
+  tests cover the validation paths without a live Keycloak.
 
 ### Fixed
 - **`POST /participant/{id}/confirm` with a `null` element in the metering point array** answered with a panic; it
