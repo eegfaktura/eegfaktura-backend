@@ -14,7 +14,7 @@ func TestTariffListWithDecimalBaseFee(t *testing.T) {
 	db, err := GetDB(context.Background())
 	require.NoError(t, err)
 
-	const tenant = "TE000012"
+	const tenant = "TE000032"
 	const decimal, whole = "5f0c1a2e-0b7d-4c55-9a51-7d3f2b6a0021", "5f0c1a2e-0b7d-4c55-9a51-7d3f2b6a0022"
 	cleanup := func() {
 		_, err := testDB.DbInstance.Exec(`DELETE FROM base.tariff WHERE tenant = $1`, tenant)

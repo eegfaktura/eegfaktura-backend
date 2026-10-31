@@ -185,6 +185,18 @@ func getEegByEcId(ctx context.Context, tx *sqlx.DB, edId string) (*model.Eeg, er
 
 func insertEeg(ctx context.Context, db *sqlx.DB, tenant string, eeg *model.Eeg) error {
 
+	// Tenants compare case-insensitively, the primary key only sees the exact spelling. Outside GEA an RC number
+	// belongs to one community: a new tenant on it would reach that community's login and Ponton account.
+	var exists bool
+	if err := db.GetContext(ctx, &exists, `SELECT EXISTS (SELECT 1 FROM base.eeg WHERE upper(tenant) = upper($1)
+		OR ($2 AND upper("rcNumber") = upper($3)))`, eeg.Id, eeg.Area != model.AreaType("GEA"), eeg.RcNumber); err != nil {
+		log.WithError(err).WithField("SQL", "SELECT").Error("SQL statement failed")
+		return err
+	}
+	if exists {
+		return ErrEegExists
+	}
+
 	// Same shared address rule as updateEegPartial — the create path
 	// must not be the one write that skips enforcement.
 	if eeg.Contact.Email.Valid {
@@ -199,16 +211,6 @@ func insertEeg(ctx context.Context, db *sqlx.DB, tenant string, eeg *model.Eeg) 
 		}
 	}
 
-	// Tenants compare case-insensitively, the primary key only sees the exact spelling.
-	var exists bool
-	if err := db.GetContext(ctx, &exists, `SELECT EXISTS (SELECT 1 FROM base.eeg WHERE upper(tenant) = upper($1))`, eeg.Id); err != nil {
-		log.WithError(err).WithField("SQL", "SELECT").Error("SQL statement failed")
-		return err
-	}
-	if exists {
-		return ErrEegExists
-	}
-
 	sql, _, err := pgDialect.Insert(TABLE_EEG).Rows(eeg).OnConflict(goqu.DoNothing()).ToSQL()
 	if err != nil {
 		return err
@@ -218,7 +220,7 @@ func insertEeg(ctx context.Context, db *sqlx.DB, tenant string, eeg *model.Eeg) 
 		log.WithError(err).WithField("SQL", "INSERT").Error("SQL statement failed")
 		return err
 	}
-	// a parallel registration of the same tenant was faster
+	// a parallel registration in the same spelling was faster
 	inserted, err := res.RowsAffected()
 	if err != nil {
 		return err
