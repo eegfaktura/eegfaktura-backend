@@ -65,6 +65,16 @@ func TestExportMasterdataToExcel_joiningFee(t *testing.T) {
 			JoiningFee: &model.JoiningFeeDocument{DocumentNumber: "RG-FREMD", DocumentDate: "2026-02-01"}},
 	}
 
+	t.Run("the tax number of a member is not exported", func(t *testing.T) {
+		withFee.TaxNumber = null.StringFrom("11 123/4567")
+		defer func() { withFee.TaxNumber = null.String{} }()
+		buf, err := ExportMasterdataToExcel(participants, eeg, tariffNames, joiningFees, states)
+		require.NoError(t, err)
+		rows := exportRows(t, buf)
+		assert.NotContains(t, rows[0], "SteuerNr.")
+		assert.NotContains(t, rows[1], "11 123/4567")
+	})
+
 	t.Run("with the list from billing", func(t *testing.T) {
 		buf, err := ExportMasterdataToExcel(participants, eeg, tariffNames, joiningFees, states)
 		require.NoError(t, err)

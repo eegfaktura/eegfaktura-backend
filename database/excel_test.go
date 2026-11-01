@@ -48,7 +48,8 @@ func Test_transformExcelData(t *testing.T) {
 
 	assert.Equal(t, 7, len(participants))
 	assert.Equal(t, 2, len(findParticipant("Finnegan", participants).MeteringPoint))
-	assert.Equal(t, null.StringFrom("001-3456"), findParticipant("Finnegan", participants).TaxNumber)
+	// the template still has the column SteuerNr, the import leaves it out
+	assert.False(t, findParticipant("Finnegan", participants).TaxNumber.Valid)
 
 	assert.Equal(t, null.StringFrom("003"), findParticipant("Finnegan", participants).ParticipantNumber)
 	assert.Equal(t, null.StringFrom("005"), findParticipant("Beckett", participants).ParticipantNumber)
@@ -236,12 +237,12 @@ func TestExportMasterdataToExcel(t *testing.T) {
 				}
 
 				assert.Equal(t, 6, len(cols))
-				assert.Equal(t, "6", cols[1][19])
+				assert.Equal(t, "6", cols[1][18])
 
-				// platform#165: both Status columns (E, X) show the member status derived from the metering points
+				// platform#165: both Status columns (E, W) show the member status derived from the metering points
 				for _, row := range cols[1:] {
 					assert.Contains(t, []string{"aktiv", "in Anmeldung", "inaktiv"}, row[4])
-					assert.Equal(t, row[4], row[23])
+					assert.Equal(t, row[4], row[22])
 				}
 
 				// the filter covers every header column and all rows (was A1:AH10)
