@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
@@ -19,20 +20,27 @@ const ServiceName = "eegfaktura-backend"
 // LevelTrace is below slog's debug; slog has no trace level of its own.
 const LevelTrace = slog.Level(-8)
 
-// Config is read from LOG_LEVEL, LOG_FORMAT and SERVICE_VERSION.
+// Config is read from LOG_LEVEL, LOG_FORMAT, SERVICE_VERSION and
+// DEPLOYMENT_ENVIRONMENT.
 type Config struct {
-	Level   slog.Level
-	JSON    bool
-	Version string
+	Level       slog.Level
+	JSON        bool
+	Version     string
+	Environment string
 }
 
-// ConfigFromEnv reads LOG_LEVEL (default info), LOG_FORMAT (default json) and
-// SERVICE_VERSION (set by the image build, default dev). An empty value is the
-// default; an unknown level or format is an error: the backend refuses to start.
+// ConfigFromEnv reads LOG_LEVEL (default info), LOG_FORMAT (default json),
+// SERVICE_VERSION (set by the image build, default dev) and
+// DEPLOYMENT_ENVIRONMENT (no default, the field is left out when unset). An
+// empty value is the default; an unknown level or format is an error: the
+// backend refuses to start.
 func ConfigFromEnv(lookup func(string) (string, bool)) (Config, error) {
 	cfg := Config{Level: slog.LevelInfo, JSON: true, Version: "dev"}
 	if v, ok := lookup("SERVICE_VERSION"); ok && v != "" {
 		cfg.Version = v
+	}
+	if v, ok := lookup("DEPLOYMENT_ENVIRONMENT"); ok {
+		cfg.Environment = strings.TrimSpace(v)
 	}
 	if v, ok := lookup("LOG_LEVEL"); ok && strings.TrimSpace(v) != "" {
 		l, err := ParseLevel(v)
@@ -86,7 +94,8 @@ func levelName(l slog.Level) string {
 }
 
 // NewHandler builds the one handler: one JSON object (or one key=value line)
-// per record, ECS field names, service.name and service.version on every line.
+// per record, ECS field names, service.name, service.version and (when set)
+// deployment.environment on every line.
 func NewHandler(w io.Writer, cfg Config) slog.Handler {
 	opts := &slog.HandlerOptions{Level: cfg.Level, ReplaceAttr: ecsKeys}
 	var h slog.Handler
@@ -95,11 +104,14 @@ func NewHandler(w io.Writer, cfg Config) slog.Handler {
 	} else {
 		h = slog.NewTextHandler(w, opts)
 	}
-	h = h.WithAttrs([]slog.Attr{
+	common := []slog.Attr{
 		slog.String("service.name", ServiceName),
 		slog.String("service.version", cfg.Version),
-	})
-	return contextHandler{h}
+	}
+	if cfg.Environment != "" {
+		common = append(common, slog.String("deployment.environment", cfg.Environment))
+	}
+	return contextHandler{h.WithAttrs(common)}
 }
 
 func ecsKeys(groups []string, a slog.Attr) slog.Attr {
@@ -126,7 +138,7 @@ var allowedFields = map[string]bool{
 	"request.id": true, "trace.id": true, "span.id": true,
 	"tenant.id": true, "client.id": true, "graphql.operation.name": true,
 	"error.type": true, "error.message": true, "error.stack_trace": true,
-	"log.logger": true, "log.origin.function": true, "log.origin.file.name": true, "log.origin.file.line": true,
+	"log.logger": true, "log.effective_level": true, "log.origin.function": true, "log.origin.file.name": true, "log.origin.file.line": true,
 	// logrus fields in use (2026-10-30)
 	"SQL": true, "STMT": true, "MAIL": true, "MSG": true, "PROTOCOL": true, "protocol": true,
 	"code": true, "command": true, "ecId": true, "participantId": true, "templates": true,
@@ -183,4 +195,16 @@ func Setup(w io.Writer, cfg Config) {
 	logrus.SetFormatter(discardFormatter{})
 	logrus.StandardLogger().ReplaceHooks(logrus.LevelHooks{})
 	logrus.AddHook(&bridge{handler: h})
+}
+
+// LogStart writes the one start-up line: version and effective log level. It
+// goes straight to the handler, a LOG_LEVEL above info must not hide it.
+func LogStart(cfg Config) {
+	r := slog.NewRecord(time.Now(), slog.LevelInfo,
+		fmt.Sprintf("%s %s starting, log level %s", ServiceName, cfg.Version, levelName(cfg.Level)), 0)
+	r.AddAttrs(
+		slog.String("event.action", "service.start"),
+		slog.String("log.effective_level", levelName(cfg.Level)),
+	)
+	_ = slog.Default().Handler().Handle(context.Background(), r)
 }

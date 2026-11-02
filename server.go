@@ -101,14 +101,15 @@ func (d *driver) Open(rawURL string) (source.Driver, error) {
 }
 
 func main() {
-	// LOG_LEVEL (default info), LOG_FORMAT (default json), SERVICE_VERSION (image build);
-	// an unknown value stops the start. Debug logs import rows and other personal data (261008-ca1).
+	// LOG_LEVEL (default info), LOG_FORMAT (default json), SERVICE_VERSION (image build),
+	// DEPLOYMENT_ENVIRONMENT (optional); an unknown level or format stops the start. Debug logs import rows and other personal data (261008-ca1).
 	logCfg, err := logging.ConfigFromEnv(os.LookupEnv)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
 	logging.Setup(os.Stdout, logCfg)
+	logging.LogStart(logCfg)
 
 	var configPath = flag.String("configPath", ".", "Configfile Path")
 	flag.Parse()
