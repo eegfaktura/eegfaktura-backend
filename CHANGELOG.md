@@ -8,6 +8,9 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Fixed
+- **Partition factor changes** (backend 261005-ca4): security relevant — details not published.
+
 ## [1.15.0] – 2026-11-02
 
 ### Changed

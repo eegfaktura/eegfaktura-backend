@@ -121,6 +121,9 @@ var ChangePartitionFactor = func(eeg *model.Eeg, meterReq []*model.ChangePartiti
 		if m.GridOperatorId.Valid && len(m.GridOperatorId.ValueOrZero()) > 0 {
 			gridId = m.GridOperatorId.String
 		}
+		if gridId == "" {
+			return model.ErrEdaCommunication(errors.New("no Grid Operator specified"))
+		}
 
 		if _, ok := operators[gridId]; !ok {
 			operators[gridId] = []model.Meter{}
