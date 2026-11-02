@@ -155,15 +155,22 @@ var allowedFields = map[string]bool{
 // tenant.id, trace.id and span.id when the record's context belongs to an HTTP
 // request (see AccessLog). In a request tenant.id is only ever what passed the
 // tenant check (SetTenant), a tenant field of the record does not count.
+// Outside a request a tenant field that fails validTenant is dropped.
 type contextHandler struct{ slog.Handler }
 
 func (h contextHandler) Handle(ctx context.Context, r slog.Record) error {
 	ai := fromContext(ctx)
 	out := slog.NewRecord(r.Time, r.Level, r.Message, r.PC)
 	r.Attrs(func(a slog.Attr) bool {
-		if allowedFields[a.Key] && (ai == nil || a.Key != "tenant.id") {
-			out.AddAttrs(a)
+		if !allowedFields[a.Key] {
+			return true
 		}
+		if a.Key == "tenant.id" {
+			if _, ok := validTenant(a.Value.String()); ai != nil || !ok {
+				return true
+			}
+		}
+		out.AddAttrs(a)
 		return true
 	})
 	if ai != nil {

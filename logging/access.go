@@ -34,7 +34,7 @@ var skipRoutes = map[string]bool{"/healthz": true, "/readyz": true}
 
 var (
 	requestIDPattern   = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
-	tenantPattern      = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
+	tenantPattern      = regexp.MustCompile(`^[A-Z0-9][A-Z0-9_-]{0,63}$`)
 	traceparentPattern = regexp.MustCompile(`^([0-9a-f]{2})-([0-9a-f]{32})-([0-9a-f]{16})-[0-9a-f]{2}$`)
 )
 
@@ -76,12 +76,20 @@ func SetClient(ctx context.Context, clientID string) {
 	}
 }
 
-// SetTenant records the tenant the request was allowed for. A superuser skips
-// the check against the token, so the header value gets here as sent: anything
-// that is not shaped like a tenant id stays out of the log.
+// validTenant applies the rule of all services, on the upper-cased value. A
+// superuser skips the check against the token, so the header value can get
+// into the log as sent: what fails the rule gets no tenant.id.
+func validTenant(tenant string) (string, bool) {
+	upper := strings.ToUpper(tenant)
+	return upper, tenantPattern.MatchString(upper)
+}
+
+// SetTenant records the tenant the request was allowed for.
 func SetTenant(ctx context.Context, tenant string) {
-	if ai := fromContext(ctx); ai != nil && tenantPattern.MatchString(tenant) {
-		ai.tenant = tenant
+	if ai := fromContext(ctx); ai != nil {
+		if upper, ok := validTenant(tenant); ok {
+			ai.tenant = upper
+		}
 	}
 }
 

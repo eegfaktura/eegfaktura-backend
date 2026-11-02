@@ -300,11 +300,28 @@ func TestTenantField_InARequestOnlyWhatPassedTheCheck(t *testing.T) {
 
 func TestSetTenant_OnlyIdShapedValues(t *testing.T) {
 	for tenant, kept := range map[string]bool{
-		"TE100100": true, "GC123456-001": true, "": false, "a b": false, "a\nb": false,
+		"TE100100": true, "GC123456-001": true, "te100100": true, "RC_100": true, strings.Repeat("A", 64): true,
+		"": false, "a b": false, "a\nb": false, "a.b": false, "-TE100100": false, "_TE100100": false,
 		`x","y":"z`: false, strings.Repeat("A", 65): false,
 	} {
 		ai := &accessInfo{}
 		SetTenant(context.WithValue(context.Background(), accessCtxKey{}, ai), tenant)
 		assert.Equal(t, kept, ai.tenant != "", tenant)
+		if kept {
+			assert.Equal(t, strings.ToUpper(tenant), ai.tenant)
+		}
 	}
+}
+
+// Outside a request, on a path without a context (SendMail), the value of the
+// tenant field can be the header as sent: what fails the rule gets no tenant.id.
+func TestTenantField_OutsideARequestFollowsTheRule(t *testing.T) {
+	buf := setup(t, Config{Level: slog.LevelInfo, JSON: true, Version: "1.2.3"})
+	logrus.WithField("tenant", "GC123456-001").Info("fine")
+	logrus.WithField("tenant", "Erika Mustermann").Info("not an id")
+
+	got := lines(t, buf)
+	require.Len(t, got, 2)
+	assert.Equal(t, "GC123456-001", got[0]["tenant.id"])
+	assert.NotContains(t, got[1], "tenant.id")
 }
