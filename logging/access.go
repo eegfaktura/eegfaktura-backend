@@ -34,6 +34,7 @@ var skipRoutes = map[string]bool{"/healthz": true, "/readyz": true}
 
 var (
 	requestIDPattern   = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
+	tenantPattern      = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
 	traceparentPattern = regexp.MustCompile(`^([0-9a-f]{2})-([0-9a-f]{32})-([0-9a-f]{16})-[0-9a-f]{2}$`)
 )
 
@@ -72,9 +73,11 @@ func SetClient(ctx context.Context, clientID string) {
 	}
 }
 
-// SetTenant records the tenant the request was allowed for.
+// SetTenant records the tenant the request was allowed for. A superuser skips
+// the check against the token, so the header value gets here as sent: anything
+// that is not shaped like a tenant id stays out of the log.
 func SetTenant(ctx context.Context, tenant string) {
-	if ai := fromContext(ctx); ai != nil {
+	if ai := fromContext(ctx); ai != nil && tenantPattern.MatchString(tenant) {
 		ai.tenant = tenant
 	}
 }

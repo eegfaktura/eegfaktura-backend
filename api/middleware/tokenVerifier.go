@@ -115,7 +115,7 @@ func GQLProtect(next http.Handler) http.Handler {
 		superuser := hasRole(claims.RealmAccess.Roles, "superuser")
 		if !superuser {
 			if contains(claims.Tenants, tenant) == false {
-				logrus.WithField("tenant", tenant).Warnf("Unauthorized access with tenant %s", tenant)
+				logrus.Warn("tenant check failed")
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
@@ -162,7 +162,7 @@ func retrieveClaims(r *http.Request) (string, *PlatformClaims, error) {
 	superuser := hasRole(claims.RealmAccess.Roles, "superuser")
 	if !superuser {
 		if contains(claims.Tenants, tenant) == false {
-			logrus.WithField("tenant", tenant).Warnf("Unauthorized access with tenant %s", tenant)
+			logrus.Warn("tenant check failed")
 			return tenant, nil, &VerifyError{http.StatusForbidden, errors.New("unauthorized access")}
 		}
 	}
@@ -253,21 +253,21 @@ func ProtectApi(handler JWTHandlerFunc) http.HandlerFunc {
 
 		tenant := r.Header.Get("X-Tenant")
 		if !contains(claims.Tenants, tenant) {
-			logrus.WithField("tenant", tenant).Warn("unauthorized tenant")
+			logrus.Warn("tenant check failed")
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
+		logging.SetTenant(r.Context(), strings.ToUpper(tenant))
 
 		// Same admin-group requirement as the JWT path (verifyRequest): these
 		// endpoints expose member data and trigger EDA messages, so a plain
 		// EEG_USER must not reach them.
 		if !claims.AccessGroups.IsAdmin() {
-			logrus.WithField("tenant", tenant).Warn("unauthorized access - request has no admin access group")
+			logrus.Warn("unauthorized access - request has no admin access group")
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
 
-		logging.SetTenant(r.Context(), strings.ToUpper(tenant))
 		handler(w, r, &claims, strings.ToUpper(tenant))
 	}
 }
@@ -288,12 +288,12 @@ func verifyRequest(handler JWTHandlerFunc) func(w http.ResponseWriter, r *http.R
 			return
 		}
 
+		logging.SetTenant(r.Context(), strings.ToUpper(tenant))
 		if claims.AccessGroups.IsAdmin() {
 			claims.Tenants = toUpper(claims.Tenants)
-			logging.SetTenant(r.Context(), strings.ToUpper(tenant))
 			handler(w, r, claims, strings.ToUpper(tenant))
 		} else {
-			logrus.WithField("tenant", tenant).Warnf("Unauthorized access with tenant %s - Request has no admin access group", tenant)
+			logrus.Warn("unauthorized access - request has no admin access group")
 			w.WriteHeader(http.StatusUnauthorized)
 		}
 	}
