@@ -59,6 +59,9 @@ func fromContext(ctx context.Context) *accessInfo {
 
 func (ai *accessInfo) correlation() []slog.Attr {
 	as := []slog.Attr{slog.String("request.id", ai.requestID)}
+	if ai.tenant != "" {
+		as = append(as, slog.String("tenant.id", ai.tenant))
+	}
 	if ai.traceID != "" {
 		as = append(as, slog.String("trace.id", ai.traceID), slog.String("span.id", ai.spanID))
 	}
@@ -155,9 +158,6 @@ func AccessLog(next http.Handler) http.Handler {
 			attrs = append(attrs, slog.String("http.route", ai.route))
 			msgRoute = ai.route
 		}
-		if ai.tenant != "" {
-			attrs = append(attrs, slog.String("tenant.id", ai.tenant))
-		}
 		if ai.clientID != "" {
 			attrs = append(attrs, slog.String("client.id", ai.clientID))
 		}
@@ -165,7 +165,7 @@ func AccessLog(next http.Handler) http.Handler {
 			attrs = append(attrs, slog.String("graphql.operation.name", ai.operation))
 		}
 
-		// the request context carries request.id, trace.id and span.id (contextHandler)
+		// the request context carries request.id, tenant.id, trace.id and span.id (contextHandler)
 		ctx := context.WithValue(context.Background(), accessCtxKey{}, ai)
 		slog.Default().LogAttrs(ctx, level, fmt.Sprintf("%s %s %d", r.Method, msgRoute, status), attrs...)
 		if abort {

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -84,10 +85,10 @@ func respondWithHttpError(w http.ResponseWriter, httpCode int, error *HttpError)
 	respondWithJSON(w, httpCode, map[string]interface{}{"error": error})
 }
 
-func respondWith(w http.ResponseWriter, httpCode int, tenant string, data interface{}) {
+func respondWith(ctx context.Context, w http.ResponseWriter, httpCode int, tenant string, data interface{}) {
 	switch e := data.(type) {
 	case *model.VfeegError:
-		log.WithField("tenant", tenant).WithField("code", e.Code).WithError(e).Error(e.Error())
+		log.WithContext(ctx).WithField("tenant", tenant).WithField("code", e.Code).WithError(e).Error(e.Error())
 		text := model.UserText(e)
 		respondWithHttpError(w, httpCode, &HttpError{Error: text, Code: e.Code, Message: text})
 		return

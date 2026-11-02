@@ -65,7 +65,7 @@ func (h *MailTemplateHandler) render(w http.ResponseWriter, r *http.Request, ten
 		return nil, nil, false
 	}
 	if err != nil {
-		respondServerError(w, tenant, err)
+		respondServerError(r.Context(), w, tenant, err)
 		return nil, nil, false
 	}
 	return rendered, eeg, true
@@ -122,7 +122,7 @@ func (h *MailTemplateHandler) test() middleware.JWTHandlerFunc {
 		}
 		if err := h.sendMail(tenant, to, testSubjectPrefix+rendered.Subject, nil,
 			bytes.NewBufferString(rendered.Html), rendered.Inline, rendered.Attachment); err != nil {
-			log.WithField("tenant", tenant).WithError(err).Log(services.MailErrorLevel(err), "mail template: test mail failed")
+			log.WithContext(r.Context()).WithField("tenant", tenant).WithError(err).Log(services.MailErrorLevel(err), "mail template: test mail failed")
 			code, msg := http.StatusBadGateway, "Die Testmail konnte nicht verschickt werden."
 			if errors.Is(err, services.ErrMailUnconfirmed) {
 				code, msg = http.StatusGatewayTimeout, services.ErrMailUnconfirmed.Error()

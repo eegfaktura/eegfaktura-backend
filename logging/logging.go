@@ -152,19 +152,21 @@ var allowedFields = map[string]bool{
 }
 
 // contextHandler drops fields outside allowedFields and adds request.id,
-// trace.id and span.id when the record's context belongs to an HTTP request
-// (see AccessLog).
+// tenant.id, trace.id and span.id when the record's context belongs to an HTTP
+// request (see AccessLog). In a request tenant.id is only ever what passed the
+// tenant check (SetTenant), a tenant field of the record does not count.
 type contextHandler struct{ slog.Handler }
 
 func (h contextHandler) Handle(ctx context.Context, r slog.Record) error {
+	ai := fromContext(ctx)
 	out := slog.NewRecord(r.Time, r.Level, r.Message, r.PC)
 	r.Attrs(func(a slog.Attr) bool {
-		if allowedFields[a.Key] {
+		if allowedFields[a.Key] && (ai == nil || a.Key != "tenant.id") {
 			out.AddAttrs(a)
 		}
 		return true
 	})
-	if ai := fromContext(ctx); ai != nil {
+	if ai != nil {
 		out.AddAttrs(ai.correlation()...)
 	}
 	return h.Handler.Handle(ctx, out)

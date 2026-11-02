@@ -88,7 +88,7 @@ func InitKeycloak() {
 		if err != nil {
 			panic(err)
 		}
-		logrus.Printf("Internal KEYCLOAK host: %s\n", u.Host)
+		logrus.WithContext(ctx).Printf("Internal KEYCLOAK host: %s\n", u.Host)
 		transport := &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -111,7 +111,7 @@ func InitKeycloak() {
 	providerUriApp := fmt.Sprintf("%s/realms/%s", hostApp, realmApp)
 	provider, err := oidc.NewProvider(ctx, providerUriApp)
 	if err != nil {
-		logrus.Errorf("E: %v", err)
+		logrus.WithContext(ctx).Errorf("E: %v", err)
 		panic(err)
 	}
 	verifier = provider.Verifier(&oidc.Config{ClientID: clientIDApp, SkipClientIDCheck: true, SupportedSigningAlgs: []string{oidc.RS256}})

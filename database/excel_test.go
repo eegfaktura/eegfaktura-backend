@@ -35,7 +35,7 @@ func Test_transformExcelData(t *testing.T) {
 	require.NoError(t, err)
 
 	importLog := &model.Log{Operation: "Excel Master Data Import", Messages: []*model.LogMessage{}}
-	participants := transformExcelData(rows, func(id string) string { return id }, false, "AT00999900000TC100200000000000002", importLog)
+	participants := transformExcelData(context.Background(), rows, func(id string) string { return id }, false, "AT00999900000TC100200000000000002", importLog)
 
 	findParticipant := func(n string, p []*model.EegParticipant) *model.EegParticipant {
 		for i := range p {
@@ -201,7 +201,7 @@ func TestExportMasterdataToExcel(t *testing.T) {
 	participants, err := db.GetParticipants(context.Background(), tenant)
 	require.NoError(t, err)
 
-	tariffMap, err := db.GetTariffNameMap(tenant)
+	tariffMap, err := db.GetTariffNameMap(context.Background(), tenant)
 	require.NoError(t, err)
 
 	type args struct {
@@ -261,7 +261,7 @@ func TestExportMasterdataToExcel(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ExportMasterdataToExcel(tt.args.participants, tt.args.eeg, tt.args.tariffMap, nil, nil)
+			got, err := ExportMasterdataToExcel(context.Background(), tt.args.participants, tt.args.eeg, tt.args.tariffMap, nil, nil)
 			if !tt.wantErr(t, err, fmt.Sprintf("ExportMasterdataToExcel(%v, %v, %v)", tt.args.participants, tt.args.eeg, tt.args.tariffMap)) {
 				return
 			}
@@ -277,7 +277,7 @@ func TestExportZPListToExcel(t *testing.T) {
 	err := json.Unmarshal([]byte(testMsg), &ebmsMsgTest)
 	require.NoError(t, err)
 
-	buf, err := ExportZPListToExcel(&ebmsMsgTest)
+	buf, err := ExportZPListToExcel(context.Background(), &ebmsMsgTest)
 	err = os.WriteFile("./test.xlsx", buf.Bytes(), 0644)
 	require.NoError(t, err)
 }

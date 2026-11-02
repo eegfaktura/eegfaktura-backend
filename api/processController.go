@@ -71,7 +71,7 @@ func (h *ProcessHandler) fetchProcessHistory() middleware.JWTHandlerFunc {
 
 		protocol := r.URL.Query().Get("protocol")
 
-		history, err := h.db.FetchEdaHistory(tenant, protocol, start, end, pageSize)
+		history, err := h.db.FetchEdaHistory(r.Context(), tenant, protocol, start, end, pageSize)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

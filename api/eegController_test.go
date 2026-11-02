@@ -127,7 +127,7 @@ func TestAddTariff_joiningFee(t *testing.T) {
 	assert.Equal(t, true, created["joiningFeeUseVat"])
 	assert.Equal(t, float64(20), created["joiningFeeVatInPercent"])
 
-	tariffs, err := db.GetTariff("TE000027")
+	tariffs, err := db.GetTariff(context.Background(), "TE000027")
 	require.NoError(t, err)
 	require.Len(t, tariffs, 1)
 	assert.Equal(t, 49.90, tariffs[0].JoiningFee)

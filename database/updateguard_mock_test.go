@@ -54,7 +54,7 @@ func TestAddTariffRejectsForeignTariffId(t *testing.T) {
 	mock.ExpectRollback()
 
 	tariff := &model.Tariff{Id: uuid.NewUUID(), Version: 1}
-	err = mDB.AddTariff("TE000001", "user", tariff)
+	err = mDB.AddTariff(context.Background(), "TE000001", "user", tariff)
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet(), "kein INSERT/UPDATE erwartet")
 }
@@ -73,7 +73,7 @@ func TestAddTariffOwnTariffNewVersion(t *testing.T) {
 	mock.ExpectCommit()
 
 	tariff := &model.Tariff{Id: uuid.NewUUID(), Version: 1}
-	err = mDB.AddTariff("TE000001", "user", tariff)
+	err = mDB.AddTariff(context.Background(), "TE000001", "user", tariff)
 	assert.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

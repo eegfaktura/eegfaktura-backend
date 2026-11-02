@@ -44,7 +44,7 @@ func applyGridOperator(ctx context.Context, q sqlx.QueryerContext, tenant string
 			continue
 		}
 		if r.Aliased {
-			log.WithField("tenant", tenant).Infof("Grid operator of %s: %s -> %s (alias)", p.MeteringPoint, r.Prefix, r.Id)
+			log.WithContext(ctx).WithField("tenant", tenant).Infof("Grid operator of %s: %s -> %s (alias)", p.MeteringPoint, r.Prefix, r.Id)
 		}
 		name := gridOperatorName(r.Id, names, eegCode, eegName)
 		p.GridOperatorId = null.StringFrom(r.Id)

@@ -46,17 +46,6 @@ func logLines(t *testing.T, buf *bytes.Buffer) []map[string]any {
 	return out
 }
 
-func accessLine(t *testing.T, buf *bytes.Buffer) map[string]any {
-	t.Helper()
-	for _, l := range logLines(t, buf) {
-		if l["event.action"] == "http.access" {
-			return l
-		}
-	}
-	t.Fatal("no access line")
-	return nil
-}
-
 func withClaims(t *testing.T, claims *PlatformClaims) {
 	t.Helper()
 	orig := VerifyTokenClaims
@@ -117,7 +106,10 @@ func TestNoAdminGroup_LogsCheckedTenant(t *testing.T) {
 	code := serveTenant(Protect(passes(&handled)), "tenant", "te100100")
 
 	assert.Equal(t, http.StatusUnauthorized, code)
-	assert.Equal(t, "TE100100", accessLine(t, buf)["tenant.id"])
+	for _, l := range logLines(t, buf) {
+		assert.Equal(t, "TE100100", l["tenant.id"], l["message"])
+		assert.NotEmpty(t, l["request.id"], l["message"])
+	}
 }
 
 // A superuser skips the tenant check, so the header arrives as sent: only an
@@ -139,6 +131,8 @@ func TestSuperuser_HeaderOnlyLoggedWhenShapedLikeATenant(t *testing.T) {
 		withClaims(t, superuser)
 		buf := logCapture(t)
 		serveTenant(Protect(passes(&handled)), "tenant", "GC123456-001")
-		assert.Equal(t, "GC123456-001", accessLine(t, buf)["tenant.id"])
+		for _, l := range logLines(t, buf) {
+			assert.Equal(t, "GC123456-001", l["tenant.id"], l["message"])
+		}
 	})
 }

@@ -54,7 +54,7 @@ func transformSheet(t *testing.T, f *excelize.File, online bool) ([]*model.EegPa
 	require.NoError(t, err)
 	defer rows.Close()
 	importLog := &model.Log{Operation: "Excel Master Data Import", Messages: []*model.LogMessage{}}
-	return transformExcelData(rows, func(id string) string { return id }, online, testCommunityId, importLog), importLog
+	return transformExcelData(context.Background(), rows, func(id string) string { return id }, online, testCommunityId, importLog), importLog
 }
 
 // Template column "Mitglied seit" must become the participant's
@@ -375,7 +375,7 @@ func Test_transformExcelData_shippedTemplate(t *testing.T) {
 	rows, err := f.Rows("EEG Stammdaten")
 	require.NoError(t, err)
 	importLog := &model.Log{Operation: "Excel Master Data Import", Messages: []*model.LogMessage{}}
-	participants := transformExcelData(rows, func(id string) string { return id }, false, "AT00300000000RC101519000000912345", importLog)
+	participants := transformExcelData(context.Background(), rows, func(id string) string { return id }, false, "AT00300000000RC101519000000912345", importLog)
 
 	assert.Empty(t, importLog.Messages)
 	require.Len(t, participants, 1)

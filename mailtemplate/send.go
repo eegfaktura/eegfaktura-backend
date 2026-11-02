@@ -33,14 +33,14 @@ func SendStored(ctx context.Context, store Store, sendMail services.SendMailFunc
 	}
 	t, err := store.GetMailTemplate(ctx, tenant, def.Key)
 	if err != nil {
-		log.WithField("tenant", tenant).WithError(err).Errorf("mail template %s: can not load, using default", def.Key)
+		log.WithContext(ctx).WithField("tenant", tenant).WithError(err).Errorf("mail template %s: can not load, using default", def.Key)
 		return false, nil
 	}
 	if t == nil {
 		return false, nil
 	}
 	if !strings.EqualFold(t.Tenant, tenant) {
-		log.WithField("tenant", tenant).Errorf("mail template %s: tenant mismatch, using default", def.Key)
+		log.WithContext(ctx).WithField("tenant", tenant).Errorf("mail template %s: tenant mismatch, using default", def.Key)
 		return false, nil
 	}
 	// only the files the saved version references, and only committed ones
@@ -52,21 +52,21 @@ func SendStored(ctx context.Context, store Store, sendMail services.SendMailFunc
 	}
 	files, err := store.GetCommittedMailTemplateFiles(ctx, tenant, def.Key, ids)
 	if err != nil {
-		notifyFallback(store, def, tenant, identifier, err)
+		notifyFallback(ctx, store, def, tenant, identifier, err)
 		return false, nil
 	}
 	r, err := Render(def, t.Subject, t.BodyHtml, attachmentId, data, files, ImagesInline)
 	if err != nil {
-		notifyFallback(store, def, tenant, identifier, err)
+		notifyFallback(ctx, store, def, tenant, identifier, err)
 		return false, nil
 	}
-	log.WithField("tenant", tenant).Infof("Mail %s for tenant %q rendered from the customised version %d", def.Key, tenant, t.Version)
+	log.WithContext(ctx).WithField("tenant", tenant).Infof("Mail %s for tenant %q rendered from the customised version %d", def.Key, tenant, t.Version)
 	return true, sendMail(tenant, to, r.Subject, cc, bytes.NewBufferString(r.Html), r.Inline, r.Attachment)
 }
 
 // notifyFallback tells the community that its customised mail was not used.
-func notifyFallback(store Store, def *Definition, tenant, identifier string, cause error) {
-	log.WithField("tenant", tenant).WithError(cause).Errorf("mail template %s: can not render, sending default", def.Key)
+func notifyFallback(ctx context.Context, store Store, def *Definition, tenant, identifier string, cause error) {
+	log.WithContext(ctx).WithField("tenant", tenant).WithError(cause).Errorf("mail template %s: can not render, sending default", def.Key)
 	msg := fmt.Sprintf("Ihre angepasste Mail „%s“ konnte nicht verwendet werden; es wurde der Standardtext verschickt. Grund: %s", def.Name, fallbackReason(def, cause))
 	_ = store.SaveNotificationFromMap(database.CreateNotificationMessageFromLog(&model.Log{
 		Operation: "Mail",
@@ -108,11 +108,11 @@ func NotifyDefaultChanges(ctx context.Context, store NoticeStore) {
 			})
 		})
 		if err != nil {
-			log.WithError(err).Errorf("mail template %s: default change notice failed, retried on the next start", def.Key)
+			log.WithContext(ctx).WithError(err).Errorf("mail template %s: default change notice failed, retried on the next start", def.Key)
 			continue
 		}
 		if len(tenants) > 0 {
-			log.Infof("mail template %s: default change notice for %d communities", def.Key, len(tenants))
+			log.WithContext(ctx).Infof("mail template %s: default change notice for %d communities", def.Key, len(tenants))
 		}
 	}
 }

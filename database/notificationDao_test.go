@@ -2,6 +2,7 @@ package database
 
 import (
 	"at.ourproject/vfeeg-backend/model"
+	"context"
 	"encoding/json"
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/require"
@@ -24,7 +25,7 @@ func TestFetchEdaHistory(t *testing.T) {
 		AddRow("1", time.Now(), "CONSUMPTION", "ADMIN", "{}", "CR_MSG", "RC100298", model.EBMS_ONLINE_REG_APPROVAL)
 	mock.ExpectQuery(stmt).WillReturnRows(rows)
 	//res, err := FetchEdaHistory(mockDb.OpenMockDb, "RC100298", (time.Now().Add(25 * time.Hour * -1)).UnixMilli(), time.Now().UnixMilli())
-	res, err := mDB.FetchEdaHistory("RC100298", "", start.UnixMilli(), end.UnixMilli(), 0)
+	res, err := mDB.FetchEdaHistory(context.Background(), "RC100298", "", start.UnixMilli(), end.UnixMilli(), 0)
 	require.NoError(t, err)
 	require.NotNil(t, res)
 }
@@ -53,7 +54,7 @@ func TestFetchEdaHistory_pageSizeBounds(t *testing.T) {
 
 		var res interface{}
 		require.NotPanics(t, func() {
-			res, err = mDB.FetchEdaHistory("RC100298", "CR_MSG", start.UnixMilli(), end.UnixMilli(), pageSize)
+			res, err = mDB.FetchEdaHistory(context.Background(), "RC100298", "CR_MSG", start.UnixMilli(), end.UnixMilli(), pageSize)
 		})
 		require.NoError(t, err)
 		require.NoError(t, mock.ExpectationsWereMet())
