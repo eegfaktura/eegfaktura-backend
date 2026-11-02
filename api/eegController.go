@@ -51,7 +51,7 @@ func InitEegRouter(r *mux.Router, db database.Database) *mux.Router {
 
 func (h *EegHandler) getEEG() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
-		log.WithContext(r.Context()).Infof("Query EEG with TENANT: %s", tenant)
+		log.WithContext(r.Context()).Info("Query EEG")
 
 		var eeg *model.Eeg
 		var err error
@@ -117,7 +117,7 @@ func (h *EegHandler) addTariff() middleware.JWTHandlerFunc {
 			respondWith(r.Context(), w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
-		log.WithContext(r.Context()).Printf("ADD TARIF: %s (%s) Tenant: %s", t.Name, t.Id, tenant)
+		log.WithContext(r.Context()).Printf("ADD TARIF: %s (%s)", t.Name, t.Id)
 
 		// ZVT: serverseitige Plausibilitaetspruefung der Zeitfenster
 		if err = t.ValidateTimeTariff(); err != nil {
@@ -208,7 +208,7 @@ func (h *EegHandler) uploadMasterData() middleware.JWTHandlerFunc {
 		}
 		defer func() { _ = file.Close() }()
 
-		log.WithContext(r.Context()).Infof("--- Upload File: sheet %s, %s\n", sheet, tenant)
+		log.WithContext(r.Context()).Infof("--- Upload File: sheet %s\n", sheet)
 
 		if err = h.db.ImportMasterdataFromExcel(r.Context(), file, handler.Filename, sheet, tenant); err != nil {
 			log.WithContext(r.Context()).WithField("tenant", tenant).Error(err)

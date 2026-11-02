@@ -60,7 +60,7 @@ func SendStored(ctx context.Context, store Store, sendMail services.SendMailFunc
 		notifyFallback(ctx, store, def, tenant, identifier, err)
 		return false, nil
 	}
-	log.WithContext(ctx).WithField("tenant", tenant).Infof("Mail %s for tenant %q rendered from the customised version %d", def.Key, tenant, t.Version)
+	log.WithContext(ctx).WithField("tenant", tenant).Infof("Mail %s rendered from the customised version %d", def.Key, t.Version)
 	return true, sendMail(tenant, to, r.Subject, cc, bytes.NewBufferString(r.Html), r.Inline, r.Attachment)
 }
 
