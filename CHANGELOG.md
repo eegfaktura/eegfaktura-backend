@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.15.0] – 2026-11-02
+
 ### Changed
 - **The tax number of a member is out of the master data Excel** (decided 2026-11-01). The sheet „Mitglieder“ of the
   export no longer has the column „SteuerNr.“, so the columns after it move one to the left; the import ignores the
