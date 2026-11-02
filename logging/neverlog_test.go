@@ -2,6 +2,7 @@ package logging
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/constant"
@@ -34,7 +35,7 @@ import (
 
 // neverLogNames match case-insensitively inside identifiers, field keys and
 // format text. Metering point numbers are ids and may be logged (W-261008-ca2).
-var neverLogNames = regexp.MustCompile(`(?i)firstname|lastname|name1|name2|email|iban|password|passwd|secret|token|phone|accountholder|credential`)
+var neverLogNames = regexp.MustCompile(`(?i)firstname|lastname|name1|name2|email|iban|password|passwd|secret|token|phone|accountholder|credential|authorization|bearer|creds|basicauth|payload|body|username|user_id|subject|\bsub\b`)
 
 // neverLogAllowed: key "<file>: <hit>", without a line number, so an entry
 // survives edits around it but not a change of what is logged.
@@ -43,6 +44,13 @@ var neverLogAllowed = map[string]string{
 	"mqtt/messageBroker.go: name token":                      "the paho delivery token, only its Error() is logged",
 	"eda/edaSubscription.go: %+v of []eda.responseCodesPerMeter": "metering point, response codes, consent end and a " +
 		"pointer to the consent id: no personal data, metering point numbers may be logged",
+	`api/middleware/tokenVerifier.go: name in the format text "Authorization: %v"`: "the err is ErrNoAuthorization or " +
+		"ErrInvalidAuthSchema, constant texts, never the header",
+	"cmd/mailtemplate-import/main.go: name Body":    "operator tool, prints the template on its own terminal, not a service log",
+	"cmd/mailtemplate-import/main.go: name Subject": "operator tool, prints the template on its own terminal, not a service log",
+	"eda/edaSubscription.go: name Payload":          "only msg.Payload.ConversationId is logged; the struct itself is caught as a whole value",
+	"mqtt/subscriptionHandler.go: name Payload":     "only msg.Payload.ConversationId is logged",
+	"mqtt/messageBroker.go: name Payload":           "only len(msg.Payload()) is logged",
 }
 
 func TestNeverLog(t *testing.T) {
@@ -102,6 +110,10 @@ func scanPackages(t *testing.T, pattern string) []neverLogHit {
 	cmd := exec.Command("go", "list", "-export", "-deps", "-json=ImportPath,Dir,Export,GoFiles,Module", pattern)
 	cmd.Dir = root
 	out, err := cmd.Output()
+	var failed *exec.ExitError
+	if errors.As(err, &failed) {
+		t.Logf("go list: %s", failed.Stderr)
+	}
 	require.NoError(t, err, "go list")
 
 	exports := map[string]string{}
@@ -316,6 +328,10 @@ func (s *scanner) dumpedInterface(e ast.Expr, flags string) {
 func printsWhole(t types.Type) bool {
 	if hasPrintMethod(t) {
 		return false
+	}
+	if n, ok := t.(*types.Named); ok && n.Obj().Pkg() != nil &&
+		n.Obj().Pkg().Path() == "net/http" && n.Obj().Name() == "Header" {
+		return true // holds Authorization and cookies
 	}
 	switch u := t.Underlying().(type) {
 	case *types.Struct:
