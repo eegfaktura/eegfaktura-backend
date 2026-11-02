@@ -863,7 +863,7 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 								"E_COMMUNITY_1000",
 								msg,
 							))
-							log.Warnf("Import rows skipped: community id %q does not match target %q", rowCommunityId, communityId)
+							log.Warnf("Import rows skipped: community id does not match target %q", communityId)
 						}
 						continue
 					}
@@ -882,7 +882,7 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 								"E_PARTICIPANT_1001",
 								fmt.Sprintf("Row skipped: 'Name 1' is missing and 'Name 2' (%s) cannot be split into last and first name", excelName1),
 							))
-							log.Warnf("Import row skipped: cannot extract name from %q", excelName1)
+							log.Warn("Import row skipped: cannot extract name")
 							continue
 						}
 					} else {
@@ -907,7 +907,7 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 							"E_COUNTERPOINT_1001",
 							fmt.Sprintf("Row skipped: unknown 'Energierichtung' %q (expected CONSUMPTION or GENERATION)", directionVal),
 						))
-						log.Warnf("Import row skipped: unknown energy direction %q", directionVal)
+						log.Warn("Import row skipped: unknown energy direction")
 						continue
 					}
 
@@ -1050,7 +1050,7 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 								fmt.Sprintf("%s %s", firstname, lastname),
 								"E_PARTICIPANT_1000",
 								fmt.Sprintf("Does not fulfill requirements! Participant has wrong status: %s", cpStatus)))
-						log.Warnf("Participant -%s %s- does not fulfill requirements! Participant has wrong status: %s", firstname, lastname, cpStatus)
+						log.Warn("Import row skipped: participant has wrong status")
 					}
 				}
 			}
