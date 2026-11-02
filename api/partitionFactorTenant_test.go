@@ -95,6 +95,6 @@ func TestChangePartitionFactorTakesDirectionAndGridOperatorFromTheMeter(t *testi
 	assert.Equal(t, http.StatusNoContent, w.Code)
 	require.Len(t, sent, 1)
 	assert.Equal(t, model.CONSUMPTION, sent[0].Direction)
-	assert.NotEqual(t, "AT999999", sent[0].GridOperatorId.String)
+	assert.False(t, sent[0].GridOperatorId.Valid, "the fixture stores no grid operator")
 	assert.Equal(t, 50, sent[0].PartFact)
 }
