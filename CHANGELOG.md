@@ -13,8 +13,8 @@ this changelog highlights the changes relevant for overview and operations.
   level (`log.effective_level`), written whatever `LOG_LEVEL` says, no secrets. `deployment.environment` on every line
   from the new optional env `DEPLOYMENT_ENVIRONMENT`; the field is left out when unset.
 - **Never-log test** (dev#45 L11, `logging/neverlog_test.go`, no new dependency): type-checks the source and fails on a
-  struct printed whole in a log call (verb, bare argument, field value), `%+v`/`%#v` of an interface, and names of
-  personal data or secrets in log calls. An exception needs an entry with its reason in `neverLogAllowed`.
+  struct or `http.Header` printed whole in a log call (verb, bare argument, field value), `%+v`/`%#v` of an interface,
+  and names of personal data or secrets in log calls. An exception needs an entry with its reason in `neverLogAllowed`.
 
 ### Changed
 - **`request.id` and `tenant.id` on the lines of an HTTP request** (dev#45 L12), no longer on the access line only;
@@ -27,8 +27,9 @@ this changelog highlights the changes relevant for overview and operations.
 - **No names or cell values in the warn lines of the Excel import** (dev#45 L1). The import result shown to the user
   is unchanged; the lines no longer repeat names, status, energy direction or community id of the row.
 - **The raw `tenant` header stays out of the log** (dev#45 L2): a failed check logs `tenant check failed`. A superuser
-  skips the check, so `tenant.id` then takes only a value shaped like a tenant id. A refusal for a missing admin group
-  now carries the checked `tenant.id`, also on its access line.
+  skips the check, so `tenant.id` takes only a value that passes `^[A-Z0-9][A-Z0-9_-]{0,63}$` after upper-casing, on
+  every line; the tenant value is out of the message texts. A refusal for a missing admin group now carries the checked
+  `tenant.id`, also on its access line.
 - **No debug print of field values** in `util.ConvertMapToStruct` (dev#45 L11, found by the never-log test).
 
 ## [1.15.1] – 2026-11-02
