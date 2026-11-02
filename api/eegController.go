@@ -208,13 +208,13 @@ func (h *EegHandler) uploadMasterData() middleware.JWTHandlerFunc {
 		}
 		defer func() { _ = file.Close() }()
 
-		log.WithContext(r.Context()).Infof("--- Upload File: %s, %s, %s\n", sheet, handler.Filename, tenant)
+		log.WithContext(r.Context()).Infof("--- Upload File: sheet %s, %s\n", sheet, tenant)
 
 		if err = h.db.ImportMasterdataFromExcel(r.Context(), file, handler.Filename, sheet, tenant); err != nil {
 			log.WithContext(r.Context()).WithField("tenant", tenant).Error(err)
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1052, err.Error()))
 		} else {
-			log.WithContext(r.Context()).Infof("Import File %s successful", handler.Filename)
+			log.WithContext(r.Context()).Info("Import File successful")
 			respondWithStatus(w, http.StatusNoContent)
 		}
 	}
