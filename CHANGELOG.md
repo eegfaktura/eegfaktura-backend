@@ -8,6 +8,10 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Fixed
+- **Partition factor changes** (backend 261005-ca4): security relevant — details not published. A request with a direction
+  or grid operator other than the stored ones is sent with the stored values; web and the API are unchanged otherwise.
+
 ## [1.15.0] – 2026-11-02
 
 ### Changed

@@ -9,6 +9,7 @@ import (
 	"at.ourproject/vfeeg-backend/model"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // 261005-ca4: a partition factor change is only sent for metering points of the
@@ -72,4 +73,28 @@ func TestUpdateParticipantFactorAPIRefusesForeignMeter(t *testing.T) {
 	h.updateParticipantFactorAPI()(w, req, nil, "TE001006")
 	assert.Equal(t, http.StatusCreated, w.Code)
 	assert.Equal(t, 1, calls)
+}
+
+// 261005-ca4: direction and grid operator of a partition factor change come from the stored
+// metering point; AT...00953016 is CONSUMPTION in the fixture, without a grid operator of its own.
+func TestChangePartitionFactorTakesDirectionAndGridOperatorFromTheMeter(t *testing.T) {
+	orig := mqttclient.ChangePartitionFactor
+	t.Cleanup(func() { mqttclient.ChangePartitionFactor = orig })
+	var sent []*model.ChangePartitionFactorRequest
+	mqttclient.ChangePartitionFactor = func(eeg *model.Eeg, meter []*model.ChangePartitionFactorRequest) error {
+		sent = meter
+		return nil
+	}
+
+	data := `{"meteringPoints":[{"meter":"AT0030000000000000000000000953016","direction":"GENERATION","gridOperatorId":"AT999999","activation":"2022-01-01","partFact":50}]}`
+	req, _ := http.NewRequest("POST", "/meteringpoint/changepartitionfactor", strings.NewReader(data))
+	w := httptest.NewRecorder()
+
+	newTestMeteringHandler(t).requestChangePartitionFactor()(w, req, nil, "TE001006")
+
+	assert.Equal(t, http.StatusNoContent, w.Code)
+	require.Len(t, sent, 1)
+	assert.Equal(t, model.CONSUMPTION, sent[0].Direction)
+	assert.NotEqual(t, "AT999999", sent[0].GridOperatorId.String)
+	assert.Equal(t, 50, sent[0].PartFact)
 }
