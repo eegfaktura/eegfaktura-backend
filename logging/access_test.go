@@ -248,6 +248,37 @@ func TestAccessLog_HandlerPanicAfterWrite(t *testing.T) {
 	assert.EqualValues(t, 500, ls[1]["http.response.status_code"])
 }
 
+// headerRecorder notes every WriteHeader call that reaches the connection.
+type headerRecorder struct {
+	*httptest.ResponseRecorder
+	codes []int
+}
+
+func (r *headerRecorder) WriteHeader(code int) {
+	r.codes = append(r.codes, code)
+	r.ResponseRecorder.WriteHeader(code)
+}
+
+// Q7: Flush sends the header, so a panic after it aborts the connection like
+// one after a write, instead of a WriteHeader(500) on a started response.
+func TestAccessLog_HandlerPanicAfterFlush(t *testing.T) {
+	buf := setup(t, Config{Level: slog.LevelInfo, JSON: true})
+	h := router(func(w http.ResponseWriter, r *http.Request) {
+		w.(http.Flusher).Flush()
+		panic("late")
+	})
+	rec := &headerRecorder{ResponseRecorder: httptest.NewRecorder()}
+	assert.PanicsWithValue(t, http.ErrAbortHandler, func() {
+		h.ServeHTTP(rec, httptest.NewRequest("GET", "/participant/1", nil))
+	})
+	assert.True(t, rec.Flushed)
+	assert.Empty(t, rec.codes, "no WriteHeader after the flush")
+	ls := lines(t, buf)
+	require.Len(t, ls, 2)
+	assert.Equal(t, "late", ls[0]["error.message"])
+	assert.EqualValues(t, 500, ls[1]["http.response.status_code"])
+}
+
 // L12: every line of a request carries request.id and, once checked, tenant.id.
 func TestRequestLines_CarryRequestAndTenant(t *testing.T) {
 	buf := setup(t, Config{Level: slog.LevelInfo, JSON: true, Version: "1.2.3"})

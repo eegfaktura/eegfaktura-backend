@@ -249,8 +249,12 @@ func (w *statusWriter) Write(b []byte) (int, error) {
 	return w.ResponseWriter.Write(b)
 }
 
+// Flush sends the header (200 unless set), so it counts as written.
 func (w *statusWriter) Flush() {
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		if w.status == 0 {
+			w.status = http.StatusOK
+		}
 		f.Flush()
 	}
 }
