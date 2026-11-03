@@ -278,8 +278,18 @@ func TestExportZPListToExcel(t *testing.T) {
 	require.NoError(t, err)
 
 	buf, err := ExportZPListToExcel(context.Background(), &ebmsMsgTest)
-	err = os.WriteFile("./test.xlsx", buf.Bytes(), 0644)
 	require.NoError(t, err)
+
+	f, err := excelize.OpenReader(buf)
+	require.NoError(t, err)
+	defer func() { _ = f.Close() }()
+	assert.Equal(t, []string{"ZP-List"}, f.GetSheetList())
+	rows, err := f.GetRows("ZP-List")
+	require.NoError(t, err)
+	require.Len(t, rows, 1+len(ebmsMsgTest.MeterList), "header and one row per metering point")
+	assert.Equal(t, "Zählpunktname", rows[0][1])
+	assert.Equal(t, ebmsMsgTest.MeterList[0].MeteringPoint, rows[1][1])
+	assert.Equal(t, ebmsMsgTest.MeterList[len(ebmsMsgTest.MeterList)-1].MeteringPoint, rows[len(rows)-1][1])
 }
 
 // withTempDir points the process temp directory to an empty test directory.
