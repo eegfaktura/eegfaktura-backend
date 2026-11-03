@@ -15,11 +15,10 @@ RUN go mod tidy
 
 ENV PATH="/go/bin:${PATH}"
 
-# Codegen muss VOR `go install ./...` / `go build` laufen: `make protoc`
-# erzeugt das protobuf-Package, `go generate` die gqlgen-/jsonschema-Sourcen.
-# Sonst scheitert der Compile an `undefined: protobuf.*`.
-RUN make protoc
-RUN go generate ./...
+# Codegen muss VOR `go install ./...` / `go build` laufen (generierter Code ist nicht
+# eingecheckt): `make generate` erzeugt das protobuf-Package und model/registration_model.go,
+# wie in der CI. Sonst scheitert der Compile an `undefined: protobuf.*`.
+RUN make generate
 RUN go install ./...
 RUN go build -o /usr/local/bin/vfeeg-backend -ldflags="-s -w" server.go
 

@@ -27,7 +27,7 @@ golang-migrate + Atlas · Eclipse Paho (MQTT) · Keycloak/OIDC (JWT) · Viper ·
 - **Go**: version 1.26 or higher.
 - **PostgreSQL**: for data storage.
 - **MQTT Broker**: (e.g., Mosquitto) for real-time messaging.
-- **Protoc**: Protocol Buffers compiler (if modifying `.proto` files).
+- **Protoc**: Protocol Buffers compiler (the build generates the gRPC code; CI pins 29.3).
 
 ## Getting Started
 
@@ -37,6 +37,11 @@ golang-migrate + Atlas · Eclipse Paho (MQTT) · Keycloak/OIDC (JWT) · Viper ·
 2. Download dependencies:
    ```bash
    go mod download
+   ```
+3. Generate the gRPC code and the registration model (not tracked; protoc must be on the `PATH`, the
+   generators are installed at the versions in `go.mod`):
+   ```bash
+   make tools generate
    ```
 
 ### Configuration
@@ -101,10 +106,11 @@ go generate ./...
 
 ### Protobuf/gRPC
 
-If you modify files in the `proto/` directory, regenerate the Go code:
+The Go code of `proto/*.proto` and `model/registration.schema.json` is generated, not tracked. After changing one
+of them, regenerate it:
 
 ```bash
-make protoc
+make generate
 ```
 
 ### Database Migrations
