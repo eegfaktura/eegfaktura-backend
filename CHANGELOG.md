@@ -16,7 +16,9 @@ this changelog highlights the changes relevant for overview and operations.
 - **Never-log test** (dev#45 L11, `logging/neverlog_test.go`, no new dependency): type-checks the source and fails on a
   struct or `http.Header` printed whole in a log call (verb, bare argument, field value), `%+v`/`%#v` of an interface,
   and names of personal data or secrets among the identifiers of log calls, split into words (camelCase, snake_case) and
-  compared as whole words with the list common to all services; string literals are not scanned (dev#45 Q1). An
+  compared as whole words with the list common to all services (also with a plural s; in an all lower-case identifier a
+  list word of five or more letters also inside it), and a list word right before a format verb (`password=%s`); other
+  string literals are not scanned, numbers, booleans and errors are skipped by type (dev#45 Q1). An
   exception needs an entry, keyed by file and finding, with its reason in `neverLogAllowed`. `-short` skips the scan.
 
 ### Changed
