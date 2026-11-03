@@ -4,6 +4,7 @@
 package neverlog
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -22,7 +23,7 @@ type member struct {
 
 type nested struct{ Members []*member }
 
-func run(ctx context.Context, m *member, n nested, err error, id string, count int, when time.Time, format string, list []member, a any, h http.Header, username, sub, subscription, apiKey, userID, tokenString, tokenizerState, accesstoken, userpassword string, tokens, IBANs []string, tokenErr error, payload []byte) {
+func run(ctx context.Context, m *member, n nested, err error, id string, count int, when time.Time, format string, list []member, a any, h http.Header, username, sub, subscription, apiKey, userID, tokenString, tokenizerState, accesstoken, userpassword string, tokens, IBANs []string, tokenErr error, payload []byte, body *bytes.Buffer, emailVerified bool) {
 	// structs printed whole
 	logrus.Infof("member %v", m)                      // want
 	logrus.Warnf("member %+v", *m)                    // want
@@ -50,14 +51,17 @@ func run(ctx context.Context, m *member, n nested, err error, id string, count i
 	slog.Info("x", "key", apiKey)                         // want
 	logrus.WithField("MSG", userID).Info("x")             // want
 	logrus.Infof("x %s", tokenString)                     // want
-	logrus.Info(tokenErr)                                 // want
+	logrus.Info(tokenErr)                                 // an error value, skipped by type
+	logrus.Info(body.String())                            // want
+	logrus.Infof("verified %t", emailVerified)            // a boolean
+	logrus.Infof("tokens %d", len(tokens))
 	logrus.Infof("subscription %s", subscription)
 	logrus.Infof("x %s", tokenizerState)
-	logrus.Infof("x %v", tokens)       // want
-	logrus.Infof("x %v", IBANs)        // want
-	logrus.Infof("x %s", accesstoken)  // want
-	logrus.Infof("x %s", userpassword) // want
-	logrus.Infof("x %s %d", tokenErr.Error(), len(payload))
+	logrus.Infof("x %v", tokens)                            // want
+	logrus.Infof("x %v", IBANs)                             // want
+	logrus.Infof("x %s", accesstoken)                       // want
+	logrus.Infof("x %s", userpassword)                      // want
+	logrus.Infof("x %s %d", tokenErr.Error(), len(payload)) // the text of an error value
 	logrus.WithField("tenant", id).Warnf("token %%v %d", 1) // the verb is escaped, %d is count-like
 
 	// a list word right before a verb of a format text

@@ -35,6 +35,7 @@ import (
 //     "tokens" is "token". In an all lower-case identifier a list word of five
 //     or more letters also matches inside it (accesstoken).
 //   - a list word right before a verb of a format text ("password=%s").
+//     Values that are numbers, booleans or errors are skipped by type.
 //     Otherwise string literals are not scanned; a field key outside
 //     allowedFields is dropped at runtime.
 //
@@ -63,12 +64,8 @@ var neverLogAllowed = map[string]string{
 	"eda/edaSubscription.go: name Payload in msg.Payload.ConversationId": "only the conversation id is logged; " +
 		"the struct itself is caught as a whole value",
 	"mqtt/subscriptionHandler.go: name Payload in msg.Payload.ConversationId": "only the conversation id is logged",
-	`api/middleware/tokenVerifier.go: word before a verb in the format text "Authorization: %v"`: "the err is " +
-		"ErrNoAuthorization or ErrInvalidAuthSchema, constant texts, never the header",
-	"database/eegDao.go: name owners in owners":    "the tenants (community ids) holding the metering points, no person",
-	"database/eegDao.go: name owners in owners[0]": "the tenant (community id) the metering points are applied to, no person",
-	`services/mailService.go: word before a verb in the format text "recipients %d"`: "the number of rejected " +
-		"recipients (len), no address",
+	"database/eegDao.go: name owners in owners":                               "the tenants (community ids) holding the metering points, no person",
+	"database/eegDao.go: name owners in owners[0]":                            "the tenant (community id) the metering points are applied to, no person",
 }
 
 // fixtureDir is left out of TestNeverLog; TestNeverLog_FindsTheFixture checks it.
@@ -300,7 +297,8 @@ var (
 	formatVerb = regexp.MustCompile(`%([-+# 0]*)[0-9]*(?:\.[0-9]+)?([a-zA-Z%])`)
 	// a list word right before a verb: "password=%s", "email: %v", "IBANs %v"
 	beforeVerb = regexp.MustCompile(`(?i)\b(?:` + strings.Join(append(mapKeys(neverLogWords), "api_key", "mail address"), "|") +
-		`)s?[ =:'"(-]{0,3}%[^%]`)
+		`)s?[ =:'"(-]{0,3}$`)
+	errorType = types.Universe.Lookup("error").Type().Underlying().(*types.Interface)
 )
 
 func mapKeys(m map[string]bool) []string {
@@ -331,17 +329,18 @@ func (s *scanner) formatted(args []ast.Expr) {
 		return
 	}
 	text := constant.StringVal(tv.Value)
-	if m := beforeVerb.FindString(text); m != "" {
-		s.hit(format.Pos(), fmt.Sprintf("word before a verb in the format text %q", m))
-	}
 	i := 0
-	for _, m := range formatVerb.FindAllStringSubmatch(text, -1) {
-		if m[2] == "%" || i >= len(values) {
+	for _, m := range formatVerb.FindAllStringSubmatchIndex(text, -1) {
+		flags, verb := text[m[2]:m[3]], text[m[4]:m[5]]
+		if verb == "%" || i >= len(values) {
 			continue
 		}
-		if m[2] != "T" && m[2] != "p" {
-			s.whole(values[i], "%"+m[1]+m[2])
-			s.dumpedInterface(values[i], m[1])
+		if w := beforeVerb.FindString(text[:m[0]]); w != "" && carriesText(s.typeOf(values[i])) {
+			s.hit(format.Pos(), fmt.Sprintf("word before a verb in the format text %q", w+text[m[0]:m[1]]))
+		}
+		if verb != "T" && verb != "p" {
+			s.whole(values[i], "%"+flags+verb)
+			s.dumpedInterface(values[i], flags)
 		}
 		i++
 	}
@@ -364,17 +363,16 @@ func (s *scanner) fields(args []ast.Expr) {
 }
 
 // names reports identifiers (variables, fields, methods) in a logged argument
-// that hold a word of neverLogWords. Left out is what the line does not show:
-// the receiver of Error() or String() (it prints what it chooses, as in
-// hasPrintMethod) and the argument of len or cap.
+// that hold a word of neverLogWords. Left out is what the line does not show
+// as text: a value that is a number, a boolean or an error (carriesText), and
+// the argument of len or cap.
 func (s *scanner) names(e ast.Expr) {
 	ast.Inspect(e, func(n ast.Node) bool {
+		if x, ok := n.(ast.Expr); ok && !carriesText(s.typeOf(x)) {
+			return false
+		}
 		switch n := n.(type) {
 		case *ast.CallExpr:
-			if sel, ok := n.Fun.(*ast.SelectorExpr); ok && len(n.Args) == 0 &&
-				(sel.Sel.Name == "Error" || sel.Sel.Name == "String") {
-				return false
-			}
 			if id, ok := n.Fun.(*ast.Ident); ok && (id.Name == "len" || id.Name == "cap") {
 				if _, builtin := s.info.Uses[id].(*types.Builtin); builtin {
 					return false
@@ -387,6 +385,32 @@ func (s *scanner) names(e ast.Expr) {
 		}
 		return true
 	})
+}
+
+// typeOf is the type of an expression, also of an identifier that the type
+// checker records only in Uses; nil when unknown.
+func (s *scanner) typeOf(e ast.Expr) types.Type {
+	if tv, ok := s.info.Types[e]; ok {
+		return tv.Type
+	}
+	if id, ok := e.(*ast.Ident); ok {
+		if v, ok := s.info.Uses[id].(*types.Var); ok {
+			return v.Type()
+		}
+	}
+	return nil
+}
+
+// carriesText: whether a value can show a name or a secret. Numbers, booleans
+// and error values cannot by their type (an error prints what it chooses).
+func carriesText(t types.Type) bool {
+	if t == nil {
+		return true
+	}
+	if b, ok := t.Underlying().(*types.Basic); ok && b.Info()&(types.IsNumeric|types.IsBoolean) != 0 {
+		return false
+	}
+	return !types.Implements(t, errorType)
 }
 
 func wordSet(ws ...string) map[string]bool {
