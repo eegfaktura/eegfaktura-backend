@@ -3,6 +3,7 @@ package middleware
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -117,4 +118,46 @@ func TestSuperuser_HeaderOnlyLoggedWhenShapedLikeATenant(t *testing.T) {
 			assert.Equal(t, "GC123456-001", l["tenant.id"], l["message"])
 		}
 	})
+}
+
+// Q6: a failed token check logs the error as error.type and error.message under
+// a fixed message, no constant label in the error field.
+func TestTokenCheckFailed_LogsTheError(t *testing.T) {
+	var handled bool
+	for name, h := range map[string]http.Handler{
+		"GQLProtect": GQLProtect(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { handled = true })),
+		"Protect":    Protect(passes(&handled)),
+	} {
+		t.Run(name, func(t *testing.T) {
+			orig := VerifyTokenClaims
+			t.Cleanup(func() { VerifyTokenClaims = orig })
+			VerifyTokenClaims = func(context.Context, string) (*PlatformClaims, error) {
+				return nil, errors.New("token is expired")
+			}
+			buf := logCapture(t)
+
+			assert.Equal(t, http.StatusUnauthorized, serveTenant(h, "tenant", "TE100100"))
+			assert.False(t, handled)
+			ls := logLines(t, buf)
+			assert.Equal(t, "token verification failed", ls[0]["message"])
+			assert.Equal(t, "error", ls[0]["log.level"])
+			assert.Equal(t, "*errors.errorString", ls[0]["error.type"])
+			assert.Equal(t, "token is expired", ls[0]["error.message"])
+			assert.NotContains(t, buf.String(), "JWT-Token")
+		})
+	}
+}
+
+func TestNoToken_LogsTheError(t *testing.T) {
+	var handled bool
+	buf := logCapture(t)
+	req := httptest.NewRequest("POST", "/any", nil)
+	rw := httptest.NewRecorder()
+	logging.AccessLog(Protect(passes(&handled))).ServeHTTP(rw, req)
+
+	assert.Equal(t, http.StatusForbidden, rw.Code)
+	ls := logLines(t, buf)
+	assert.Equal(t, "info", ls[0]["log.level"])
+	assert.Equal(t, ErrNoAuthorization.Error(), ls[0]["error.message"])
+	assert.NotContains(t, buf.String(), "JWT-Token")
 }

@@ -101,7 +101,7 @@ func GQLProtect(next http.Handler) http.Handler {
 
 		claims, err := verifyAndExtractClaims(context.Background(), jwtToken)
 		if err != nil {
-			logrus.WithContext(r.Context()).WithField("error", "JWT-Token").Errorf("%v", err)
+			logrus.WithContext(r.Context()).WithError(err).Error("token verification failed")
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
@@ -144,13 +144,13 @@ func GQLProtect(next http.Handler) http.Handler {
 func retrieveClaims(r *http.Request) (string, *PlatformClaims, error) {
 	jwtToken, err := ParseBearerTokenFromHeader(r)
 	if err != nil {
-		logrus.WithContext(r.Context()).WithField("error", "JWT-Token").Printf("No Access_token in request or invalid Authorization: %v\n", err)
+		logrus.WithContext(r.Context()).WithError(err).Info("no access token in the request or invalid Authorization header")
 		return "", nil, &VerifyError{http.StatusForbidden, errors.New("no access token available")}
 	}
 
 	claims, err := verifyAndExtractClaims(context.Background(), jwtToken)
 	if err != nil {
-		logrus.WithContext(r.Context()).WithField("error", "JWT-Token").Errorf("%v", err)
+		logrus.WithContext(r.Context()).WithError(err).Error("token verification failed")
 		return "", nil, &VerifyError{http.StatusUnauthorized, err}
 	}
 	logging.SetClient(r.Context(), claims.Authorized)
