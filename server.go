@@ -109,7 +109,6 @@ func main() {
 		os.Exit(2)
 	}
 	logging.Setup(os.Stdout, logCfg)
-	logging.LogStart(logCfg)
 
 	var configPath = flag.String("configPath", ".", "Configfile Path")
 	flag.Parse()

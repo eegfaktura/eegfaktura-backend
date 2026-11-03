@@ -199,7 +199,9 @@ func (h contextHandler) WithGroup(name string) slog.Handler {
 }
 
 // Setup makes the handler the default for slog and the standard log package,
-// and routes the global logrus logger into it.
+// routes the global logrus logger into it and writes the one start-up line:
+// version (service.version, as on every line) and effective log level. The
+// line goes straight to the handler, a LOG_LEVEL above info must not hide it.
 func Setup(w io.Writer, cfg Config) {
 	h := NewHandler(w, cfg)
 	slog.SetDefault(slog.New(h))
@@ -209,16 +211,11 @@ func Setup(w io.Writer, cfg Config) {
 	logrus.SetFormatter(discardFormatter{})
 	logrus.StandardLogger().ReplaceHooks(logrus.LevelHooks{})
 	logrus.AddHook(&bridge{handler: h})
-}
 
-// LogStart writes the one start-up line: version and effective log level. It
-// goes straight to the handler, a LOG_LEVEL above info must not hide it.
-func LogStart(cfg Config) {
-	r := slog.NewRecord(time.Now(), slog.LevelInfo,
-		fmt.Sprintf("%s %s starting, log level %s", ServiceName, cfg.Version, levelName(cfg.Level)), 0)
+	r := slog.NewRecord(time.Now(), slog.LevelInfo, "service start", 0)
 	r.AddAttrs(
 		slog.String("event.action", "service.start"),
 		slog.String("log.effective_level", levelName(cfg.Level)),
 	)
-	_ = slog.Default().Handler().Handle(context.Background(), r)
+	_ = h.Handle(context.Background(), r)
 }

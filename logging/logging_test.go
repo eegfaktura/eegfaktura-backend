@@ -198,15 +198,19 @@ func TestDeploymentEnvironment_OmittedWhenUnset(t *testing.T) {
 	}
 }
 
-// L14: the start-up line says which level is in force, whatever that level is.
-func TestLogStart(t *testing.T) {
+// L14: Setup writes the start-up line, which says which level is in force,
+// whatever that level is.
+func TestSetup_StartLine(t *testing.T) {
 	for level, want := range map[slog.Level]string{slog.LevelError: "error", slog.LevelInfo: "info", LevelTrace: "trace"} {
-		buf := setup(t, Config{Level: level, JSON: true, Version: "1.2.3", Environment: "dev"})
-		LogStart(Config{Level: level, Version: "1.2.3"})
+		var start bytes.Buffer
+		logtest.Capture(t, func(w io.Writer) {
+			Setup(io.MultiWriter(w, &start), Config{Level: level, JSON: true, Version: "1.2.3", Environment: "dev"})
+		})
 
-		got := lines(t, buf)
+		got := lines(t, &start)
 		require.Len(t, got, 1)
 		l := got[0]
+		assert.Equal(t, "service start", l["message"])
 		assert.Equal(t, "service.start", l["event.action"])
 		assert.Equal(t, want, l["log.effective_level"])
 		assert.Equal(t, "1.2.3", l["service.version"])

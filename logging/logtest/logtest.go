@@ -19,7 +19,8 @@ import (
 // Capture calls setup with a buffer (as a rule logging.Setup) and restores,
 // when the test ends, the slog default, the logrus standard logger (level,
 // output, formatter, caller reporting, hooks) and the log package's writer
-// and flags, which slog.SetDefault changes.
+// and flags, which slog.SetDefault changes. The buffer is emptied after setup:
+// it holds what the test logs, not the start-up line of logging.Setup.
 func Capture(t testing.TB, setup func(io.Writer)) *bytes.Buffer {
 	t.Helper()
 	oldSlog := slog.Default()
@@ -39,6 +40,7 @@ func Capture(t testing.TB, setup func(io.Writer)) *bytes.Buffer {
 	})
 	var buf bytes.Buffer
 	setup(&buf)
+	buf.Reset()
 	return &buf
 }
 
