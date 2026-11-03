@@ -31,8 +31,12 @@ import (
 //   - a name of personal data or a secret among the identifiers in the
 //     arguments of a log call (variables, fields, methods). Identifiers are
 //     split into words (camelCase, snake_case) and compared as whole words
-//     with neverLogWords: "subscription" is not "sub". String literals are not
-//     scanned; a field key outside allowedFields is dropped at runtime.
+//     with neverLogWords, also with a plural s: "subscription" is not "sub",
+//     "tokens" is "token". In an all lower-case identifier a list word of five
+//     or more letters also matches inside it (accesstoken).
+//   - a list word right before a verb of a format text ("password=%s").
+//     Otherwise string literals are not scanned; a field key outside
+//     allowedFields is dropped at runtime.
 //
 // A log call is logrus, log/slog, log or fmt.Print*. Generated code is left
 // out. A line that is fine goes on neverLogAllowed with its reason, after
@@ -59,6 +63,12 @@ var neverLogAllowed = map[string]string{
 	"eda/edaSubscription.go: name Payload in msg.Payload.ConversationId": "only the conversation id is logged; " +
 		"the struct itself is caught as a whole value",
 	"mqtt/subscriptionHandler.go: name Payload in msg.Payload.ConversationId": "only the conversation id is logged",
+	`api/middleware/tokenVerifier.go: word before a verb in the format text "Authorization: %v"`: "the err is " +
+		"ErrNoAuthorization or ErrInvalidAuthSchema, constant texts, never the header",
+	"database/eegDao.go: name owners in owners":    "the tenants (community ids) holding the metering points, no person",
+	"database/eegDao.go: name owners in owners[0]": "the tenant (community id) the metering points are applied to, no person",
+	`services/mailService.go: word before a verb in the format text "recipients %d"`: "the number of rejected " +
+		"recipients (len), no address",
 }
 
 // fixtureDir is left out of TestNeverLog; TestNeverLog_FindsTheFixture checks it.
@@ -124,12 +134,15 @@ func TestIdentWords(t *testing.T) {
 	for id, want := range map[string][]string{
 		"userName": {"user", "name"}, "APIKey": {"api", "key"}, "api_key": {"api", "key"}, "Name1": {"name1"},
 		"IBAN": {"iban"}, "userID": {"user", "id"}, "ConversationId": {"conversation", "id"}, "_x": {"x"},
+		"IBANs": {"ibans"}, "IBANsFor": {"ibans", "for"}, "URLStatus": {"url", "status"},
 	} {
 		assert.Equal(t, want, identWords(id), id)
 	}
 	for id, want := range map[string]bool{
 		"userName": true, "APIKey": true, "apikey": true, "eMail": true, "sentTo": true, "tokenString": true,
-		"Subscription": false, "tokenizer": false, "Number": false, "subject": true, "Sub": true,
+		"Subscription": false, "subscription": false, "tokenizerState": false, "Number": false, "subject": true, "Sub": true,
+		"tokens": true, "IBANs": true, "Emails": true, "recipients": true, "accesstoken": true, "userpassword": true,
+		"mailaddress": true, "tokenizer": true, "subid": false, "mypwd": false, "Accesstoken": false,
 	} {
 		assert.Equal(t, want, hasNeverLogWord(id), id)
 	}
@@ -283,7 +296,20 @@ var logMethods = map[string]bool{
 	"Error": true, "Fatal": true, "Panic": true, "Log": true,
 }
 
-var formatVerb = regexp.MustCompile(`%([-+# 0]*)[0-9]*(?:\.[0-9]+)?([a-zA-Z%])`)
+var (
+	formatVerb = regexp.MustCompile(`%([-+# 0]*)[0-9]*(?:\.[0-9]+)?([a-zA-Z%])`)
+	// a list word right before a verb: "password=%s", "email: %v", "IBANs %v"
+	beforeVerb = regexp.MustCompile(`(?i)\b(?:` + strings.Join(append(mapKeys(neverLogWords), "api_key", "mail address"), "|") +
+		`)s?[ =:'"(-]{0,3}%[^%]`)
+)
+
+func mapKeys(m map[string]bool) []string {
+	var ks []string
+	for k := range m {
+		ks = append(ks, k)
+	}
+	return ks
+}
 
 func (s *scanner) plain(args []ast.Expr) {
 	for _, a := range args {
@@ -304,8 +330,12 @@ func (s *scanner) formatted(args []ast.Expr) {
 		}
 		return
 	}
+	text := constant.StringVal(tv.Value)
+	if m := beforeVerb.FindString(text); m != "" {
+		s.hit(format.Pos(), fmt.Sprintf("word before a verb in the format text %q", m))
+	}
 	i := 0
-	for _, m := range formatVerb.FindAllStringSubmatch(constant.StringVal(tv.Value), -1) {
+	for _, m := range formatVerb.FindAllStringSubmatch(text, -1) {
 		if m[2] == "%" || i >= len(values) {
 			continue
 		}
@@ -367,14 +397,23 @@ func wordSet(ws ...string) map[string]bool {
 	return m
 }
 
-// hasNeverLogWord: one word, or several in a row, of the identifier form an entry.
+// hasNeverLogWord: one word, or several in a row, of the identifier form an
+// entry, also with a plural s. An all lower-case identifier also matches when
+// it holds an entry of five or more letters (accesstoken, userpassword).
 func hasNeverLogWord(id string) bool {
 	ws := identWords(id)
 	for i := range ws {
 		joined := ""
 		for _, w := range ws[i:] {
 			joined += w
-			if neverLogWords[joined] {
+			if neverLogWords[joined] || neverLogWords[strings.TrimSuffix(joined, "s")] {
+				return true
+			}
+		}
+	}
+	if strings.ToLower(id) == id {
+		for w := range neverLogWords {
+			if len(w) >= 5 && strings.Contains(id, w) {
 				return true
 			}
 		}
@@ -383,7 +422,8 @@ func hasNeverLogWord(id string) bool {
 }
 
 // identWords splits an identifier into lower-case words at underscores and
-// case changes: userName -> user, name; APIKey -> api, key; Name1 -> name1.
+// case changes: userName -> user, name; APIKey -> api, key; Name1 -> name1;
+// a plural s stays with an acronym: IBANs -> ibans.
 func identWords(id string) []string {
 	var ws []string
 	rs := []rune(id)
@@ -395,8 +435,7 @@ func identWords(id string) []string {
 				ws = append(ws, strings.ToLower(string(rs[start:i])))
 			}
 			start = i + 1
-		case i > start && unicode.IsUpper(r) &&
-			(!unicode.IsUpper(rs[i-1]) || i+1 < len(rs) && unicode.IsLower(rs[i+1])):
+		case i > start && unicode.IsUpper(r) && (!unicode.IsUpper(rs[i-1]) || startsWord(rs, i)):
 			ws = append(ws, strings.ToLower(string(rs[start:i])))
 			start = i
 		}
@@ -405,6 +444,15 @@ func identWords(id string) []string {
 		ws = append(ws, strings.ToLower(string(rs[start:])))
 	}
 	return ws
+}
+
+// startsWord: the upper-case letter at i of an acronym begins a new word
+// (APIKey: K), unless only a plural s follows it (IBANs).
+func startsWord(rs []rune, i int) bool {
+	if i+1 >= len(rs) || !unicode.IsLower(rs[i+1]) {
+		return false
+	}
+	return rs[i+1] != 's' || i+2 < len(rs) && unicode.IsLower(rs[i+2])
 }
 
 func (s *scanner) whole(e ast.Expr, how string) {

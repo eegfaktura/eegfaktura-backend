@@ -22,7 +22,7 @@ type member struct {
 
 type nested struct{ Members []*member }
 
-func run(ctx context.Context, m *member, n nested, err error, id string, count int, when time.Time, format string, list []member, a any, h http.Header, username, sub, subscription, apiKey, userID, tokenString, tokenizer string, tokenErr error, payload []byte) {
+func run(ctx context.Context, m *member, n nested, err error, id string, count int, when time.Time, format string, list []member, a any, h http.Header, username, sub, subscription, apiKey, userID, tokenString, tokenizerState, accesstoken, userpassword string, tokens, IBANs []string, tokenErr error, payload []byte) {
 	// structs printed whole
 	logrus.Infof("member %v", m)                      // want
 	logrus.Warnf("member %+v", *m)                    // want
@@ -52,15 +52,25 @@ func run(ctx context.Context, m *member, n nested, err error, id string, count i
 	logrus.Infof("x %s", tokenString)                     // want
 	logrus.Info(tokenErr)                                 // want
 	logrus.Infof("subscription %s", subscription)
-	logrus.Infof("x %s", tokenizer)
+	logrus.Infof("x %s", tokenizerState)
+	logrus.Infof("x %v", tokens)       // want
+	logrus.Infof("x %v", IBANs)        // want
+	logrus.Infof("x %s", accesstoken)  // want
+	logrus.Infof("x %s", userpassword) // want
 	logrus.Infof("x %s %d", tokenErr.Error(), len(payload))
 	logrus.WithField("tenant", id).Warnf("token %%v %d", 1) // the verb is escaped, %d is count-like
 
-	// string literals are not scanned: a key outside allowedFields is dropped at runtime
+	// a list word right before a verb of a format text
+	logrus.Infof("email: %s", id)        // want
+	logrus.Infof("password=%s", id)      // want
+	fmt.Printf("IBANs %v\n", id)         // want
+	logrus.Infof("mail address: %s", id) // want
+	logrus.Infof("subscription %s, the token expired", id)
+
+	// otherwise string literals are not scanned: a key outside allowedFields is dropped at runtime
 	logrus.WithField("iban", id).Info("x")
 	slog.Info("x", slog.String("email", id))
 	slog.WarnContext(ctx, "x", "password", id)
-	logrus.Infof("email: %s", id)
 	logrus.WithField("user_id", id).Info("x")
 
 	// fine
