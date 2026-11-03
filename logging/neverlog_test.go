@@ -16,7 +16,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
+	"unicode"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,37 +28,56 @@ import (
 // type-checks the module's source and fails on
 //   - a struct (a model above all) printed whole: by a format verb, as a bare
 //     argument or as a field value. Errors and Stringers print what they choose.
-//   - a name of personal data or a secret in the arguments of a log call, in a
-//     field key, or right before a format verb in the text.
+//   - a name of personal data or a secret among the identifiers in the
+//     arguments of a log call (variables, fields, methods). Identifiers are
+//     split into words (camelCase, snake_case) and compared as whole words
+//     with neverLogWords: "subscription" is not "sub". String literals are not
+//     scanned; a field key outside allowedFields is dropped at runtime.
 //
 // A log call is logrus, log/slog, log or fmt.Print*. Generated code is left
 // out. A line that is fine goes on neverLogAllowed with its reason, after
-// reading what the value holds at runtime.
+// reading what the value holds at runtime. A false positive is fixed in the
+// scanner, not allowlisted.
 
-// neverLogNames match case-insensitively inside identifiers, field keys and
-// format text. Metering point numbers are ids and may be logged (W-261008-ca2).
-var neverLogNames = regexp.MustCompile(`(?i)firstname|lastname|name1|name2|email|iban|password|passwd|secret|token|phone|accountholder|credential|authorization|bearer|creds|basicauth|payload|body|username|user_id|subject|\bsub\b`)
+// neverLogWords is the list common to all services. An entry of several words
+// (user name, api_key) matches those words in a row: userName, api_key, APIKey.
+// Metering point numbers are ids and may be logged (W-261008-ca2).
+var neverLogWords = wordSet("password", "passwd", "pwd", "secret", "token", "jwt", "bearer", "authorization",
+	"credential", "creds", "cookie", "apikey", "iban", "bic", "firstname", "lastname", "vorname", "nachname",
+	"name1", "name2", "street", "phone", "email", "mailaddress", "recipient", "sentto", "owner", "accountholder",
+	"username", "userid", "sub", "subject", "payload", "body")
 
-// neverLogAllowed: key "<file>: <hit>", without a line number, so an entry
+// neverLogAllowed: key "<file>: <finding>", without a line number, so an entry
 // survives edits around it but not a change of what is logged.
 var neverLogAllowed = map[string]string{
-	`api/middleware/tokenVerifier.go: field key "JWT-Token"`: "a constant label as the value of the field error, no token",
-	"mqtt/messageBroker.go: name token":                      "the paho delivery token, only its Error() is logged",
 	"eda/edaSubscription.go: %+v of []eda.responseCodesPerMeter": "metering point, response codes, consent end and a " +
 		"pointer to the consent id: no personal data, metering point numbers may be logged",
-	`api/middleware/tokenVerifier.go: name in the format text "Authorization: %v"`: "the err is ErrNoAuthorization or " +
-		"ErrInvalidAuthSchema, constant texts, never the header",
-	"cmd/mailtemplate-import/main.go: name Body":    "operator tool, prints the template on its own terminal, not a service log",
-	"cmd/mailtemplate-import/main.go: name Subject": "operator tool, prints the template on its own terminal, not a service log",
-	"eda/edaSubscription.go: name Payload":          "only msg.Payload.ConversationId is logged; the struct itself is caught as a whole value",
-	"mqtt/subscriptionHandler.go: name Payload":     "only msg.Payload.ConversationId is logged",
-	"mqtt/messageBroker.go: name Payload":           "only len(msg.Payload()) is logged",
+	"cmd/mailtemplate-import/main.go: name Body in c.Body":       "operator tool, prints the template on its own terminal, not a service log",
+	"cmd/mailtemplate-import/main.go: name Subject in c.Subject": "operator tool, prints the template on its own terminal, not a service log",
+	"cmd/mailtemplate-import/main.go: name SentTo in sent.SentTo": "operator tool, prints the test mail address the " +
+		"operator passed on its own terminal, not a service log",
+	"eda/edaSubscription.go: name Payload in msg.Payload.ConversationId": "only the conversation id is logged; " +
+		"the struct itself is caught as a whole value",
+	"mqtt/subscriptionHandler.go: name Payload in msg.Payload.ConversationId": "only the conversation id is logged",
 }
 
+// fixtureDir is left out of TestNeverLog; TestNeverLog_FindsTheFixture checks it.
+const fixtureDir = "logging/testdata/"
+
+// The scan compiles the module through go list. -short skips it for a quick
+// local run; CI runs the tests without -short, so it always runs there.
 func TestNeverLog(t *testing.T) {
+	if testing.Short() {
+		t.Skip("source scan, skipped with -short")
+	}
+	hits, err := scanned()
+	require.NoError(t, err)
 	var failed []string
 	used := map[string]bool{}
-	for _, h := range scanPackages(t, "./...") {
+	for _, h := range hits {
+		if strings.HasPrefix(h.file, fixtureDir) {
+			continue
+		}
 		if _, ok := neverLogAllowed[h.key]; ok {
 			used[h.key] = true
 			continue
@@ -73,7 +94,10 @@ func TestNeverLog(t *testing.T) {
 
 // The scan itself: every line marked "// want" in the fixture is a hit and no other is.
 func TestNeverLog_FindsTheFixture(t *testing.T) {
-	const fixture = "logging/testdata/neverlog/bad.go"
+	if testing.Short() {
+		t.Skip("source scan, skipped with -short")
+	}
+	const fixture = fixtureDir + "neverlog/bad.go"
 	src, err := os.ReadFile(filepath.FromSlash("testdata/neverlog/bad.go"))
 	require.NoError(t, err)
 	want := map[int]bool{}
@@ -84,12 +108,31 @@ func TestNeverLog_FindsTheFixture(t *testing.T) {
 	}
 	require.NotEmpty(t, want)
 
+	hits, err := scanned()
+	require.NoError(t, err)
 	got := map[int]bool{}
-	for _, h := range scanPackages(t, "./logging/testdata/neverlog") {
-		require.Equal(t, fixture, h.file)
-		got[h.line] = true
+	for _, h := range hits {
+		if strings.HasPrefix(h.file, fixtureDir) {
+			require.Equal(t, fixture, h.file)
+			got[h.line] = true
+		}
 	}
 	assert.Equal(t, want, got)
+}
+
+func TestIdentWords(t *testing.T) {
+	for id, want := range map[string][]string{
+		"userName": {"user", "name"}, "APIKey": {"api", "key"}, "api_key": {"api", "key"}, "Name1": {"name1"},
+		"IBAN": {"iban"}, "userID": {"user", "id"}, "ConversationId": {"conversation", "id"}, "_x": {"x"},
+	} {
+		assert.Equal(t, want, identWords(id), id)
+	}
+	for id, want := range map[string]bool{
+		"userName": true, "APIKey": true, "apikey": true, "eMail": true, "sentTo": true, "tokenString": true,
+		"Subscription": false, "tokenizer": false, "Number": false, "subject": true, "Sub": true,
+	} {
+		assert.Equal(t, want, hasNeverLogWord(id), id)
+	}
 }
 
 type neverLogHit struct {
@@ -103,18 +146,27 @@ type listedPackage struct {
 	Module                  *struct{ Main bool }
 }
 
-func scanPackages(t *testing.T, pattern string) []neverLogHit {
-	t.Helper()
+// scanned runs go list and the scan once per test binary, also under -count=N:
+// the module and the fixture in one go.
+var scanned = sync.OnceValues(func() ([]neverLogHit, error) {
+	return scanPackages("./...", "./"+fixtureDir+"neverlog")
+})
+
+func scanPackages(patterns ...string) ([]neverLogHit, error) {
 	root, err := filepath.Abs("..")
-	require.NoError(t, err)
-	cmd := exec.Command("go", "list", "-export", "-deps", "-json=ImportPath,Dir,Export,GoFiles,Module", pattern)
+	if err != nil {
+		return nil, err
+	}
+	args := append([]string{"list", "-export", "-deps", "-json=ImportPath,Dir,Export,GoFiles,Module"}, patterns...)
+	cmd := exec.Command("go", args...)
 	cmd.Dir = root
 	out, err := cmd.Output()
 	var failed *exec.ExitError
 	if errors.As(err, &failed) {
-		t.Logf("go list: %s", failed.Stderr)
+		return nil, fmt.Errorf("go list: %w: %s", err, failed.Stderr)
+	} else if err != nil {
+		return nil, fmt.Errorf("go list: %w", err)
 	}
-	require.NoError(t, err, "go list")
 
 	exports := map[string]string{}
 	var own []listedPackage
@@ -122,8 +174,8 @@ func scanPackages(t *testing.T, pattern string) []neverLogHit {
 		var p listedPackage
 		if err := dec.Decode(&p); err == io.EOF {
 			break
-		} else {
-			require.NoError(t, err)
+		} else if err != nil {
+			return nil, err
 		}
 		exports[p.ImportPath] = p.Export
 		if p.Module != nil && p.Module.Main {
@@ -138,19 +190,22 @@ func scanPackages(t *testing.T, pattern string) []neverLogHit {
 		var files []*ast.File
 		for _, name := range p.GoFiles {
 			f, err := parser.ParseFile(fset, filepath.Join(p.Dir, name), nil, parser.ParseComments)
-			require.NoError(t, err)
+			if err != nil {
+				return nil, err
+			}
 			files = append(files, f)
 		}
 		s.info = &types.Info{Types: map[ast.Expr]types.TypeAndValue{}, Uses: map[*ast.Ident]types.Object{}}
-		_, err := (&types.Config{Importer: imp}).Check(p.ImportPath, fset, files, s.info)
-		require.NoError(t, err, p.ImportPath)
+		if _, err := (&types.Config{Importer: imp}).Check(p.ImportPath, fset, files, s.info); err != nil {
+			return nil, fmt.Errorf("%s: %w", p.ImportPath, err)
+		}
 		for _, f := range files {
 			if !ast.IsGenerated(f) {
 				ast.Inspect(f, s.visit)
 			}
 		}
 	}
-	return s.hits
+	return s.hits, nil
 }
 
 type scanner struct {
@@ -228,12 +283,7 @@ var logMethods = map[string]bool{
 	"Error": true, "Fatal": true, "Panic": true, "Log": true,
 }
 
-var (
-	formatVerb = regexp.MustCompile(`%([-+# 0]*)[0-9]*(?:\.[0-9]+)?([a-zA-Z%])`)
-	// a name right before a verb: "password=%s", "email: %v"
-	beforeVerb = regexp.MustCompile(`(?i)(?:` + neverLogNames.String() + `)[a-z]*[ =:'"(-]{0,3}%[^%]`)
-	fieldKey   = regexp.MustCompile(`^"[\w.-]+"$`)
-)
+var formatVerb = regexp.MustCompile(`%([-+# 0]*)[0-9]*(?:\.[0-9]+)?([a-zA-Z%])`)
 
 func (s *scanner) plain(args []ast.Expr) {
 	for _, a := range args {
@@ -254,12 +304,8 @@ func (s *scanner) formatted(args []ast.Expr) {
 		}
 		return
 	}
-	text := constant.StringVal(tv.Value)
-	if m := beforeVerb.FindString(text); m != "" {
-		s.hit(format.Pos(), fmt.Sprintf("name in the format text %q", m))
-	}
 	i := 0
-	for _, m := range formatVerb.FindAllStringSubmatch(text, -1) {
+	for _, m := range formatVerb.FindAllStringSubmatch(constant.StringVal(tv.Value), -1) {
 		if m[2] == "%" || i >= len(values) {
 			continue
 		}
@@ -271,17 +317,9 @@ func (s *scanner) formatted(args []ast.Expr) {
 	}
 }
 
-// fields looks at keys and values of WithField(s) and slog calls. The message
-// of a slog call is text; a literal counts only if it looks like a key.
+// fields looks at the values of WithField(s) and slog calls.
 func (s *scanner) fields(args []ast.Expr) {
 	for _, a := range args {
-		ast.Inspect(a, func(n ast.Node) bool {
-			if lit, ok := n.(*ast.BasicLit); ok && lit.Kind == token.STRING &&
-				fieldKey.MatchString(lit.Value) && neverLogNames.MatchString(lit.Value) {
-				s.hit(lit.Pos(), "field key "+lit.Value)
-			}
-			return true
-		})
 		s.names(a)
 		if lit, ok := a.(*ast.CompositeLit); ok {
 			for _, e := range lit.Elts {
@@ -295,16 +333,78 @@ func (s *scanner) fields(args []ast.Expr) {
 	}
 }
 
-// names reports identifiers (variables, fields, methods) that match.
+// names reports identifiers (variables, fields, methods) in a logged argument
+// that hold a word of neverLogWords. Left out is what the line does not show:
+// the receiver of Error() or String() (it prints what it chooses, as in
+// hasPrintMethod) and the argument of len or cap.
 func (s *scanner) names(e ast.Expr) {
 	ast.Inspect(e, func(n ast.Node) bool {
-		if id, ok := n.(*ast.Ident); ok && neverLogNames.MatchString(id.Name) {
-			if _, pkg := s.info.Uses[id].(*types.PkgName); !pkg {
-				s.hit(id.Pos(), "name "+id.Name)
+		switch n := n.(type) {
+		case *ast.CallExpr:
+			if sel, ok := n.Fun.(*ast.SelectorExpr); ok && len(n.Args) == 0 &&
+				(sel.Sel.Name == "Error" || sel.Sel.Name == "String") {
+				return false
+			}
+			if id, ok := n.Fun.(*ast.Ident); ok && (id.Name == "len" || id.Name == "cap") {
+				if _, builtin := s.info.Uses[id].(*types.Builtin); builtin {
+					return false
+				}
+			}
+		case *ast.Ident:
+			if _, pkg := s.info.Uses[n].(*types.PkgName); !pkg && hasNeverLogWord(n.Name) {
+				s.hit(n.Pos(), "name "+n.Name+" in "+types.ExprString(e))
 			}
 		}
 		return true
 	})
+}
+
+func wordSet(ws ...string) map[string]bool {
+	m := map[string]bool{}
+	for _, w := range ws {
+		m[w] = true
+	}
+	return m
+}
+
+// hasNeverLogWord: one word, or several in a row, of the identifier form an entry.
+func hasNeverLogWord(id string) bool {
+	ws := identWords(id)
+	for i := range ws {
+		joined := ""
+		for _, w := range ws[i:] {
+			joined += w
+			if neverLogWords[joined] {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// identWords splits an identifier into lower-case words at underscores and
+// case changes: userName -> user, name; APIKey -> api, key; Name1 -> name1.
+func identWords(id string) []string {
+	var ws []string
+	rs := []rune(id)
+	start := 0
+	for i, r := range rs {
+		switch {
+		case r == '_':
+			if i > start {
+				ws = append(ws, strings.ToLower(string(rs[start:i])))
+			}
+			start = i + 1
+		case i > start && unicode.IsUpper(r) &&
+			(!unicode.IsUpper(rs[i-1]) || i+1 < len(rs) && unicode.IsLower(rs[i+1])):
+			ws = append(ws, strings.ToLower(string(rs[start:i])))
+			start = i
+		}
+	}
+	if start < len(rs) {
+		ws = append(ws, strings.ToLower(string(rs[start:])))
+	}
+	return ws
 }
 
 func (s *scanner) whole(e ast.Expr, how string) {

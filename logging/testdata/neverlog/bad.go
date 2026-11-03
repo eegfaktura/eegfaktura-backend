@@ -22,7 +22,7 @@ type member struct {
 
 type nested struct{ Members []*member }
 
-func run(ctx context.Context, m *member, n nested, err error, id string, count int, when time.Time, format string, list []member, a any, h http.Header, username, sub, subscription string) {
+func run(ctx context.Context, m *member, n nested, err error, id string, count int, when time.Time, format string, list []member, a any, h http.Header, username, sub, subscription, apiKey, userID, tokenString, tokenizer string, tokenErr error, payload []byte) {
 	// structs printed whole
 	logrus.Infof("member %v", m)                      // want
 	logrus.Warnf("member %+v", *m)                    // want
@@ -41,21 +41,27 @@ func run(ctx context.Context, m *member, n nested, err error, id string, count i
 	logrus.Infof("value %v", a)
 	logrus.Errorf("failed: %+v", err)
 
-	// names
+	// names: identifiers split into words, compared as whole words
 	logrus.Warnf("x %s", m.FirstName)                     // want
 	logrus.WithContext(ctx).Warn(m.IBAN)                  // want
 	logrus.Errorf("x %s", fmt.Sprintf("%s", m.FirstName)) // want
-	logrus.WithField("iban", id).Info("x")                // want
-	slog.Info("x", slog.String("email", id))              // want
-	slog.WarnContext(ctx, "x", "password", id)            // want
-	logrus.Infof("email: %s", id)                         // want
-	logrus.Infof("password=%s", id)                       // want
 	logrus.Warnf("x %s", username)                        // want
 	logrus.Warnf("x %s", sub)                             // want
-	logrus.WithField("user_id", id).Info("x")             // want
-	logrus.Infof("body: %s", id)                          // want
+	slog.Info("x", "key", apiKey)                         // want
+	logrus.WithField("MSG", userID).Info("x")             // want
+	logrus.Infof("x %s", tokenString)                     // want
+	logrus.Info(tokenErr)                                 // want
 	logrus.Infof("subscription %s", subscription)
+	logrus.Infof("x %s", tokenizer)
+	logrus.Infof("x %s %d", tokenErr.Error(), len(payload))
 	logrus.WithField("tenant", id).Warnf("token %%v %d", 1) // the verb is escaped, %d is count-like
+
+	// string literals are not scanned: a key outside allowedFields is dropped at runtime
+	logrus.WithField("iban", id).Info("x")
+	slog.Info("x", slog.String("email", id))
+	slog.WarnContext(ctx, "x", "password", id)
+	logrus.Infof("email: %s", id)
+	logrus.WithField("user_id", id).Info("x")
 
 	// fine
 	logrus.Warn("the token expired, no password set")

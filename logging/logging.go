@@ -138,9 +138,9 @@ var allowedFields = map[string]bool{
 	"request.id": true, "trace.id": true, "span.id": true,
 	"tenant.id": true, "client.id": true, "graphql.operation.name": true,
 	"error.type": true, "error.message": true, "error.stack_trace": true,
-	"log.logger": true, "log.effective_level": true, "log.origin.function": true, "log.origin.file.name": true, "log.origin.file.line": true,
+	"log.effective_level": true, "log.origin.function": true, "log.origin.file.name": true, "log.origin.file.line": true,
 	// logrus fields in use (2026-10-30)
-	"SQL": true, "STMT": true, "MAIL": true, "MSG": true, "PROTOCOL": true, "protocol": true,
+	"SQL": true, "STMT": true, "MSG": true, "PROTOCOL": true, "protocol": true,
 	"code": true, "command": true, "ecId": true, "participantId": true, "templates": true,
 	"sepaActiv": true, "settlementInterval": true,
 	// db pool stats (database.go)
