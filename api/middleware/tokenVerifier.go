@@ -134,7 +134,7 @@ func GQLProtect(next http.Handler) http.Handler {
 			ctx = withGQLNonAdmin(ctx, claims, superuser)
 		}
 
-		logging.SetTenant(ctx, strings.ToUpper(tenant))
+		logging.SetTenant(ctx, tenant)
 		// and call the next with our new context
 		r = r.WithContext(ctx)
 		next.ServeHTTP(w, r)
@@ -190,10 +190,10 @@ func ConditionProtect(admin JWTHandlerFunc, user JWTHandlerFunc) http.HandlerFun
 
 		claims.Tenants = toUpper(claims.Tenants)
 		if claims.AccessGroups.IsAdmin() {
-			logging.SetTenant(r.Context(), strings.ToUpper(tenant))
+			logging.SetTenant(r.Context(), tenant)
 			admin(w, r, claims, strings.ToUpper(tenant))
 		} else if claims.AccessGroups.IsUser() {
-			logging.SetTenant(r.Context(), strings.ToUpper(tenant))
+			logging.SetTenant(r.Context(), tenant)
 			user(w, r, claims, strings.ToUpper(tenant))
 		} else {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -257,7 +257,7 @@ func ProtectApi(handler JWTHandlerFunc) http.HandlerFunc {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
-		logging.SetTenant(r.Context(), strings.ToUpper(tenant))
+		logging.SetTenant(r.Context(), tenant)
 
 		// Same admin-group requirement as the JWT path (verifyRequest): these
 		// endpoints expose member data and trigger EDA messages, so a plain
@@ -288,7 +288,7 @@ func verifyRequest(handler JWTHandlerFunc) func(w http.ResponseWriter, r *http.R
 			return
 		}
 
-		logging.SetTenant(r.Context(), strings.ToUpper(tenant))
+		logging.SetTenant(r.Context(), tenant)
 		if claims.AccessGroups.IsAdmin() {
 			claims.Tenants = toUpper(claims.Tenants)
 			handler(w, r, claims, strings.ToUpper(tenant))

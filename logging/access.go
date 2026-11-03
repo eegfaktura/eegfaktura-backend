@@ -84,7 +84,8 @@ func validTenant(tenant string) (string, bool) {
 	return upper, tenantPattern.MatchString(upper)
 }
 
-// SetTenant records the tenant the request was allowed for.
+// SetTenant records the tenant the request was allowed for, upper-cased here
+// for every caller.
 func SetTenant(ctx context.Context, tenant string) {
 	if ai := fromContext(ctx); ai != nil {
 		if upper, ok := validTenant(tenant); ok {

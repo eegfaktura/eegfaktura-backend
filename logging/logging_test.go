@@ -147,6 +147,19 @@ func TestUnknownFieldsAreDropped(t *testing.T) {
 	assert.Equal(t, "TE100100", ls[1]["tenant.id"])
 }
 
+// Outside a request the tenant field is checked and written upper-cased, as SetTenant does in a request.
+func TestTenantOutsideRequest_UpperCased(t *testing.T) {
+	buf := setup(t, Config{Level: slog.LevelInfo, JSON: true})
+	logrus.WithField("tenant", "te100100").Info("a")
+	slog.Info("b", "tenant.id", "gc123456-001")
+	logrus.WithField("tenant", "Erika Mustermann").Info("c")
+	ls := lines(t, buf)
+	require.Len(t, ls, 3)
+	assert.Equal(t, "TE100100", ls[0]["tenant.id"])
+	assert.Equal(t, "GC123456-001", ls[1]["tenant.id"])
+	assert.NotContains(t, ls[2], "tenant.id")
+}
+
 // slog.With / Logger.With: the allowlist applies to those fields as well.
 func TestUnknownFieldsAreDropped_With(t *testing.T) {
 	buf := setup(t, Config{Level: slog.LevelInfo, JSON: true})
