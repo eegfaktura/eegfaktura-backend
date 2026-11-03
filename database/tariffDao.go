@@ -2,6 +2,7 @@ package database
 
 import (
 	"at.ourproject/vfeeg-backend/model"
+	"context"
 	"database/sql"
 	"errors"
 	"github.com/doug-martin/goqu/v9"
@@ -19,30 +20,30 @@ import (
 type OpenDbXConnection func() (*sqlx.DB, error)
 
 type TariffRepository interface {
-	GetTariff(tenant string) ([]model.Tariff, error)
-	GetTariffNameMap(tenant string) (map[string]string, error)
-	AddTariff(tenant, user string, tariff *model.Tariff) error
+	GetTariff(ctx context.Context, tenant string) ([]model.Tariff, error)
+	GetTariffNameMap(ctx context.Context, tenant string) (map[string]string, error)
+	AddTariff(ctx context.Context, tenant, user string, tariff *model.Tariff) error
 	ArchiveTariff(tenant string, id string) error
-	GetTariffHistory(tenant, id string) ([]model.Tariff, error)
+	GetTariffHistory(ctx context.Context, tenant, id string) ([]model.Tariff, error)
 }
 
-func (db *sqlDatabase) GetTariff(tenant string) ([]model.Tariff, error) {
-	return GetTariff(db.db, tenant)
+func (db *sqlDatabase) GetTariff(ctx context.Context, tenant string) ([]model.Tariff, error) {
+	return GetTariff(ctx, db.db, tenant)
 }
 
-func (db *sqlDatabase) GetTariffNameMap(tenant string) (map[string]string, error) {
-	return GetTariffNameMap(db.db, tenant)
+func (db *sqlDatabase) GetTariffNameMap(ctx context.Context, tenant string) (map[string]string, error) {
+	return GetTariffNameMap(ctx, db.db, tenant)
 }
 
-func (db *sqlDatabase) AddTariff(tenant, user string, tariff *model.Tariff) error {
-	return AddTariff(db.db, tenant, user, tariff)
+func (db *sqlDatabase) AddTariff(ctx context.Context, tenant, user string, tariff *model.Tariff) error {
+	return AddTariff(ctx, db.db, tenant, user, tariff)
 }
 
 func (db *sqlDatabase) ArchiveTariff(tenant string, id string) error {
 	return archiveTariff(db.db, tenant, id)
 }
 
-func (db *sqlDatabase) GetTariffHistory(tenant, id string) ([]model.Tariff, error) {
+func (db *sqlDatabase) GetTariffHistory(ctx context.Context, tenant, id string) ([]model.Tariff, error) {
 	var tariff model.Tariff
 	stmt, _, err := goqu.Dialect("postgres").From("base.tariff").Select(&tariff).
 		Where(
@@ -57,7 +58,7 @@ func (db *sqlDatabase) GetTariffHistory(tenant, id string) ([]model.Tariff, erro
 	tariffHistory := []model.Tariff{}
 	err = db.db.Select(&tariffHistory, stmt)
 	if (err != nil) || len(tariffHistory) == 0 {
-		log.Errorf("GetTariffHistory err: %v", err)
+		log.WithContext(ctx).Errorf("GetTariffHistory err: %v", err)
 		return []model.Tariff{}, model.ErrGetTariff(err)
 	}
 
@@ -78,14 +79,14 @@ var (
 
 var pgDialect = goqu.Dialect("postgres")
 
-func GetTariff(db *sqlx.DB, tenant string) ([]model.Tariff, error) {
+func GetTariff(ctx context.Context, db *sqlx.DB, tenant string) ([]model.Tariff, error) {
 	var tariff []model.Tariff
 	err := db.Select(&tariff, `SELECT id, name, "billingPeriod", "useVat", "vatInPercent", "accountNetAmount", "accountGrossAmount", "participantFee", "baseFee", "businessNr", version, type, "centPerKWh", discount, "freeKWh", "meteringPointFee", "meteringPointVat", "useMeteringPointFee", "vatSupplementaryText", `+
 		`"useTimeTariff", "timeTariff1Active", "timeTariff1Name", "timeTariff1From", "timeTariff1To", "timeTariff1CentPerKWh", "timeTariff2Active", "timeTariff2Name", "timeTariff2From", "timeTariff2To", "timeTariff2CentPerKWh", `+
 		`"joiningFee", "joiningFeeUseVat", "joiningFeeVatInPercent" `+
 		`FROM base.activetariff WHERE tenant = $1`, tenant)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		log.WithField("tenant", tenant).Errorf("Error Query Tariff! %s", err.Error())
+		log.WithContext(ctx).WithField("tenant", tenant).Errorf("Error Query Tariff! %s", err.Error())
 		return tariff, model.ErrGetTariff(err)
 	}
 	if tariff == nil {
@@ -132,8 +133,8 @@ func GetTariffHistory(db *sqlx.DB, tenant string, id string) ([]model.Tariff, er
 	return tariffHistory, nil
 }
 
-func GetTariffNameMap(db *sqlx.DB, tenant string) (map[string]string, error) {
-	tariffs, err := GetTariff(db, tenant)
+func GetTariffNameMap(ctx context.Context, db *sqlx.DB, tenant string) (map[string]string, error) {
+	tariffs, err := GetTariff(ctx, db, tenant)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +181,7 @@ func archiveTariff(db *sqlx.DB, tenant string, id string) error {
 	return model.ErrUpdateTariff(errors.New("unknown tariff"))
 }
 
-func AddTariff(db *sqlx.DB, tenant, user string, tariff *model.Tariff) error {
+func AddTariff(ctx context.Context, db *sqlx.DB, tenant, user string, tariff *model.Tariff) error {
 
 	isNew := len(tariff.Id.String()) == 0
 	if isNew {
@@ -225,7 +226,7 @@ func AddTariff(db *sqlx.DB, tenant, user string, tariff *model.Tariff) error {
 		}
 		var owner string
 		if err = tx.Get(&owner, stmt, args...); err != nil || !strings.EqualFold(owner, tenant) {
-			log.WithField("tenant", tenant).Warnf("AddTariff: tariff %s does not belong to the tenant", tariff.Id.String())
+			log.WithContext(ctx).WithField("tenant", tenant).Warnf("AddTariff: tariff %s does not belong to the tenant", tariff.Id.String())
 			err = errors.New("unknown tariff")
 			return model.ErrUpdateTariff(err)
 		}
@@ -237,7 +238,7 @@ func AddTariff(db *sqlx.DB, tenant, user string, tariff *model.Tariff) error {
 	}
 	_, err = tx.Exec(stmt)
 	if err != nil {
-		log.WithError(err).WithField("SQL", "INSERT").Error("SQL statement failed")
+		log.WithContext(ctx).WithError(err).WithField("SQL", "INSERT").Error("SQL statement failed")
 		return model.ErrUpdateTariff(err)
 	}
 
@@ -249,7 +250,7 @@ func AddTariff(db *sqlx.DB, tenant, user string, tariff *model.Tariff) error {
 			"tenant":  tenant,
 		}).ToSQL()
 		if err != nil {
-			log.WithField("tenant", tenant).Errorf("Update previous entry: %v", err)
+			log.WithContext(ctx).WithField("tenant", tenant).Errorf("Update previous entry: %v", err)
 			return model.ErrUpdateTariff(err)
 		}
 		_, err = tx.Exec(stmt)

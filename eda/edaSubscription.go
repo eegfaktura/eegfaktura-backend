@@ -563,7 +563,7 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 	switch msg.MessageCode {
 	case model.EBMS_ZP_LIST:
 	case model.EBMS_ZP_LIST_RESPONSE:
-		buf, err := database.ExportZPListToExcel(&msg.Payload)
+		buf, err := database.ExportZPListToExcel(ctx, &msg.Payload)
 		if err != nil {
 			return
 		}

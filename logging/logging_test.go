@@ -180,3 +180,47 @@ func TestUnknownFieldsAreDropped_With(t *testing.T) {
 	assert.NotContains(t, ls[0], "user.email")
 	assert.Equal(t, "TE100100", ls[0]["tenant.id"])
 }
+
+// L14: deployment.environment is on every line, also on the bridged logrus lines.
+func TestDeploymentEnvironment(t *testing.T) {
+	cfg, err := ConfigFromEnv(env(map[string]string{"DEPLOYMENT_ENVIRONMENT": " pilot "}))
+	require.NoError(t, err)
+	assert.Equal(t, "pilot", cfg.Environment)
+
+	buf := setup(t, Config{Level: slog.LevelInfo, JSON: true, Version: "1.2.3", Environment: cfg.Environment})
+	logrus.Info("a")
+	slog.Info("b")
+
+	got := lines(t, buf)
+	require.Len(t, got, 2)
+	for _, l := range got {
+		assert.Equal(t, "pilot", l["deployment.environment"])
+	}
+}
+
+func TestDeploymentEnvironment_OmittedWhenUnset(t *testing.T) {
+	for _, e := range []map[string]string{nil, {"DEPLOYMENT_ENVIRONMENT": ""}, {"DEPLOYMENT_ENVIRONMENT": "  "}} {
+		cfg, err := ConfigFromEnv(env(e))
+		require.NoError(t, err)
+		buf := setup(t, cfg)
+		logrus.Info("a")
+		assert.NotContains(t, lines(t, buf)[0], "deployment.environment")
+	}
+}
+
+// L14: the start-up line says which level is in force, whatever that level is.
+func TestLogStart(t *testing.T) {
+	for level, want := range map[slog.Level]string{slog.LevelError: "error", slog.LevelInfo: "info", LevelTrace: "trace"} {
+		buf := setup(t, Config{Level: level, JSON: true, Version: "1.2.3", Environment: "dev"})
+		LogStart(Config{Level: level, Version: "1.2.3"})
+
+		got := lines(t, buf)
+		require.Len(t, got, 1)
+		l := got[0]
+		assert.Equal(t, "service.start", l["event.action"])
+		assert.Equal(t, want, l["log.effective_level"])
+		assert.Equal(t, "1.2.3", l["service.version"])
+		assert.Equal(t, "dev", l["deployment.environment"])
+		assert.Equal(t, "info", l["log.level"])
+	}
+}

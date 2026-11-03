@@ -36,7 +36,7 @@ func (h *UserHandler) getUser() middleware.JWTHandlerFunc {
 
 		tn, err := h.db.FetchTenantsName(r.Context(), tenants, su)
 		if err != nil {
-			respondWith(w, http.StatusBadRequest, tenant, model.ErrGetUser(err))
+			respondWith(r.Context(), w, http.StatusBadRequest, tenant, model.ErrGetUser(err))
 			return
 		}
 		respondWithData(w, http.StatusOK, tn)

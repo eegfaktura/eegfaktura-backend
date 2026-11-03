@@ -37,11 +37,11 @@ func TestGetTariffReportsAQueryError(t *testing.T) {
 	dbx := sqlx.NewDb(mockDb.db, "mock")
 
 	mockDb.Mock.ExpectQuery("SELECT (.+) FROM base.activetariff (.+)").WillReturnError(errors.New("query failed"))
-	_, err = GetTariff(dbx, "TE000001")
+	_, err = GetTariff(context.Background(), dbx, "TE000001")
 	assert.Error(t, err)
 
 	mockDb.Mock.ExpectQuery("SELECT (.+) FROM base.activetariff (.+)").WillReturnRows(sqlmock.NewRows([]string{"id"}))
-	tariffs, err := GetTariff(dbx, "TE000001")
+	tariffs, err := GetTariff(context.Background(), dbx, "TE000001")
 	assert.NoError(t, err)
 	assert.Equal(t, []model.Tariff{}, tariffs)
 }
@@ -61,7 +61,7 @@ func TestAddTariff(t *testing.T) {
 	//mockDb.Mock.ExpectExec("Update \"base\".\"tariff\" SET (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
 	mockDb.Mock.ExpectCommit()
 
-	err = AddTariff(dbx, "TE000001", "sepp", &tariff)
+	err = AddTariff(context.Background(), dbx, "TE000001", "sepp", &tariff)
 	assert.NoError(t, err)
 	assert.NoError(t, mockDb.Mock.ExpectationsWereMet())
 }
@@ -72,10 +72,10 @@ func TestUpdateTariff(t *testing.T) {
 	db, err := GetDB(context.Background())
 	require.NoError(t, err)
 
-	err = db.AddTariff("TE000001", "sepp", &tariff)
+	err = db.AddTariff(context.Background(), "TE000001", "sepp", &tariff)
 	require.NoError(t, err)
 
-	tariffSlice, err := db.GetTariff("TE000001")
+	tariffSlice, err := db.GetTariff(context.Background(), "TE000001")
 	require.NoError(t, err)
 	require.Equal(t, 2, len(tariffSlice))
 
@@ -83,9 +83,9 @@ func TestUpdateTariff(t *testing.T) {
 	updateTariff.UseMeteringFee = true
 	updateTariff.MeteringFee = null.FloatFrom(200.11)
 
-	err = db.AddTariff("TE000001", "sepp", &updateTariff)
+	err = db.AddTariff(context.Background(), "TE000001", "sepp", &updateTariff)
 	require.NoError(t, err)
-	updatedTariff, err := db.GetTariff("TE000001")
+	updatedTariff, err := db.GetTariff(context.Background(), "TE000001")
 	require.NoError(t, err)
 
 	require.Equal(t, 2, len(updatedTariff))
