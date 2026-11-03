@@ -113,8 +113,8 @@ Migrations are stored in the `migrations/` directory. The application automatica
 
 For schema diffing and hashing:
 ```bash
-make altas-hash
-make altas-migrage
+make atlas-hash
+make atlas-diff
 ```
 
 ## Docker
@@ -122,7 +122,7 @@ make altas-migrage
 Build the Docker image:
 
 ```bash
-make docker
+docker build -t vfeeg-backend .
 ```
 
 Run with Docker:
