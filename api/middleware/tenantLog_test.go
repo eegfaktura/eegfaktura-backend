@@ -3,7 +3,7 @@ package middleware
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -11,39 +11,21 @@ import (
 	"testing"
 
 	"at.ourproject/vfeeg-backend/logging"
-	"github.com/sirupsen/logrus"
+	"at.ourproject/vfeeg-backend/logging/logtest"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
-// logCapture routes slog and logrus into a buffer for one test and restores them after.
+// logCapture routes slog, logrus and log into a buffer for one test and restores them after.
 func logCapture(t *testing.T) *bytes.Buffer {
 	t.Helper()
-	oldSlog := slog.Default()
-	std := logrus.StandardLogger()
-	oldLevel, oldOut, oldFmt := std.Level, std.Out, std.Formatter
-	oldHooks := std.ReplaceHooks(logrus.LevelHooks{})
-	t.Cleanup(func() {
-		slog.SetDefault(oldSlog)
-		std.SetLevel(oldLevel)
-		std.SetOutput(oldOut)
-		std.SetFormatter(oldFmt)
-		std.ReplaceHooks(oldHooks)
+	return logtest.Capture(t, func(w io.Writer) {
+		logging.Setup(w, logging.Config{Level: slog.LevelInfo, JSON: true, Version: "test"})
 	})
-	var buf bytes.Buffer
-	logging.Setup(&buf, logging.Config{Level: slog.LevelInfo, JSON: true, Version: "test"})
-	return &buf
 }
 
 func logLines(t *testing.T, buf *bytes.Buffer) []map[string]any {
 	t.Helper()
-	var out []map[string]any
-	for _, l := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
-		var m map[string]any
-		require.NoError(t, json.Unmarshal([]byte(l), &m), l)
-		out = append(out, m)
-	}
-	return out
+	return logtest.Lines(t, buf)
 }
 
 func withClaims(t *testing.T, claims *PlatformClaims) {

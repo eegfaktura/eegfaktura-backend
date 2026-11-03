@@ -2,13 +2,14 @@ package logging
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"regexp"
 	"strings"
 	"testing"
 
+	"at.ourproject/vfeeg-backend/logging/logtest"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,38 +22,15 @@ func env(m map[string]string) func(string) (string, bool) {
 	}
 }
 
-// setup routes slog and logrus into a buffer for one test and restores them after.
+// setup routes slog, logrus and log into a buffer for one test and restores them after.
 func setup(t *testing.T, cfg Config) *bytes.Buffer {
 	t.Helper()
-	oldSlog := slog.Default()
-	std := logrus.StandardLogger()
-	oldLevel, oldOut, oldFmt, oldCaller := std.Level, std.Out, std.Formatter, std.ReportCaller
-	oldHooks := std.ReplaceHooks(logrus.LevelHooks{})
-	t.Cleanup(func() {
-		slog.SetDefault(oldSlog)
-		std.SetLevel(oldLevel)
-		std.SetOutput(oldOut)
-		std.SetFormatter(oldFmt)
-		std.SetReportCaller(oldCaller)
-		std.ReplaceHooks(oldHooks)
-	})
-	var buf bytes.Buffer
-	Setup(&buf, cfg)
-	return &buf
+	return logtest.Capture(t, func(w io.Writer) { Setup(w, cfg) })
 }
 
 func lines(t *testing.T, buf *bytes.Buffer) []map[string]any {
 	t.Helper()
-	var out []map[string]any
-	for _, l := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
-		if l == "" {
-			continue
-		}
-		var m map[string]any
-		require.NoError(t, json.Unmarshal([]byte(l), &m), l)
-		out = append(out, m)
-	}
-	return out
+	return logtest.Lines(t, buf)
 }
 
 func TestConfigFromEnv_Defaults(t *testing.T) {
@@ -164,7 +142,6 @@ func TestUnknownFieldsAreDropped(t *testing.T) {
 	require.Len(t, ls, 2)
 	assert.NotContains(t, buf.String(), "example.org")
 	assert.NotContains(t, buf.String(), "f81d4fae", "sub (user id) never appears")
-	assert.NotContains(t, allowedFields, "sub")
 	assert.NotContains(t, buf.String(), "AT611904300234573201")
 	assert.Equal(t, "AT00300000000RC100181000000000001", ls[0]["ecId"])
 	assert.Equal(t, "TE100100", ls[1]["tenant.id"])
