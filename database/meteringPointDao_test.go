@@ -332,6 +332,7 @@ func Test_RegisterMeteringPoint(t *testing.T) {
 			mock.ExpectExec("INSERT (.+) \"base\".\"meteringpoint\"").WillReturnResult(sqlmock.NewResult(1, 1))
 			//mock.Mock.ExpectExec("INSERT INTO \"base\".\"participant_meter_state\" (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
 			mock.ExpectExec("INSERT INTO \"base\".\"metering_partition_factor\" (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
+			mock.ExpectCommit()
 
 			assert.NoError(t, mDB.RegisterMeteringPoint(context.Background(), tt.args.tenant, "userId", tt.args.participantId, tt.args.point))
 		})

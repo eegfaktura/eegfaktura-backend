@@ -50,16 +50,9 @@ func (db *sqlDatabase) GetParticipantByName(ctx context.Context, tenant, email s
 }
 
 func (db *sqlDatabase) RegisterParticipant(ctx context.Context, tenant, username string, participant *model.EegParticipant) error {
-	tx, err := db.db.BeginTxx(ctx, nil)
-	if err != nil {
-		return err
-	}
-
-	err = registerParticipant(ctx, tx, tenant, username, participant)
-	if err != nil {
-		return errors.Join(err, tx.Rollback())
-	}
-	return tx.Commit()
+	return inTx(ctx, db.db, func(tx *sqlx.Tx) error {
+		return registerParticipant(ctx, tx, tenant, username, participant)
+	})
 }
 
 func (db *sqlDatabase) ConfirmParticipant(ctx context.Context, tenant, username, participantId string) error {
@@ -77,16 +70,9 @@ func (db *sqlDatabase) QueryParticipant(ctx context.Context, tenant, participant
 }
 
 func (db *sqlDatabase) ImportParticipant(ctx context.Context, tenant, username string, participant *model.EegParticipant) error {
-	tx, err := db.db.BeginTxx(ctx, nil)
-	if err != nil {
-		return err
-	}
-
-	err = importParticipant(ctx, tx, tenant, username, participant)
-	if err != nil {
-		return errors.Join(err, tx.Rollback())
-	}
-	return tx.Commit()
+	return inTx(ctx, db.db, func(tx *sqlx.Tx) error {
+		return importParticipant(ctx, tx, tenant, username, participant)
+	})
 }
 
 func (db *sqlDatabase) FindParticipantByMeteringPoint(ctx context.Context, tenant, meteringPoint string) (*model.EegParticipant, error) {
@@ -94,16 +80,9 @@ func (db *sqlDatabase) FindParticipantByMeteringPoint(ctx context.Context, tenan
 }
 
 func (db *sqlDatabase) UpdateParticipant(ctx context.Context, tenant, user string, participant *model.EegParticipant) error {
-	tx, err := db.db.BeginTxx(ctx, nil)
-	if err != nil {
-		return err
-	}
-
-	err = updateParticipant(ctx, tx, tenant, user, participant)
-	if err != nil {
-		return errors.Join(err, tx.Rollback())
-	}
-	return tx.Commit()
+	return inTx(ctx, db.db, func(tx *sqlx.Tx) error {
+		return updateParticipant(ctx, tx, tenant, user, participant)
+	})
 }
 
 func (db *sqlDatabase) UpdateParticipantPartial(ctx context.Context, tenant, participantId, name string, value interface{}) error {

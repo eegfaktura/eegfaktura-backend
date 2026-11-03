@@ -199,66 +199,56 @@ func AddTariff(ctx context.Context, db *sqlx.DB, tenant, user string, tariff *mo
 	}
 	update := updateType{tenant, time.Now(), time.Now(), user, tariff}
 
-	tx, err := db.Beginx()
-	if err != nil {
-		return err
-	}
-	//defer func() { _ = tx.Rollback() }()
-	defer func() {
-		switch err {
-		case nil:
-			err = tx.Commit()
-		default:
-			err = tx.Rollback()
-		}
-	}()
-	var stmt string
+	return inTx(ctx, db, func(tx *sqlx.Tx) error {
+		var stmt string
+		var err error
 
-	// A new version may only be added to a tariff of the caller's own tenant.
-	// The id comes from the client; without this check a known id of another
-	// community would add a row under that id and deactivate its tariff.
-	if !isNew {
-		var args []interface{}
-		stmt, args, err = pgDialect.From("base.tariff").Select("tenant").
-			Where(goqu.Ex{"id": tariff.Id.String()}).Limit(1).Prepared(true).ToSQL()
+		// A new version may only be added to a tariff of the caller's own tenant.
+		// The id comes from the client; without this check a known id of another
+		// community would add a row under that id and deactivate its tariff.
+		if !isNew {
+			var args []interface{}
+			stmt, args, err = pgDialect.From("base.tariff").Select("tenant").
+				Where(goqu.Ex{"id": tariff.Id.String()}).Limit(1).Prepared(true).ToSQL()
+			if err != nil {
+				return model.ErrUpdateTariff(err)
+			}
+			var owner string
+			if err = tx.Get(&owner, stmt, args...); err != nil || !strings.EqualFold(owner, tenant) {
+				log.WithContext(ctx).WithField("tenant", tenant).Warnf("AddTariff: tariff %s does not belong to the tenant", tariff.Id.String())
+				err = errors.New("unknown tariff")
+				return model.ErrUpdateTariff(err)
+			}
+		}
+
+		stmt, _, err = goqu.Insert("base.tariff").Rows(update).ToSQL()
 		if err != nil {
-			return model.ErrUpdateTariff(err)
-		}
-		var owner string
-		if err = tx.Get(&owner, stmt, args...); err != nil || !strings.EqualFold(owner, tenant) {
-			log.WithContext(ctx).WithField("tenant", tenant).Warnf("AddTariff: tariff %s does not belong to the tenant", tariff.Id.String())
-			err = errors.New("unknown tariff")
-			return model.ErrUpdateTariff(err)
-		}
-	}
-
-	stmt, _, err = goqu.Insert("base.tariff").Rows(update).ToSQL()
-	if err != nil {
-		return model.ErrUpdateTariff(err)
-	}
-	_, err = tx.Exec(stmt)
-	if err != nil {
-		log.WithContext(ctx).WithError(err).WithField("SQL", "INSERT").Error("SQL statement failed")
-		return model.ErrUpdateTariff(err)
-	}
-
-	if tariff.Version > 0 {
-		stmt, _, err = goqu.Update("base.tariff").Set(
-			map[string]interface{}{"status": "INACTIVE", "inactiveSince": civil.Today(), "lastModifiedDate": civil.Today()}).Where(goqu.Ex{
-			"version": tariff.Version - 1,
-			"id":      tariff.Id.String(),
-			"tenant":  tenant,
-		}).ToSQL()
-		if err != nil {
-			log.WithContext(ctx).WithField("tenant", tenant).Errorf("Update previous entry: %v", err)
 			return model.ErrUpdateTariff(err)
 		}
 		_, err = tx.Exec(stmt)
-	}
-	if err != nil {
-		return model.ErrUpdateTariff(err)
-	}
-	return err
+		if err != nil {
+			log.WithContext(ctx).WithError(err).WithField("SQL", "INSERT").Error("SQL statement failed")
+			return model.ErrUpdateTariff(err)
+		}
+
+		if tariff.Version > 0 {
+			stmt, _, err = goqu.Update("base.tariff").Set(
+				map[string]interface{}{"status": "INACTIVE", "inactiveSince": civil.Today(), "lastModifiedDate": civil.Today()}).Where(goqu.Ex{
+				"version": tariff.Version - 1,
+				"id":      tariff.Id.String(),
+				"tenant":  tenant,
+			}).ToSQL()
+			if err != nil {
+				log.WithContext(ctx).WithField("tenant", tenant).Errorf("Update previous entry: %v", err)
+				return model.ErrUpdateTariff(err)
+			}
+			_, err = tx.Exec(stmt)
+		}
+		if err != nil {
+			return model.ErrUpdateTariff(err)
+		}
+		return nil
+	})
 }
 
 func UpdateTariff(dbConn OpenDbXConnection, tenant string, tariff *model.Tariff) error {
