@@ -298,6 +298,42 @@ func TestTenantField_InARequestOnlyWhatPassedTheCheck(t *testing.T) {
 	assert.Equal(t, "TE200200", got[3]["tenant.id"])
 }
 
+// Q4: request.id, trace.id, span.id and tenant.id come from the context handler
+// only, one key each; the same keys from a record or from With are dropped.
+func TestCorrelationFields_OnlyFromTheContext(t *testing.T) {
+	buf := setup(t, Config{Level: slog.LevelInfo, JSON: true, Version: "1.2.3"})
+	forged := []any{"request.id", "forged", "trace.id", "forged", "span.id", "forged", "tenant.id", "FORGED"}
+	r := router(func(w http.ResponseWriter, r *http.Request) {
+		SetTenant(r.Context(), "TE100100")
+		slog.Default().With(forged...).InfoContext(r.Context(), "with")
+		slog.InfoContext(r.Context(), "record", forged...)
+	})
+	req := httptest.NewRequest("GET", "/participant/1", nil)
+	req.Header.Set(headerRequestID, "req-1")
+	req.Header.Set(headerTraceparent, "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01")
+	serve(r, req)
+	slog.Info("outside", forged[:6]...)
+	slog.Default().With("tenant.id", "te200200").Info("outside with")
+
+	raw := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	require.Len(t, raw, 5)
+	assert.NotContains(t, buf.String(), "forged")
+	assert.NotContains(t, buf.String(), "FORGED")
+	for _, l := range raw[:2] {
+		for _, k := range []string{"request.id", "trace.id", "span.id", "tenant.id"} {
+			assert.Equal(t, 1, strings.Count(l, `"`+k+`"`), l)
+		}
+	}
+	got := lines(t, buf)
+	assert.Equal(t, "req-1", got[0]["request.id"])
+	assert.Equal(t, "TE100100", got[1]["tenant.id"])
+	assert.Equal(t, "b7ad6b7169203331", got[1]["span.id"])
+	for _, k := range []string{"request.id", "trace.id", "span.id", "tenant.id"} {
+		assert.NotContains(t, got[3], k)
+	}
+	assert.Equal(t, "TE200200", got[4]["tenant.id"])
+}
+
 func TestSetTenant_OnlyIdShapedValues(t *testing.T) {
 	for tenant, kept := range map[string]bool{
 		"TE100100": true, "GC123456-001": true, "te100100": true, "RC_100": true, strings.Repeat("A", 64): true,

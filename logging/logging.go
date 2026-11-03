@@ -111,7 +111,7 @@ func NewHandler(w io.Writer, cfg Config) slog.Handler {
 	if cfg.Environment != "" {
 		common = append(common, slog.String("deployment.environment", cfg.Environment))
 	}
-	return contextHandler{h.WithAttrs(common)}
+	return contextHandler{Handler: h.WithAttrs(common)}
 }
 
 func ecsKeys(groups []string, a slog.Attr) slog.Attr {
@@ -131,12 +131,12 @@ func ecsKeys(groups []string, a slog.Attr) slog.Attr {
 
 // allowedFields are the only record fields written (never-log rule: a field
 // is a decision, not a side effect); others are dropped. ECS fields first,
-// then the field names the existing logrus calls use.
+// then the field names the existing logrus calls use. request.id, trace.id,
+// span.id and tenant.id are not on it: contextHandler writes them, once each.
 var allowedFields = map[string]bool{
 	"event.action": true, "event.outcome": true, "event.duration": true,
 	"http.request.method": true, "http.route": true, "http.response.status_code": true,
-	"request.id": true, "trace.id": true, "span.id": true,
-	"tenant.id": true, "client.id": true, "graphql.operation.name": true,
+	"client.id": true, "graphql.operation.name": true,
 	"error.type": true, "error.message": true, "error.stack_trace": true,
 	"log.effective_level": true, "log.origin.function": true, "log.origin.file.name": true, "log.origin.file.line": true,
 	// logrus fields in use (2026-10-30)
@@ -154,30 +154,30 @@ var allowedFields = map[string]bool{
 // contextHandler drops fields outside allowedFields and adds request.id,
 // tenant.id, trace.id and span.id when the record's context belongs to an HTTP
 // request (see AccessLog). In a request tenant.id is only ever what passed the
-// tenant check (SetTenant), a tenant field of the record does not count.
-// Outside a request a tenant field is written upper-cased, or dropped when it
-// fails validTenant.
-type contextHandler struct{ slog.Handler }
+// tenant check (SetTenant), a tenant field of the record or of With does not
+// count. Outside a request the tenant field (the record's over With's) is
+// written upper-cased, or dropped when it fails validTenant. A request.id,
+// trace.id or span.id field of the record is dropped.
+type contextHandler struct {
+	slog.Handler
+	tenant string // a tenant.id field of WithAttrs
+}
 
 func (h contextHandler) Handle(ctx context.Context, r slog.Record) error {
-	ai := fromContext(ctx)
 	out := slog.NewRecord(r.Time, r.Level, r.Message, r.PC)
+	tenant := h.tenant
 	r.Attrs(func(a slog.Attr) bool {
-		if !allowedFields[a.Key] {
-			return true
-		}
 		if a.Key == "tenant.id" {
-			upper, ok := validTenant(a.Value.String())
-			if ai != nil || !ok {
-				return true
-			}
-			a = slog.String("tenant.id", upper)
+			tenant = a.Value.String()
+		} else if allowedFields[a.Key] {
+			out.AddAttrs(a)
 		}
-		out.AddAttrs(a)
 		return true
 	})
-	if ai != nil {
+	if ai := fromContext(ctx); ai != nil {
 		out.AddAttrs(ai.correlation()...)
+	} else if upper, ok := validTenant(tenant); ok {
+		out.AddAttrs(slog.String("tenant.id", upper))
 	}
 	return h.Handler.Handle(ctx, out)
 }
@@ -185,15 +185,17 @@ func (h contextHandler) Handle(ctx context.Context, r slog.Record) error {
 func (h contextHandler) WithAttrs(as []slog.Attr) slog.Handler {
 	var kept []slog.Attr
 	for _, a := range as {
-		if allowedFields[a.Key] {
+		if a.Key == "tenant.id" {
+			h.tenant = a.Value.String()
+		} else if allowedFields[a.Key] {
 			kept = append(kept, a)
 		}
 	}
-	return contextHandler{h.Handler.WithAttrs(kept)}
+	return contextHandler{h.Handler.WithAttrs(kept), h.tenant}
 }
 
 func (h contextHandler) WithGroup(name string) slog.Handler {
-	return contextHandler{h.Handler.WithGroup(name)}
+	return contextHandler{h.Handler.WithGroup(name), h.tenant}
 }
 
 // Setup makes the handler the default for slog and the standard log package,
