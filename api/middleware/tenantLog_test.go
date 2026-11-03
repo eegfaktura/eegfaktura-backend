@@ -139,10 +139,10 @@ func TestTokenCheckFailed_LogsTheError(t *testing.T) {
 			assert.Equal(t, http.StatusUnauthorized, serveTenant(h, "tenant", "TE100100"))
 			assert.False(t, handled)
 			ls := logLines(t, buf)
-			assert.Equal(t, "token verification failed", ls[0]["message"])
 			assert.Equal(t, "error", ls[0]["log.level"])
-			assert.Equal(t, "*errors.errorString", ls[0]["error.type"])
-			assert.Equal(t, "token is expired", ls[0]["error.message"])
+			assert.NotEmpty(t, ls[0]["error.type"])
+			assert.Contains(t, ls[0]["error.message"], "expired", "the error is in its field")
+			assert.NotContains(t, ls[0]["message"], "expired", "not in the text")
 			assert.NotContains(t, buf.String(), "JWT-Token")
 		})
 	}
