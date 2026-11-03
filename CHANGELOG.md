@@ -9,12 +9,17 @@ this changelog highlights the changes relevant for overview and operations.
 ## [Unreleased]
 
 ### Added
-- **Start-up line and `deployment.environment`** (dev#45 L14): one line `service.start` with version and effective log
-  level (`log.effective_level`), written whatever `LOG_LEVEL` says, no secrets. `deployment.environment` on every line
+- **Start-up line and `deployment.environment`** (dev#45 L14, Q5): one line `service start` (`event.action=service.start`)
+  with version and effective log level (`log.effective_level`), written by `logging.Setup` whatever `LOG_LEVEL` says, no
+  secrets. `deployment.environment` on every line
   from the new optional env `DEPLOYMENT_ENVIRONMENT`; the field is left out when unset.
 - **Never-log test** (dev#45 L11, `logging/neverlog_test.go`, no new dependency): type-checks the source and fails on a
   struct or `http.Header` printed whole in a log call (verb, bare argument, field value), `%+v`/`%#v` of an interface,
-  and names of personal data or secrets in log calls. An exception needs an entry with its reason in `neverLogAllowed`.
+  and names of personal data or secrets among the identifiers of log calls, split into words (camelCase, snake_case) and
+  compared as whole words with the list common to all services (also with a plural s; in an all lower-case identifier a
+  list word of five or more letters also inside it), and a list word right before a format verb (`password=%s`); other
+  string literals are not scanned, numbers, booleans and errors are skipped by type (dev#45 Q1). An
+  exception needs an entry, keyed by file and finding, with its reason in `neverLogAllowed`. `-short` skips the scan.
 
 ### Changed
 - **`request.id` and `tenant.id` on the lines of an HTTP request** (dev#45 L12), no longer on the access line only;
@@ -22,6 +27,13 @@ this changelog highlights the changes relevant for overview and operations.
   of the line does not count. Not on: the notification DAO (`SaveNotification`, `SaveNotificationFromMap`,
   `SaveHistory`), `SendMail`, the HTML mail parser and the lines of the MQTT send loop. No propagation over MQTT or
   gRPC.
+- **One owner for the correlation fields** (dev#45 Q4): `request.id`, `trace.id`, `span.id` and `tenant.id` are written
+  by the context handler only, one key each; the same keys set on a line or through `With` are dropped (outside a
+  request a tenant field still counts, checked as above).
+- **Token check failures** (dev#45 Q6) log the error as `error.type`/`error.message` under a fixed message
+  (`token verification failed`, `no access token in the request or invalid Authorization header`) instead of the field
+  `error=JWT-Token` and the error in the text.
+- **Logging tests** (dev#45 Q2): one capture helper `logging/logtest` restores slog, logrus and the `log` package.
 
 ### Fixed
 - **No names or cell values in the warn lines of the Excel import** (dev#45 L1). The import result shown to the user
@@ -31,6 +43,10 @@ this changelog highlights the changes relevant for overview and operations.
   every line; the tenant value is out of the message texts. A refusal for a missing admin group now carries the checked
   `tenant.id`, also on its access line.
 - **No debug print of field values** in `util.ConvertMapToStruct` (dev#45 L11, found by the never-log test).
+- **`tenant.id` outside a request is written upper-cased** (dev#45 Q3), as it is checked; before, `te100100` passed
+  the check and was written as given.
+- **A handler panic after a flush aborts the connection** (dev#45 Q7) instead of a `WriteHeader(500)` on a response that
+  had already begun.
 
 ## [1.15.1] – 2026-11-02
 

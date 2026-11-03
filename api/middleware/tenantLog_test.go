@@ -3,7 +3,8 @@ package middleware
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -11,39 +12,21 @@ import (
 	"testing"
 
 	"at.ourproject/vfeeg-backend/logging"
-	"github.com/sirupsen/logrus"
+	"at.ourproject/vfeeg-backend/logging/logtest"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
-// logCapture routes slog and logrus into a buffer for one test and restores them after.
+// logCapture routes slog, logrus and log into a buffer for one test and restores them after.
 func logCapture(t *testing.T) *bytes.Buffer {
 	t.Helper()
-	oldSlog := slog.Default()
-	std := logrus.StandardLogger()
-	oldLevel, oldOut, oldFmt := std.Level, std.Out, std.Formatter
-	oldHooks := std.ReplaceHooks(logrus.LevelHooks{})
-	t.Cleanup(func() {
-		slog.SetDefault(oldSlog)
-		std.SetLevel(oldLevel)
-		std.SetOutput(oldOut)
-		std.SetFormatter(oldFmt)
-		std.ReplaceHooks(oldHooks)
+	return logtest.Capture(t, func(w io.Writer) {
+		logging.Setup(w, logging.Config{Level: slog.LevelInfo, JSON: true, Version: "test"})
 	})
-	var buf bytes.Buffer
-	logging.Setup(&buf, logging.Config{Level: slog.LevelInfo, JSON: true, Version: "test"})
-	return &buf
 }
 
 func logLines(t *testing.T, buf *bytes.Buffer) []map[string]any {
 	t.Helper()
-	var out []map[string]any
-	for _, l := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
-		var m map[string]any
-		require.NoError(t, json.Unmarshal([]byte(l), &m), l)
-		out = append(out, m)
-	}
-	return out
+	return logtest.Lines(t, buf)
 }
 
 func withClaims(t *testing.T, claims *PlatformClaims) {
@@ -135,4 +118,46 @@ func TestSuperuser_HeaderOnlyLoggedWhenShapedLikeATenant(t *testing.T) {
 			assert.Equal(t, "GC123456-001", l["tenant.id"], l["message"])
 		}
 	})
+}
+
+// Q6: a failed token check logs the error as error.type and error.message under
+// a fixed message, no constant label in the error field.
+func TestTokenCheckFailed_LogsTheError(t *testing.T) {
+	var handled bool
+	for name, h := range map[string]http.Handler{
+		"GQLProtect": GQLProtect(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { handled = true })),
+		"Protect":    Protect(passes(&handled)),
+	} {
+		t.Run(name, func(t *testing.T) {
+			orig := VerifyTokenClaims
+			t.Cleanup(func() { VerifyTokenClaims = orig })
+			VerifyTokenClaims = func(context.Context, string) (*PlatformClaims, error) {
+				return nil, errors.New("token is expired")
+			}
+			buf := logCapture(t)
+
+			assert.Equal(t, http.StatusUnauthorized, serveTenant(h, "tenant", "TE100100"))
+			assert.False(t, handled)
+			ls := logLines(t, buf)
+			assert.Equal(t, "error", ls[0]["log.level"])
+			assert.NotEmpty(t, ls[0]["error.type"])
+			assert.Contains(t, ls[0]["error.message"], "expired", "the error is in its field")
+			assert.NotContains(t, ls[0]["message"], "expired", "not in the text")
+			assert.NotContains(t, buf.String(), "JWT-Token")
+		})
+	}
+}
+
+func TestNoToken_LogsTheError(t *testing.T) {
+	var handled bool
+	buf := logCapture(t)
+	req := httptest.NewRequest("POST", "/any", nil)
+	rw := httptest.NewRecorder()
+	logging.AccessLog(Protect(passes(&handled))).ServeHTTP(rw, req)
+
+	assert.Equal(t, http.StatusForbidden, rw.Code)
+	ls := logLines(t, buf)
+	assert.Equal(t, "info", ls[0]["log.level"])
+	assert.Equal(t, ErrNoAuthorization.Error(), ls[0]["error.message"])
+	assert.NotContains(t, buf.String(), "JWT-Token")
 }

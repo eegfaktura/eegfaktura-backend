@@ -101,7 +101,7 @@ func GQLProtect(next http.Handler) http.Handler {
 
 		claims, err := verifyAndExtractClaims(context.Background(), jwtToken)
 		if err != nil {
-			logrus.WithContext(r.Context()).WithField("error", "JWT-Token").Errorf("%v", err)
+			logrus.WithContext(r.Context()).WithError(err).Error("token verification failed")
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
@@ -134,7 +134,7 @@ func GQLProtect(next http.Handler) http.Handler {
 			ctx = withGQLNonAdmin(ctx, claims, superuser)
 		}
 
-		logging.SetTenant(ctx, strings.ToUpper(tenant))
+		logging.SetTenant(ctx, tenant)
 		// and call the next with our new context
 		r = r.WithContext(ctx)
 		next.ServeHTTP(w, r)
@@ -144,13 +144,13 @@ func GQLProtect(next http.Handler) http.Handler {
 func retrieveClaims(r *http.Request) (string, *PlatformClaims, error) {
 	jwtToken, err := ParseBearerTokenFromHeader(r)
 	if err != nil {
-		logrus.WithContext(r.Context()).WithField("error", "JWT-Token").Printf("No Access_token in request or invalid Authorization: %v\n", err)
+		logrus.WithContext(r.Context()).WithError(err).Info("no access token in the request or invalid Authorization header")
 		return "", nil, &VerifyError{http.StatusForbidden, errors.New("no access token available")}
 	}
 
 	claims, err := verifyAndExtractClaims(context.Background(), jwtToken)
 	if err != nil {
-		logrus.WithContext(r.Context()).WithField("error", "JWT-Token").Errorf("%v", err)
+		logrus.WithContext(r.Context()).WithError(err).Error("token verification failed")
 		return "", nil, &VerifyError{http.StatusUnauthorized, err}
 	}
 	logging.SetClient(r.Context(), claims.Authorized)
@@ -190,10 +190,10 @@ func ConditionProtect(admin JWTHandlerFunc, user JWTHandlerFunc) http.HandlerFun
 
 		claims.Tenants = toUpper(claims.Tenants)
 		if claims.AccessGroups.IsAdmin() {
-			logging.SetTenant(r.Context(), strings.ToUpper(tenant))
+			logging.SetTenant(r.Context(), tenant)
 			admin(w, r, claims, strings.ToUpper(tenant))
 		} else if claims.AccessGroups.IsUser() {
-			logging.SetTenant(r.Context(), strings.ToUpper(tenant))
+			logging.SetTenant(r.Context(), tenant)
 			user(w, r, claims, strings.ToUpper(tenant))
 		} else {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -257,7 +257,7 @@ func ProtectApi(handler JWTHandlerFunc) http.HandlerFunc {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
-		logging.SetTenant(r.Context(), strings.ToUpper(tenant))
+		logging.SetTenant(r.Context(), tenant)
 
 		// Same admin-group requirement as the JWT path (verifyRequest): these
 		// endpoints expose member data and trigger EDA messages, so a plain
@@ -288,7 +288,7 @@ func verifyRequest(handler JWTHandlerFunc) func(w http.ResponseWriter, r *http.R
 			return
 		}
 
-		logging.SetTenant(r.Context(), strings.ToUpper(tenant))
+		logging.SetTenant(r.Context(), tenant)
 		if claims.AccessGroups.IsAdmin() {
 			claims.Tenants = toUpper(claims.Tenants)
 			handler(w, r, claims, strings.ToUpper(tenant))
