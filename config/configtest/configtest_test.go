@@ -16,3 +16,11 @@ func TestSet_restoresThePreviousValue(t *testing.T) {
 	})
 	assert.Equal(t, "outer", viper.GetString("configtest.key"))
 }
+
+func TestSet_unsetKeyIsUnsetAfterwards(t *testing.T) {
+	t.Run("inner", func(t *testing.T) {
+		configtest.Set(t, "configtest.unset", "x")
+		assert.True(t, viper.IsSet("configtest.unset"))
+	})
+	assert.False(t, viper.IsSet("configtest.unset"))
+}
