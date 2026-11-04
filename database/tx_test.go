@@ -9,19 +9,11 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"gopkg.in/guregu/null.v4"
 )
 
 // The transaction tests (BE-CQ-7) run on sqlmock: a failed COMMIT must reach the caller, and an
 // error inside the transaction must roll it back, never commit it.
-
-func newTxMock(t *testing.T) (*sqlx.DB, sqlmock.Sqlmock) {
-	conn, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = conn.Close() })
-	return sqlx.NewDb(conn, "mock"), mock
-}
 
 var errCommit = errors.New("commit failed")
 

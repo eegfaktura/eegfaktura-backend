@@ -48,13 +48,12 @@ func TestUpdateParticipant(t *testing.T) {
 
 func TestRegisterParticipant(t *testing.T) {
 
-	db, mock, err := InitMockDatabase()
-	require.NoError(t, err)
+	db, mock := newMockDatabase(t)
 
 	participantJson := `{"businessRole":"EEG_PRIVATE","firstname":"Peter","lastname":"Obermüller","residentAddress":{"street":"Lambacherstraße","streetNumber":"39","zip":"4680","city":"Haag am Hausruck","type":"RESIDENCE"},"contact":{"phone":"06603611758","email":"obermueller.peter@gmail.com"},"accountInfo":{},"optionals":{},"status":"NEW","id":"e98b8619-7b6a-4836-baff-5489fb539535","role":"EEG_USER","billingAddress":{"street":"Lambacherstraße","streetNumber":"39","zip":"4680","city":"Haag am Hausruck","type":"BILLING"},"meters":[{"direction":"CONSUMPTION","status":"NEW","meteringPoint":"AT48124817243712897412","participantId":"e98b8619-7b6a-4836-baff-5489fb539535","tariffId":"a48d1990-a5a2-40c9-8d0a-77bed8e7dbcd","street":"Lambacherstraße","streetNumber":"39","zip":"4680","city":"Haag am Hausruck"}]}`
 
 	var p model.EegParticipant
-	err = json.NewDecoder(strings.NewReader(participantJson)).Decode(&p)
+	err := json.NewDecoder(strings.NewReader(participantJson)).Decode(&p)
 	assert.NoError(t, err)
 
 	fmt.Printf("Participant: %+v\n", p)
@@ -128,8 +127,7 @@ func TestEnforceAddressTypes(t *testing.T) {
 // With an empty meter list saveMeteringPoint returns before issuing SQL, so the
 // statement order is exactly participant, contactdetail, bankaccount, address.
 func TestRegisterParticipantStampsResidenceType(t *testing.T) {
-	db, mock, err := InitMockDatabase()
-	require.NoError(t, err)
+	db, mock := newMockDatabase(t)
 
 	participantJson := `{"businessRole":"EEG_PRIVATE","firstname":"Anna","lastname":"Berger","contact":{"email":"anna.berger@example.at"},"accountInfo":{},"optionals":{},"status":"NEW","role":"EEG_USER","billingAddress":{"street":"Hauptstrasse","streetNumber":"1","zip":"1010","city":"Wien","type":"BILLING"},"meters":[]}`
 
@@ -150,8 +148,7 @@ func TestRegisterParticipantStampsResidenceType(t *testing.T) {
 }
 
 func TestGetParticipant(t *testing.T) {
-	db, mock, err := InitMockDatabase()
-	require.NoError(t, err)
+	db, mock := newMockDatabase(t)
 
 	participantRows := sqlmock.NewRows([]string{
 		"id", "firstname", "lastname", "role", "businessRole", "titleBefore", "titleAfter", "participantSince",

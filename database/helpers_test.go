@@ -2,7 +2,6 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	"testing"
 
 	"at.ourproject/vfeeg-backend/database/dbtest"
@@ -36,23 +35,18 @@ func seedDB(t *testing.T) Database {
 	return NewDatabase(conn)
 }
 
-type MockDatabase struct {
-	Mock sqlmock.Sqlmock
-	db   *sql.DB
+// newTxMock returns a connection on sqlmock and its mock; the connection is closed when the test ends.
+func newTxMock(t *testing.T) (*sqlx.DB, sqlmock.Sqlmock) {
+	t.Helper()
+	conn, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+	return sqlx.NewDb(conn, "mock"), mock
 }
 
-func GetDatabaseMock() (*MockDatabase, error) {
-	var err error
-	m := &MockDatabase{}
-	m.db, m.Mock, err = sqlmock.New()
-
-	return m, err
-}
-
-func InitMockDatabase() (Database, sqlmock.Sqlmock, error) {
-	dbInstance, mock, err := sqlmock.New()
-	if err != nil {
-		return nil, nil, err
-	}
-	return NewDatabase(sqlx.NewDb(dbInstance, "mock")), mock, nil
+// newMockDatabase is newTxMock as a Database. It does not change the database GetDB returns.
+func newMockDatabase(t *testing.T) (Database, sqlmock.Sqlmock) {
+	t.Helper()
+	conn, mock := newTxMock(t)
+	return NewDatabase(conn), mock
 }

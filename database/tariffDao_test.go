@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/guregu/null.v4"
@@ -32,15 +31,13 @@ import (
 
 // A failing query is an error, not an empty tariff list.
 func TestGetTariffReportsAQueryError(t *testing.T) {
-	mockDb, err := GetDatabaseMock()
-	require.NoError(t, err)
-	dbx := sqlx.NewDb(mockDb.db, "mock")
+	dbx, mock := newTxMock(t)
 
-	mockDb.Mock.ExpectQuery("SELECT (.+) FROM base.activetariff (.+)").WillReturnError(errors.New("query failed"))
-	_, err = GetTariff(context.Background(), dbx, "TE000001")
+	mock.ExpectQuery("SELECT (.+) FROM base.activetariff (.+)").WillReturnError(errors.New("query failed"))
+	_, err := GetTariff(context.Background(), dbx, "TE000001")
 	assert.Error(t, err)
 
-	mockDb.Mock.ExpectQuery("SELECT (.+) FROM base.activetariff (.+)").WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectQuery("SELECT (.+) FROM base.activetariff (.+)").WillReturnRows(sqlmock.NewRows([]string{"id"}))
 	tariffs, err := GetTariff(context.Background(), dbx, "TE000001")
 	assert.NoError(t, err)
 	assert.Equal(t, []model.Tariff{}, tariffs)
@@ -48,22 +45,19 @@ func TestGetTariffReportsAQueryError(t *testing.T) {
 
 func TestAddTariff(t *testing.T) {
 	tariff := model.Tariff{Version: 0, Name: "Sepp", UseVat: false, BillingPeriod: "monthly", FreeKWh: null.IntFrom(100), CentPerKWh: 12}
-	var mockDb, err = GetDatabaseMock()
-	require.NoError(t, err)
-
-	dbx := sqlx.NewDb(mockDb.db, "mock")
+	dbx, mock := newTxMock(t)
 
 	//stmt := "INSERT INTO (.+) VALUES \\(0, 0, 0, 'monthly', 0, 12, 0, 100, DEFAULT, 'Sepp', 0, 'sepp', '', FALSE, 0, 1\\)"
 	//stmt := "INSERT INTO \"base\".\"tariff\" \\(\"accountGrossAmount\", \"accountNetAmount\", \"baseFee\", \"billingPeriod\", \"businessNr\", \"centPerKWh\", \"createdBy\", \"createdDate\", \"discount\", \"freeKWh\", \"id\", \"lastModifiedDate\", \"meteringPointFee\", \"name\", \"participantFee\", \"tenant\", \"type\", \"useMeteringPointFee\", \"useVat\", \"vatInPercent\", \"vatSupplementaryText\", \"version\"\\) VALUES (.+)"
 
-	mockDb.Mock.ExpectBegin()
-	mockDb.Mock.ExpectExec("INSERT INTO \"base\".\"tariff\" (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
-	//mockDb.Mock.ExpectExec("Update \"base\".\"tariff\" SET (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
-	mockDb.Mock.ExpectCommit()
+	mock.ExpectBegin()
+	mock.ExpectExec("INSERT INTO \"base\".\"tariff\" (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
+	//mock.ExpectExec("Update \"base\".\"tariff\" SET (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
 
-	err = AddTariff(context.Background(), dbx, "TE000001", "sepp", &tariff)
+	err := AddTariff(context.Background(), dbx, "TE000001", "sepp", &tariff)
 	assert.NoError(t, err)
-	assert.NoError(t, mockDb.Mock.ExpectationsWereMet())
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 // A changed tariff is stored as a new version of the same id.

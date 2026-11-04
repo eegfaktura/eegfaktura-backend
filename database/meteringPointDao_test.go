@@ -319,10 +319,7 @@ func Test_RegisterMeteringPoint(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mDB, mock, err := InitMockDatabase()
-			if err != nil {
-				t.Fatalf("An error occurred while creating mock: %s", err)
-			}
+			mDB, mock := newMockDatabase(t)
 
 			// registerMeteringPoint checks the participant's tenant first (#59).
 			mock.ExpectQuery(`SELECT "tenant" FROM "base"."participant"`).

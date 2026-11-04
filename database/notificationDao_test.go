@@ -12,8 +12,7 @@ import (
 )
 
 func TestFetchEdaHistory(t *testing.T) {
-	var mDB, mock, err = InitMockDatabase()
-	require.NoError(t, err)
+	mDB, mock := newMockDatabase(t)
 
 	start, _ := time.Parse(time.RFC3339Nano, "2023-10-03T17:00:00.000Z")
 	end, _ := time.Parse(time.RFC3339Nano, "2023-10-04T18:00:00.000Z")
@@ -44,8 +43,7 @@ func TestFetchEdaHistory_pageSizeBounds(t *testing.T) {
 		Data map[string]map[string][]json.RawMessage `json:"data"`
 	}
 	fetch := func(pageSize uint) result {
-		mDB, mock, err := InitMockDatabase()
-		require.NoError(t, err)
+		mDB, mock := newMockDatabase(t)
 		rows := sqlmock.NewRows([]string{"conversationId", "date", "message", "protocol", "tenant"}).
 			AddRow("1", start, "{}", "CR_MSG", "RC100298").
 			AddRow("2", start, "{}", "CR_MSG", "RC100298").
@@ -53,6 +51,7 @@ func TestFetchEdaHistory_pageSizeBounds(t *testing.T) {
 		mock.ExpectQuery(`SELECT (.+) FROM "base"."processhistory" WHERE (.+)`).WillReturnRows(rows)
 
 		var res interface{}
+		var err error
 		require.NotPanics(t, func() {
 			res, err = mDB.FetchEdaHistory(context.Background(), "RC100298", "CR_MSG", start.UnixMilli(), end.UnixMilli(), pageSize)
 		})
