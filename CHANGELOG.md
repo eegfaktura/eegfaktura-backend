@@ -53,8 +53,12 @@ this changelog highlights the changes relevant for overview and operations.
 - **A failed COMMIT is reported as an error** (BE-CQ-7, BE-CQ-8): registering and moving a metering point, adding a
   tariff and activating metering points from an EDA message reported success when the COMMIT failed. Activating
   metering points also went on to COMMIT after a failed step instead of rolling back. One helper (`inTx`) now runs the
-  transactions of the DAOs. `POST /participant` answers a failed registration with the coded error body instead of
-  `{}` (the error was joined with the rollback's and lost its code).
+  transactions of the DAOs; a failed BEGIN in them is `ErrOpenTx` (code 998) — before, some wrappers returned the raw
+  driver error. Registering a metering point, adding a tariff and activating metering points do not take the cancel
+  of the caller's context, as before.
+- **`POST /participant`: a failed registration answers with a code** (caller: eegfaktura-web): code 1104 and a
+  generic message (not found and invalid input keep their own code and text), as the member update does; before, the
+  body was `{}` (the error was joined with the rollback's and lost its type). No database text goes to the client.
 - **No names or cell values in the warn lines of the Excel import** (dev#45 L1). The import result shown to the user
   is unchanged; the lines no longer repeat names, status, energy direction or community id of the row.
 - **The raw `tenant` header stays out of the log** (dev#45 L2): a failed check logs `tenant check failed`. A superuser
