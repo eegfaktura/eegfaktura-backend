@@ -1111,7 +1111,8 @@ func UpdateActiveMeteringPoints(ctx context.Context, db *sqlx.DB, tenant string,
 	status := model.S_ACTIVE
 	processState := model.ACTIVE
 
-	return inTx(ctx, db, func(sqlTx *sqlx.Tx) error {
+	// without the cancel of ctx, as before inTx: SyncMeteringPoints gives 10 s, a long list must not roll back
+	return inTx(context.WithoutCancel(ctx), db, func(sqlTx *sqlx.Tx) error {
 		tx := goqu.NewTx("postgres", sqlTx)
 		for _, m := range tml {
 			dbMeter := model.ConvertToDbMeter(m)
