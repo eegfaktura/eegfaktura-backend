@@ -96,13 +96,22 @@ func (h *ParticipantHandler) updateParticipant() middleware.JWTHandlerFunc {
 // text: "not found" (unknown or foreign id) and invalid input keep their code and
 // message, anything else gets a generic message. The full error is logged.
 func participantWriteError(err error) *model.VfeegError {
+	return participantError(err, model.ErrUpdateParticipant(errors.New("participant could not be updated")))
+}
+
+// participantRegisterError is participantWriteError for a failed registration.
+func participantRegisterError(err error) *model.VfeegError {
+	return participantError(err, model.ErrRegisterParticipant(errors.New("participant could not be registered")))
+}
+
+func participantError(err error, generic *model.VfeegError) *model.VfeegError {
 	var ve *model.VfeegError
 	if errors.As(err, &ve) {
 		if ve.Code == model.ErrFindParticipant(nil).Code || ve.Code == model.ErrParseJson(nil).Code {
 			return ve
 		}
 	}
-	return model.ErrUpdateParticipant(errors.New("participant could not be updated"))
+	return generic
 }
 
 func (h *ParticipantHandler) updateParticipantPartial() middleware.JWTHandlerFunc {
@@ -161,7 +170,7 @@ func (h *ParticipantHandler) registerParticipant() middleware.JWTHandlerFunc {
 		err = h.db.RegisterParticipant(r.Context(), tenant, claims.Username, &t)
 		if err != nil {
 			log.WithContext(r.Context()).WithField("tenant", tenant).WithError(err).Error("failed to register participant.")
-			respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
+			respondWith(r.Context(), w, http.StatusBadRequest, tenant, participantRegisterError(err))
 			return
 		}
 		respondWithJSON(w, http.StatusCreated, t)
