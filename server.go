@@ -59,9 +59,6 @@ func captureOsInterrupt() chan bool {
 
 func InitRouters(db database.Database) *mux.Router {
 
-	//middleware.InitKeycloak()
-
-	//r := mux.NewRouter().PathPrefix("/api").Subrouter()
 	r := mux.NewRouter()
 	s := r.PathPrefix("/").Subrouter()
 	s = api.InitEegRouter(s, db)
@@ -190,12 +187,9 @@ func StartServer(db database.Database) {
 			"Cache-Control",
 			"tenant",
 			"X-tenant"})
-	//allowedHeaders := handlers.AllowedHeaders(
-	//	[]string{"authorization", "content-type"})
 	allowedMethods := handlers.AllowedMethods([]string{"GET", "HEAD", "POST", "PUT", "OPTIONS", "DELETE"})
 	allowedCredentials := handlers.AllowCredentials()
 
-	//repository.InitRepositories()
 	go services.StartGRPCServer(quit)
 
 	log.Infof("VFEEG BACKEND Config:  host: %s  port: %d  database:%s  user:%s",
@@ -225,7 +219,6 @@ func StartServer(db database.Database) {
 
 	broker.Stop()
 	eda.StopMailWorker()
-	//repository.CloseRepositories()
 	log.Println("final")
 
 	log.Println("STOP PROGRAM")
