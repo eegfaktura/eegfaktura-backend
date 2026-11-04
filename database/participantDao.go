@@ -453,6 +453,11 @@ func registerParticipant(ctx context.Context, tx *sqlx.Tx, tenant, username stri
 	participant.Status = model.PENDING
 	participant.Id = uuid.NewUUID()
 	participant.CreatedBy = username
+	// invalid input like the member update (updateParticipant): ErrParseJson keeps the reason for the
+	// client; the Excel import (importParticipant) logs the bare error as before
+	if err := enforceContactEmail(participant); err != nil {
+		return model.ErrParseJson(err)
+	}
 	return saveParticipant(ctx, tx, tenant, username, participant, ImportMeteringPoints)
 }
 
