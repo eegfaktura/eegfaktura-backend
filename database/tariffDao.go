@@ -66,14 +66,6 @@ var (
 	ErrTariffUtilized = errors.New("Tariff is currently used")
 )
 
-//var ConnectToDatabase = func() (*sqlx.DB, error) {
-//	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
-//		"password=%s dbname=%s sslmode=disable",
-//		viper.GetString("database.host"), viper.GetInt("database.port"), viper.GetString("database.user"),
-//		viper.GetString("database.password"), viper.GetString("database.dbname"))
-//	return sqlx.Open("postgres", psqlInfo)
-//}
-
 var pgDialect = goqu.Dialect("postgres")
 
 func GetTariff(ctx context.Context, db *sqlx.DB, tenant string) ([]model.Tariff, error) {
@@ -94,23 +86,11 @@ func GetTariff(ctx context.Context, db *sqlx.DB, tenant string) ([]model.Tariff,
 
 func GetTariffHistory(db *sqlx.DB, tenant string, id string) ([]model.Tariff, error) {
 
-	//ds := goqu.Dialect("postgres").From("base.tariff").
-	//	Select(
-	//		goqu.I("users.id"),
-	//		goqu.I("users.name"),
-	//		goqu.L("COALESCE(array_agg(DISTINCT roles.role), '{}')").As("roles"),
-	//		goqu.L("COALESCE(array_agg(DISTINCT emails.email), '{}')").As("emails"),
-	//		goqu.L(`COALESCE(json_agg(
 	//                   DISTINCT jsonb_build_object(
 	//                       'street', addresses.street,
 	//                       'city', addresses.city
 	//                   )
 	//               ) FILTER (WHERE addresses.id IS NOT NULL), '[]')`).As("addresses"),
-	//	).
-	//	LeftJoin(goqu.T("roles"), goqu.On(goqu.I("roles.user_id").Eq(goqu.I("users.id")))).
-	//	LeftJoin(goqu.T("emails"), goqu.On(goqu.I("emails.user_id").Eq(goqu.I("users.id")))).
-	//	LeftJoin(goqu.T("addresses"), goqu.On(goqu.I("addresses.user_id").Eq(goqu.I("users.id")))).
-	//	GroupBy(goqu.I("users.id"), goqu.I("users.name"))
 
 	stmt, _, err := goqu.Dialect("postgres").From("base.tariff").
 		Where(
@@ -247,12 +227,6 @@ func AddTariff(ctx context.Context, db *sqlx.DB, tenant, user string, tariff *mo
 		return nil
 	})
 }
-
-//func DateToCivilHookFunc(f reflect.Type, t reflect.Type, data interface{}) (interface{}, error) {
-//
-//
-//
-//}
 
 func StringToNullStringHookFunc(f reflect.Type, t reflect.Type, data interface{}) (interface{}, error) {
 	if f.Kind() == reflect.String {
