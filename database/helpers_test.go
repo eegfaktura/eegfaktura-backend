@@ -36,15 +36,6 @@ func GetDatabaseMock() (*MockDatabase, error) {
 	return m, err
 }
 
-func GetMockDb() (*MockDatabase, error) {
-	mockDb, err := GetDatabaseMock()
-	if err != nil {
-		return nil, err
-	}
-	SetDB(NewDatabase(sqlx.NewDb(mockDb.db, "mock")))
-	return mockDb, nil
-}
-
 func InitMockDatabase() (Database, sqlmock.Sqlmock, error) {
 	dbInstance, mock, err := sqlmock.New()
 	if err != nil {
