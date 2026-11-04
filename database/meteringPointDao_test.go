@@ -412,6 +412,9 @@ func Test_AddMultipleMeteringPoints(t *testing.T) {
 
 	db, err := GetDB(context.Background())
 	require.NoError(t, err)
+	// other tests add members to TE000001 too: count the two this test registers
+	before, err := db.GetParticipants(context.Background(), "TE000001")
+	require.NoError(t, err)
 
 	// Register new Meteringpoint
 	err = db.RegisterMeteringPoint(context.Background(), "TE000001", "test", "ea9942da-03da-11ee-b82b-5a985b4b033a", meter)
@@ -482,7 +485,7 @@ func Test_AddMultipleMeteringPoints(t *testing.T) {
 	p, err := db.GetParticipants(context.Background(), "TE000001")
 	require.NoError(t, err)
 
-	assert.Equal(t, 3, len(p))
+	assert.Equal(t, len(before)+2, len(p))
 
 	p1 := findP(p, "Peter", "Obermüller")
 	assert.NotNil(t, p1)

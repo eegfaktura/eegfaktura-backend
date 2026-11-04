@@ -17,9 +17,8 @@ import (
 
 func TestNewDatabase(t *testing.T) {
 
-	ctx := context.Background()
-	db, err := GetDB(ctx)
-	require.NoError(t, err)
+	// asserts the seed data: on the untouched copy, other tests change TE000001
+	db := seedDB(t)
 
 	eeg, err := db.GetEegByEcId(context.Background(), "AT00300000000TC000001000000000001")
 	require.NoError(t, err)
@@ -34,8 +33,8 @@ func TestNewDatabase(t *testing.T) {
 }
 
 func TestGetEeg(t *testing.T) {
-	db, err := GetDB(context.Background())
-	require.NoError(t, err)
+	// asserts the seed data: on the untouched copy, other tests change TE000001
+	db := seedDB(t)
 
 	eeg, err := db.GetEegById(context.Background(), "TE000001")
 	assert.NoError(t, err)

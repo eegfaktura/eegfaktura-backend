@@ -3,10 +3,12 @@ package database
 import (
 	"context"
 	"database/sql"
+	"testing"
 
 	"at.ourproject/vfeeg-backend/database/dbtest"
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/jmoiron/sqlx"
+	"github.com/stretchr/testify/require"
 )
 
 var testDB *dbtest.TestDatabase
@@ -21,6 +23,17 @@ func GetTestDB(ctx context.Context, dbInstance *dbtest.TestDatabase) (Database, 
 	d := NewDatabase(dbInstance.DbInstance)
 	SetDB(d)
 	return d, nil
+}
+
+// seedDB is the database as migrated and seeded, before any test wrote to it (dbtest.SeedDbName).
+// Only for tests that read and assert the seed data; they would otherwise depend on the tests run
+// before them. Do not write to it.
+func seedDB(t *testing.T) Database {
+	t.Helper()
+	conn, err := sqlx.Connect("postgres", testDB.SeedConnectionString())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+	return NewDatabase(conn)
 }
 
 type MockDatabase struct {

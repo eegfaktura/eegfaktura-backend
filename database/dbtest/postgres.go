@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -25,6 +26,9 @@ const (
 	DbName = "test_db"
 	DbUser = "test_user"
 	DbPass = "test_password"
+	// SeedDbName is a copy of DbName right after migration and seed data, before any test writes:
+	// for tests that assert the seed data, while other tests change test_db.
+	SeedDbName = "test_seed"
 )
 
 type TestDatabase struct {
@@ -48,6 +52,9 @@ func SetupTestDatabase() *TestDatabase {
 	if err != nil {
 		log.Fatal("failed to perform db migration", err)
 	}
+	if err = copySeed(connectionString); err != nil {
+		log.Fatalf("copy the seed database: %v", err)
+	}
 	cancel()
 
 	return &TestDatabase{
@@ -61,6 +68,11 @@ func (tdb *TestDatabase) Open(ctx context.Context) error {
 	var err error
 	tdb.DbInstance, err = sqlx.ConnectContext(ctx, "postgres", tdb.ConnectionString)
 	return err
+}
+
+// SeedConnectionString is the connection string of the untouched copy SeedDbName.
+func (tdb *TestDatabase) SeedConnectionString() string {
+	return strings.Replace(tdb.ConnectionString, "dbname="+DbName, "dbname="+SeedDbName, 1)
 }
 
 func (tdb *TestDatabase) TearDown() {
@@ -113,6 +125,17 @@ func createContainer(ctx context.Context) (testcontainers.Container, string, str
 	//}
 
 	return container, fmt.Sprintf("host=localhost port=%s user=%s password=%s dbname=%s sslmode=disable", p.Port(), DbUser, DbPass, DbName), dbAddr, nil
+}
+
+// copySeed creates SeedDbName from the migrated and seeded DbName (no connection to it is open yet).
+func copySeed(connectionString string) error {
+	dbm, err := sqlx.Open("postgres", strings.Replace(connectionString, "dbname="+DbName, "dbname=postgres", 1))
+	if err != nil {
+		return err
+	}
+	defer dbm.Close()
+	_, err = dbm.Exec(`CREATE DATABASE ` + SeedDbName + ` TEMPLATE ` + DbName)
+	return err
 }
 
 func migrateDb(dbAddr string) error {
