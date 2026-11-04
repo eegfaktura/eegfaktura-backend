@@ -360,7 +360,8 @@ func registerMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, p
 		return err
 	}
 
-	return inTx(ctx, db, func(tx *sqlx.Tx) error {
+	// without the cancel of the request: a client that goes away does not roll back the save (as before inTx)
+	return inTx(context.WithoutCancel(ctx), db, func(tx *sqlx.Tx) error {
 		if err := applyGridOperator(ctx, tx, tenant, []*model.MeteringPoint{point}); err != nil {
 			return err
 		}

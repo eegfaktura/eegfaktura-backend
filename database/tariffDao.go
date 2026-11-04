@@ -176,7 +176,8 @@ func AddTariff(ctx context.Context, db *sqlx.DB, tenant, user string, tariff *mo
 	}
 	update := updateType{tenant, time.Now(), time.Now(), user, tariff}
 
-	return inTx(ctx, db, func(tx *sqlx.Tx) error {
+	// without the cancel of the request: a client that goes away does not roll back the save (as before inTx)
+	return inTx(context.WithoutCancel(ctx), db, func(tx *sqlx.Tx) error {
 		var stmt string
 		var err error
 
