@@ -78,3 +78,32 @@ func TestUpdateActiveMeteringPoints_commitErrorReachesCaller(t *testing.T) {
 	assert.ErrorIs(t, err, errCommit)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
+
+// AddTariff and UpdateActiveMeteringPoints begin without the cancel of the caller's context, as on master: a client
+// that went away or the timeout of SyncMeteringPoints does not roll the save back.
+func cancelledCtx() context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return ctx
+}
+
+func TestAddTariff_cancelledContextStillCommits(t *testing.T) {
+	dbx, mock := newTxMock(t)
+	mock.ExpectBegin()
+	mock.ExpectExec(`INSERT INTO "base"."tariff" (.+)`).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	tariff := model.Tariff{Name: "Sepp", BillingPeriod: "monthly", FreeKWh: null.IntFrom(100), CentPerKWh: 12}
+	assert.NoError(t, AddTariff(cancelledCtx(), dbx, "TE000001", "sepp", &tariff))
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUpdateActiveMeteringPoints_cancelledContextStillCommits(t *testing.T) {
+	dbx, mock := newTxMock(t)
+	mock.ExpectBegin()
+	mock.ExpectQuery(`UPDATE "base"."meteringpoint"`).WillReturnRows(sqlmock.NewRows([]string{"participant_id"}))
+	mock.ExpectCommit()
+
+	assert.NoError(t, UpdateActiveMeteringPoints(cancelledCtx(), dbx, "TE000001", activeMeter))
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
