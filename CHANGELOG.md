@@ -34,8 +34,27 @@ this changelog highlights the changes relevant for overview and operations.
   (`token verification failed`, `no access token in the request or invalid Authorization header`) instead of the field
   `error=JWT-Token` and the error in the text.
 - **Logging tests** (dev#45 Q2): one capture helper `logging/logtest` restores slog, logrus and the `log` package.
+- **Generated code is no longer tracked** (BE-CQ-23): `proto/*.pb.go` and `model/registration_model.go` are generated
+  by `make tools generate` (protoc on the `PATH`, generators at the `go.mod` versions); CI, the Dockerfile and the
+  README use it. A fresh clone did not compile before. The image build no longer runs gqlgen (`graph/generated` stays
+  tracked).
+- **Test helpers out of the service binary** (BE-CQ-30): Testcontainers, the Docker client and go-sqlmock are no
+  longer linked into it (`database/dbtest`, `database/dbmock`, test-only). Container tests: README notes
+  `go test -p 1 ./api ./database ./eda` for a shared Docker.
+- **Cleanup** (code-quality review 2026-11-03): removed unused code and files — `MigrateDatabase`, the `repository`
+  package, `UpdateTariff`/`OpenDbXConnection`, `GetTemplateFor`, unused response helpers in `api/common.go`
+  (`respondWithData` is `respondWithJSON`), unused middleware types (`BackendClaims`, `Authenticate`, `ClientCreds`,
+  `HasRole`, the superuser context key), `graph/gmodel/rate.go`, two unused error variables, the blank pgx import,
+  commented-out code in `server.go` and the DAOs, the unread `migration.sql`, `schema.hcl`,
+  `database/migration/000001_init-setup.up.sql` and config key `file-content.basedir`; stale Makefile targets
+  (`atlas-hash`/`atlas-diff` spelled right). The test seed data is `database/testdata/seed.sql`.
 
 ### Fixed
+- **A failed COMMIT is reported as an error** (BE-CQ-7, BE-CQ-8): registering and moving a metering point, adding a
+  tariff and activating metering points from an EDA message reported success when the COMMIT failed. Activating
+  metering points also went on to COMMIT after a failed step instead of rolling back. One helper (`inTx`) now runs the
+  transactions of the DAOs. `POST /participant` answers a failed registration with the coded error body instead of
+  `{}` (the error was joined with the rollback's and lost its code).
 - **No names or cell values in the warn lines of the Excel import** (dev#45 L1). The import result shown to the user
   is unchanged; the lines no longer repeat names, status, energy direction or community id of the row.
 - **The raw `tenant` header stays out of the log** (dev#45 L2): a failed check logs `tenant check failed`. A superuser
