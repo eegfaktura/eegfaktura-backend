@@ -66,7 +66,8 @@ func TestAddTariff(t *testing.T) {
 	assert.NoError(t, mockDb.Mock.ExpectationsWereMet())
 }
 
-func TestUpdateTariff(t *testing.T) {
+// A changed tariff is stored as a new version of the same id.
+func TestAddTariff_newVersion(t *testing.T) {
 	tariff := model.Tariff{Version: 1, Name: "Sepp", UseVat: false, BillingPeriod: "monthly", FreeKWh: null.IntFrom(100), CentPerKWh: 12}
 
 	db, err := GetDB(context.Background())

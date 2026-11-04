@@ -478,7 +478,6 @@ func execOrInsertChild(ctx context.Context, tx *sqlx.Tx, updateSql, table string
 //	LastmodifiedDate civil.DateTime `db:"lastModifiedDate"`
 //}
 
-// RegisterParticipant func RegisterParticipant(dbConn OpenDbXConnection, tenant, username string, participant *model.EegParticipant) error {
 func registerParticipant(ctx context.Context, tx *sqlx.Tx, tenant, username string, participant *model.EegParticipant) error {
 	participant.Status = model.PENDING
 	participant.Id = uuid.NewUUID()
@@ -487,7 +486,6 @@ func registerParticipant(ctx context.Context, tx *sqlx.Tx, tenant, username stri
 	return saveParticipant(ctx, tx, tenant, username, participant, ImportMeteringPoints)
 }
 
-// ImportParticipant func ImportParticipant(dbConn OpenDbXConnection, tenant, username string, participant *model.EegParticipant) error {
 func importParticipant(ctx context.Context, tx *sqlx.Tx, tenant, username string, participant *model.EegParticipant) error {
 
 	// check if User already exists

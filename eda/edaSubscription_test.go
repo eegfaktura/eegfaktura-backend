@@ -10,9 +10,7 @@ import (
 	"fmt"
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/jjeffery/civil"
-	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"os"
 	"strconv"
@@ -52,42 +50,6 @@ func cleanupCommunities(t *testing.T, tenants ...string) {
 			}
 		}
 	})
-}
-
-type RecorderMock struct {
-	mock.Mock
-	dbOpen database.OpenDbXConnection
-}
-
-func newRecorderMock(t *testing.T) *RecorderMock {
-	var mockDb, err = database.GetDatabaseMock()
-	require.NoError(t, err)
-	return &RecorderMock{dbOpen: mockDb.OpenMockDb}
-}
-
-// func (_m *RecorderMock) saveNotification(notificationValue map[string]interface{}, tenant, notificationType, role string) error {
-func (_m *RecorderMock) saveNotification(db *sqlx.DB, tenant string, code model.EbMsMessageType, meters []string, errCodes []int16, protocol model.EdaProtocol) {
-	_ = _m.Called(db, tenant, code, meters, errCodes, protocol)
-	return
-}
-
-func (_m *RecorderMock) saveHistory(db *sqlx.DB, tenant string, messageCode model.EbMsMessageType, conversationId, role, dir string, protocol model.EdaProtocol, msg interface{}) error {
-	args := _m.Called(db, tenant, messageCode, conversationId, role, dir, protocol, msg)
-	return args.Error(0)
-}
-
-func (_m *RecorderMock) databaseConnectFunc() database.OpenDbXConnection {
-	return _m.dbOpen
-}
-
-func (_m *RecorderMock) databaseConnection() (*sqlx.DB, error) {
-	return _m.dbOpen()
-}
-
-func (_m *RecorderMock) meteringPointPerformAnswerMsg(sendMail services.SendMailFunc, tenant string, meterId []string) error {
-	args := _m.Called(sendMail, tenant, meterId)
-	return args.Error(0)
-	//return nil
 }
 
 var extractMeters = func(p model.EbmsMessage, proto model.EbMsMessageType) []string {

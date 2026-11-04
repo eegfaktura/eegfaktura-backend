@@ -17,8 +17,6 @@ import (
 	"time"
 )
 
-type OpenDbXConnection func() (*sqlx.DB, error)
-
 type TariffRepository interface {
 	GetTariff(ctx context.Context, tenant string) ([]model.Tariff, error)
 	GetTariffNameMap(ctx context.Context, tenant string) (map[string]string, error)
@@ -249,38 +247,6 @@ func AddTariff(ctx context.Context, db *sqlx.DB, tenant, user string, tariff *mo
 		}
 		return nil
 	})
-}
-
-func UpdateTariff(dbConn OpenDbXConnection, tenant string, tariff *model.Tariff) error {
-	db, err := dbConn()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	if len(tariff.Id.NodeID()) == 0 {
-		tariff.Id = uuid.NewUUID()
-	} else {
-		tariff.Version = tariff.Version + 1
-	}
-
-	type updateType struct {
-		Tenant string
-		model.Tariff
-	}
-
-	update := updateType{tenant, *tariff}
-
-	stmt, _, err := goqu.Update("base.tariff").Set(&update).Where(goqu.C("tenant").Eq(tenant)).ToSQL()
-	_, err = db.Exec(stmt)
-	if err != nil {
-		log.WithError(err).WithField("SQL", "UPDATE").Error("SQL statement failed")
-	}
-
-	//_, err = db.NamedExec(
-	//	"UPDATE base.tariff SET \"billingPeriod\"=:billingperiod, \"useVat\"=:usevat, \"vatInPercent\"=:vatinpercent, \"accountNetAmount\"=:accountnetamount, \"accountGrossAmount\"=:accountgrossamount, \"participantFee\"=:participantfee, \"baseFee\"=:basefee, discount=:discount, \"businessNr\"=:businessnr, \"centPerKWh\"=:centperkwh, \"freeKWh\" = :freekwh, \"createdBy\"=:createdby, version=:version WHERE id = :id", &update)
-
-	return err
 }
 
 //func DateToCivilHookFunc(f reflect.Type, t reflect.Type, data interface{}) (interface{}, error) {
