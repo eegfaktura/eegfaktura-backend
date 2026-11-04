@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"at.ourproject/vfeeg-backend/database"
+	"at.ourproject/vfeeg-backend/database/dbmock"
 	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/require"
 )
@@ -19,7 +20,7 @@ import (
 // same "/" subrouter as the protected routers (here only the EEG router), but
 // with a fake ping. server_health_test.go covers the real InitRouters.
 func probeRouter(t *testing.T, ping func(context.Context) error) *mux.Router {
-	db, _, err := database.InitMockDatabase()
+	db, _, err := dbmock.New()
 	require.NoError(t, err)
 	s := mux.NewRouter().PathPrefix("/").Subrouter()
 	s = InitEegRouter(s, db)

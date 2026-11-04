@@ -1,6 +1,7 @@
 package database
 
 import (
+	"at.ourproject/vfeeg-backend/database/dbtest"
 	"context"
 	"errors"
 	"net"
@@ -12,7 +13,7 @@ import (
 )
 
 func TestPing_answeringDatabase(t *testing.T) {
-	require.NoError(t, ping(context.Background(), testDB.connectionString, "SELECT 1"))
+	require.NoError(t, ping(context.Background(), testDB.ConnectionString, "SELECT 1"))
 }
 
 func TestPing_unreachableDatabaseFailsWithinConnectTimeout(t *testing.T) {
@@ -26,7 +27,7 @@ func TestPing_unreachableDatabaseFailsWithinConnectTimeout(t *testing.T) {
 func TestPing_slowStatementEndsByDriverStatementTimeout(t *testing.T) {
 	// No context deadline: only statement_timeout=2000 can end the 10 s sleep.
 	start := time.Now()
-	err := ping(context.Background(), testDB.connectionString, "SELECT pg_sleep(10)")
+	err := ping(context.Background(), testDB.ConnectionString, "SELECT pg_sleep(10)")
 
 	var pgErr *pgconn.PgError
 	require.True(t, errors.As(err, &pgErr), "got %v", err)
@@ -44,6 +45,6 @@ func TestPing_tooManyConnectionsIsReported(t *testing.T) {
 
 	host, port, err := net.SplitHostPort(testDB.DbAddress)
 	require.NoError(t, err)
-	info := "host=" + host + " port=" + port + " user=ping_limited password=ping_limited dbname=" + DbName + " sslmode=disable"
+	info := "host=" + host + " port=" + port + " user=ping_limited password=ping_limited dbname=" + dbtest.DbName + " sslmode=disable"
 	require.ErrorIs(t, ping(context.Background(), info, "SELECT 1"), ErrTooManyConnections)
 }

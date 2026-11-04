@@ -6,13 +6,13 @@ import (
 	"testing"
 
 	"at.ourproject/vfeeg-backend/config/configtest"
-	"at.ourproject/vfeeg-backend/database"
+	"at.ourproject/vfeeg-backend/database/dbmock"
 	"github.com/stretchr/testify/require"
 )
 
 // The probes as wired by InitRouters, with the real database.Ping.
 func TestInitRouters_probes(t *testing.T) {
-	db, _, err := database.InitMockDatabase()
+	db, _, err := dbmock.New()
 	require.NoError(t, err)
 	// Nothing listens on port 1: the dedicated ping fails at once.
 	configtest.Set(t, "database.host", "127.0.0.1")

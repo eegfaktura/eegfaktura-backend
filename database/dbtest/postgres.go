@@ -1,12 +1,14 @@
-package database
+// Package dbtest starts the PostgreSQL container of the database tests, with the migrations and the
+// seed data. Only tests import it, so Testcontainers and the Docker client stay out of the service
+// binary. It does not import package database, so the tests inside that package can use it too.
+package dbtest
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/jmoiron/sqlx"
-	"io/ioutil"
 	"log"
+	"os"
 	"path/filepath"
 	"runtime"
 	"time"
@@ -14,6 +16,7 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres" // used by migrator
 	_ "github.com/golang-migrate/migrate/v4/source/file"       // used by migrator
+	"github.com/jmoiron/sqlx"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
@@ -24,36 +27,11 @@ const (
 	DbPass = "test_password"
 )
 
-var testDbInstance *sqlx.DB
-var testDB *TestDatabase
-
-func GetTestDB(ctx context.Context, dbInstance *TestDatabase) (Database, error) {
-	db.Do(func() {
-		_ = dbInstance.Open(ctx)
-		//db.Database = &sqlDatabase{db: dbInstance.DbInstance}
-	})
-	db.Database = &sqlDatabase{db: dbInstance.DbInstance}
-
-	if db.Database == nil {
-		return nil, errors.New("database was not initialized")
-	}
-	return db.Database, nil
-}
-
-func SetTestDb(testDb *sqlx.DB) {
-	db.Database = &sqlDatabase{db: testDb}
-}
-
-func InitTestDb(testDb *sqlx.DB) {
-	db.Do(func() {})
-	db.Database = &sqlDatabase{db: testDb}
-}
-
 type TestDatabase struct {
 	DbAddress        string
 	DbInstance       *sqlx.DB
-	connectionString string
-	container        testcontainers.Container
+	ConnectionString string
+	Container        testcontainers.Container
 }
 
 func SetupTestDatabase() *TestDatabase {
@@ -73,22 +51,22 @@ func SetupTestDatabase() *TestDatabase {
 	cancel()
 
 	return &TestDatabase{
-		container:        container,
-		connectionString: connectionString,
+		Container:        container,
+		ConnectionString: connectionString,
 		DbAddress:        dbAddr,
 	}
 }
 
 func (tdb *TestDatabase) Open(ctx context.Context) error {
 	var err error
-	tdb.DbInstance, err = sqlx.ConnectContext(ctx, "postgres", tdb.connectionString)
+	tdb.DbInstance, err = sqlx.ConnectContext(ctx, "postgres", tdb.ConnectionString)
 	return err
 }
 
 func (tdb *TestDatabase) TearDown() {
 	tdb.DbInstance.Close()
 	// remove test container
-	_ = tdb.container.Terminate(context.Background())
+	_ = tdb.Container.Terminate(context.Background())
 }
 
 func createContainer(ctx context.Context) (testcontainers.Container, string, string, error) {
@@ -144,7 +122,7 @@ func migrateDb(dbAddr string) error {
 	if !ok {
 		return fmt.Errorf("failed to get path")
 	}
-	pathToMigrationFiles := filepath.Dir(path) + "/../migrations"
+	pathToMigrationFiles := filepath.Dir(path) + "/../../migrations"
 
 	databaseURL := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", DbUser, DbPass, dbAddr, DbName)
 	m, err := migrate.New(fmt.Sprintf("file:%s", pathToMigrationFiles), databaseURL)
@@ -164,7 +142,7 @@ func migrateDb(dbAddr string) error {
 
 func loadSqlFile(connectionStr, path string) error {
 	// Read file
-	file, err := ioutil.ReadFile(filepath.Dir(path) + "/migration/000002_init-setup.up.sql")
+	file, err := os.ReadFile(filepath.Dir(path) + "/../migration/000002_init-setup.up.sql")
 	if err != nil {
 		fmt.Println(err.Error())
 		return err

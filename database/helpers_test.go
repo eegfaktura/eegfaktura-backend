@@ -1,10 +1,27 @@
 package database
 
 import (
+	"context"
 	"database/sql"
+
+	"at.ourproject/vfeeg-backend/database/dbtest"
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/jmoiron/sqlx"
 )
+
+var testDB *dbtest.TestDatabase
+
+// GetTestDB opens the container database once and makes it the database GetDB returns.
+func GetTestDB(ctx context.Context, dbInstance *dbtest.TestDatabase) (Database, error) {
+	if dbInstance.DbInstance == nil {
+		if err := dbInstance.Open(ctx); err != nil {
+			return nil, err
+		}
+	}
+	d := NewDatabase(dbInstance.DbInstance)
+	SetDB(d)
+	return d, nil
+}
 
 type MockDatabase struct {
 	Mock sqlmock.Sqlmock
@@ -19,21 +36,12 @@ func GetDatabaseMock() (*MockDatabase, error) {
 	return m, err
 }
 
-func (m *MockDatabase) OpenMockDb() (*sqlx.DB, error) {
-	return sqlx.NewDb(m.db, "mock"), nil
-}
-
-func (m *MockDatabase) Close() error {
-	return m.db.Close()
-}
-
 func GetMockDb() (*MockDatabase, error) {
 	mockDb, err := GetDatabaseMock()
 	if err != nil {
 		return nil, err
 	}
-	testDb, err := mockDb.OpenMockDb()
-	InitTestDb(testDb)
+	SetDB(NewDatabase(sqlx.NewDb(mockDb.db, "mock")))
 	return mockDb, nil
 }
 
@@ -42,5 +50,5 @@ func InitMockDatabase() (Database, sqlmock.Sqlmock, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return &sqlDatabase{db: sqlx.NewDb(dbInstance, "mock")}, mock, nil
+	return NewDatabase(sqlx.NewDb(dbInstance, "mock")), mock, nil
 }

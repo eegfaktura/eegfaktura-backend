@@ -1,13 +1,14 @@
 package database
 
 import (
+	"at.ourproject/vfeeg-backend/database/dbtest"
 	"context"
 	"os"
 	"testing"
 )
 
 func TestMain(m *testing.M) {
-	testDB = SetupTestDatabase()
+	testDB = dbtest.SetupTestDatabase()
 	db, err := GetTestDB(context.Background(), testDB)
 	if err != nil {
 		panic(err)

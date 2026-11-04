@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"at.ourproject/vfeeg-backend/database/dbtest"
 	"at.ourproject/vfeeg-backend/model"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/jmoiron/sqlx"
@@ -53,9 +54,9 @@ func migrationDB(t *testing.T, name string) (*sqlx.DB, *migrate.Migrate) {
 	_, path, _, ok := runtime.Caller(0)
 	require.True(t, ok)
 	m, err := migrate.New("file:"+filepath.Dir(path)+"/../migrations",
-		fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", DbUser, DbPass, testDB.DbAddress, name))
+		fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", dbtest.DbUser, dbtest.DbPass, testDB.DbAddress, name))
 	require.NoError(t, err)
-	dbx, err := sqlx.Connect("postgres", strings.Replace(testDB.connectionString, "dbname="+DbName, "dbname="+name, 1))
+	dbx, err := sqlx.Connect("postgres", strings.Replace(testDB.ConnectionString, "dbname="+dbtest.DbName, "dbname="+name, 1))
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_ = dbx.Close()

@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"at.ourproject/vfeeg-backend/api/middleware"
-	"at.ourproject/vfeeg-backend/database"
+	"at.ourproject/vfeeg-backend/database/dbmock"
 	"at.ourproject/vfeeg-backend/logging"
 	"at.ourproject/vfeeg-backend/logging/logtest"
 	"github.com/stretchr/testify/assert"
@@ -58,7 +58,7 @@ func logLines(t *testing.T, claims *middleware.PlatformClaims, reqs ...*http.Req
 		logging.Setup(w, logging.Config{Level: slog.LevelInfo, JSON: true, Version: "test"})
 	})
 
-	db, _, err := database.InitMockDatabase()
+	db, _, err := dbmock.New()
 	require.NoError(t, err)
 	r := InitRouters(db)
 	InitGraphQL(r)
