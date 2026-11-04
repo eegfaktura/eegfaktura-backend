@@ -6,7 +6,7 @@ database:
   password: "postgresPW"
   dbname: "postgresdb"
   maxOpenConns: 20
-  maxIdleConns: 25
+  maxIdleConns: 20
   connMaxLifetime: "5m"
   statsLogInterval: "1m"
 
@@ -16,7 +16,6 @@ mqtt:
   qos: 1
 
 file-content:
-  basedir: "../../file-content/"
   templates: "./public"
 
 grpc-provider:
