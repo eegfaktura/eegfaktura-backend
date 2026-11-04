@@ -124,14 +124,14 @@ func createContainer(ctx context.Context) (testcontainers.Container, string, str
 
 	log.Println("postgres container ready and running at port: ", p.Port())
 
-	dbAddr := fmt.Sprintf("localhost:%s", p.Port())
+	dbAddr := fmt.Sprintf("127.0.0.1:%s", p.Port())
 
 	//db, err := sqlx.Open("postgres", fmt.Sprintf("host=localhost port=%s user=%s password=%s dbname=%s sslmode=disable", p.Port(), DbUser, DbPass, DbName))
 	//if err != nil {
 	//	return container, "", dbAddr, fmt.Errorf("failed to establish database connection: %v", err)
 	//}
 
-	return container, fmt.Sprintf("host=localhost port=%s user=%s password=%s dbname=%s sslmode=disable", p.Port(), DbUser, DbPass, DbName), dbAddr, nil
+	return container, fmt.Sprintf("host=127.0.0.1 port=%s user=%s password=%s dbname=%s sslmode=disable", p.Port(), DbUser, DbPass, DbName), dbAddr, nil
 }
 
 // copySeed creates SeedDbName from the migrated and seeded DbName (no connection to it is open yet).
