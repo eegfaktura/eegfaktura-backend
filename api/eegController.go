@@ -70,7 +70,7 @@ func (h *EegHandler) getEEG() middleware.JWTHandlerFunc {
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1001, fmt.Sprintf("EEG %s is not existing yet!", tenant)))
 			return
 		}
-		respondWithData(w, http.StatusOK, eeg)
+		respondWithJSON(w, http.StatusOK, eeg)
 	}
 }
 
@@ -92,7 +92,7 @@ func (h *EegHandler) updateEEG() middleware.JWTHandlerFunc {
 			respondWith(r.Context(), w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
 			return
 		}
-		respondWithData(w, http.StatusOK, eeg)
+		respondWithJSON(w, http.StatusOK, eeg)
 	}
 }
 
@@ -103,7 +103,7 @@ func (h *EegHandler) getTariff() middleware.JWTHandlerFunc {
 			respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
 			return
 		}
-		respondWithData(w, http.StatusOK, tariff)
+		respondWithJSON(w, http.StatusOK, tariff)
 	}
 }
 
@@ -133,7 +133,7 @@ func (h *EegHandler) addTariff() middleware.JWTHandlerFunc {
 			respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
 			return
 		}
-		respondWithData(w, http.StatusCreated, t)
+		respondWithJSON(w, http.StatusCreated, t)
 	}
 }
 
@@ -148,7 +148,7 @@ func (h *EegHandler) fetchTariffHistory() middleware.JWTHandlerFunc {
 			respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
 			return
 		}
-		respondWithData(w, http.StatusOK, data)
+		respondWithJSON(w, http.StatusOK, data)
 	}
 }
 
@@ -161,7 +161,7 @@ func (h *EegHandler) archiveTariff() middleware.JWTHandlerFunc {
 			respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
 			return
 		}
-		respondWithData(w, http.StatusAccepted, map[string]interface{}{"status": "ok"})
+		respondWithJSON(w, http.StatusAccepted, map[string]interface{}{"status": "ok"})
 	}
 }
 
@@ -311,7 +311,7 @@ func (h *EegHandler) notifications() middleware.JWTHandlerFunc {
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1055, err.Error()))
 			return
 		}
-		respondWithData(w, http.StatusOK, notifications)
+		respondWithJSON(w, http.StatusOK, notifications)
 	}
 }
 
@@ -322,7 +322,7 @@ func (h *EegHandler) gridOperators() middleware.JWTHandlerFunc {
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1055, err.Error()))
 			return
 		}
-		respondWithData(w, http.StatusOK, o)
+		respondWithJSON(w, http.StatusOK, o)
 	}
 }
 
@@ -339,6 +339,6 @@ func (h *EegHandler) getUser() middleware.JWTHandlerFunc {
 			respondWith(r.Context(), w, http.StatusBadRequest, tenant, model.ErrGetUser(err))
 			return
 		}
-		respondWithData(w, http.StatusOK, tn)
+		respondWithJSON(w, http.StatusOK, tn)
 	}
 }

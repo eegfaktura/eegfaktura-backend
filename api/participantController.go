@@ -47,7 +47,7 @@ func (h *ParticipantHandler) fetchParticipantAll() middleware.JWTHandlerFunc {
 				respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
 				return
 			}
-			respondWithData(w, 200, participant)
+			respondWithJSON(w, 200, participant)
 		}
 	}
 }
@@ -60,7 +60,7 @@ func (h *ParticipantHandler) fetchParticipant() middleware.JWTHandlerFunc {
 			respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
 			return
 		}
-		respondWithData(w, 200, participant)
+		respondWithJSON(w, 200, participant)
 	}
 }
 
@@ -88,7 +88,7 @@ func (h *ParticipantHandler) updateParticipant() middleware.JWTHandlerFunc {
 			respondWith(r.Context(), w, http.StatusBadRequest, tenant, participantWriteError(err))
 			return
 		}
-		respondWithData(w, http.StatusAccepted, t)
+		respondWithJSON(w, http.StatusAccepted, t)
 	}
 }
 
@@ -144,7 +144,7 @@ func (h *ParticipantHandler) updateParticipantPartial() middleware.JWTHandlerFun
 			respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
 			return
 		}
-		respondWithData(w, http.StatusAccepted, participant)
+		respondWithJSON(w, http.StatusAccepted, participant)
 	}
 }
 
@@ -164,7 +164,7 @@ func (h *ParticipantHandler) registerParticipant() middleware.JWTHandlerFunc {
 			respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
 			return
 		}
-		respondWithData(w, http.StatusCreated, t)
+		respondWithJSON(w, http.StatusCreated, t)
 	}
 }
 
@@ -254,7 +254,7 @@ func (h *ParticipantHandler) confirmParticipant() middleware.JWTHandlerFunc {
 				return
 			}
 		}
-		respondWithData(w, http.StatusCreated, participant)
+		respondWithJSON(w, http.StatusCreated, participant)
 	}
 }
 
@@ -273,6 +273,6 @@ func (h *ParticipantHandler) deleteParticipant() middleware.JWTHandlerFunc {
 			respondWith(r.Context(), w, status, tenant, err)
 			return
 		}
-		respondWithData(w, http.StatusAccepted, map[string]interface{}{"id": idStr})
+		respondWithJSON(w, http.StatusAccepted, map[string]interface{}{"id": idStr})
 	}
 }
