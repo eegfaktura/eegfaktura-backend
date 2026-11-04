@@ -31,6 +31,12 @@ const (
 	SeedDbName = "test_seed"
 )
 
+const (
+	nat5432 = "5432/tcp"
+	// startupTimeout is the wait for the started container to take connections, after the pull.
+	startupTimeout = 90 * time.Second
+)
+
 type TestDatabase struct {
 	DbAddress        string
 	DbInstance       *sqlx.DB
@@ -40,22 +46,22 @@ type TestDatabase struct {
 
 func SetupTestDatabase() *TestDatabase {
 
-	// setup db container
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*60)
+	// setup db container: the deadline covers an image pull, the readiness wait has its own (startupTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
 	container, connectionString, dbAddr, err := createContainer(ctx)
 	if err != nil {
-		log.Fatal("failed to setup test", err)
+		log.Fatalf("setup test db: %v", err)
 	}
 
 	// migrate db schema
 	err = migrateDb(dbAddr)
 	if err != nil {
-		log.Fatal("failed to perform db migration", err)
+		log.Fatalf("migrate test db: %v", err)
 	}
 	if err = copySeed(connectionString); err != nil {
 		log.Fatalf("copy the seed database: %v", err)
 	}
-	cancel()
 
 	return &TestDatabase{
 		Container:        container,
@@ -90,7 +96,7 @@ func createContainer(ctx context.Context) (testcontainers.Container, string, str
 		//"TZ":                "Europe/Berlin",
 		//"PGTZ":              "Europe/Berlin",
 	}
-	var port = "5432/tcp"
+	var port = nat5432
 
 	req := testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
@@ -98,8 +104,11 @@ func createContainer(ctx context.Context) (testcontainers.Container, string, str
 			ExposedPorts: []string{port},
 			Env:          env,
 			// The message appears twice: first from the temporary server of initdb, then from
-			// the real server.
-			WaitingFor: wait.ForLog("database system is ready to accept connections").WithOccurrence(2),
+			// the real server; then the port must take connections (no fixed sleep).
+			WaitingFor: wait.ForAll(
+				wait.ForLog("database system is ready to accept connections").WithOccurrence(2),
+				wait.ForListeningPort(nat5432),
+			).WithStartupTimeout(startupTimeout),
 		},
 		Started: true,
 	}
@@ -114,8 +123,6 @@ func createContainer(ctx context.Context) (testcontainers.Container, string, str
 	}
 
 	log.Println("postgres container ready and running at port: ", p.Port())
-
-	time.Sleep(time.Second)
 
 	dbAddr := fmt.Sprintf("localhost:%s", p.Port())
 

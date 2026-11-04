@@ -27,10 +27,6 @@ func TestMain(m *testing.M) {
 	}
 	db := database.NewDatabase(testDB.DbInstance)
 	database.SetDB(db)
-	defer func() {
-		_ = db.CloseDB()
-		testDB.TearDown()
-	}()
 	// no test talks to a mail server; a test that looks at mails replaces its sender
 	noMail := func(string, string, string, *string, *bytes.Buffer, []*services.Attachment, *services.Attachment) error {
 		return nil
@@ -38,7 +34,11 @@ func TestMain(m *testing.M) {
 	sendActivationMail, sendInactiveMail = noMail, noMail
 	sendZpListMail = func(string, string, string, *string, *bytes.Buffer, *services.Attachment) error { return nil }
 	StartMailWorker()
-	os.Exit(m.Run())
+	// os.Exit skips deferred calls: close and remove the container before it
+	code := m.Run()
+	_ = db.CloseDB()
+	testDB.TearDown()
+	os.Exit(code)
 }
 
 // cleanupCommunities removes what a test with fixed tenants leaves behind, so it survives -count=2.

@@ -27,12 +27,12 @@ func TestMain(m *testing.M) {
 	}
 	db := database.NewDatabase(testDB.DbInstance)
 	database.SetDB(db)
-	defer func() {
-		_ = db.CloseDB()
-		testDB.TearDown()
-	}()
 
-	os.Exit(m.Run())
+	// os.Exit skips deferred calls: close and remove the container before it
+	code := m.Run()
+	_ = db.CloseDB()
+	testDB.TearDown()
+	os.Exit(code)
 }
 
 func TestMarschaling(t *testing.T) {

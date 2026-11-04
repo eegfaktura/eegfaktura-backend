@@ -94,6 +94,13 @@ Run the test suite using:
 make test
 ```
 
+The tests of `api`, `database` and `eda` start PostgreSQL through Testcontainers (Docker needed), one container per
+package. On a shared or slow Docker (e.g. Docker Desktop) run them one package at a time:
+
+```bash
+go test -p 1 ./api ./database ./eda
+```
+
 ## Development
 
 ### GraphQL
