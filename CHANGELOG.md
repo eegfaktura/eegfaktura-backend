@@ -57,8 +57,9 @@ this changelog highlights the changes relevant for overview and operations.
   driver error. Registering a metering point, adding a tariff and activating metering points do not take the cancel
   of the caller's context, as before.
 - **`POST /participant`: a failed registration answers with a code** (caller: eegfaktura-web): code 1104 and a
-  generic message (not found and invalid input keep their own code and text), as the member update does; before, the
-  body was `{}` (the error was joined with the rollback's and lost its type). No database text goes to the client.
+  generic message, as the member update does; not found and invalid input keep their own code and text (an invalid
+  e-mail address: code 2000 with the reason). Before, the body was `{}` (the error was joined with the rollback's and
+  lost its type). No database text goes to the client.
 - **No names or cell values in the warn lines of the Excel import** (dev#45 L1). The import result shown to the user
   is unchanged; the lines no longer repeat names, status, energy direction or community id of the row.
 - **The raw `tenant` header stays out of the log** (dev#45 L2): a failed check logs `tenant check failed`. A superuser
