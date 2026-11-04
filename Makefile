@@ -1,5 +1,8 @@
 BINARY_NAME=vfeeg-backend
 
+# tools/ is a directory: without .PHONY `make tools` would be "up to date" and install nothing
+.PHONY: all tools generate build test clean run protoc atlas-hash atlas-diff
+
 # The generated code (proto/*.pb.go, model/registration_model.go) is not tracked: run `make tools generate`
 # after cloning and after changing a .proto or a JSON schema. Needs protoc on the PATH (CI pins 29.3);
 # `tools` installs the generators at the versions in go.mod.
