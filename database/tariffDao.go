@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"errors"
 	"github.com/doug-martin/goqu/v9"
-	_ "github.com/jackc/pgx/v5"
 	"github.com/jjeffery/civil"
 	"github.com/jmoiron/sqlx"
 	"github.com/pborman/uuid"
