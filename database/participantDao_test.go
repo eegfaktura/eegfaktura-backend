@@ -192,9 +192,6 @@ func TestGetParticipant(t *testing.T) {
 }
 
 func Test_GetParticipants(t *testing.T) {
-	//_, err := GetMockDb()
-	//require.NoError(t, err)
-
 	db, err := GetTestDB(context.Background(), testDB)
 	require.NoError(t, err)
 

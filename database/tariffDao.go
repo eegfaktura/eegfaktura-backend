@@ -86,12 +86,6 @@ func GetTariff(ctx context.Context, db *sqlx.DB, tenant string) ([]model.Tariff,
 
 func GetTariffHistory(db *sqlx.DB, tenant string, id string) ([]model.Tariff, error) {
 
-	//                   DISTINCT jsonb_build_object(
-	//                       'street', addresses.street,
-	//                       'city', addresses.city
-	//                   )
-	//               ) FILTER (WHERE addresses.id IS NOT NULL), '[]')`).As("addresses"),
-
 	stmt, _, err := goqu.Dialect("postgres").From("base.tariff").
 		Where(
 			goqu.C("tenant").Eq(tenant),
