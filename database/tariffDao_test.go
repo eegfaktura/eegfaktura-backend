@@ -72,15 +72,28 @@ func TestAddTariff_newVersion(t *testing.T) {
 
 	db, err := GetDB(context.Background())
 	require.NoError(t, err)
+	// other tests add tariffs to TE000001 too: count relative to before, find the tariff by its id
+	before, err := db.GetTariff(context.Background(), "TE000001")
+	require.NoError(t, err)
+	byId := func(tariffs []model.Tariff, id string) *model.Tariff {
+		for i := range tariffs {
+			if tariffs[i].Id.String() == id {
+				return &tariffs[i]
+			}
+		}
+		return nil
+	}
 
 	err = db.AddTariff(context.Background(), "TE000001", "sepp", &tariff)
 	require.NoError(t, err)
 
 	tariffSlice, err := db.GetTariff(context.Background(), "TE000001")
 	require.NoError(t, err)
-	require.Equal(t, 2, len(tariffSlice))
+	require.Equal(t, len(before)+1, len(tariffSlice))
 
-	updateTariff := tariffSlice[0]
+	added := byId(tariffSlice, tariff.Id.String())
+	require.NotNil(t, added)
+	updateTariff := *added
 	updateTariff.UseMeteringFee = true
 	updateTariff.MeteringFee = null.FloatFrom(200.11)
 
@@ -89,8 +102,10 @@ func TestAddTariff_newVersion(t *testing.T) {
 	updatedTariff, err := db.GetTariff(context.Background(), "TE000001")
 	require.NoError(t, err)
 
-	require.Equal(t, 2, len(updatedTariff))
-	assert.Equal(t, 2, updatedTariff[0].Version)
-	assert.Equal(t, true, updatedTariff[0].UseMeteringFee)
-	assert.Equal(t, null.FloatFrom(200.11), updatedTariff[0].MeteringFee)
+	require.Equal(t, len(before)+1, len(updatedTariff), "the new version replaces the active one")
+	updated := byId(updatedTariff, tariff.Id.String())
+	require.NotNil(t, updated)
+	assert.Equal(t, 2, updated.Version)
+	assert.Equal(t, true, updated.UseMeteringFee)
+	assert.Equal(t, null.FloatFrom(200.11), updated.MeteringFee)
 }
