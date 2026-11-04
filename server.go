@@ -26,13 +26,10 @@ import (
 	"at.ourproject/vfeeg-backend/parser"
 	"at.ourproject/vfeeg-backend/services"
 	"github.com/99designs/gqlgen/graphql/handler"
-	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source"
 	"github.com/golang-migrate/migrate/v4/source/httpfs"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
-	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
@@ -128,11 +125,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	//if err := MigrateDatabase(); err != nil {
-	//	log.Fatalf("failed to migrate database")
-	//	os.Exit(1)
-	//}
-
 	parser.WarnIgnoredVolumeTemplates()
 	StartServer(db)
 
@@ -140,31 +132,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to close database")
 	}
-}
-
-func MigrateDatabase(db *sqlx.DB) error {
-	log.Info("Start migration ...")
-
-	source.Register("embed", &driver{})
-
-	dbDriver, err := postgres.WithInstance(db.DB, &postgres.Config{SchemaName: "base"})
-	if err != nil {
-		log.Fatal(err)
-		return err
-	}
-
-	m, err := migrate.NewWithDatabaseInstance(
-		"embed://",
-		"postgres", dbDriver)
-	if err != nil {
-		log.Fatal(err)
-		return err
-	}
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		log.Fatal(err)
-		return err
-	}
-	return nil
 }
 
 // httpShutdownLimit is the share of the requests in the 30 s the pod has after SIGTERM: they, the
