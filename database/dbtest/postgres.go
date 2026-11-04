@@ -172,7 +172,7 @@ func migrateDb(dbAddr string) error {
 
 func loadSqlFile(connectionStr, path string) error {
 	// Read file
-	file, err := os.ReadFile(filepath.Dir(path) + "/../migration/000002_init-setup.up.sql")
+	file, err := os.ReadFile(filepath.Dir(path) + "/../testdata/seed.sql")
 	if err != nil {
 		fmt.Println(err.Error())
 		return err
