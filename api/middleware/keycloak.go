@@ -174,23 +174,6 @@ type Credentials struct {
 	IssueUrl     string `json:"issue_url,omitempty"`
 }
 
-func (kc *KeycloakClient) Authenticate() (*httputil2.ClientCreds, error) {
-	resp, err := httputil2.PostFormUrlencoded(kc.client, kc.oidc.Endpoint().TokenURL, nil, map[string][]string{
-		"grant_type":    {"client_credentials"},
-		"client_id":     {kc.clientID},
-		"client_secret": {kc.clientSecret},
-	})
-	if err != nil {
-		return nil, err
-	}
-	creds := &httputil2.ClientCreds{}
-	if err = httputil2.DecodeJSONResponse(resp, creds); err != nil {
-		return nil, err
-	}
-	creds.SetExpiresTime()
-	return creds, nil
-}
-
 func (kc *KeycloakClient) AuthenticateUserWithPassword(username, password string) (token *oidc.IDToken, err error) {
 	params := map[string][]string{
 		"grant_type":    {"password"},
