@@ -2,17 +2,15 @@ package eda
 
 import (
 	"at.ourproject/vfeeg-backend/database"
+	"at.ourproject/vfeeg-backend/database/dbtest"
 	"at.ourproject/vfeeg-backend/model"
 	"at.ourproject/vfeeg-backend/services"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/jjeffery/civil"
-	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"os"
 	"strconv"
@@ -20,18 +18,15 @@ import (
 	"testing"
 )
 
-var testDB *database.TestDatabase
+var testDB *dbtest.TestDatabase
 
 func TestMain(m *testing.M) {
-	testDB = database.SetupTestDatabase()
-	db, err := database.GetTestDB(context.Background(), testDB)
-	if err != nil {
+	testDB = dbtest.SetupTestDatabase()
+	if err := testDB.Open(context.Background()); err != nil {
 		panic(err)
 	}
-	defer func() {
-		_ = db.CloseDB()
-		testDB.TearDown()
-	}()
+	db := database.NewDatabase(testDB.DbInstance)
+	database.SetDB(db)
 	// no test talks to a mail server; a test that looks at mails replaces its sender
 	noMail := func(string, string, string, *string, *bytes.Buffer, []*services.Attachment, *services.Attachment) error {
 		return nil
@@ -39,7 +34,11 @@ func TestMain(m *testing.M) {
 	sendActivationMail, sendInactiveMail = noMail, noMail
 	sendZpListMail = func(string, string, string, *string, *bytes.Buffer, *services.Attachment) error { return nil }
 	StartMailWorker()
-	os.Exit(m.Run())
+	// os.Exit skips deferred calls: close and remove the container before it
+	code := m.Run()
+	_ = db.CloseDB()
+	testDB.TearDown()
+	os.Exit(code)
 }
 
 // cleanupCommunities removes what a test with fixed tenants leaves behind, so it survives -count=2.
@@ -52,42 +51,6 @@ func cleanupCommunities(t *testing.T, tenants ...string) {
 			}
 		}
 	})
-}
-
-type RecorderMock struct {
-	mock.Mock
-	dbOpen database.OpenDbXConnection
-}
-
-func newRecorderMock(t *testing.T) *RecorderMock {
-	var mockDb, err = database.GetDatabaseMock()
-	require.NoError(t, err)
-	return &RecorderMock{dbOpen: mockDb.OpenMockDb}
-}
-
-// func (_m *RecorderMock) saveNotification(notificationValue map[string]interface{}, tenant, notificationType, role string) error {
-func (_m *RecorderMock) saveNotification(db *sqlx.DB, tenant string, code model.EbMsMessageType, meters []string, errCodes []int16, protocol model.EdaProtocol) {
-	_ = _m.Called(db, tenant, code, meters, errCodes, protocol)
-	return
-}
-
-func (_m *RecorderMock) saveHistory(db *sqlx.DB, tenant string, messageCode model.EbMsMessageType, conversationId, role, dir string, protocol model.EdaProtocol, msg interface{}) error {
-	args := _m.Called(db, tenant, messageCode, conversationId, role, dir, protocol, msg)
-	return args.Error(0)
-}
-
-func (_m *RecorderMock) databaseConnectFunc() database.OpenDbXConnection {
-	return _m.dbOpen
-}
-
-func (_m *RecorderMock) databaseConnection() (*sqlx.DB, error) {
-	return _m.dbOpen()
-}
-
-func (_m *RecorderMock) meteringPointPerformAnswerMsg(sendMail services.SendMailFunc, tenant string, meterId []string) error {
-	args := _m.Called(sendMail, tenant, meterId)
-	return args.Error(0)
-	//return nil
 }
 
 var extractMeters = func(p model.EbmsMessage, proto model.EbMsMessageType) []string {
@@ -217,9 +180,6 @@ func prepareMessage(t *testing.T, messageCode model.EbMsMessageType, codes []int
 }
 
 func TestProtcolCrMsgHandler(t *testing.T) {
-	var mockDb, err = database.GetDatabaseMock()
-	require.NoError(t, err)
-
 	jsonString := `{
 	"messageId":"AT003000202208201421374610104995950",
 	"conversationId":"AT003000202208191420233640008300242",
@@ -244,17 +204,8 @@ func TestProtcolCrMsgHandler(t *testing.T) {
 		Tenant:      "TE1000001",
 		Payload:     model.EbmsMessage{},
 	}
-	err = json.Unmarshal([]byte(jsonString), &msg.Payload)
+	err := json.Unmarshal([]byte(jsonString), &msg.Payload)
 	require.NoError(t, err)
-
-	stmt := "SELECT (.+) FROM \"base\".\"eeg\" WHERE (.+)"
-
-	rows := sqlmock.NewRows([]string{"tenant", "name", "description", "businessNr", "legal", "gridoperator_name", "communityId", "gridoperator_code", "rcNumber", "area", "allocationMode",
-		"settlementInterval", "providerBusinessNr", "street", "streetNumber", "zip", "city", "phone", "email", "website", "iban", "owner", "bankName",
-		"taxNumber", "vatNumber", "online", "contactPerson"}).
-		AddRow("TE1000001", "test-eeg", "", "", "verein", "Netz-Test", "CC00000000000002221212121212", "EE000001", "RC100130",
-			"LOCAL", "DYNAMIC", "MONTHLY", 0, "Solargasse", "1", "1111", "Solarcity", "", "", "", "", "Max Mustermann", "Bankname", "", "", false, "Max Mustermann")
-	mockDb.Mock.ExpectQuery(stmt).WillReturnRows(rows)
 
 	//historyValue := map[string]interface{}{"meter": msg.Payload.Meter.MeteringPoint, "from": msg.Payload.Energy[0].Start, "to": msg.Payload.Energy[0].End}
 	//recorder.Mock.On(
@@ -295,26 +246,14 @@ func TestProtocolCrReqPtHandler(t *testing.T) {
 
 	for _, m := range tests {
 		t.Run(m.name, func(t *testing.T) {
-			var mockDb, err = database.GetDatabaseMock()
-			require.NoError(t, err)
-
 			msg := model.SubscribeMessage{
 				MessageCode: m.messageType,
 				Protocol:    model.CR_REQ_PT,
 				Tenant:      "TE1000001",
 				Payload:     model.EbmsMessage{},
 			}
-			err = json.Unmarshal([]byte(m.message), &msg.Payload)
+			err := json.Unmarshal([]byte(m.message), &msg.Payload)
 			require.NoError(t, err)
-
-			stmt := "SELECT (.+) FROM \"base\".\"eeg\" WHERE (.+)"
-
-			rows := sqlmock.NewRows([]string{"tenant", "name", "description", "businessNr", "legal", "gridoperator_name", "communityId", "gridoperator_code", "rcNumber", "area", "allocationMode",
-				"settlementInterval", "providerBusinessNr", "street", "streetNumber", "zip", "city", "phone", "email", "website", "iban", "owner", "bankName",
-				"taxNumber", "vatNumber", "online", "contactPerson"}).
-				AddRow("TE1000001", "test-eeg", "", "", "verein", "Netz-Test", "CC00000000000002221212121212", "EE000001", "RC100130",
-					"LOCAL", "DYNAMIC", "MONTHLY", 0, "Solargasse", "1", "1111", "Solarcity", "", "", "", "", "Max Mustermann", "Bankname", "", "", false, "Max Mustermann")
-			mockDb.Mock.ExpectQuery(stmt).WillReturnRows(rows)
 
 			//recorder.Mock.On("saveNotification", mock.Anything, "TE1000001", msg.MessageCode, msg.Payload.Meters(), m.codes, model.CR_REQ_PT).Return(nil)
 			//// saveNotification(db *sqlx.DB, tenant string, code model.EbMsMessageType, meters []string, errCodes []int16, protocol model.EdaProtocol)
@@ -577,9 +516,6 @@ func TestProtocolCmRevImpHandler(t *testing.T) {
 	}
 	for _, m := range tests {
 		t.Run(m.name, func(t *testing.T) {
-			var mockDb, err = database.GetDatabaseMock()
-			require.NoError(t, err)
-
 			//jsonString := `{"conversationId":"RC100298202308171692252620000000321","messageId":"AT003000202308170810324070187796715","sender":"AT003000","receiver":"RC100298","messageCode":"ZUSTIMMUNG_ECON","requestId":"XV3VFJN2","responseData":[{"meteringPoint":"AT0030000000000000000000000459143","responseCode":[175]}]}`
 			msg := model.SubscribeMessage{
 				MessageCode: m.messageType,
@@ -587,7 +523,7 @@ func TestProtocolCmRevImpHandler(t *testing.T) {
 				Tenant:      "TE1000001",
 				Payload:     model.EbmsMessage{},
 			}
-			err = json.Unmarshal([]byte(m.message), &msg.Payload)
+			err := json.Unmarshal([]byte(m.message), &msg.Payload)
 			require.NoError(t, err)
 
 			//mockDb.Mock.ExpectBegin()
@@ -610,17 +546,7 @@ func TestProtocolCmRevImpHandler(t *testing.T) {
 			//mockDb.Mock.ExpectQuery(`SELECT (.+) FROM "base"."address" WHERE (.+)`).WillReturnRows(sqlmock.NewRows([]string{"type"}).AddRow("11"))
 			//mockDb.Mock.ExpectQuery(`SELECT (.+) FROM "base"."meteringpoint"(.+)`).WillReturnRows(sqlmock.NewRows([]string{"metering_point_id"}).AddRow("1212"))
 
-			mockDb.Mock.ExpectBegin()
 			//mockDb.Mock.ExpectExec("UPDATE (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
-			mockDb.Mock.ExpectQuery("UPDATE (.+)").WillReturnRows(sqlmock.NewRows([]string{"tenant"}).AddRow("TE1000001"))
-			mockDb.Mock.ExpectCommit()
-			stmt := "SELECT (.+) FROM \"base\".\"eeg\" WHERE (.+)"
-			rows := sqlmock.NewRows([]string{"tenant", "name", "description", "businessNr", "legal", "gridoperator_name", "communityId", "gridoperator_code", "rcNumber", "area", "allocationMode",
-				"settlementInterval", "providerBusinessNr", "street", "streetNumber", "zip", "city", "phone", "email", "website", "iban", "owner", "bankName",
-				"taxNumber", "vatNumber", "online", "contactPerson"}).
-				AddRow("TE1000001", "test-eeg", "", "", "verein", "Netz-Test", "CC00000000000002221212121212", "EE000001", "RC100130",
-					"LOCAL", "DYNAMIC", "MONTHLY", 0, "Solargasse", "1", "1111", "Solarcity", "", "", "", "", "Max Mustermann", "Bankname", "", "", false, "Max Mustermann")
-			mockDb.Mock.ExpectQuery(stmt).WillReturnRows(rows)
 
 			//recorder.Mock.On("saveNotification", map[string]interface{}{
 			//	"type":           msg.MessageCode,

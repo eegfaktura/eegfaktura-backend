@@ -26,7 +26,6 @@ type contextKey struct {
 }
 
 var tenantCtxKey = &contextKey{"tenant"}
-var superUserCtxKey = &contextKey{"superuser"}
 
 // ParseBearerTokenFromHeader extracts the Bearer token from the Authorization header.
 // Returns a non-empty token or an error describing the problem.

@@ -131,65 +131,6 @@ func TestImportMasterdataFromExcel(t *testing.T) {
 	}
 }
 
-//func TestImportMasterdataFromExcel(t *testing.T) {
-//	var mockDb, err = GetDatabaseMock()
-//	require.NoError(t, err)
-//
-//	reader, err := os.Open("../tests/TE100200-Muster-Stammdatenimport.xlsx")
-//	require.NoError(t, err)
-//	defer reader.Close()
-//
-//	type args struct {
-//		dbConn   OpenDbXConnection
-//		r        io.Reader
-//		filename string
-//		sheet    string
-//		tenant   string
-//	}
-//	tests := []struct {
-//		name    string
-//		args    args
-//		prepare func()
-//		test    func(t *testing.T, args args)
-//	}{
-//		{
-//			name: "import file",
-//			args: args{
-//				dbConn:   mockDb.OpenMockDb,
-//				r:        reader,
-//				filename: "TE100200-Muster-Stammdatenimport.xlsx",
-//				sheet:    "EEG Stammdaten",
-//				tenant:   "TE100200",
-//			},
-//			prepare: func() {
-//
-//			},
-//			test: func(t *testing.T, args args) {
-//				require.NoError(t, err)
-//				//mockDb.mock.ExpectExec("^INSERT INTO (.+) VALUES (.+)") //.WithArgs("firstname", "lastname")
-//				//mockDb.Mock.ExpectQuery("^SELECT (.+)").WillReturnError(sql.ErrNoRows)
-//				mockDb.Mock.ExpectBegin()
-//				// , 'excel', 'Mustermann', '001', '2023-08-19T13:15:07.776003233Z', 'ACTIVE', '001-9876', 'TE100200', '', '', '', DEFAULT
-//				mockDb.Mock.ExpectQuery("INSERT (.+)").WillReturnRows(sqlmock.NewRows([]string{"id"}).FromCSVString("1")) //.WillReturnResult(sqlmock.NewResult(1, 1)) //.WithArgs("firstname", "lastname")
-//				mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
-//				mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
-//				mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
-//				mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
-//				//mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
-//				//mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
-//
-//				require.NoError(t, ImportMasterdataFromExcel(args.dbConn, args.r, args.filename, args.sheet, args.tenant))
-//				//require.NoError(t, mockDb.Mock.ExpectationsWereMet())
-//			},
-//		},
-//	}
-//	for _, tt := range tests {
-//		t.Run(tt.name, func(t *testing.T) {
-//			tt.test(t, tt.args)
-//		})
-//	}
-//}
-
 func TestExportMasterdataToExcel(t *testing.T) {
 	db, err := GetDB(context.Background())
 	require.NoError(t, err)
@@ -278,8 +219,18 @@ func TestExportZPListToExcel(t *testing.T) {
 	require.NoError(t, err)
 
 	buf, err := ExportZPListToExcel(context.Background(), &ebmsMsgTest)
-	err = os.WriteFile("./test.xlsx", buf.Bytes(), 0644)
 	require.NoError(t, err)
+
+	f, err := excelize.OpenReader(buf)
+	require.NoError(t, err)
+	defer func() { _ = f.Close() }()
+	assert.Equal(t, []string{"ZP-List"}, f.GetSheetList())
+	rows, err := f.GetRows("ZP-List")
+	require.NoError(t, err)
+	require.Len(t, rows, 1+len(ebmsMsgTest.MeterList), "header and one row per metering point")
+	assert.Equal(t, "Zählpunktname", rows[0][1])
+	assert.Equal(t, ebmsMsgTest.MeterList[0].MeteringPoint, rows[1][1])
+	assert.Equal(t, ebmsMsgTest.MeterList[len(ebmsMsgTest.MeterList)-1].MeteringPoint, rows[len(rows)-1][1])
 }
 
 // withTempDir points the process temp directory to an empty test directory.

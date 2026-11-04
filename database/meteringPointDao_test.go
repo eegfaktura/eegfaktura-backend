@@ -319,10 +319,7 @@ func Test_RegisterMeteringPoint(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mDB, mock, err := InitMockDatabase()
-			if err != nil {
-				t.Fatalf("An error occurred while creating mock: %s", err)
-			}
+			mDB, mock := newMockDatabase(t)
 
 			// registerMeteringPoint checks the participant's tenant first (#59).
 			mock.ExpectQuery(`SELECT "tenant" FROM "base"."participant"`).
@@ -332,6 +329,7 @@ func Test_RegisterMeteringPoint(t *testing.T) {
 			mock.ExpectExec("INSERT (.+) \"base\".\"meteringpoint\"").WillReturnResult(sqlmock.NewResult(1, 1))
 			//mock.Mock.ExpectExec("INSERT INTO \"base\".\"participant_meter_state\" (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
 			mock.ExpectExec("INSERT INTO \"base\".\"metering_partition_factor\" (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
+			mock.ExpectCommit()
 
 			assert.NoError(t, mDB.RegisterMeteringPoint(context.Background(), tt.args.tenant, "userId", tt.args.participantId, tt.args.point))
 		})
@@ -411,6 +409,9 @@ func Test_AddMultipleMeteringPoints(t *testing.T) {
 
 	db, err := GetDB(context.Background())
 	require.NoError(t, err)
+	// other tests add members to TE000001 too: count the two this test registers
+	before, err := db.GetParticipants(context.Background(), "TE000001")
+	require.NoError(t, err)
 
 	// Register new Meteringpoint
 	err = db.RegisterMeteringPoint(context.Background(), "TE000001", "test", "ea9942da-03da-11ee-b82b-5a985b4b033a", meter)
@@ -481,7 +482,7 @@ func Test_AddMultipleMeteringPoints(t *testing.T) {
 	p, err := db.GetParticipants(context.Background(), "TE000001")
 	require.NoError(t, err)
 
-	assert.Equal(t, 3, len(p))
+	assert.Equal(t, len(before)+2, len(p))
 
 	p1 := findP(p, "Peter", "Obermüller")
 	assert.NotNil(t, p1)

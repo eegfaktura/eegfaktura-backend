@@ -9,15 +9,13 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"gopkg.in/guregu/null.v4"
 )
 
 // 261005-ca1: the full update writes the participant, the contact, both addresses and
 // the bank account. A failure in the last write must roll back the earlier ones.
 func TestUpdateParticipantRollsBackOnPartialFailure(t *testing.T) {
-	db, mock, err := InitMockDatabase()
-	require.NoError(t, err)
+	db, mock := newMockDatabase(t)
 
 	p := &model.EegParticipant{
 		EegParticipantBase: model.EegParticipantBase{Id: uuid.NewRandom(), FirstName: "Anna"},
@@ -37,7 +35,7 @@ func TestUpdateParticipantRollsBackOnPartialFailure(t *testing.T) {
 	mock.ExpectExec(`UPDATE "base"\."bankaccount"`).WillReturnError(errors.New("boom"))
 	mock.ExpectRollback()
 
-	err = db.UpdateParticipant(context.Background(), "RC100100", "test", p)
+	err := db.UpdateParticipant(context.Background(), "RC100100", "test", p)
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

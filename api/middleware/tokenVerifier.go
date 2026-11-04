@@ -33,10 +33,6 @@ type RealmRoles struct {
 	Roles []string `json:"roles"`
 }
 
-func (rr RealmRoles) HasRole(role string) bool {
-	return hasRole(rr.Roles, role)
-}
-
 type AccessGroups []string
 
 type VerifyError struct {
@@ -122,9 +118,7 @@ func GQLProtect(next http.Handler) http.Handler {
 		}
 
 		// put it in context
-		ctx := context.WithValue(
-			context.WithValue(r.Context(), tenantCtxKey, strings.ToUpper(tenant)),
-			superUserCtxKey, superuser)
+		ctx := context.WithValue(r.Context(), tenantCtxKey, strings.ToUpper(tenant))
 
 		// F1, step 1 (log only): REST write endpoints require the EEG_ADMIN group,
 		// /query does not check it yet. Tokens without it are only marked here and
@@ -200,23 +194,6 @@ func ConditionProtect(admin JWTHandlerFunc, user JWTHandlerFunc) http.HandlerFun
 		}
 	}
 }
-
-//func UserMiddelware(handler TenantHandlerFunc) http.HandlerFunc {
-//	return func(w http.ResponseWriter, r *http.Request) {
-//
-//		tenant := r.Header.Get("X-Tenant")
-//		userId := r.Header.Get("X-User-ID")
-//		mail := r.Header.Get("X-Mail")
-//
-//		if len(tenant) <= 0 {
-//			logrus.WithField("tenant", tenant).Warn("unauthorized tenant")
-//			http.Error(w, "forbidden", http.StatusForbidden)
-//			return
-//		}
-//
-//		handler(w, r, &BackendClaims{Tenant: strings.ToUpper(tenant), UserId: userId, Mail: mail})
-//	}
-//}
 
 func Protect(handler JWTHandlerFunc) http.HandlerFunc {
 	return verifyRequest(handler)

@@ -1,19 +1,23 @@
-package database
+// Package dbtest starts the PostgreSQL container of the database tests, with the migrations and the
+// seed data. Only tests import it, so Testcontainers and the Docker client stay out of the service
+// binary. It does not import package database, so the tests inside that package can use it too.
+package dbtest
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/jmoiron/sqlx"
-	"io/ioutil"
 	"log"
+	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres" // used by migrator
 	_ "github.com/golang-migrate/migrate/v4/source/file"       // used by migrator
+	"github.com/jmoiron/sqlx"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
@@ -22,73 +26,65 @@ const (
 	DbName = "test_db"
 	DbUser = "test_user"
 	DbPass = "test_password"
+	// SeedDbName is a copy of DbName right after migration and seed data, before any test writes:
+	// for tests that assert the seed data, while other tests change test_db.
+	SeedDbName = "test_seed"
 )
 
-var testDbInstance *sqlx.DB
-var testDB *TestDatabase
-
-func GetTestDB(ctx context.Context, dbInstance *TestDatabase) (Database, error) {
-	db.Do(func() {
-		_ = dbInstance.Open(ctx)
-		//db.Database = &sqlDatabase{db: dbInstance.DbInstance}
-	})
-	db.Database = &sqlDatabase{db: dbInstance.DbInstance}
-
-	if db.Database == nil {
-		return nil, errors.New("database was not initialized")
-	}
-	return db.Database, nil
-}
-
-func SetTestDb(testDb *sqlx.DB) {
-	db.Database = &sqlDatabase{db: testDb}
-}
-
-func InitTestDb(testDb *sqlx.DB) {
-	db.Do(func() {})
-	db.Database = &sqlDatabase{db: testDb}
-}
+const (
+	nat5432 = "5432/tcp"
+	// startupTimeout is the wait for the started container to take connections, after the pull.
+	startupTimeout = 90 * time.Second
+)
 
 type TestDatabase struct {
 	DbAddress        string
 	DbInstance       *sqlx.DB
-	connectionString string
-	container        testcontainers.Container
+	ConnectionString string
+	Container        testcontainers.Container
 }
 
 func SetupTestDatabase() *TestDatabase {
 
-	// setup db container
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*60)
+	// setup db container: the deadline covers an image pull, the readiness wait has its own (startupTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
 	container, connectionString, dbAddr, err := createContainer(ctx)
 	if err != nil {
-		log.Fatal("failed to setup test", err)
+		log.Fatalf("setup test db: %v", err)
 	}
 
 	// migrate db schema
 	err = migrateDb(dbAddr)
 	if err != nil {
-		log.Fatal("failed to perform db migration", err)
+		log.Fatalf("migrate test db: %v", err)
 	}
-	cancel()
+	if err = copySeed(connectionString); err != nil {
+		log.Fatalf("copy the seed database: %v", err)
+	}
 
 	return &TestDatabase{
-		container:        container,
-		connectionString: connectionString,
+		Container:        container,
+		ConnectionString: connectionString,
 		DbAddress:        dbAddr,
 	}
 }
 
 func (tdb *TestDatabase) Open(ctx context.Context) error {
 	var err error
-	tdb.DbInstance, err = sqlx.ConnectContext(ctx, "postgres", tdb.connectionString)
+	tdb.DbInstance, err = sqlx.ConnectContext(ctx, "postgres", tdb.ConnectionString)
 	return err
+}
+
+// SeedConnectionString is the connection string of the untouched copy SeedDbName.
+func (tdb *TestDatabase) SeedConnectionString() string {
+	return strings.Replace(tdb.ConnectionString, "dbname="+DbName, "dbname="+SeedDbName, 1)
 }
 
 func (tdb *TestDatabase) TearDown() {
 	tdb.DbInstance.Close()
 	// remove test container
-	_ = tdb.container.Terminate(context.Background())
+	_ = tdb.Container.Terminate(context.Background())
 }
 
 func createContainer(ctx context.Context) (testcontainers.Container, string, string, error) {
@@ -100,7 +96,7 @@ func createContainer(ctx context.Context) (testcontainers.Container, string, str
 		//"TZ":                "Europe/Berlin",
 		//"PGTZ":              "Europe/Berlin",
 	}
-	var port = "5432/tcp"
+	var port = nat5432
 
 	req := testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
@@ -108,8 +104,11 @@ func createContainer(ctx context.Context) (testcontainers.Container, string, str
 			ExposedPorts: []string{port},
 			Env:          env,
 			// The message appears twice: first from the temporary server of initdb, then from
-			// the real server.
-			WaitingFor: wait.ForLog("database system is ready to accept connections").WithOccurrence(2),
+			// the real server; then the port must take connections (no fixed sleep).
+			WaitingFor: wait.ForAll(
+				wait.ForLog("database system is ready to accept connections").WithOccurrence(2),
+				wait.ForListeningPort(nat5432),
+			).WithStartupTimeout(startupTimeout),
 		},
 		Started: true,
 	}
@@ -125,16 +124,25 @@ func createContainer(ctx context.Context) (testcontainers.Container, string, str
 
 	log.Println("postgres container ready and running at port: ", p.Port())
 
-	time.Sleep(time.Second)
-
-	dbAddr := fmt.Sprintf("localhost:%s", p.Port())
+	dbAddr := fmt.Sprintf("127.0.0.1:%s", p.Port())
 
 	//db, err := sqlx.Open("postgres", fmt.Sprintf("host=localhost port=%s user=%s password=%s dbname=%s sslmode=disable", p.Port(), DbUser, DbPass, DbName))
 	//if err != nil {
 	//	return container, "", dbAddr, fmt.Errorf("failed to establish database connection: %v", err)
 	//}
 
-	return container, fmt.Sprintf("host=localhost port=%s user=%s password=%s dbname=%s sslmode=disable", p.Port(), DbUser, DbPass, DbName), dbAddr, nil
+	return container, fmt.Sprintf("host=127.0.0.1 port=%s user=%s password=%s dbname=%s sslmode=disable", p.Port(), DbUser, DbPass, DbName), dbAddr, nil
+}
+
+// copySeed creates SeedDbName from the migrated and seeded DbName (no connection to it is open yet).
+func copySeed(connectionString string) error {
+	dbm, err := sqlx.Open("postgres", strings.Replace(connectionString, "dbname="+DbName, "dbname=postgres", 1))
+	if err != nil {
+		return err
+	}
+	defer dbm.Close()
+	_, err = dbm.Exec(`CREATE DATABASE ` + SeedDbName + ` TEMPLATE ` + DbName)
+	return err
 }
 
 func migrateDb(dbAddr string) error {
@@ -144,7 +152,7 @@ func migrateDb(dbAddr string) error {
 	if !ok {
 		return fmt.Errorf("failed to get path")
 	}
-	pathToMigrationFiles := filepath.Dir(path) + "/../migrations"
+	pathToMigrationFiles := filepath.Dir(path) + "/../../migrations"
 
 	databaseURL := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", DbUser, DbPass, dbAddr, DbName)
 	m, err := migrate.New(fmt.Sprintf("file:%s", pathToMigrationFiles), databaseURL)
@@ -164,7 +172,7 @@ func migrateDb(dbAddr string) error {
 
 func loadSqlFile(connectionStr, path string) error {
 	// Read file
-	file, err := ioutil.ReadFile(filepath.Dir(path) + "/migration/000002_init-setup.up.sql")
+	file, err := os.ReadFile(filepath.Dir(path) + "/../testdata/seed.sql")
 	if err != nil {
 		fmt.Println(err.Error())
 		return err

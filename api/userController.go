@@ -39,6 +39,6 @@ func (h *UserHandler) getUser() middleware.JWTHandlerFunc {
 			respondWith(r.Context(), w, http.StatusBadRequest, tenant, model.ErrGetUser(err))
 			return
 		}
-		respondWithData(w, http.StatusOK, tn)
+		respondWithJSON(w, http.StatusOK, tn)
 	}
 }

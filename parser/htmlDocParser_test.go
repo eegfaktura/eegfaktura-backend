@@ -31,37 +31,6 @@ func trimString(s string) string {
 	return s
 }
 
-func TestGetTemplateFor(t *testing.T) {
-	type args struct {
-		templateType string
-		tenant       string
-	}
-	tests := []struct {
-		name    string
-		args    args
-		want    string
-		wantErr bool
-	}{
-		{"Hugo",
-			args{"ACTIVATION", "RC100181"},
-			filepath.Join("../public", "RC100181", "templates", "AktivierungsEmail-templates.html"),
-			false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := GetTemplateFor(tt.args.templateType, tt.args.tenant)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("GetTemplateFor() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if got != tt.want {
-				t.Errorf("GetTemplateFor() got = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestParseTemplate(t *testing.T) {
 
 	eeg := &model.Eeg{

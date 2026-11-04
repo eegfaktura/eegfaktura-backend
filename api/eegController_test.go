@@ -12,37 +12,27 @@ import (
 
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"at.ourproject/vfeeg-backend/database"
+	"at.ourproject/vfeeg-backend/database/dbtest"
 	"at.ourproject/vfeeg-backend/model"
-	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-var testDB *database.TestDatabase
-
-func openTestDb() (*sqlx.DB, error) {
-	err := testDB.Open(context.Background())
-	if err != nil {
-
-	}
-	return testDB.DbInstance, nil
-}
+var testDB *dbtest.TestDatabase
 
 func TestMain(m *testing.M) {
-	//testDB = database.SetupTestDatabase()
-	//defer testDB.TearDown()
-
-	testDB = database.SetupTestDatabase()
-	db, err := database.GetTestDB(context.Background(), testDB)
-	if err != nil {
+	testDB = dbtest.SetupTestDatabase()
+	if err := testDB.Open(context.Background()); err != nil {
 		panic(err)
 	}
-	defer func() {
-		_ = db.CloseDB()
-		testDB.TearDown()
-	}()
+	db := database.NewDatabase(testDB.DbInstance)
+	database.SetDB(db)
 
-	os.Exit(m.Run())
+	// os.Exit skips deferred calls: close and remove the container before it
+	code := m.Run()
+	_ = db.CloseDB()
+	testDB.TearDown()
+	os.Exit(code)
 }
 
 func TestMarschaling(t *testing.T) {

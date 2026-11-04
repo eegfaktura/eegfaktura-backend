@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"at.ourproject/vfeeg-backend/config/configtest"
 	"at.ourproject/vfeeg-backend/mailtemplate"
 	"at.ourproject/vfeeg-backend/model"
 	"at.ourproject/vfeeg-backend/services"
-	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/guregu/null.v4"
@@ -44,7 +44,7 @@ func storedMailFixture() (*model.Eeg, *model.EegParticipant) {
 }
 
 func TestActivationMail_UsesStoredTemplate(t *testing.T) {
-	viper.Set("file-content.templates", t.TempDir())
+	configtest.Set(t, "file-content.templates", t.TempDir())
 	eeg, participant := storedMailFixture()
 	store := &storeStub{template: &model.MailTemplate{Tenant: "TE000300", MailKey: "consent-request", Version: 1,
 		Subject: "Bitte freigeben", BodyHtml: `<p>Liebe <span data-ph="member.firstName">Vorname</span>, Zählpunkt <span data-ph="meteringPoint">x</span></p>`}}
@@ -66,7 +66,7 @@ func TestActivationMail_UsesStoredTemplate(t *testing.T) {
 // A stored version that can not be rendered must never cost the member the mail:
 // the legacy default goes out and the community gets a notification.
 func TestActivationMail_BrokenStoredTemplateFallsBackToDefault(t *testing.T) {
-	viper.Set("file-content.templates", t.TempDir())
+	configtest.Set(t, "file-content.templates", t.TempDir())
 	eeg, participant := storedMailFixture()
 	store := &storeStub{template: &model.MailTemplate{Tenant: "TE000300", MailKey: "zp-active", Version: 1,
 		Subject: "x", BodyHtml: `<p><span data-ph="no.such.placeholder">x</span></p>`}}
@@ -83,7 +83,7 @@ func TestActivationMail_BrokenStoredTemplateFallsBackToDefault(t *testing.T) {
 }
 
 func TestInactiveMail_UsesStoredTemplate(t *testing.T) {
-	viper.Set("file-content.templates", t.TempDir())
+	configtest.Set(t, "file-content.templates", t.TempDir())
 	eeg, participant := storedMailFixture()
 	store := &storeStub{template: &model.MailTemplate{Tenant: "TE000300", MailKey: "zp-inactive", Version: 1,
 		Subject: "Inaktiv", BodyHtml: `<p><span data-ph="meteringPoint">x</span> <span data-ph="direction">x</span> <span data-ph="endDate">x</span> <span data-ph="reason">x</span></p>`}}
@@ -108,9 +108,7 @@ func TestMemberMails_IgnoreVolumeTemplates(t *testing.T) {
 		}
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "t.html"), []byte(`<p>VOLUME {{.Eeg.Name}}</p>`), 0o644))
 	}
-	orig := viper.GetString("file-content.templates")
-	viper.Set("file-content.templates", vol)
-	t.Cleanup(func() { viper.Set("file-content.templates", orig) })
+	configtest.Set(t, "file-content.templates", vol)
 	assert.Len(t, IgnoredVolumeTemplates(vol), 6, "listed for the startup warning")
 
 	eeg, participant := storedMailFixture()
@@ -143,7 +141,7 @@ func TestMemberMails_IgnoreVolumeTemplates(t *testing.T) {
 
 // Every member mail ends with the fixed footer: the built-in default (no saved text) and a saved text.
 func TestMemberMails_FixedFooter(t *testing.T) {
-	viper.Set("file-content.templates", t.TempDir())
+	configtest.Set(t, "file-content.templates", t.TempDir())
 	eeg, participant := storedMailFixture()
 	var body string
 	send := func(_, _, _ string, _ *string, b *bytes.Buffer, _ []*services.Attachment, _ *services.Attachment) error {

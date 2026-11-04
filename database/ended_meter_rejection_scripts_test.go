@@ -1,6 +1,7 @@
 package database
 
 import (
+	"at.ourproject/vfeeg-backend/database/dbtest"
 	"context"
 	"fmt"
 	"io"
@@ -26,12 +27,12 @@ func runOperatorScriptIn(t *testing.T, dbName, name string, vars ...string) (int
 	ctx := context.Background()
 	b, err := os.ReadFile("../scripts/ended-meter-rejection/" + name)
 	require.NoError(t, err)
-	require.NoError(t, testDB.container.CopyToContainer(ctx, b, "/tmp/"+name, 0o644))
-	cmd := "psql -U " + DbUser + " -d " + dbName + " -X -v ON_ERROR_STOP=1"
+	require.NoError(t, testDB.Container.CopyToContainer(ctx, b, "/tmp/"+name, 0o644))
+	cmd := "psql -U " + dbtest.DbUser + " -d " + dbName + " -X -v ON_ERROR_STOP=1"
 	for _, v := range vars {
 		cmd += " -v " + v
 	}
-	code, r, err := testDB.container.Exec(ctx, []string{"sh", "-c", cmd + " < /tmp/" + name}, tcexec.Multiplexed())
+	code, r, err := testDB.Container.Exec(ctx, []string{"sh", "-c", cmd + " < /tmp/" + name}, tcexec.Multiplexed())
 	require.NoError(t, err)
 	out, err := io.ReadAll(r)
 	require.NoError(t, err)
@@ -78,11 +79,11 @@ func scriptsDB(t *testing.T) (*sqlx.DB, string) {
 	_, path, _, ok := runtime.Caller(0)
 	require.True(t, ok)
 	m, err := migrate.New("file:"+filepath.Dir(path)+"/../migrations",
-		fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", DbUser, DbPass, testDB.DbAddress, name))
+		fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", dbtest.DbUser, dbtest.DbPass, testDB.DbAddress, name))
 	require.NoError(t, err)
 	require.NoError(t, m.Up())
 	_, _ = m.Close()
-	dbx, err := sqlx.Connect("postgres", strings.Replace(testDB.connectionString, "dbname="+DbName, "dbname="+name, 1))
+	dbx, err := sqlx.Connect("postgres", strings.Replace(testDB.ConnectionString, "dbname="+dbtest.DbName, "dbname="+name, 1))
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_ = dbx.Close()
