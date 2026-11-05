@@ -27,7 +27,7 @@ type Eeg struct {
 	ContactPerson      null.String        `json:"contactPerson" db:"contactPerson" goqu:"omitempty"`
 	Online             bool               `json:"online" goqu:"skipupdate"`
 	CreatedAt          civil.NullDate     `json:"createdAt,omitempty" db:"createdat" goqu:"skipinsert,skipupdate"`
-	EcZoneLevel        null.Int           `json:"ecZoneLevel" db:"ec_zone_level" goqu:"skipinsert,skipupdate"` /* Nahebereich 1–7 from the metering point list, empty = unknown */
+	EcZoneLevel        null.Int           `json:"ecZoneLevel" db:"ec_zone_level" goqu:"skipupdate"` /* Nahebereich 1–7 from the metering point list, empty = unknown */
 	EegAddress         `json:"address,omitempty" mapstructure:",squash" goqu:"omitempty"`
 	AccountInfo        `json:"accountInfo,omitempty" mapstructure:",squash" goqu:"omitempty"`
 	Contact            `json:"contact,omitempty" mapstructure:",squash" goqu:"omitempty"`
@@ -83,6 +83,25 @@ func EdaEcType(area AreaType) (string, bool) {
 	t, ok := edaEcTypes[area]
 	return t, ok
 }
+
+// DefaultEcZoneLevel is the Nahebereich of a new registration until the first metering point list: GEA 1, LOCAL 3,
+// REGIONAL 4, BEG 7; P2P and EVA are unknown (the migration 20261106100000 fills existing rows the same way).
+func DefaultEcZoneLevel(area AreaType) null.Int {
+	switch area {
+	case GEA:
+		return null.IntFrom(1)
+	case LOCAL:
+		return null.IntFrom(3)
+	case REGIONAL:
+		return null.IntFrom(4)
+	case BEG:
+		return null.IntFrom(7)
+	}
+	return null.Int{}
+}
+
+// MaxCodeLength is the longest TechCode/FuelCode stored; a longer one is dropped, never truncated.
+const MaxCodeLength = 10
 
 // ValidEcZoneLevel: ECZoneLevel (Nahebereich) is 1–7.
 func ValidEcZoneLevel(level int) bool {

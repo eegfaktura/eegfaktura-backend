@@ -79,4 +79,9 @@ func TestPodList_zoneLevelAndCodes(t *testing.T) {
 	assert.Equal(t, "PV/E001", codes(first), "an empty code does not overwrite")
 	assert.Contains(t, logged.String(), "invalid ECZoneLevel 8")
 	assert.Contains(t, logged.String(), "ECType PP, the community type GEA means GC")
+
+	// a code longer than 10 characters is dropped with a warning, never stored truncated; 10 characters are kept
+	podList(4, ``, `,"techCode":"ABCDEFGHIJK","fuelCode":"0123456789"`)
+	assert.Equal(t, "PV/0123456789", codes(first))
+	assert.Contains(t, logged.String(), "TechCode of 11 characters")
 }

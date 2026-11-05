@@ -55,10 +55,12 @@ this changelog highlights the changes relevant for overview and operations.
 - **Nahebereich and TechCode/FuelCode from the metering point list** (konzept section I, platform#229): new columns
   `base.eeg.ec_zone_level` (1–7, CHECK, empty = unknown) and `base.meteringpoint.tech_code`, `fuel_code` (text).
   Migration `20261106100000_ec_zone_level_tech_fuel_code` fills `ec_zone_level` once from `area` (GEA 1, LOCAL 3,
-  REGIONAL 4, BEG 7; P2P/EVA stay empty until the first list); down drops the three columns.
+  REGIONAL 4, BEG 7; P2P/EVA stay empty until the first list), a new registration gets the same value
+  (`model.DefaultEcZoneLevel`); down drops the three columns.
   `base.billing_masterdata` is unchanged. A metering point list (SENDEN_ECP) sets the Nahebereich at every tenant of
   its community id (an absent value keeps the stored one, an invalid one is dropped with a warning) and the codes at
-  the metering points of these tenants (an empty code never overwrites); an ECType that does not fit the community
+  the metering points of these tenants (an empty code never overwrites, one longer than 10 characters is dropped
+  with a warning, never stored truncated); an ECType that does not fit the community
   type (GEA GC, LOCAL RC_L, REGIONAL RC_R, BEG CC, P2P PP, EVA SC) is logged as a warning, not stored. All three
   values are read only: the generic updates drop them.
   **Contract:**

@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"at.ourproject/vfeeg-backend/model"
@@ -55,6 +56,32 @@ func TestEcZoneLevelMigrationUpDown(t *testing.T) {
 	assert.Equal(t, billing, viewColumns(t, dbx, "billing_masterdata"))
 }
 
+// A new registration gets the Nahebereich of its type (GEA 1, LOCAL 3, REGIONAL 4, BEG 7), P2P and EVA none.
+func TestInsertEegZoneLevelDefault(t *testing.T) {
+	db, err := GetDB(context.Background())
+	require.NoError(t, err)
+	ctx := context.Background()
+	want := map[model.AreaType]null.Int{model.GEA: null.IntFrom(1), model.LOCAL: null.IntFrom(3),
+		model.REGIONAL: null.IntFrom(4), model.BEG: null.IntFrom(7), model.P2P: {}, model.EVA: {}}
+	cleanup := func() {
+		_, err := testDB.DbInstance.Exec(`DELETE FROM base.eeg WHERE tenant LIKE 'TE00006_'`)
+		require.NoError(t, err)
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+	i := 0
+	for area, zone := range want {
+		tenant := fmt.Sprintf("TE00006%d", i)
+		i++
+		eeg := registerEegFixture(tenant, tenant, string(area))
+		eeg.Area = area
+		require.NoError(t, db.InsertEeg(ctx, tenant, eeg))
+		stored, err := db.GetEegById(ctx, tenant)
+		require.NoError(t, err)
+		assert.Equal(t, zone, stored.EcZoneLevel, area)
+	}
+}
+
 // UpdateEcZoneLevel sets every tenant of the community id (two in a GEA), not another community; 1–7 only.
 func TestUpdateEcZoneLevel(t *testing.T) {
 	db, err := GetDB(context.Background())
@@ -84,7 +111,7 @@ func TestUpdateEcZoneLevel(t *testing.T) {
 	require.NoError(t, db.UpdateEcZoneLevel(ctx, ecId, 6))
 	assert.Equal(t, null.IntFrom(6), zone("GC000057"))
 	assert.Equal(t, null.IntFrom(6), zone("GC000057-002"))
-	assert.Equal(t, null.Int{}, zone("GC000058"), "other community id")
+	assert.Equal(t, null.IntFrom(1), zone("GC000058"), "other community id: the GEA default of the registration")
 
 	for _, invalid := range []int{0, 8, -1} {
 		assert.Error(t, db.UpdateEcZoneLevel(ctx, ecId, invalid), invalid)

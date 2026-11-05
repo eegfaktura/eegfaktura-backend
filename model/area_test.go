@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/guregu/null.v4"
 )
 
 // platform#229: the six community types, nothing else (also no empty value).
@@ -47,6 +48,10 @@ func TestAreaRules(t *testing.T) {
 		code, ok := EdaEcType(area)
 		assert.True(t, ok, area)
 		assert.Equal(t, eda[area], code, area)
+	}
+	zones := map[AreaType]null.Int{GEA: null.IntFrom(1), LOCAL: null.IntFrom(3), REGIONAL: null.IntFrom(4), BEG: null.IntFrom(7)}
+	for _, area := range AreaTypes() {
+		assert.Equal(t, zones[area], DefaultEcZoneLevel(area), area)
 	}
 	_, ok := EdaEcType("6")
 	assert.False(t, ok)

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
@@ -583,6 +584,7 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 		} else if len(tenants) > 0 {
 			syncTenants = tenants
 		}
+		dropLongCodes(ctx, eeg.Id, &msg.Payload)
 		for _, tenant := range syncTenants {
 			if err = services.SyncMeteringPoints(tenant, &msg.Payload); err != nil {
 				logrus.WithField("tenant", tenant).Error(err)
@@ -638,6 +640,20 @@ func zpListCommunityData(ctx context.Context, db database.Database, eeg *model.E
 	if p.EcTypeEda != "" {
 		if want, ok := model.EdaEcType(eeg.Area); !ok || want != p.EcTypeEda {
 			entry.Warnf("metering point list with ECType %s, the community type %s means %s: check the type", p.EcTypeEda, eeg.Area, want)
+		}
+	}
+}
+
+// dropLongCodes drops a TechCode/FuelCode longer than model.MaxCodeLength with a warning; never stored truncated.
+func dropLongCodes(ctx context.Context, tenant string, p *model.EbmsMessage) {
+	for i := range p.MeterList {
+		m := &p.MeterList[i]
+		for name, code := range map[string]*string{"TechCode": &m.TechCode, "FuelCode": &m.FuelCode} {
+			if utf8.RuneCountInString(*code) > model.MaxCodeLength {
+				logrus.WithContext(ctx).WithField("tenant", tenant).Warnf("metering point list with a %s of %d characters for %s, not stored",
+					name, utf8.RuneCountInString(*code), m.MeteringPoint)
+				*code = ""
+			}
 		}
 	}
 }

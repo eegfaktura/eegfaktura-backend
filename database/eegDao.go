@@ -205,6 +205,7 @@ func insertEeg(ctx context.Context, db *sqlx.DB, tenant string, eeg *model.Eeg) 
 	if err := model.ValidateArea(eeg.Area); err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidEeg, err)
 	}
+	eeg.EcZoneLevel = model.DefaultEcZoneLevel(eeg.Area)
 
 	// Tenants compare case-insensitively, the primary key only sees the exact spelling. Outside GEA an RC number
 	// belongs to one community: a new tenant on it would reach that community's login and Ponton account.
