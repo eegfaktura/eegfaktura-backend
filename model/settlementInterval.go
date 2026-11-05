@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -31,6 +32,26 @@ type BillingState struct {
 	RunningPeriods []string `json:"runningPeriods"`
 }
 
+// CheckBillingState reports why a billingState cannot be used (eegfaktura-dev#54 #9), nil when it can: missing, a
+// list missing or null, or an identifier the rule cannot read. Before, such a state read as "nothing billed" and the
+// change applied at once.
+func CheckBillingState(s *BillingState) error {
+	switch {
+	case s == nil:
+		return errors.New("Der Abrechnungsstand (billingState) fehlt")
+	case s.FinalPeriods == nil || s.RunningPeriods == nil:
+		return errors.New("Der Abrechnungsstand (billingState) ist unvollständig (finalPeriods, runningPeriods)")
+	}
+	for _, list := range [][]string{s.FinalPeriods, s.RunningPeriods} {
+		for _, id := range list {
+			if _, ok := parseClearingPeriod(id); !ok {
+				return errors.New("Der Abrechnungsstand (billingState) enthält eine unlesbare Zeitraum-Kennung")
+			}
+		}
+	}
+	return nil
+}
+
 // SettlementIntervalDecision is the result of the change rule. Dates are ISO dates (2026-04-01); nil
 // EffectiveFrom on an allowed change = applies at once.
 type SettlementIntervalDecision struct {
@@ -53,13 +74,20 @@ type clearingPeriod struct {
 	first, last int
 }
 
-// parseClearingPeriod mirrors billing's ClearingPeriodMonths.of: false for an identifier of another form.
+// The years an identifier may name (eegfaktura-dev#54 #9: Abr_Y-9999 answered effectiveFrom 10000-01-01).
+const minClearingYear, maxClearingYear = 2000, 2100
+
+// parseClearingPeriod mirrors billing's ClearingPeriodMonths.of: false for an identifier of another form, and for a
+// year outside minClearingYear..maxClearingYear.
 func parseClearingPeriod(id string) (clearingPeriod, bool) {
 	m := clearingPeriodPattern.FindStringSubmatch(id)
 	if m == nil {
 		return clearingPeriod{}, false
 	}
 	year, _ := strconv.Atoi(m[2])
+	if year < minClearingYear || year > maxClearingYear {
+		return clearingPeriod{}, false
+	}
 	period := 0
 	if m[3] != "" {
 		period, _ = strconv.Atoi(m[3])
@@ -110,8 +138,8 @@ func (p clearingPeriod) name() string {
 // month of the final periods and S the month after it: allowed from S when S starts a period of the new interval
 // (R1, R2), else blocked with the next start after L; also blocked while a run for a period ending in S or later is
 // running (R3), without a final period while any run is running. Before R2, a month between the first month of the
-// first final period and L that no final period covers blocks (rule 6, eegfaktura-dev#54 #2). Identifiers of another
-// form are ignored, as in billing.
+// first final period and L that no final period covers blocks (rule 6, eegfaktura-dev#54 #2). The handler refuses a
+// state with an identifier of another form before (CheckBillingState); here such an identifier is ignored.
 func DecideSettlementInterval(newInterval string, state BillingState) SettlementIntervalDecision {
 	first, last, lastId := -1, -1, ""
 	covered := map[int]bool{}

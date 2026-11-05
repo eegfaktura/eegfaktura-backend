@@ -29,7 +29,10 @@ this changelog highlights the changes relevant for overview and operations.
   „Februar 2026 ist noch nicht endgültig abgerechnet.“ (rule 6, decided 05.11.2026, eegfaktura-dev#54 #2; months
   before the first final period do not count). Answer 200 `{allowed, effectiveFrom, lastFinalPeriod, message,
   earliestFrom, eeg}`; a blocked change without `dryRun` is 409 (code 1062) with the reason; an invalid value, the
-  current value or a missing `billingState` is 400 (1060, 1061). The change runs in one transaction on the locked
+  current value or a missing `billingState` is 400 (1060, 1061); so is (1060, eegfaktura-dev#54 #9) a `billingState`
+  with a list missing or `null`, or with an identifier the rule cannot read (another form than billing's
+  `Abr_(Y|YH|YQ|YM)-yyyy[-n]`, a period out of range, a year outside 2000–2100), and (2000) data after the JSON body;
+  before, such a state read as "nothing billed" and the change applied at once. The change runs in one transaction on the locked
   `base.eeg` row and is recorded with user, time, old and new value in the new table `base.settlement_interval_change`
   (migration `20261105120000_settlement_interval_change`, down drops the table).
 

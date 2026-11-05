@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 
 	"at.ourproject/vfeeg-backend/api/middleware"
@@ -33,8 +34,14 @@ const maxSettlementIntervalBytes = 1 << 20
 func (h *EegHandler) changeSettlementInterval() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
 		var req settlementIntervalRequest
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxSettlementIntervalBytes)).Decode(&req); err != nil {
+		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxSettlementIntervalBytes))
+		if err := dec.Decode(&req); err != nil {
 			respondWith(r.Context(), w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
+			return
+		}
+		// nothing after the JSON body but white space (eegfaktura-dev#54 #9)
+		if err := dec.Decode(&json.RawMessage{}); err != io.EOF {
+			respondWith(r.Context(), w, http.StatusBadRequest, tenant, model.ErrParseJson(errors.New("data after the JSON body")))
 			return
 		}
 		if !model.IsSettlementInterval(req.SettlementInterval) {
@@ -42,8 +49,8 @@ func (h *EegHandler) changeSettlementInterval() middleware.JWTHandlerFunc {
 				"Ungültiges Abrechnungsintervall (erlaubt: MONTHLY, QUARTER, BIANNUAL, ANNUAL)"))
 			return
 		}
-		if req.BillingState == nil {
-			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1060, "Der Abrechnungsstand (billingState) fehlt"))
+		if err := model.CheckBillingState(req.BillingState); err != nil {
+			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1060, err.Error()))
 			return
 		}
 

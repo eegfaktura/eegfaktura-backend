@@ -107,7 +107,17 @@ func TestChangeSettlementInterval(t *testing.T) {
 			`{"settlementInterval":"","dryRun":true,` + billedToMar + `}`:        1060,
 			`{"settlementInterval":"QUARTER","dryRun":true}`:                     1060,
 			`{"settlementInterval":"QUARTER","dryRun":true,"billingState":null}`: 1060,
-			`{"settlementInterval":"MONTHLY","dryRun":true,` + billedToMar + `}`: 1061,
+			// eegfaktura-dev#54 #9: incomplete or unreadable state, data after the body
+			`{"settlementInterval":"ANNUAL","dryRun":false,"billingState":{}}`:                                                                     1060,
+			`{"settlementInterval":"ANNUAL","dryRun":false,"billingState":{"finalPeriods":null,"runningPeriods":[]}}`:                              1060,
+			`{"settlementInterval":"ANNUAL","dryRun":false,"billingState":{"finalPeriods":[],"runningPeriods":null}}`:                              1060,
+			`{"settlementInterval":"ANNUAL","dryRun":false,"billingState":{"finalPeriods":["foo"],"runningPeriods":[]}}`:                           1060,
+			`{"settlementInterval":"ANNUAL","dryRun":false,"billingState":{"finalPeriods":["Abr_YM-2026-1"],"runningPeriods":["Abr_YM-2026-13"]}}`: 1060,
+			`{"settlementInterval":"ANNUAL","dryRun":false,"billingState":{"finalPeriods":["Abr_Y-9999"],"runningPeriods":[]}}`:                    1060,
+			`{"settlementInterval":"QUARTER","dryRun":false,` + billedToMar + `}garbage`:                                                           2000,
+			`{"settlementInterval":"QUARTER","dryRun":false,` + billedToMar + `}}`:                                                                 2000,
+			`{"settlementInterval":"QUARTER","dryRun":false,` + billedToMar + `} {}`:                                                               2000,
+			`{"settlementInterval":"MONTHLY","dryRun":true,` + billedToMar + `}`:                                                                   1061,
 			`{"settlementInterval":`: 2000,
 		} {
 			w := post("admin", body)
@@ -118,7 +128,7 @@ func TestChangeSettlementInterval(t *testing.T) {
 	})
 	t.Run("dry run allowed", func(t *testing.T) {
 		reset()
-		w := post("admin", `{"settlementInterval":"QUARTER","dryRun":true,`+billedToMar+`}`)
+		w := post("admin", `{"settlementInterval":"QUARTER","dryRun":true,`+billedToMar+"}\n")
 		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 		assert.Equal(t, map[string]interface{}{"allowed": true, "effectiveFrom": "2026-04-01", "lastFinalPeriod": "Abr_YM-2026-3",
 			"message": "Das neue Intervall gilt ab 1. April 2026.", "earliestFrom": nil, "eeg": nil}, decode(w))

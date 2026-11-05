@@ -142,10 +142,29 @@ func TestParseClearingPeriod(t *testing.T) {
 		assert.Equal(t, want, [2]int{p.first, p.last}, id)
 	}
 	for _, id := range []string{"", "Abr_YM-2026", "Abr_YM-2026-0", "Abr_YH-2026-3", "Abr_YQ-2026-5", "Abr_YM-26-1",
-		" Abr_YM-2026-1", "Abr_YM-2026-1x", "Abr_YW-2026-1"} {
+		" Abr_YM-2026-1", "Abr_YM-2026-1x", "Abr_YW-2026-1", "Abr_Y-9999", "Abr_Y-1999", "Abr_YM-2101-1"} {
 		_, ok := parseClearingPeriod(id)
 		assert.False(t, ok, id)
 	}
+}
+
+// eegfaktura-dev#54 #9: an incomplete or unreadable billingState is refused instead of reading as "nothing billed".
+func TestCheckBillingState(t *testing.T) {
+	assert.EqualError(t, CheckBillingState(nil), "Der Abrechnungsstand (billingState) fehlt")
+	for _, s := range []BillingState{{}, {FinalPeriods: []string{}}, {RunningPeriods: []string{}}} {
+		assert.EqualError(t, CheckBillingState(&s), "Der Abrechnungsstand (billingState) ist unvollständig (finalPeriods, runningPeriods)")
+	}
+	for _, id := range []string{"Abr_YM-2026-13", "ABR_YM-2026-3", "Abr_YM-2026-3 ", "foo", "Abr_Y-9999", "Abr_YQ-1999-1", ""} {
+		for _, s := range []BillingState{{FinalPeriods: []string{"Abr_YM-2026-1", id}, RunningPeriods: []string{}},
+			{FinalPeriods: []string{}, RunningPeriods: []string{id}}} {
+			assert.EqualError(t, CheckBillingState(&s), "Der Abrechnungsstand (billingState) enthält eine unlesbare Zeitraum-Kennung", id)
+		}
+	}
+	// the forms billing and web produce (web: createPeriodIdentifier, also a number after a year)
+	assert.NoError(t, CheckBillingState(&BillingState{FinalPeriods: []string{}, RunningPeriods: []string{}}))
+	assert.NoError(t, CheckBillingState(&BillingState{
+		FinalPeriods:   []string{"Abr_YM-2026-3", "Abr_YM-2026-12", "Abr_YM-2026-03", "Abr_YQ-2026-1", "Abr_YH-2026-2", "Abr_Y-2025", "Abr_Y-2025-1"},
+		RunningPeriods: []string{"Abr_YM-2000-1", "Abr_Y-2100"}}))
 }
 
 func TestIsSettlementInterval(t *testing.T) {
