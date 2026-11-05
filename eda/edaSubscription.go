@@ -643,10 +643,9 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 func zpListCommunityData(ctx context.Context, db database.Database, eeg *model.Eeg, p *model.EbmsMessage) {
 	entry := logrus.WithContext(ctx).WithField("tenant", eeg.Id)
 	if p.EcZoneLevel != nil {
-		if !model.ValidEcZoneLevel(*p.EcZoneLevel) {
-			entry.Warnf("metering point list with an invalid ECZoneLevel %d, not stored", *p.EcZoneLevel)
-		} else if err := db.UpdateEcZoneLevel(ctx, p.EcId, *p.EcZoneLevel); err != nil {
-			entry.WithError(err).Error("can not store the ECZoneLevel")
+		// UpdateEcZoneLevel refuses an invalid level
+		if err := db.UpdateEcZoneLevel(ctx, p.EcId, *p.EcZoneLevel); err != nil {
+			entry.WithError(err).Warn("ECZoneLevel of the metering point list not stored")
 		}
 	}
 	if p.EcTypeEda != "" {
