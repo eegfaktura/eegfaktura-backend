@@ -54,8 +54,8 @@ this changelog highlights the changes relevant for overview and operations.
   view `base.activeMeteringPartition` numbered the partition factors of all communities before the community filter
   of the query applied; as the inner side of a nested loop (chosen since 1.13) it did so once per metering point, and
   `MasterData_MeteringPoint` (gRPC, caller eegfaktura-energystore) ran past its 5 s deadline
-  (`error fetch Meteringpoints`). Migration `20261105120000` partitions the window by `tenant` as well, so the filter
-  reaches the table: same columns, same rows (a member belongs to one community). Migration `20261105120100` adds
+  (`error fetch Meteringpoints`). Migration `20261105140000` partitions the window by `tenant` as well, so the filter
+  reaches the table: same columns, same rows (a member belongs to one community). Migration `20261105140100` adds
   the index `metering_partition_factor_tenant_idx` (`CONCURRENTLY`). No data change; no contract change.
 - **A failed COMMIT is reported as an error** (BE-CQ-7, BE-CQ-8): registering and moving a metering point, adding a
   tariff and activating metering points from an EDA message reported success when the COMMIT failed. Activating

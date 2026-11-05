@@ -39,7 +39,7 @@ func ampTx(t *testing.T) *sqlx.Tx {
 		require.NoError(t, err)
 	}
 
-	down, err := os.ReadFile("../migrations/20261105120000_activemeteringpartition_tenant.down.sql")
+	down, err := os.ReadFile("../migrations/20261105140000_activemeteringpartition_tenant.down.sql")
 	require.NoError(t, err)
 	const create = "CREATE OR REPLACE VIEW base.activeMeteringPartition AS"
 	require.Equal(t, 1, strings.Count(string(down), create))
@@ -136,7 +136,7 @@ func TestActiveMeteringPartition_innerSideOfNestedLoopReadsOneCommunity(t *testi
 	}
 }
 
-// Migrations 20261105120000 (view) and 20261105120100 (index, CONCURRENTLY): up, down and up again.
+// Migrations 20261105140000 (view) and 20261105140100 (index, CONCURRENTLY): up, down and up again.
 func TestActiveMeteringPartitionMigrationUpDown(t *testing.T) {
 	dbx, m := migrationDB(t, "activemeteringpartition_migration_test")
 	state := func() (partitionedByTenant, index bool) {
@@ -146,7 +146,7 @@ func TestActiveMeteringPartitionMigrationUpDown(t *testing.T) {
 		require.NoError(t, dbx.Get(&index, `SELECT to_regclass('base.metering_partition_factor_tenant_idx') IS NOT NULL`))
 		return strings.Contains(def, "PARTITION BY metering_partition_factor.tenant,"), index
 	}
-	const indexMigration = 20261105120100
+	const indexMigration = 20261105140100
 	require.NoError(t, m.Migrate(indexMigration))
 	byTenant, index := state()
 	assert.True(t, byTenant && index, "up")
