@@ -35,6 +35,7 @@ type EegRepository interface {
 	InsertEeg(ctx context.Context, tenant string, eeg *model.Eeg) error
 	UpdateOnlineState(ctx context.Context, tenant string, onlineState bool) error
 	UpdateEcZoneLevel(ctx context.Context, ecId string, level int) error
+	EcIdBelongsToRc(ctx context.Context, ecId, rcNumber string) (bool, error)
 	ChangeSettlementInterval(ctx context.Context, tenant, newInterval, changedBy string, state model.BillingState,
 		dryRun bool) (model.SettlementIntervalDecision, error)
 }
@@ -137,6 +138,15 @@ func (db *sqlDatabase) FetchTenantsName(ctx context.Context, tenants []string, i
 
 func (db *sqlDatabase) InsertEeg(ctx context.Context, tenant string, eeg *model.Eeg) error {
 	return insertEeg(ctx, db.db, tenant, eeg)
+}
+
+// EcIdBelongsToRc: one of the tenants of the community id has the RC number (case-insensitive), e.g. the RC number
+// of the topic an inbound message came in on.
+func (db *sqlDatabase) EcIdBelongsToRc(ctx context.Context, ecId, rcNumber string) (bool, error) {
+	var ok bool
+	err := db.db.GetContext(ctx, &ok, `SELECT EXISTS (SELECT 1 FROM base.eeg WHERE "communityId" = $1
+		AND upper("rcNumber") = upper($2))`, ecId, rcNumber)
+	return ok, err
 }
 
 // UpdateEcZoneLevel sets the Nahebereich of every tenant of the community id (several for a GEA) from the grid

@@ -568,6 +568,14 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 			logrus.WithField("tenant", msg.Tenant).Warn("metering point list without a community id, dropped")
 			return
 		}
+		// only for a community of the RC number the list came in for (several tenants in a GEA, one RC number)
+		if ok, err := db.EcIdBelongsToRc(ctx, msg.Payload.EcId, msg.Tenant); err != nil {
+			logrus.WithField("tenant", msg.Tenant).WithError(err).Error("can not check the community id of the metering point list")
+			return
+		} else if !ok {
+			logrus.WithField("tenant", msg.Tenant).Warn("metering point list for a community id of another RC number, dropped")
+			return
+		}
 		buf, err := database.ExportZPListToExcel(ctx, &msg.Payload)
 		if err != nil {
 			return
