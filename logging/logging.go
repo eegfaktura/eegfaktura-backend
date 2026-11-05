@@ -143,6 +143,8 @@ var allowedFields = map[string]bool{
 	"SQL": true, "STMT": true, "MSG": true, "PROTOCOL": true, "protocol": true,
 	"code": true, "command": true, "ecId": true, "participantId": true, "templates": true,
 	"sepaActiv": true, "settlementInterval": true,
+	// migration result (database/migrate.go)
+	"migration.version_before": true, "migration.version_after": true, "migration.applied": true,
 	// db pool stats (database.go)
 	"open": true, "inUse": true, "idle": true, "maxOpen": true, "waitCount": true, "waitDuration": true,
 	"maxIdleClosed": true, "maxLifetimeClosed": true,

@@ -63,6 +63,11 @@ this changelog highlights the changes relevant for overview and operations.
   commented-out code in `server.go` and the DAOs, the unread `migration.sql`, `schema.hcl`,
   `database/migration/000001_init-setup.up.sql` and config key `file-content.basedir`; stale Makefile targets
   (`atlas-hash`/`atlas-diff` spelled right). The test seed data is `database/testdata/seed.sql`.
+- **The start-up log names the migration result** (eegfaktura-dev#54 #4): one line `event.action=db.migrate.done` with
+  `migration.version_before`, `migration.version_after` (0: no version) and `migration.applied` (0 with the message
+  `database schema unchanged (no_change)`), so a run that skipped migrations is visible. A failed migration is one
+  ERROR line `db.migrate.failed` (before: `log.Fatal` with the bare error, then nothing). The migrations run on a
+  connection of their own, closed afterwards (before: one connection of the pool stayed held).
 
 ### Fixed
 - **Metering point master data of larger communities within the deadline again** (support ticket 6611200): the

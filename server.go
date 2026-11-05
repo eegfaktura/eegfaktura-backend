@@ -117,8 +117,8 @@ func main() {
 		panic(err)
 	}
 
+	// MigrateDB has logged the error
 	if err = db.MigrateDB(); err != nil {
-		log.Fatalf("failed to migrate database")
 		os.Exit(1)
 	}
 
