@@ -39,8 +39,8 @@ func updateEegModel(t *testing.T, groups middleware.AccessGroups, arg string, in
 	return eeg, err
 }
 
-// 261105-mm2: updateEegModel stores sepaActiv through the guarded update of POST /eeg for the tenant of the request
-// (not the argument), drops settlementInterval and returns the EEG read back.
+// 261105-mm2: updateEegModel stores sepaActiv through the guarded update of POST /eeg for the tenant of the request,
+// drops settlementInterval and returns the EEG read back. The tenant arguments match the header case-insensitively.
 func TestUpdateEegModelStores(t *testing.T) {
 	db, mock, err := dbmock.New()
 	require.NoError(t, err)
@@ -52,8 +52,8 @@ func TestUpdateEegModelStores(t *testing.T) {
 	mock.ExpectQuery(`SELECT .* FROM "base"."eeg" WHERE \("tenant" = \$1\)`).WithArgs("TE000233").
 		WillReturnRows(sqlmock.NewRows([]string{"tenant", "settlementInterval", "sepa"}).AddRow("TE000233", "MONTHLY", true))
 
-	interval, sepa := "ANNUAL", true
-	eeg, err := updateEegModel(t, admin, "OTHER", &gmodel.EegModel{SettlementInterval: &interval, SepaActiv: &sepa})
+	interval, sepa, lower := "ANNUAL", true, "te000233"
+	eeg, err := updateEegModel(t, admin, lower, &gmodel.EegModel{Tenant: &lower, SettlementInterval: &interval, SepaActiv: &sepa})
 	require.NoError(t, err)
 	assert.Equal(t, "TE000233", eeg.Id)
 	assert.True(t, eeg.Sepa)
@@ -76,6 +76,31 @@ func TestUpdateEegModelOnlySettlementInterval(t *testing.T) {
 		assert.Equal(t, "MONTHLY", eeg.SettlementInterval)
 	}
 	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// eegfaktura-dev#54 #6: a tenant argument (or EegModel.tenant) other than the header is an error, nothing is written.
+func TestUpdateEegModelTenantArgument(t *testing.T) {
+	db, mock, err := dbmock.New()
+	require.NoError(t, err)
+	database.SetDB(db)
+	t.Cleanup(func() { database.SetDB(nil) })
+
+	sepa, other, own := true, "TE000234", "TE000233"
+	for _, c := range []struct {
+		arg string
+		in  *gmodel.EegModel
+	}{
+		{"TE000234", &gmodel.EegModel{SepaActiv: &sepa}},
+		{"TE000234", nil},
+		{"", &gmodel.EegModel{SepaActiv: &sepa}},
+		{"TE000233", &gmodel.EegModel{Tenant: &other, SepaActiv: &sepa}},
+		{"TE000234", &gmodel.EegModel{Tenant: &own, SepaActiv: &sepa}},
+	} {
+		eeg, err := updateEegModel(t, admin, c.arg, c.in)
+		assert.EqualError(t, err, "updateEegModel: the tenant argument differs from the tenant header", c.arg)
+		assert.Nil(t, eeg)
+	}
+	assert.NoError(t, mock.ExpectationsWereMet(), "no statement expected")
 }
 
 // A member token (no EEG admin group) is refused like on POST /eeg, nothing is written; /query stays log-only for the

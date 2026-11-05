@@ -131,6 +131,8 @@ this changelog highlights the changes relevant for overview and operations.
 - **GraphQL `updateEegModel` stores again** (tracking backend 261105-mm2): it returned the changed EEG but never stored
   anything, also not `sepaActiv`. It now goes through the guarded update of `POST /eeg` (`updateEegPartial`, protected
   fields dropped, `settlementInterval` included) for the tenant of the checked request, and returns the EEG read back.
+  A `tenant` argument or `EegModel.tenant` other than the `tenant` header (case-insensitive) is an error and nothing
+  is written (eegfaktura-dev#54 #6); before, the argument was ignored and the write went to the header's community.
   `updateEegModel` requires the EEG admin group like `POST /eeg`; the other GraphQL operations stay in log-only mode.
   No known caller (web's `updateEegModel` calls `POST /eeg`).
 - **A failed COMMIT is reported as an error** (BE-CQ-7, BE-CQ-8): registering and moving a metering point, adding a

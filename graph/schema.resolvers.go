@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"at.ourproject/vfeeg-backend/database"
@@ -27,6 +28,7 @@ func (r *mutationResolver) UpdateEegModel(ctx context.Context, tenant string, ee
 
 	// The tenant must come from the verified request context (GQLProtect checked
 	// the header against the token), never from the caller-supplied argument.
+	arg := tenant
 	tenant = middleware.ForContextTenant(ctx)
 	if tenant == "" {
 		return nil, errors.New("no tenant in context")
@@ -35,6 +37,11 @@ func (r *mutationResolver) UpdateEegModel(ctx context.Context, tenant string, ee
 	// Like POST /eeg (Protect) only for the EEG admin group (261105-mm2, admin check); nothing is written otherwise.
 	if !middleware.IsGQLAdmin(ctx) {
 		return nil, errors.New("updateEegModel requires the EEG admin group")
+	}
+	// A tenant argument other than the header (case-insensitive) is an error, nothing is written (eegfaktura-dev#54
+	// #6): before, it was ignored and the write went to the community of the header.
+	if !strings.EqualFold(arg, tenant) || (eegModel != nil && eegModel.Tenant != nil && !strings.EqualFold(*eegModel.Tenant, tenant)) {
+		return nil, errors.New("updateEegModel: the tenant argument differs from the tenant header")
 	}
 
 	// Stored through the guarded path of POST /eeg (261105-mm2: before, nothing was stored). settlementInterval is
