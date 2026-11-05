@@ -12,7 +12,7 @@ import (
 // included (platform#229, phase 1: one grid area), uses the operator from the community settings.
 func TestGetReceiverFrom(t *testing.T) {
 	meter := &model.MeteringPoint{GridOperatorId: null.StringFrom("at008000")}
-	for _, area := range model.AreaTypes {
+	for _, area := range model.AreaTypes() {
 		eeg := &model.Eeg{Area: area, GridOperator: "at003000"}
 		want := "AT003000"
 		if area == model.BEG {

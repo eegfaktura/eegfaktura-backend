@@ -52,13 +52,16 @@ const (
 	EVA      AreaType = "EVA" // Eigenversorgung, ECType SC (eda-xp); no billing (platform#229)
 )
 
-// AreaTypes are the community types a registration may set (platform#229: one place in the code).
-var AreaTypes = []AreaType{LOCAL, REGIONAL, BEG, GEA, P2P, EVA}
+// areaTypes are the community types a registration may set (platform#229: one place in the code).
+var areaTypes = []AreaType{LOCAL, REGIONAL, BEG, GEA, P2P, EVA}
+
+// AreaTypes returns a copy of the known community types.
+func AreaTypes() []AreaType { return slices.Clone(areaTypes) }
 
 // ValidateArea refuses a community type outside AreaTypes, e.g. a gRPC enum value this backend does not know yet
 // (its String() is the number, "6").
 func ValidateArea(area AreaType) error {
-	if !slices.Contains(AreaTypes, area) {
+	if !slices.Contains(areaTypes, area) {
 		return fmt.Errorf("unknown community type %q", string(area))
 	}
 	return nil

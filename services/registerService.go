@@ -17,8 +17,9 @@ import (
 // admin-backend stops the registration on it (261015-ca1).
 const statusEegExists = 409
 
-// statusInvalidArea in RegisteredEegReply.status: the community type is unknown, nothing was written.
-const statusInvalidArea = 400
+// statusInvalidEeg in RegisteredEegReply.status: a value is unknown (e.g. an enum value this backend does not know
+// yet, its name is the number), nothing was written. Without a gRPC error, like 409 (platform#229).
+const statusInvalidEeg = 400
 
 type RegisterService struct {
 	protobuf.UnimplementedRegisterEegServiceServer
@@ -70,12 +71,6 @@ func (r *RegisterService) Register(ctx context.Context, eeg *protobuf.RegisterEe
 		ContactPerson: null.StringFrom(eeg.EegOwner),
 	}
 
-	// An enum value this backend does not know arrives as its number ("6"): refused, nothing written (platform#229).
-	if err := model.ValidateArea(newEeg.Area); err != nil {
-		log.Warnf("Register EEG refused: %v", err)
-		return &protobuf.RegisteredEegReply{Status: statusInvalidArea}, status.Error(codes.InvalidArgument, err.Error())
-	}
-
 	log.Printf("Register EEG: %s", newEeg.Id)
 	db, err := database.GetDB(ctx)
 	if err != nil {
@@ -90,6 +85,10 @@ func registerReply(err error) (*protobuf.RegisteredEegReply, error) {
 	if errors.Is(err, database.ErrEegExists) {
 		log.Warn("Register EEG refused: the tenant is already registered")
 		return &protobuf.RegisteredEegReply{Status: statusEegExists}, nil
+	}
+	if errors.Is(err, database.ErrInvalidEeg) {
+		log.Warnf("Register EEG refused: %v", err)
+		return &protobuf.RegisteredEegReply{Status: statusInvalidEeg}, nil
 	}
 	if err != nil {
 		log.Errorf("Could not create an EEG! %v", err.Error())

@@ -111,3 +111,18 @@ func TestInsertEegStoresP2PAndEva(t *testing.T) {
 		assert.Equal(t, []string{string(area)}, areas)
 	}
 }
+
+// platform#229: both registrations (gRPC, MQTT) refuse an unknown community type in insertEeg; nothing is written.
+// "6" is how a gRPC GRID_AREA value unknown to this backend arrives.
+func TestInsertEegRefusesAnUnknownArea(t *testing.T) {
+	db, err := GetDB(context.Background())
+	require.NoError(t, err)
+	for _, area := range []model.AreaType{"6", "", "PP"} {
+		eeg := registerEegFixture("TE000046", "TE000046", "Unbekannter Typ")
+		eeg.Area = area
+		assert.ErrorIs(t, db.InsertEeg(context.Background(), "TE000046", eeg), ErrInvalidEeg, string(area))
+	}
+	var n int
+	require.NoError(t, testDB.DbInstance.Get(&n, `SELECT count(*) FROM base.eeg WHERE tenant = 'TE000046'`))
+	assert.Zero(t, n, "nothing written")
+}

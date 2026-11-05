@@ -19,6 +19,9 @@ const TABLE_EEG_ADDRESS = "base.address"
 // ErrEegExists: the tenant is already registered; nothing was written (261015-ca1).
 var ErrEegExists = errors.New("eeg already exists")
 
+// ErrInvalidEeg: the registration carries a value outside the known ones (e.g. the community type); nothing was written.
+var ErrInvalidEeg = errors.New("invalid eeg registration")
+
 type EegRepository interface {
 	GetEegById(ctx context.Context, tenant string) (*model.Eeg, error)
 	GetEegByIdForUser(ctx context.Context, tenant string) (*model.Eeg, error)
@@ -187,11 +190,16 @@ func getEegByEcId(ctx context.Context, tx *sqlx.DB, edId string) (*model.Eeg, er
 
 func insertEeg(ctx context.Context, db *sqlx.DB, tenant string, eeg *model.Eeg) error {
 
+	// Both registrations (gRPC, MQTT register-eeg) come through here: only a known community type (platform#229).
+	if err := model.ValidateArea(eeg.Area); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidEeg, err)
+	}
+
 	// Tenants compare case-insensitively, the primary key only sees the exact spelling. Outside GEA an RC number
 	// belongs to one community: a new tenant on it would reach that community's login and Ponton account.
 	var exists bool
 	if err := db.GetContext(ctx, &exists, `SELECT EXISTS (SELECT 1 FROM base.eeg WHERE upper(tenant) = upper($1)
-		OR ($2 AND upper("rcNumber") = upper($3)))`, eeg.Id, eeg.Area != model.AreaType("GEA"), eeg.RcNumber); err != nil {
+		OR ($2 AND upper("rcNumber") = upper($3)))`, eeg.Id, eeg.Area != model.GEA, eeg.RcNumber); err != nil {
 		log.WithContext(ctx).WithError(err).WithField("SQL", "SELECT").Error("SQL statement failed")
 		return err
 	}

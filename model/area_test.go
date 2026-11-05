@@ -10,8 +10,8 @@ import (
 
 // platform#229: the six community types, nothing else (also no empty value).
 func TestValidateArea(t *testing.T) {
-	assert.Equal(t, []AreaType{"LOCAL", "REGIONAL", "BEG", "GEA", "P2P", "EVA"}, AreaTypes)
-	for _, area := range AreaTypes {
+	assert.ElementsMatch(t, []AreaType{"LOCAL", "REGIONAL", "BEG", "GEA", "P2P", "EVA"}, AreaTypes())
+	for _, area := range AreaTypes() {
 		assert.NoError(t, ValidateArea(area), area)
 	}
 	for _, area := range []AreaType{"", "6", "local", "PP", "SC", "RC_L"} {
@@ -29,7 +29,7 @@ func TestRegisterEegRequestArea(t *testing.T) {
 			"streetNumber":"1","city":"c","zip":"4020","email":"e@example.org","online":false}`), &r)
 		return r, err
 	}
-	for _, area := range AreaTypes {
+	for _, area := range AreaTypes() {
 		r, err := decode(string(area))
 		require.NoError(t, err, area)
 		assert.Equal(t, string(area), string(r.Area))

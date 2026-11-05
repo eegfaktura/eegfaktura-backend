@@ -315,11 +315,6 @@ func (m *MessageBroker) command(cmd CommandMessage) {
 			return
 		}
 		eeg := factory.GetEegFromRegisterEeg(registerMsg)
-		// The schema enum already refuses an unknown type on decode; same rule as the gRPC registration (platform#229).
-		if err := model.ValidateArea(eeg.Area); err != nil {
-			log.Errorf("Error from MQTT: (%s) cmd: %s - %v", cmd.tenant, cmd.cmd, err)
-			return
-		}
 		log.Printf("Register EEG: %s", eeg.Id)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

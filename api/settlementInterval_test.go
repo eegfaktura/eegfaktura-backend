@@ -159,6 +159,9 @@ func TestChangeSettlementInterval(t *testing.T) {
 	t.Run("generic update drops area and allocationMode", func(t *testing.T) {
 		before, err := db.GetEegById(ctx, siTenant)
 		require.NoError(t, err)
+		require.NotEqual(t, "P2P", string(before.Area), "fixture")
+		require.NotEqual(t, "STATIC", string(before.AllocationMode), "fixture")
+		t.Cleanup(func() { exec(`UPDATE base.eeg SET description = $1 WHERE tenant = $2`, before.Description, siTenant) })
 		w := call("admin", "/eeg", `{"area":"P2P","allocationMode":"STATIC","description":"Typ-Test"}`)
 		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 		after, err := db.GetEegById(ctx, siTenant)
@@ -166,7 +169,6 @@ func TestChangeSettlementInterval(t *testing.T) {
 		assert.Equal(t, "Typ-Test", after.Description)
 		assert.Equal(t, before.Area, after.Area)
 		assert.Equal(t, before.AllocationMode, after.AllocationMode)
-		assert.NotEqual(t, "STATIC", string(after.AllocationMode), "fixture")
 	})
 	t.Run("allowed change: stored, recorded, EEG returned", func(t *testing.T) {
 		reset()

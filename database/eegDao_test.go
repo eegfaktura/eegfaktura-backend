@@ -88,7 +88,7 @@ func TestUpdateEeg(t *testing.T) {
             "id": "TE100100",
             "name": "T-VIERE",
             "businessNr": "123456789",
-            "area": "",
+            "area": "LOCAL",
             "legal": "verein",
             "operatorName": "Netz OOE",
             "communityId": "AT00300000000TC100100000000000001",
