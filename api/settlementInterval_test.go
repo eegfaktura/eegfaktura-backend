@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +12,8 @@ import (
 
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"at.ourproject/vfeeg-backend/database"
+	"at.ourproject/vfeeg-backend/logging"
+	"at.ourproject/vfeeg-backend/logging/logtest"
 	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -125,6 +129,28 @@ func TestChangeSettlementInterval(t *testing.T) {
 			assert.Equal(t, code, errorOf(w).Code, body)
 		}
 		assert.Equal(t, "MONTHLY", interval())
+	})
+	t.Run("unreadable request: a warning, no Go names in the answer", func(t *testing.T) {
+		reset()
+		buf := logtest.Capture(t, func(w io.Writer) {
+			logging.Setup(w, logging.Config{Level: slog.LevelInfo, JSON: true, Version: "test"})
+		})
+		for _, body := range []string{`{"settlementInterval":"QUARTER","dryRun":"yes",` + billedToMar + `}`,
+			`{"settlementInterval":"QUARTER","dryRun":true,` + billedToMar + `}x`} {
+			w := post("admin", body)
+			require.Equal(t, http.StatusBadRequest, w.Code, body)
+			assert.Equal(t, HttpError{Code: 2000, Error: "Bad Process", Message: "Die Anfrage konnte nicht gelesen werden (kein gültiges JSON)"},
+				errorOf(w), body)
+		}
+		var warnings int
+		for _, l := range logtest.Lines(t, buf) {
+			assert.NotEqual(t, "error", l["log.level"], l)
+			if l["message"] == "settlement interval request unreadable" {
+				assert.Equal(t, "warn", l["log.level"])
+				warnings++
+			}
+		}
+		assert.Equal(t, 2, warnings, buf.String())
 	})
 	t.Run("dry run allowed", func(t *testing.T) {
 		reset()

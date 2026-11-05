@@ -85,6 +85,10 @@ this changelog highlights the changes relevant for overview and operations.
   (dirty)", at start on a dirty version and when a migration file fails. Before, only golang-migrate's
   `Dirty database version … Fix and force version.`, which names a CLI that is not in the image and is wrong for an
   invalid index.
+- **`POST /eeg/settlementinterval`: an unreadable body is a warning** (eegfaktura-dev#54 #12): 400 (code 2000) with
+  the text „Die Anfrage konnte nicht gelesen werden (kein gültiges JSON)“ and `"error":"Bad Process"` like the other
+  answers of the route; the decoder's text (Go type and field names) only in the WARN line. Before, ERROR and the
+  decoder's text in the answer.
 
 ### Fixed
 - **Metering point master data of larger communities within the deadline again** (support ticket 6611200): the

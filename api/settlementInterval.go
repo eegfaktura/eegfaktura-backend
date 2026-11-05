@@ -35,13 +35,15 @@ func (h *EegHandler) changeSettlementInterval() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
 		var req settlementIntervalRequest
 		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxSettlementIntervalBytes))
-		if err := dec.Decode(&req); err != nil {
-			respondWith(r.Context(), w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
-			return
-		}
+		err := dec.Decode(&req)
 		// nothing after the JSON body but white space (eegfaktura-dev#54 #9)
-		if err := dec.Decode(&json.RawMessage{}); err != io.EOF {
-			respondWith(r.Context(), w, http.StatusBadRequest, tenant, model.ErrParseJson(errors.New("data after the JSON body")))
+		if err == nil && dec.Decode(&json.RawMessage{}) != io.EOF {
+			err = errors.New("data after the JSON body")
+		}
+		if err != nil {
+			// the decoder's text names Go types and fields: only in the log, as a warning (eegfaktura-dev#54 #12)
+			log.WithContext(r.Context()).WithError(err).WithField("code", 2000).Warn("settlement interval request unreadable")
+			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(2000, "Die Anfrage konnte nicht gelesen werden (kein gültiges JSON)"))
 			return
 		}
 		if !model.IsSettlementInterval(req.SettlementInterval) {
