@@ -2,6 +2,7 @@ package database
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"at.ourproject/vfeeg-backend/database/dbtest"
 	"at.ourproject/vfeeg-backend/logging"
 	"at.ourproject/vfeeg-backend/logging/logtest"
+	"github.com/golang-migrate/migrate/v4"
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -108,6 +110,11 @@ func TestMigrateDBLogsTheResult(t *testing.T) {
 
 // eegfaktura-dev#54 #1: a migration waiting for a lock fails after the lock timeout instead of keeping the start
 // waiting, and says why.
+func TestLockHint(t *testing.T) {
+	assert.NotEmpty(t, lockHint(migrate.ErrLockTimeout))
+	assert.Empty(t, lockHint(errors.New("relation already exists")))
+}
+
 func TestMigrateDBBoundsTheLockWait(t *testing.T) {
 	dsn, dbx := emptyDB(t, "migrate_lock_test")
 	require.NoError(t, migrateDB(migrationsURL(t), dsn, time.Minute))
@@ -126,7 +133,7 @@ func TestMigrateDBBoundsTheLockWait(t *testing.T) {
 	assert.Less(t, time.Since(start), 30*time.Second)
 	failed := lineOf(t, buf, "db.migrate.failed")
 	assert.Equal(t, "error", failed["log.level"])
-	assert.Contains(t, failed["message"], "lock_timeout")
+	assert.Contains(t, failed["message"], "a lock wait took too long")
 	assert.Contains(t, failed["error.message"], "lock timeout")
 }
 

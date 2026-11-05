@@ -122,11 +122,11 @@ func migrateFailed(err error) error {
 	return err
 }
 
-// lockHint names the cause of a lock timeout (SQLSTATE 55P03; golang-migrate keeps only the text of the driver's
-// error).
+// lockHint names the cause of a lock timeout: PostgreSQL's lock_timeout (SQLSTATE 55P03; golang-migrate keeps only
+// the text of the driver's error) or golang-migrate's own wait for its migration lock (ErrLockTimeout, 15 s).
 func lockHint(err error) string {
-	if strings.Contains(err.Error(), "lock timeout") {
-		return ": a lock wait exceeded lock_timeout, check pg_stat_activity for long transactions or a running pg_dump"
+	if errors.Is(err, migrate.ErrLockTimeout) || strings.Contains(err.Error(), "lock timeout") {
+		return ": a lock wait took too long, check pg_stat_activity for long transactions or a running pg_dump"
 	}
 	return ""
 }
