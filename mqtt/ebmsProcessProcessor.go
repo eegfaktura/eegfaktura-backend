@@ -184,6 +184,11 @@ func getReceiverFrom(eeg *model.Eeg, meter *model.MeteringPoint) (string, error)
 	return strings.ToUpper(receiver), nil
 }
 
+// ReceiverFor is getReceiverFrom for callers that check all metering points before they write or send anything.
+func ReceiverFor(eeg *model.Eeg, meter *model.MeteringPoint) (string, error) {
+	return getReceiverFrom(eeg, meter)
+}
+
 func createEbmsMessage(eeg *model.Eeg, receiver string, code model.EbMsMessageType) model.EbmsMessage {
 	return model.EbmsMessage{
 		Sender:   strings.ToUpper(eeg.RcNumber),

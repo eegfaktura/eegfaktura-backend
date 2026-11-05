@@ -220,17 +220,28 @@ func (h *ParticipantHandler) confirmParticipant() middleware.JWTHandlerFunc {
 			return
 		}
 
+		participantMetersMap := make(map[string]*model.MeteringPoint)
+		for _, meter := range participant.MeteringPoint {
+			participantMetersMap[meter.MeteringPoint] = meter
+		}
+		// every registration needs a grid operator: check all before anything is written or sent
+		if eeg.Online {
+			for _, qm := range meters {
+				if m, ok := participantMetersMap[qm.MeteringPoint]; ok {
+					if _, err = mqttclient.ReceiverFor(eeg, m); err != nil {
+						respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
+						return
+					}
+				}
+			}
+		}
+
 		if err = h.db.ConfirmParticipant(r.Context(), tenant, claims.Username, participantId); err != nil {
 			log.WithContext(r.Context()).WithField("tenant", tenant).WithError(err).Error("failed to confirm participant.")
 			respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
 			return
 		}
 		participant.Status = model.ACTIVE
-
-		participantMetersMap := make(map[string]*model.MeteringPoint)
-		for _, meter := range participant.MeteringPoint {
-			participantMetersMap[meter.MeteringPoint] = meter
-		}
 
 		if eeg.Online {
 			for _, qm := range meters {
