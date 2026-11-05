@@ -12,18 +12,43 @@ import (
 // ebUtilities like the BEG (platform#229).
 var multiGrid = map[model.AreaType]bool{model.BEG: true, model.P2P: true, model.EVA: true}
 
-// The grid operator receiving a message: from the metering point for BEG, P2P and EVA; every other type uses the
-// operator from the community settings.
+// The grid operator receiving a message: from the metering point for BEG, P2P and EVA; every other type, and a
+// metering point without one, uses the operator from the community settings; without either nothing is sent.
 func TestGetReceiverFrom(t *testing.T) {
+	receiver := func(eeg *model.Eeg, meter *model.MeteringPoint) string {
+		r, err := getReceiverFrom(eeg, meter)
+		assert.NoError(t, err, eeg.Area)
+		return r
+	}
 	meter := &model.MeteringPoint{GridOperatorId: null.StringFrom("at008000")}
+	noOperator := &model.MeteringPoint{}
 	for _, area := range model.AreaTypes() {
 		eeg := &model.Eeg{Area: area, GridOperator: "at003000"}
 		want := "AT003000"
 		if multiGrid[area] {
 			want = "AT008000"
 		}
-		assert.Equal(t, want, getReceiverFrom(eeg, meter), string(area))
-		assert.Equal(t, "AT003000", getReceiverFrom(eeg, nil), string(area)+" without metering point")
+		assert.Equal(t, want, receiver(eeg, meter), string(area))
+		assert.Equal(t, "AT003000", receiver(eeg, nil), string(area)+" without metering point")
+		assert.Equal(t, "AT003000", receiver(eeg, noOperator), string(area)+" metering point without grid operator")
+
+		_, err := getReceiverFrom(&model.Eeg{Area: area}, noOperator)
+		assert.Error(t, err, string(area)+" without any grid operator")
+		r, err := getReceiverFrom(&model.Eeg{Area: area}, meter)
+		assert.Equal(t, multiGrid[area], err == nil, string(area)+" only the metering point's grid operator")
+		if err == nil {
+			assert.Equal(t, "AT008000", r)
+		}
+	}
+}
+
+// Nothing is sent without a grid operator: P2P (and BEG) with a metering point that has none and no grid operator
+// in the community settings.
+func TestRegistrationForParticipationWithoutGridOperator(t *testing.T) {
+	for _, area := range []model.AreaType{model.P2P, model.BEG} {
+		eeg := &model.Eeg{Id: "TE000049", RcNumber: "TE000049", Area: area}
+		err := RegistrationForParticipation(eeg, &model.MeteringPoint{MeteringPoint: "AT0030000000000000000000000049001"}, nil)
+		assert.Error(t, err, area)
 	}
 }
 

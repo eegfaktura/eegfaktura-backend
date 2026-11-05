@@ -12,7 +12,11 @@ import (
 
 var RegistrationForParticipation = func(eeg *model.Eeg, meter *model.MeteringPoint, from *int64) error {
 
-	ebmsMessage := createEbmsMessage(eeg, meter, model.EBMS_ONLINE_REG_INIT)
+	receiver, err := getReceiverFrom(eeg, meter)
+	if err != nil {
+		return err
+	}
+	ebmsMessage := createEbmsMessage(eeg, receiver, model.EBMS_ONLINE_REG_INIT)
 	ebmsMessage.Meter = &model.Meter{MeteringPoint: meter.MeteringPoint, Direction: meter.Direction, PartFact: meter.PartFact}
 
 	log.WithField("tenant", eeg.Id).Infof("Start Meteringpoint %s ONLINE registration", meter.MeteringPoint)
@@ -37,7 +41,11 @@ func sendRegistrationForParticipation(eeg *model.Eeg, meter *model.MeteringPoint
 
 var RequestingEnergyData = func(eeg *model.Eeg, meter *model.MeteringPoint, fromDate, toDate int64) error {
 
-	ebmsMessage := createEbmsMessage(eeg, meter, model.EBMS_ZP_SYNC)
+	receiver, err := getReceiverFrom(eeg, meter)
+	if err != nil {
+		return err
+	}
+	ebmsMessage := createEbmsMessage(eeg, receiver, model.EBMS_ZP_SYNC)
 	ebmsMessage.Meter = &model.Meter{MeteringPoint: meter.MeteringPoint}
 	ebmsMessage.Timeline = &model.Timeline{From: fromDate, To: toDate}
 
@@ -57,7 +65,11 @@ func RevokeMeteringPoint(eeg *model.Eeg, meter *model.MeteringPoint, consentEnd 
 		reasonMsg = *reason
 	}
 
-	ebmsMessage := createEbmsMessage(eeg, meter, model.EBMS_AUFHEBUNG_CCMS)
+	receiver, err := getReceiverFrom(eeg, meter)
+	if err != nil {
+		return err
+	}
+	ebmsMessage := createEbmsMessage(eeg, receiver, model.EBMS_AUFHEBUNG_CCMS)
 	ebmsMessage.Meter = &model.Meter{MeteringPoint: meter.MeteringPoint, ConsentID: meter.ConsentId.ValueOrZero()}
 	ebmsMessage.ConsentEnd = consentEnd
 	ebmsMessage.Reason = reasonMsg
@@ -72,13 +84,13 @@ func RevokeMeteringPoint(eeg *model.Eeg, meter *model.MeteringPoint, consentEnd 
 
 func RequestingMeteringPointList(eeg *model.Eeg, receiver string, from, to int64) error {
 
-	ebmsMessage := createEbmsMessage(eeg, nil, model.EBMS_ZP_LIST)
-	ebmsMessage.Meter = &model.Meter{MeteringPoint: eeg.CommunityId}
-	ebmsMessage.Timeline = &model.Timeline{From: from, To: to}
-	var err error
-	if ebmsMessage.Receiver, err = zpListReceiver(eeg, receiver); err != nil {
+	zpReceiver, err := zpListReceiver(eeg, receiver)
+	if err != nil {
 		return err
 	}
+	ebmsMessage := createEbmsMessage(eeg, zpReceiver, model.EBMS_ZP_LIST)
+	ebmsMessage.Meter = &model.Meter{MeteringPoint: eeg.CommunityId}
+	ebmsMessage.Timeline = &model.Timeline{From: from, To: to}
 
 	log.WithField("tenant", eeg.Id).Info("Request MeteringPointList")
 	//if err := SendEbmsMessage(ebmsMessage); err != nil {
@@ -147,8 +159,7 @@ var ChangePartitionFactor = func(eeg *model.Eeg, meterReq []*model.ChangePartiti
 	}
 
 	for k, v := range operators {
-		ebmsMessage := createEbmsMessage(eeg, nil, model.EBMS_REQ_CHANGE_PARTFACT)
-		ebmsMessage.Receiver = k
+		ebmsMessage := createEbmsMessage(eeg, k, model.EBMS_REQ_CHANGE_PARTFACT)
 		ebmsMessage.EcType = eeg.Area
 		ebmsMessage.EcDisModel = model.AllocationModeType(eeg.AllocationMode)
 		ebmsMessage.MeterList = v
@@ -159,17 +170,21 @@ var ChangePartitionFactor = func(eeg *model.Eeg, meterReq []*model.ChangePartiti
 	return nil
 }
 
-func getReceiverFrom(eeg *model.Eeg, meter *model.MeteringPoint) string {
+// getReceiverFrom is the grid operator a message about the metering point goes to: with several grid operators
+// possible (BEG, P2P, EVA) the one of the metering point, else, or when the metering point has none, the
+// community's; without either nothing is sent.
+func getReceiverFrom(eeg *model.Eeg, meter *model.MeteringPoint) (string, error) {
 	receiver := eeg.GridOperator
-	if meter != nil && model.HasMultipleGridOperators(eeg.Area) {
+	if meter != nil && model.HasMultipleGridOperators(eeg.Area) && meter.GridOperatorId.String != "" {
 		receiver = meter.GridOperatorId.String
 	}
-	return strings.ToUpper(receiver)
+	if receiver == "" {
+		return "", model.ErrEdaCommunication(errors.New("no Grid Operator specified"))
+	}
+	return strings.ToUpper(receiver), nil
 }
 
-func createEbmsMessage(eeg *model.Eeg, meter *model.MeteringPoint, code model.EbMsMessageType) model.EbmsMessage {
-	receiver := getReceiverFrom(eeg, meter)
-
+func createEbmsMessage(eeg *model.Eeg, receiver string, code model.EbMsMessageType) model.EbmsMessage {
 	return model.EbmsMessage{
 		Sender:   strings.ToUpper(eeg.RcNumber),
 		Receiver: receiver,
