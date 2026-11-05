@@ -43,8 +43,12 @@ func (h *EegHandler) changeSettlementInterval() middleware.JWTHandlerFunc {
 		}
 		if err != nil {
 			// the decoder's text names Go types and fields: only in the log (eegfaktura-dev#54 #12)
-			refuseSettlementInterval(w, r, http.StatusBadRequest, 2000,
-				"Die Anfrage konnte nicht gelesen werden (kein gültiges JSON)", log.Fields{log.ErrorKey: err})
+			message := "Die Anfrage konnte nicht gelesen werden (kein gültiges JSON)"
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				message = "Die Anfrage ist zu groß"
+			}
+			refuseSettlementInterval(w, r, http.StatusBadRequest, 2000, message, log.Fields{log.ErrorKey: err})
 			return
 		}
 		if !model.IsSettlementInterval(req.SettlementInterval) {

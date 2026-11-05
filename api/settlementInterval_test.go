@@ -150,6 +150,11 @@ func TestChangeSettlementInterval(t *testing.T) {
 			assert.Equal(t, HttpError{Code: 2000, Error: "Bad Process", Message: "Die Anfrage konnte nicht gelesen werden (kein gültiges JSON)"},
 				errorOf(w), body)
 		}
+		// over the size limit: its own text
+		w := post("admin", `{"settlementInterval":"QUARTER","dryRun":true,"billingState":{"finalPeriods":["`+
+			strings.Repeat("x", maxSettlementIntervalBytes)+`"],"runningPeriods":[]}}`)
+		require.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Equal(t, HttpError{Code: 2000, Error: "Bad Process", Message: "Die Anfrage ist zu groß"}, errorOf(w))
 		var warnings int
 		for _, l := range logtest.Lines(t, buf) {
 			assert.NotEqual(t, "error", l["log.level"], l)
@@ -160,7 +165,7 @@ func TestChangeSettlementInterval(t *testing.T) {
 				warnings++
 			}
 		}
-		assert.Equal(t, 2, warnings, buf.String())
+		assert.Equal(t, 3, warnings, buf.String())
 	})
 	// eegfaktura-dev#54 #5: a change and a refusal are logged with an event, old and new value, without the user name
 	t.Run("events", func(t *testing.T) {

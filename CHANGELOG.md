@@ -92,7 +92,8 @@ this changelog highlights the changes relevant for overview and operations.
   invalid index.
 - **`POST /eeg/settlementinterval`: an unreadable body is a warning** (eegfaktura-dev#54 #12): 400 (code 2000) with
   the text „Die Anfrage konnte nicht gelesen werden (kein gültiges JSON)“ and `"error":"Bad Process"` like the other
-  answers of the route; the decoder's text (Go type and field names) only in the WARN line. Before, ERROR and the
+  answers of the route (a body over 1 MiB: „Die Anfrage ist zu groß“); the decoder's text (Go type and field names)
+  only in the WARN line. Before, ERROR and the
   decoder's text in the answer.
 - **A refused GraphQL `updateEegModel` is logged** (eegfaktura-dev#54 #13): one WARN line
   `event.action=graphql.update_eeg_model.refused` with the reason (no admin group, tenant argument); the access line
