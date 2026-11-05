@@ -42,14 +42,38 @@ func CheckBillingState(s *BillingState) error {
 	case s.FinalPeriods == nil || s.RunningPeriods == nil:
 		return errors.New("Der Abrechnungsstand (billingState) ist unvollständig (finalPeriods, runningPeriods)")
 	}
+	var unreadable []string
 	for _, list := range [][]string{s.FinalPeriods, s.RunningPeriods} {
 		for _, id := range list {
 			if _, ok := parseClearingPeriod(id); !ok {
-				return errors.New("Der Abrechnungsstand (billingState) enthält eine unlesbare Zeitraum-Kennung")
+				unreadable = append(unreadable, id)
 			}
 		}
 	}
-	return nil
+	switch {
+	case len(unreadable) == 0:
+		return nil
+	case len(unreadable) == 1:
+		return fmt.Errorf("Der Abrechnungsstand (billingState) enthält eine unlesbare Zeitraum-Kennung: %s", quoteIds(unreadable))
+	}
+	return fmt.Errorf("Der Abrechnungsstand (billingState) enthält unlesbare Zeitraum-Kennungen: %s", quoteIds(unreadable))
+}
+
+// quoteIds names at most five identifiers, each quoted and cut to 40 characters (they come from the client).
+func quoteIds(ids []string) string {
+	const most, length = 5, 40
+	quoted := make([]string, 0, most+1)
+	for i, id := range ids {
+		if i == most {
+			quoted = append(quoted, "…")
+			break
+		}
+		if r := []rune(id); len(r) > length {
+			id = string(r[:length]) + "…"
+		}
+		quoted = append(quoted, strconv.Quote(id))
+	}
+	return strings.Join(quoted, ", ")
 }
 
 // SettlementIntervalDecision is the result of the change rule. Dates are ISO dates (2026-04-01); nil
@@ -140,16 +164,13 @@ func (p clearingPeriod) name() string {
 // month of the final periods and S the month after it: allowed from S when S starts a period of the new interval
 // (R1, R2), else blocked with the next start after L; also blocked while a run for a period ending in S or later is
 // running (R3), without a final period while any run is running. Before R2, a month between the first month of the
-// first final period and L that no final period covers blocks (rule 6, eegfaktura-dev#54 #2). The handler refuses a
-// state with an identifier of another form before (CheckBillingState); here such an identifier is ignored.
+// first final period and L that no final period covers blocks (rule 6, eegfaktura-dev#54 #2). state must have passed
+// CheckBillingState: every identifier is readable.
 func DecideSettlementInterval(newInterval string, state BillingState) SettlementIntervalDecision {
 	first, last, lastId := -1, -1, ""
 	covered := map[int]bool{}
 	for _, id := range state.FinalPeriods {
-		p, ok := parseClearingPeriod(id)
-		if !ok {
-			continue
-		}
+		p, _ := parseClearingPeriod(id)
 		if p.last > last {
 			last, lastId = p.last, id
 		}
@@ -241,7 +262,7 @@ func gapMessage(gaps [][2]int) string {
 // runningFrom returns the first running period that ends in month start or later.
 func runningFrom(state BillingState, start int) (clearingPeriod, bool) {
 	for _, id := range state.RunningPeriods {
-		if p, ok := parseClearingPeriod(id); ok && p.last >= start {
+		if p, _ := parseClearingPeriod(id); p.last >= start {
 			return p, true
 		}
 	}

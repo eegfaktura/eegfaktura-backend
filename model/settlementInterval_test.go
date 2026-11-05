@@ -1,6 +1,8 @@
 package model
 
 import (
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -18,12 +20,8 @@ func TestDecideSettlementInterval(t *testing.T) {
 	}{
 		{"no final period: at once (R5)", SettlementAnnual, nil, []string{},
 			SettlementIntervalDecision{Allowed: true, Message: "Das neue Intervall gilt sofort, es gibt noch keine endgültige Abrechnung."}},
-		{"no final period, a run running: blocked (R3)", SettlementAnnual, nil, []string{"kaputt", "Abr_YM-2026-4"},
+		{"no final period, a run running: blocked (R3)", SettlementAnnual, nil, []string{"Abr_YM-2026-4"},
 			SettlementIntervalDecision{Message: "Für April 2026 läuft gerade eine Berechnung. Bitte nach deren Ende erneut versuchen."}},
-		{"no final period, only unparseable running: at once", SettlementQuarter, []string{"Rechnung 3"}, []string{"kaputt"},
-			SettlementIntervalDecision{Allowed: true, Message: "Das neue Intervall gilt sofort, es gibt noch keine endgültige Abrechnung."}},
-		{"only identifiers of another form: at once", SettlementQuarter, []string{"Abr_YM-2026-13", "Abr_YQ-2026-5", "abr_YM-2026-3", "Rechnung 3"}, nil,
-			SettlementIntervalDecision{Allowed: true, Message: "Das neue Intervall gilt sofort, es gibt noch keine endgültige Abrechnung."}},
 		{"monthly to March, quarterly from April", SettlementQuarter, []string{"Abr_YM-2026-2", "Abr_YM-2026-3", "Abr_YM-2026-1"}, nil,
 			SettlementIntervalDecision{Allowed: true, EffectiveFrom: str("2026-04-01"), LastFinalPeriod: str("Abr_YM-2026-3"),
 				Message: "Das neue Intervall gilt ab 1. April 2026."}},
@@ -51,10 +49,7 @@ func TestDecideSettlementInterval(t *testing.T) {
 		{"running quarter ending after S blocks, named as quarter", SettlementMonthly, []string{"Abr_YM-2026-3"}, []string{"Abr_YQ-2026-2"},
 			SettlementIntervalDecision{LastFinalPeriod: str("Abr_YM-2026-3"),
 				Message: "Für 2. Quartal 2026 läuft gerade eine Berechnung. Bitte nach deren Ende erneut versuchen."}},
-		{"running period before S does not block", SettlementQuarter, []string{"Abr_YM-2026-3"}, []string{"Abr_YM-2026-2", "Abr_YQ-2026-1", "kaputt"},
-			SettlementIntervalDecision{Allowed: true, EffectiveFrom: str("2026-04-01"), LastFinalPeriod: str("Abr_YM-2026-3"),
-				Message: "Das neue Intervall gilt ab 1. April 2026."}},
-		{"unparseable identifiers ignored beside valid ones", SettlementQuarter, []string{"Abr_YM-2026-3", "Abr_YM-2027-13", "Abr_YX-2030"}, nil,
+		{"running period before S does not block", SettlementQuarter, []string{"Abr_YM-2026-3"}, []string{"Abr_YM-2026-2", "Abr_YQ-2026-1"},
 			SettlementIntervalDecision{Allowed: true, EffectiveFrom: str("2026-04-01"), LastFinalPeriod: str("Abr_YM-2026-3"),
 				Message: "Das neue Intervall gilt ab 1. April 2026."}},
 		{"mixed types: year 2025 and February 2026, January a gap (rule 6)", SettlementQuarter, []string{"Abr_YM-2026-2", "Abr_Y-2025"}, nil,
@@ -157,9 +152,14 @@ func TestCheckBillingState(t *testing.T) {
 	for _, id := range []string{"Abr_YM-2026-13", "ABR_YM-2026-3", "Abr_YM-2026-3 ", "foo", "Abr_Y-9999", "Abr_YQ-1999-1", ""} {
 		for _, s := range []BillingState{{FinalPeriods: []string{"Abr_YM-2026-1", id}, RunningPeriods: []string{}},
 			{FinalPeriods: []string{}, RunningPeriods: []string{id}}} {
-			assert.EqualError(t, CheckBillingState(&s), "Der Abrechnungsstand (billingState) enthält eine unlesbare Zeitraum-Kennung", id)
+			assert.EqualError(t, CheckBillingState(&s), "Der Abrechnungsstand (billingState) enthält eine unlesbare Zeitraum-Kennung: "+strconv.Quote(id), id)
 		}
 	}
+	// several: named, at most five, each cut to 40 characters
+	long := strings.Repeat("x", 50)
+	assert.EqualError(t, CheckBillingState(&BillingState{FinalPeriods: []string{"a", "Abr_YM-2026-1", long},
+		RunningPeriods: []string{"b", "c", "d", "e"}}),
+		`Der Abrechnungsstand (billingState) enthält unlesbare Zeitraum-Kennungen: "a", "`+strings.Repeat("x", 40)+`…", "b", "c", "d", …`)
 	// the forms billing and web produce (web: createPeriodIdentifier, also a number after a year)
 	assert.NoError(t, CheckBillingState(&BillingState{FinalPeriods: []string{}, RunningPeriods: []string{}}))
 	assert.NoError(t, CheckBillingState(&BillingState{

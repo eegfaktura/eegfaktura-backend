@@ -31,7 +31,8 @@ this changelog highlights the changes relevant for overview and operations.
   earliestFrom, eeg}`; a blocked change without `dryRun` is 409 (code 1062) with the reason; an invalid value, the
   current value or a missing `billingState` is 400 (1060, 1061); so is (1060, eegfaktura-dev#54 #9) a `billingState`
   with a list missing or `null`, or with an identifier the rule cannot read (another form than billing's
-  `Abr_(Y|YH|YQ|YM)-yyyy[-n]`, a period out of range, a year outside 2000–2100), and (2000) data after the JSON body;
+  `Abr_(Y|YH|YQ|YM)-yyyy[-n]`, a period out of range, a year outside 2000–2100; the message names them, at most five,
+  each cut to 40 characters), and (2000) data after the JSON body;
   before, such a state read as "nothing billed" and the change applied at once. The change runs in one transaction on the locked
   `base.eeg` row and is recorded with user, time, old and new value in the new table `base.settlement_interval_change`
   (migration `20261105120000_settlement_interval_change`, down drops the table).
