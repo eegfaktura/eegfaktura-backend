@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS base.EEG
     description          VARCHAR(100),
     periods              JSON             DEFAULT ('[]'),
     "rcNumber"           TEXT    NOT NULL,
-    area                 TEXT    NOT NULL, /* Ortsgebiet (LOCAL | REGIONAL) | BEG | GEA */
+    area                 TEXT    NOT NULL, /* Ortsgebiet (LOCAL | REGIONAL) | BEG | GEA | P2P | EVA */
     legal                TEXT    NOT NULL DEFAULT 'verein', /* Unternehmensform ("verein" | "genossenschaft" | "gesellschaft") */
     gridoperator_code    TEXT    NOT NULL,
     gridoperator_name    TEXT    NOT NULL,
@@ -425,7 +425,8 @@ SELECT p.id                                                    AS participant_id
        c.creditor_id                                           AS eec_bank_creditor_id,
        COALESCE(tp."joiningFee", 0::numeric)                   AS tariff_joining_fee,
        COALESCE(tp."joiningFeeUseVat", false)                  AS tariff_joining_fee_use_vat,
-       COALESCE(tp."joiningFeeVatInPercent", 0::numeric)       AS tariff_joining_fee_vat_in_percent
+       COALESCE(tp."joiningFeeVatInPercent", 0::numeric)       AS tariff_joining_fee_vat_in_percent,
+       c.area                                                  AS eeg_area
 FROM base.participant p
          LEFT JOIN base.eeg c ON c.tenant::text = p.tenant::text
          LEFT JOIN base.meteringpoint pm ON pm.participant_id = p.id
