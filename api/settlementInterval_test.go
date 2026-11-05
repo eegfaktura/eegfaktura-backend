@@ -25,17 +25,30 @@ func TestChangeSettlementInterval(t *testing.T) {
 	ctx := context.Background()
 	db, err := database.GetDB(ctx)
 	require.NoError(t, err)
-	for _, tenant := range []string{siTenant, siOtherTenant} {
-		_, err = execTestSQL(ctx, db, `INSERT INTO base.eeg
-			(tenant, name, description, "rcNumber", area, gridoperator_code, gridoperator_name, "communityId",
-			 street, "streetNumber", city, zip, email, "settlementInterval")
-			VALUES ($1, 'INTERVALL', 'Intervall-Test', $2, 'LOCAL', 'AT003000', 'Netz OÖ', 'AT00300000000TC000231000000000001',
-			 'Weg', '1', 'Linz', '4020', 'intervall@example.org', 'MONTHLY')
-			ON CONFLICT (tenant) DO UPDATE SET "settlementInterval" = 'MONTHLY'`, tenant, tenant)
+	exec := func(stmt string, args ...interface{}) {
+		_, err := execTestSQL(ctx, db, stmt, args...)
 		require.NoError(t, err)
 	}
-	_, err = execTestSQL(ctx, db, `DELETE FROM base.settlement_interval_change WHERE tenant = $1`, siTenant)
-	require.NoError(t, err)
+	removeFixture := func() {
+		for _, table := range []string{"base.settlement_interval_change", "base.eeg"} {
+			exec(`DELETE FROM `+table+` WHERE tenant IN ($1, $2)`, siTenant, siOtherTenant)
+		}
+	}
+	removeFixture()
+	t.Cleanup(removeFixture)
+	for tenant, communityId := range map[string]string{siTenant: "AT00300000000TC000231000000000001",
+		siOtherTenant: "AT00300000000TC000232000000000001"} {
+		exec(`INSERT INTO base.eeg
+			(tenant, name, description, "rcNumber", area, gridoperator_code, gridoperator_name, "communityId",
+			 street, "streetNumber", city, zip, email, "settlementInterval")
+			VALUES ($1, 'INTERVALL', 'Intervall-Test', $2, 'LOCAL', 'AT003000', 'Netz OÖ', $3,
+			 'Weg', '1', 'Linz', '4020', 'intervall@example.org', 'MONTHLY')`, tenant, tenant, communityId)
+	}
+	// every subtest starts from MONTHLY without a record, whatever ran before
+	reset := func() {
+		exec(`UPDATE base.eeg SET "settlementInterval" = 'MONTHLY' WHERE tenant IN ($1, $2)`, siTenant, siOtherTenant)
+		exec(`DELETE FROM base.settlement_interval_change WHERE tenant IN ($1, $2)`, siTenant, siOtherTenant)
+	}
 
 	orig := middleware.VerifyTokenClaims
 	t.Cleanup(func() { middleware.VerifyTokenClaims = orig })
@@ -83,10 +96,12 @@ func TestChangeSettlementInterval(t *testing.T) {
 	const billedToFeb = `"billingState":{"finalPeriods":["Abr_YM-2026-2"],"runningPeriods":[]}`
 
 	t.Run("access", func(t *testing.T) {
+		reset()
 		assert.Equal(t, http.StatusUnauthorized, post("user", `{"settlementInterval":"QUARTER","dryRun":true,`+billedToMar+`}`).Code)
 		assert.Equal(t, http.StatusForbidden, post("other", `{"settlementInterval":"QUARTER","dryRun":true,`+billedToMar+`}`).Code)
 	})
 	t.Run("400", func(t *testing.T) {
+		reset()
 		for body, code := range map[string]int{
 			`{"settlementInterval":"YEARLY","dryRun":true,` + billedToMar + `}`:  1060,
 			`{"settlementInterval":"","dryRun":true,` + billedToMar + `}`:        1060,
@@ -102,6 +117,7 @@ func TestChangeSettlementInterval(t *testing.T) {
 		assert.Equal(t, "MONTHLY", interval())
 	})
 	t.Run("dry run allowed", func(t *testing.T) {
+		reset()
 		w := post("admin", `{"settlementInterval":"QUARTER","dryRun":true,`+billedToMar+`}`)
 		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 		assert.Equal(t, map[string]interface{}{"allowed": true, "effectiveFrom": "2026-04-01", "lastFinalPeriod": "Abr_YM-2026-3",
@@ -109,6 +125,7 @@ func TestChangeSettlementInterval(t *testing.T) {
 		assert.Equal(t, "MONTHLY", interval())
 	})
 	t.Run("dry run blocked (R2, R3)", func(t *testing.T) {
+		reset()
 		w := post("admin", `{"settlementInterval":"QUARTER","dryRun":true,`+billedToFeb+`}`)
 		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 		assert.Equal(t, map[string]interface{}{"allowed": false, "effectiveFrom": nil, "lastFinalPeriod": "Abr_YM-2026-2",
@@ -123,6 +140,7 @@ func TestChangeSettlementInterval(t *testing.T) {
 		assert.Equal(t, "Für April 2026 läuft gerade eine Berechnung. Bitte nach deren Ende erneut versuchen.", m["message"])
 	})
 	t.Run("blocked change: 409 with the reason", func(t *testing.T) {
+		reset()
 		w := post("admin", `{"settlementInterval":"QUARTER","dryRun":false,`+billedToFeb+`}`)
 		require.Equal(t, http.StatusConflict, w.Code, w.Body.String())
 		e := errorOf(w)
@@ -131,12 +149,14 @@ func TestChangeSettlementInterval(t *testing.T) {
 		assert.Equal(t, "MONTHLY", interval())
 	})
 	t.Run("generic update drops settlementInterval", func(t *testing.T) {
+		reset()
 		w := call("admin", "/eeg", `{"settlementInterval":"ANNUAL","description":"Intervall-Test 2"}`)
 		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 		assert.Equal(t, "MONTHLY", decode(w)["settlementInterval"])
 		assert.Equal(t, "MONTHLY", interval())
 	})
 	t.Run("allowed change: stored, recorded, EEG returned", func(t *testing.T) {
+		reset()
 		w := post("admin", `{"settlementInterval":"QUARTER","dryRun":false,`+billedToMar+`}`)
 		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 		m := decode(w)
