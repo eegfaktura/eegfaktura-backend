@@ -34,6 +34,7 @@ type EegRepository interface {
 	FetchTenantsName(ctx context.Context, tenants []string, isSuperUser bool) ([]tenantsNameStruct, error)
 	InsertEeg(ctx context.Context, tenant string, eeg *model.Eeg) error
 	UpdateOnlineState(ctx context.Context, tenant string, onlineState bool) error
+	UpdateEcZoneLevel(ctx context.Context, ecId string, level int) error
 	ChangeSettlementInterval(ctx context.Context, tenant, newInterval, changedBy string, state model.BillingState,
 		dryRun bool) (model.SettlementIntervalDecision, error)
 }
@@ -136,6 +137,16 @@ func (db *sqlDatabase) FetchTenantsName(ctx context.Context, tenants []string, i
 
 func (db *sqlDatabase) InsertEeg(ctx context.Context, tenant string, eeg *model.Eeg) error {
 	return insertEeg(ctx, db.db, tenant, eeg)
+}
+
+// UpdateEcZoneLevel sets the Nahebereich of every tenant of the community id (several for a GEA) from the grid
+// operator's metering point list; an invalid level is refused (platform#229).
+func (db *sqlDatabase) UpdateEcZoneLevel(ctx context.Context, ecId string, level int) error {
+	if !model.ValidEcZoneLevel(level) {
+		return fmt.Errorf("invalid ECZoneLevel %d", level)
+	}
+	_, err := db.db.ExecContext(ctx, `UPDATE base.eeg SET ec_zone_level = $1 WHERE "communityId" = $2`, level, ecId)
+	return err
 }
 
 func (db *sqlDatabase) UpdateOnlineState(ctx context.Context, tenant string, onlineState bool) error {

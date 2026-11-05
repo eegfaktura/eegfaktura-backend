@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS base.EEG
     phone                TEXT,
     email                TEXT    NOT NULL,
     website              TEXT,
+    ec_zone_level        SMALLINT CHECK (ec_zone_level BETWEEN 1 AND 7), /* Nahebereich, empty = unknown */
 
     online               BOOLEAN NOT NULL DEFAULT false
 );
@@ -182,6 +183,8 @@ CREATE TABLE IF NOT EXISTS base.meteringpoint
     inactiveSince      DATE,
     active             INT       NOT NULL DEFAULT 1,
     flag               INT       NOT NULL DEFAULT 1,
+    tech_code          TEXT, /* TechCode of the grid operator's metering point list */
+    fuel_code          TEXT, /* FuelCode of the grid operator's metering point list */
     CONSTRAINT meteringpointPK PRIMARY KEY (metering_point_id, tenant, participant_id),
     CONSTRAINT FK_ParticipantMeteringpoint FOREIGN KEY (participant_id) REFERENCES base.participant (id) ON DELETE CASCADE
 --    UNIQUE (metering_point_id, active)

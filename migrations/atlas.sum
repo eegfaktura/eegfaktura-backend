@@ -1,4 +1,4 @@
-h1:DD4Ln2mcjHc12ZPG6SOgNAC1BkWLmTF5EnbEABwd8sQ=
+h1:rfDnFb2KQCxEldx7UvwbPbH7JXEhU6yaRvHIV572zMU=
 20250603103206_activeMeterView.up.sql h1:QqDAR7Nl5WLFKtq2iweipOO4Tex62hfdWWoyAeqEyeg=
 20250603150318_create_views.up.sql h1:2XjI3rEmMfiucybCBwxzWKEkFoCODxO0IhG83++K+bU=
 20250604162024_init_grid_operators.up.sql h1:5fUr6r6VkNxuNbKfknygkM542PTZSy+A/47jNsXqcuU=
@@ -17,3 +17,4 @@ h1:DD4Ln2mcjHc12ZPG6SOgNAC1BkWLmTF5EnbEABwd8sQ=
 20261105110100_metering_partition_factor_tenant_index.up.sql h1:wwM8JE7ajLYLRIL6XxSAd2n6plPp7RMm6TYeeonBSpc=
 20261105120000_settlement_interval_change.up.sql h1:L/enRAs7nWkKoMzZlf1BF5pVVnP5Wfos/2oe478kU5o=
 20261106090000_billing_masterdata_eeg_area.up.sql h1:MfpzrkqmVNGhJ1jzpLybbO0gMt9wltl57rvNflokHO8=
+20261106100000_ec_zone_level_tech_fuel_code.up.sql h1:uLgmC1wplPkjIFbxQ5XiAYv6lpuvwOCegyfRQVT4WcM=

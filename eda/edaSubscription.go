@@ -588,6 +588,7 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 				logrus.WithField("tenant", tenant).Error(err)
 			}
 		}
+		zpListCommunityData(ctx, db, eeg, &msg.Payload)
 
 		if eeg.Email.Valid {
 			now := time.Now()
@@ -620,6 +621,25 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 		return
 	}
 	_ = db.SaveHistory(historyTenant, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
+}
+
+// zpListCommunityData takes the community data of a metering point list (platform#229): the Nahebereich goes to every
+// tenant of the community id, kept when the list has none, an invalid value is dropped; ECType is not stored, a
+// mismatch with the community type is logged. TechCode/FuelCode go with the metering points (SyncMeteringPoints).
+func zpListCommunityData(ctx context.Context, db database.Database, eeg *model.Eeg, p *model.EbmsMessage) {
+	entry := logrus.WithContext(ctx).WithField("tenant", eeg.Id)
+	if p.EcZoneLevel != nil {
+		if !model.ValidEcZoneLevel(*p.EcZoneLevel) {
+			entry.Warnf("metering point list with an invalid ECZoneLevel %d, not stored", *p.EcZoneLevel)
+		} else if err := db.UpdateEcZoneLevel(ctx, p.EcId, *p.EcZoneLevel); err != nil {
+			entry.WithError(err).Error("can not store the ECZoneLevel")
+		}
+	}
+	if p.EcTypeEda != "" {
+		if want, ok := model.EdaEcType(eeg.Area); !ok || want != p.EcTypeEda {
+			entry.Warnf("metering point list with ECType %s, the community type %s means %s: check the type", p.EcTypeEda, eeg.Area, want)
+		}
+	}
 }
 
 // zpListEeg returns the community a metering point list belongs to. In a GEA the list covers every tenant of the
