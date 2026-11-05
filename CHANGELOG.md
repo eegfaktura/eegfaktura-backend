@@ -20,8 +20,23 @@ this changelog highlights the changes relevant for overview and operations.
   list word of five or more letters also inside it), and a list word right before a format verb (`password=%s`); other
   string literals are not scanned, numbers, booleans and errors are skipped by type (dev#45 Q1). An
   exception needs an entry, keyed by file and finding, with its reason in `neverLogAllowed`. `-short` skips the scan.
+- **EEG admins change the settlement interval** (konzept-abrechnungsintervall.md, platform#230; caller: eegfaktura-web):
+  `POST /eeg/settlementinterval` (EEG_ADMIN, tenant from the checked header) with `settlementInterval`, `dryRun` and
+  `billingState` (billing's `settlementState`, passed on by web). The rule: without a final period the change applies
+  at once unless a run is running; otherwise from the month after the last final period, if a period of the new interval starts there, and no
+  run is running for a period ending then or later. Answer 200 `{allowed, effectiveFrom, lastFinalPeriod, message,
+  earliestFrom, eeg}`; a blocked change without `dryRun` is 409 (code 1062) with the reason; an invalid value, the
+  current value or a missing `billingState` is 400 (1060, 1061). The change runs in one transaction on the locked
+  `base.eeg` row and is recorded with user, time, old and new value in the new table `base.settlement_interval_change`
+  (migration `20261105120000_settlement_interval_change`, down drops the table).
 
 ### Changed
+- **`settlementInterval` is dropped silently by the generic EEG updates** (konzept-abrechnungsintervall.md): `POST /eeg`
+  and gRPC `AdminEegService.updateValue` (class EEG, caller: eegfaktura-admin-backend for the admin tool) no longer
+  change it, like the other protected fields; it changes only through `POST /eeg/settlementinterval`. Registration
+  still sets the initial value. GraphQL `updateEegModel` drops it the same way (see Fixed).
+  **Deploy order:** release eegfaktura-admin#79 (removes the edit field of the admin tool) together with or before this
+  backend; otherwise the old admin tool reports success over gRPC class EEG while nothing changes.
 - **`request.id` and `tenant.id` on the lines of an HTTP request** (dev#45 L12), no longer on the access line only;
   `trace.id` and `span.id` come along. In a request `tenant.id` is only what passed the tenant check, a tenant field
   of the line does not count. Not on: the notification DAO (`SaveNotification`, `SaveNotificationFromMap`,
@@ -64,6 +79,11 @@ this changelog highlights the changes relevant for overview and operations.
   `DROP INDEX CONCURRENTLY IF EXISTS base.metering_partition_factor_tenant_idx`, then by hand
   `UPDATE base.schema_migrations SET version = 20261105110000, dirty = false` (the migrate CLI is not in the image),
   then restart. Never only reset the version: `IF NOT EXISTS` would keep the invalid index.
+- **GraphQL `updateEegModel` stores again** (tracking backend 261105-mm2): it returned the changed EEG but never stored
+  anything, also not `sepaActiv`. It now goes through the guarded update of `POST /eeg` (`updateEegPartial`, protected
+  fields dropped, `settlementInterval` included) for the tenant of the checked request, and returns the EEG read back.
+  `updateEegModel` requires the EEG admin group like `POST /eeg`; the other GraphQL operations stay in log-only mode.
+  No known caller (web's `updateEegModel` calls `POST /eeg`).
 - **A failed COMMIT is reported as an error** (BE-CQ-7, BE-CQ-8): registering and moving a metering point, adding a
   tariff and activating metering points from an EDA message reported success when the COMMIT failed. Activating
   metering points also went on to COMMIT after a failed step instead of rolling back. One helper (`inTx`) now runs the

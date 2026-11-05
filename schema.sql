@@ -268,6 +268,19 @@ CREATE TABLE IF NOT EXISTS base.mail_template_file
 );
 CREATE INDEX IF NOT EXISTS idx_mail_template_file_tenant_key ON base.mail_template_file (tenant, mail_key);
 
+CREATE TABLE IF NOT EXISTS base.settlement_interval_change
+(
+    id                BIGSERIAL PRIMARY KEY,
+    tenant            TEXT        NOT NULL,
+    old_value         TEXT        NOT NULL,
+    new_value         TEXT        NOT NULL,
+    effective_from    DATE, /* NULL = applies at once (no final settlement yet) */
+    last_final_period TEXT, /* last final clearing period of the billing state passed on by web */
+    changed_by        TEXT        NOT NULL,
+    changed_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_settlement_interval_change_tenant ON base.settlement_interval_change (tenant);
+
 CREATE OR REPLACE VIEW base.activeMeteringPartition AS
 SELECT partp.metering_point_id,
        partp.version,

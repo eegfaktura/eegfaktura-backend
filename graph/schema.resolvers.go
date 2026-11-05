@@ -32,19 +32,26 @@ func (r *mutationResolver) UpdateEegModel(ctx context.Context, tenant string, ee
 		return nil, errors.New("no tenant in context")
 	}
 
-	eeg, err := db.GetEegById(ctx, tenant)
-	if err != nil {
+	// Like POST /eeg (Protect) only for the EEG admin group (261105-mm2, admin check); nothing is written otherwise.
+	if !middleware.IsGQLAdmin(ctx) {
+		return nil, errors.New("updateEegModel requires the EEG admin group")
+	}
+
+	// Stored through the guarded path of POST /eeg (261105-mm2: before, nothing was stored). settlementInterval is
+	// dropped there: it changes only through POST /eeg/settlementinterval with its rule (konzept-abrechnungsintervall.md).
+	fields := map[string]interface{}{}
+	if eegModel != nil {
+		if eegModel.SettlementInterval != nil {
+			fields["settlementInterval"] = *eegModel.SettlementInterval
+		}
+		if eegModel.SepaActiv != nil {
+			fields["sepa"] = *eegModel.SepaActiv
+		}
+	}
+	if err = db.UpdateEegPartial(ctx, tenant, fields); err != nil {
 		return nil, err
 	}
-
-	if eegModel.SettlementInterval != nil {
-		eeg.SettlementInterval = *eegModel.SettlementInterval
-	}
-	if eegModel.SepaActiv != nil {
-		eeg.AccountInfo.Sepa = *eegModel.SepaActiv
-	}
-
-	return eeg, nil
+	return db.GetEegById(ctx, tenant)
 }
 
 // MasterDataUpload is the resolver for the masterDataUpload field.

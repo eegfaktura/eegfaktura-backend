@@ -31,6 +31,7 @@ func InitEegRouter(r *mux.Router, db database.Database) *mux.Router {
 
 	s.HandleFunc("", middleware.ConditionProtect(h.getEEG(), h.getEEG())).Methods("GET")
 	s.HandleFunc("", middleware.Protect(h.updateEEG())).Methods("POST")
+	s.HandleFunc("/settlementinterval", middleware.Protect(h.changeSettlementInterval())).Methods("POST")
 	s.HandleFunc("/tariff", middleware.Protect(h.getTariff())).Methods("GET")
 	s.HandleFunc("/tariff", middleware.Protect(h.addTariff())).Methods("POST")
 	s.HandleFunc("/tariff/{id}", middleware.Protect(h.fetchTariffHistory())).Methods("GET")
