@@ -53,11 +53,13 @@ func (h *EegHandler) changeSettlementInterval() middleware.JWTHandlerFunc {
 		case errors.Is(err, database.ErrSettlementIntervalUnchanged):
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1061, "Das Abrechnungsintervall ist bereits eingestellt"))
 			return
+		case errors.Is(err, database.ErrSettlementIntervalNoEeg):
+			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1001, "Die Gemeinschaft ist nicht angelegt"))
+			return
 		case err != nil:
 			// no database text to the client
 			log.WithContext(r.Context()).WithError(err).Error("settlement interval change failed")
-			respondWith(r.Context(), w, http.StatusInternalServerError, tenant,
-				model.ErrGetEeg(errors.New("Das Abrechnungsintervall konnte nicht geändert werden")))
+			respondWithHttpError(w, http.StatusInternalServerError, BadProcessError(1063, "Das Abrechnungsintervall konnte nicht geändert werden"))
 			return
 		case !decision.Allowed && !req.DryRun:
 			respondWithHttpError(w, http.StatusConflict, BadProcessError(1062, decision.Message))
@@ -67,7 +69,8 @@ func (h *EegHandler) changeSettlementInterval() middleware.JWTHandlerFunc {
 		resp := settlementIntervalResponse{SettlementIntervalDecision: decision}
 		if !req.DryRun {
 			if resp.Eeg, err = h.db.GetEegById(r.Context(), tenant); err != nil {
-				respondWith(r.Context(), w, http.StatusInternalServerError, tenant, model.ErrGetEeg(err))
+				log.WithContext(r.Context()).WithError(err).Error("settlement interval changed, reading the EEG failed")
+				respondWithHttpError(w, http.StatusInternalServerError, BadProcessError(1063, "Das Abrechnungsintervall wurde geändert, die Gemeinschaft konnte nicht neu geladen werden"))
 				return
 			}
 		}

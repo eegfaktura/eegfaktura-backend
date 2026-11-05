@@ -12,6 +12,9 @@ import (
 // ErrSettlementIntervalUnchanged: the new interval is the current one; nothing was written.
 var ErrSettlementIntervalUnchanged = errors.New("settlement interval unchanged")
 
+// ErrSettlementIntervalNoEeg: the tenant has no base.eeg row; nothing was written.
+var ErrSettlementIntervalNoEeg = errors.New("eeg not found")
+
 // ChangeSettlementInterval applies the change rule (model.DecideSettlementInterval) to the tenant's current interval
 // in one transaction: the base.eeg row is locked (FOR UPDATE), so two changes at the same time decide one after the
 // other. With dryRun or when the rule blocks nothing is written; otherwise the interval is set and the change is
@@ -24,7 +27,7 @@ func (db *sqlDatabase) ChangeSettlementInterval(ctx context.Context, tenant, new
 		if err := tx.GetContext(ctx, &current, `SELECT "settlementInterval" FROM base.eeg WHERE tenant = $1 FOR UPDATE`,
 			tenant); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				return model.ErrGetEeg(err)
+				return ErrSettlementIntervalNoEeg
 			}
 			return err
 		}

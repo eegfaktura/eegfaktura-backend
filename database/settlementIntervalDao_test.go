@@ -97,7 +97,7 @@ func TestChangeSettlementInterval(t *testing.T) {
 	})
 	t.Run("unknown tenant", func(t *testing.T) {
 		_, err := db.ChangeSettlementInterval(ctx, "TE000239", model.SettlementQuarter, "admin", billedToMar, true)
-		assert.Error(t, err)
+		assert.ErrorIs(t, err, ErrSettlementIntervalNoEeg)
 	})
 }
 
