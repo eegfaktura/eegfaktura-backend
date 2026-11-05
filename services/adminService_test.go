@@ -92,12 +92,13 @@ func TestRegisterReply(t *testing.T) {
 	}
 }
 
-// Pre-existing (review of backend#147): an allocation or settlement interval this backend does not know arrived as its
-// number ("2", "4") and was stored. Refused with reply status 400 and no gRPC error, before the database.
+// Pre-existing (review of backend#147): an allocation, settlement interval or legal form this backend does not know arrived as its
+// number ("2", "4", "3") and was stored. Refused with reply status 400 and no gRPC error, before the database.
 func TestRegisterEegRefusesUnknownEnums(t *testing.T) {
 	for name, req := range map[string]*protobuf.RegisterEegRequest{
 		"allocation": {Tenant: "TE000047", RcNumber: "TE000047", Area: protobuf.RegisterEegRequest_LOCAL, Allocation: 2},
 		"settlement": {Tenant: "TE000047", RcNumber: "TE000047", Area: protobuf.RegisterEegRequest_LOCAL, SettelmentInterval: 4},
+		"legal":      {Tenant: "TE000047", RcNumber: "TE000047", Area: protobuf.RegisterEegRequest_LOCAL, Legal: 3},
 	} {
 		r, err := (&RegisterService{}).Register(context.Background(), req)
 		assert.NoError(t, err, name)

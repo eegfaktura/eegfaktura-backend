@@ -71,10 +71,13 @@ func (r *RegisterService) Register(ctx context.Context, eeg *protobuf.RegisterEe
 		ContactPerson: null.StringFrom(eeg.EegOwner),
 	}
 
-	// An allocation or settlement interval this backend does not know arrived as its number and was stored: refused.
+	// An allocation, settlement interval or legal form this backend does not know arrived as its number and was
+	// stored: refused.
 	if !knownEnum(protobuf.RegisterEegRequest_GRID_ALLOCATION_name, int32(eeg.Allocation)) ||
-		!knownEnum(protobuf.RegisterEegRequest_EEG_SETTELMENT_name, int32(eeg.SettelmentInterval)) {
-		log.Warnf("Register EEG refused: unknown allocation %d or settlement interval %d", eeg.Allocation, eeg.SettelmentInterval)
+		!knownEnum(protobuf.RegisterEegRequest_EEG_SETTELMENT_name, int32(eeg.SettelmentInterval)) ||
+		!knownEnum(protobuf.RegisterEegRequest_EEG_LEGAL_name, int32(eeg.Legal)) {
+		log.Warnf("Register EEG refused: unknown allocation %d, settlement interval %d or legal form %d",
+			eeg.Allocation, eeg.SettelmentInterval, eeg.Legal)
 		return &protobuf.RegisteredEegReply{Status: statusInvalidEeg}, nil
 	}
 
