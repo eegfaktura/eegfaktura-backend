@@ -68,7 +68,8 @@ this changelog highlights the changes relevant for overview and operations.
 - **GraphQL `updateEegModel` stores again** (tracking backend 261105-mm2): it returned the changed EEG but never stored
   anything, also not `sepaActiv`. It now goes through the guarded update of `POST /eeg` (`updateEegPartial`, protected
   fields dropped, `settlementInterval` included) for the tenant of the checked request, and returns the EEG read back.
-  No known caller (web's `updateEegModel` calls `POST /eeg`); the GraphQL admin check stays in log-only mode.
+  `updateEegModel` requires the EEG admin group like `POST /eeg`; the other GraphQL operations stay in log-only mode.
+  No known caller (web's `updateEegModel` calls `POST /eeg`).
 - **A failed COMMIT is reported as an error** (BE-CQ-7, BE-CQ-8): registering and moving a metering point, adding a
   tariff and activating metering points from an EDA message reported success when the COMMIT failed. Activating
   metering points also went on to COMMIT after a failed step instead of rolling back. One helper (`inTx`) now runs the

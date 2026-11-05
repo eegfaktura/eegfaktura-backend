@@ -17,13 +17,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var admin = middleware.AccessGroups{"/EEG_ADMIN"}
+
 // updateEegModel calls the resolver behind GQLProtect, so the tenant comes from the checked header.
-func updateEegModel(t *testing.T, arg string, in *gmodel.EegModel) (*model.Eeg, error) {
+func updateEegModel(t *testing.T, groups middleware.AccessGroups, arg string, in *gmodel.EegModel) (*model.Eeg, error) {
 	t.Helper()
 	orig := middleware.VerifyTokenClaims
 	t.Cleanup(func() { middleware.VerifyTokenClaims = orig })
 	middleware.VerifyTokenClaims = func(context.Context, string) (*middleware.PlatformClaims, error) {
-		return &middleware.PlatformClaims{Tenants: []string{"te000233"}, AccessGroups: middleware.AccessGroups{"/EEG_ADMIN"}}, nil
+		return &middleware.PlatformClaims{Tenants: []string{"te000233"}, AccessGroups: groups}, nil
 	}
 	var eeg *model.Eeg
 	var err error
@@ -51,7 +53,7 @@ func TestUpdateEegModelStores(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"tenant", "settlementInterval", "sepa"}).AddRow("TE000233", "MONTHLY", true))
 
 	interval, sepa := "ANNUAL", true
-	eeg, err := updateEegModel(t, "OTHER", &gmodel.EegModel{SettlementInterval: &interval, SepaActiv: &sepa})
+	eeg, err := updateEegModel(t, admin, "OTHER", &gmodel.EegModel{SettlementInterval: &interval, SepaActiv: &sepa})
 	require.NoError(t, err)
 	assert.Equal(t, "TE000233", eeg.Id)
 	assert.True(t, eeg.Sepa)
@@ -69,9 +71,26 @@ func TestUpdateEegModelOnlySettlementInterval(t *testing.T) {
 	for _, in := range []*gmodel.EegModel{nil, {SettlementInterval: new(string)}} {
 		mock.ExpectQuery(`SELECT .* FROM "base"."eeg"`).WithArgs("TE000233").
 			WillReturnRows(sqlmock.NewRows([]string{"tenant", "settlementInterval"}).AddRow("TE000233", "MONTHLY"))
-		eeg, err := updateEegModel(t, "TE000233", in)
+		eeg, err := updateEegModel(t, admin, "TE000233", in)
 		require.NoError(t, err)
 		assert.Equal(t, "MONTHLY", eeg.SettlementInterval)
 	}
 	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// A member token (no EEG admin group) is refused like on POST /eeg, nothing is written; /query stays log-only for the
+// other operations.
+func TestUpdateEegModelRequiresAdmin(t *testing.T) {
+	db, mock, err := dbmock.New()
+	require.NoError(t, err)
+	database.SetDB(db)
+	t.Cleanup(func() { database.SetDB(nil) })
+
+	sepa := true
+	for _, groups := range []middleware.AccessGroups{{"/EEG_USER"}, nil} {
+		eeg, err := updateEegModel(t, groups, "TE000233", &gmodel.EegModel{SepaActiv: &sepa})
+		assert.Error(t, err)
+		assert.Nil(t, eeg)
+	}
+	assert.NoError(t, mock.ExpectationsWereMet(), "no statement expected")
 }

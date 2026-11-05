@@ -32,6 +32,11 @@ func (r *mutationResolver) UpdateEegModel(ctx context.Context, tenant string, ee
 		return nil, errors.New("no tenant in context")
 	}
 
+	// Like POST /eeg (Protect) only for the EEG admin group (261105-mm2, admin check); nothing is written otherwise.
+	if !middleware.IsGQLAdmin(ctx) {
+		return nil, errors.New("updateEegModel requires the EEG admin group")
+	}
+
 	// Stored through the guarded path of POST /eeg (261105-mm2: before, nothing was stored). settlementInterval is
 	// dropped there: it changes only through POST /eeg/settlementinterval with its rule (konzept-abrechnungsintervall.md).
 	fields := map[string]interface{}{}
