@@ -29,8 +29,31 @@ this changelog highlights the changes relevant for overview and operations.
   current value or a missing `billingState` is 400 (1060, 1061). The change runs in one transaction on the locked
   `base.eeg` row and is recorded with user, time, old and new value in the new table `base.settlement_interval_change`
   (migration `20261105120000_settlement_interval_change`, down drops the table).
+- **Community types P2P and EVA** (Peer-to-Peer, Eigenversorgung; konzept-buergerenergie-eigenversorgung-p2p.md,
+  vfeeg-development/eegfaktura-platform#229 part 2): `area` knows `LOCAL`, `REGIONAL`, `BEG`, `GEA`, `P2P`, `EVA`, kept in
+  one list (`model.AreaTypes`, `model.ValidateArea`). P2P and EVA run like an EEG: grid operator from the community
+  settings (not the BEG path), the RC number stays unique (only GEA is excepted).
+  **Contract:**
+  - gRPC `register.proto` `GRID_AREA`: `P2P = 4`, `EVA = 5` appended (caller: eegfaktura-admin-backend, keep its copy
+    the same). A value the backend does not know (its name is the number) is refused with status 400 and
+    `InvalidArgument`; nothing is written. Before, it was stored as the number.
+  - MQTT `register-eeg` (`registration.schema.json`): the `area` enum gets `P2P`, `EVA`; the handler checks the same list.
+  - MQTT `eda/request` `ecType` (ANFORDERUNG_CPF, to eegfaktura-eda-xp): field unchanged, the new values pass through.
+  - View `base.billing_masterdata` (caller: eegfaktura-billing): new last column `eeg_area` (text, = `base.eeg.area`);
+    all other columns keep name, type and order. Migration `20261106090000_billing_masterdata_eeg_area`
+    (`CREATE OR REPLACE VIEW`; down restores the view as after `20261028130000_joining_fee`). No data change.
+  - `GET /eeg` `area` (web, admin portal): the new values, no new field.
+  **Deploy order:** eegfaktura-eda-xp → backend → eegfaktura-billing, eegfaktura-admin-backend → eegfaktura-admin,
+  eegfaktura-web → operator SQL (PP100784, PP102502 from LOCAL and PP102524 from BEG to P2P). Backend before
+  admin-backend: otherwise a P2P registration arrives as an unknown number; backend before billing: the new billing
+  reads `eeg_area`.
 
 ### Changed
+- **`area` and `allocationMode` are dropped silently by the generic EEG updates** (platform#229, E5): `POST /eeg`, gRPC
+  `AdminEegService.updateValue` (class EEG) and GraphQL `updateEegModel` (maps only `sepaActiv` anyway) no longer
+  change them, like `settlementInterval`. They are set at registration, otherwise only by the operator; a P2P/EVA
+  community can no longer switch itself to an EEG type and around the billing block. No current caller changes them
+  (web shows `allocationMode` read-only and has no field for `area`; the admin tool edits only the settlement).
 - **`settlementInterval` is dropped silently by the generic EEG updates** (konzept-abrechnungsintervall.md): `POST /eeg`
   and gRPC `AdminEegService.updateValue` (class EEG, caller: eegfaktura-admin-backend for the admin tool) no longer
   change it, like the other protected fields; it changes only through `POST /eeg/settlementinterval`. Registration
