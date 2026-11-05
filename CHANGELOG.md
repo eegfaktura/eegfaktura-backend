@@ -24,7 +24,10 @@ this changelog highlights the changes relevant for overview and operations.
   `POST /eeg/settlementinterval` (EEG_ADMIN, tenant from the checked header) with `settlementInterval`, `dryRun` and
   `billingState` (billing's `settlementState`, passed on by web). The rule: without a final period the change applies
   at once unless a run is running; otherwise from the month after the last final period, if a period of the new interval starts there, and no
-  run is running for a period ending then or later. Answer 200 `{allowed, effectiveFrom, lastFinalPeriod, message,
+  run is running for a period ending then or later. A month without a final period between the first month of the
+  first final period and the last final month blocks the change, before the other checks; the message names it, e.g.
+  „Februar 2026 ist noch nicht endgültig abgerechnet.“ (rule 6, decided 05.11.2026, eegfaktura-dev#54 #2; months
+  before the first final period do not count). Answer 200 `{allowed, effectiveFrom, lastFinalPeriod, message,
   earliestFrom, eeg}`; a blocked change without `dryRun` is 409 (code 1062) with the reason; an invalid value, the
   current value or a missing `billingState` is 400 (1060, 1061). The change runs in one transaction on the locked
   `base.eeg` row and is recorded with user, time, old and new value in the new table `base.settlement_interval_change`

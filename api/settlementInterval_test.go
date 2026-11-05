@@ -124,13 +124,19 @@ func TestChangeSettlementInterval(t *testing.T) {
 			"message": "Das neue Intervall gilt ab 1. April 2026.", "earliestFrom": nil, "eeg": nil}, decode(w))
 		assert.Equal(t, "MONTHLY", interval())
 	})
-	t.Run("dry run blocked (R2, R3)", func(t *testing.T) {
+	t.Run("dry run blocked (R2, rule 6, R3)", func(t *testing.T) {
 		reset()
 		w := post("admin", `{"settlementInterval":"QUARTER","dryRun":true,`+billedToFeb+`}`)
 		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 		assert.Equal(t, map[string]interface{}{"allowed": false, "effectiveFrom": nil, "lastFinalPeriod": "Abr_YM-2026-2",
 			"message":      "Zuerst muss noch der Zeitraum März 2026 im bisherigen Intervall abgerechnet werden. Ein Wechsel ist dann ab 1. April 2026 möglich.",
 			"earliestFrom": "2026-04-01", "eeg": nil}, decode(w))
+
+		// rule 6 (eegfaktura-dev#54 #2): February between two final months blocks
+		w = post("admin", `{"settlementInterval":"QUARTER","dryRun":true,"billingState":{"finalPeriods":["Abr_YM-2026-1","Abr_YM-2026-3"],"runningPeriods":[]}}`)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		assert.Equal(t, map[string]interface{}{"allowed": false, "effectiveFrom": nil, "lastFinalPeriod": "Abr_YM-2026-3",
+			"message": "Februar 2026 ist noch nicht endgültig abgerechnet.", "earliestFrom": nil, "eeg": nil}, decode(w))
 
 		w = post("admin", `{"settlementInterval":"QUARTER","dryRun":true,"billingState":{"finalPeriods":["Abr_YM-2026-3"],"runningPeriods":["Abr_YM-2026-4"]}}`)
 		require.Equal(t, http.StatusOK, w.Code, w.Body.String())

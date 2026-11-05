@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 // The settlement intervals of base.eeg."settlementInterval".
@@ -108,13 +109,25 @@ func (p clearingPeriod) name() string {
 // backend") to a valid new interval. Without a final period the change applies at once (R5). Otherwise L is the last
 // month of the final periods and S the month after it: allowed from S when S starts a period of the new interval
 // (R1, R2), else blocked with the next start after L; also blocked while a run for a period ending in S or later is
-// running (R3), without a final period while any run is running. Identifiers of another form are ignored, as in
-// billing.
+// running (R3), without a final period while any run is running. Before R2, a month between the first month of the
+// first final period and L that no final period covers blocks (rule 6, eegfaktura-dev#54 #2). Identifiers of another
+// form are ignored, as in billing.
 func DecideSettlementInterval(newInterval string, state BillingState) SettlementIntervalDecision {
-	last, lastId := -1, ""
+	first, last, lastId := -1, -1, ""
+	covered := map[int]bool{}
 	for _, id := range state.FinalPeriods {
-		if p, ok := parseClearingPeriod(id); ok && p.last > last {
+		p, ok := parseClearingPeriod(id)
+		if !ok {
+			continue
+		}
+		if p.last > last {
 			last, lastId = p.last, id
+		}
+		if first < 0 || p.first < first {
+			first = p.first
+		}
+		for m := p.first; m <= p.last; m++ {
+			covered[m] = true
 		}
 	}
 	if last < 0 {
@@ -130,6 +143,10 @@ func DecideSettlementInterval(newInterval string, state BillingState) Settlement
 	start := last + 1
 	length := periodMonths[newInterval]
 	d := SettlementIntervalDecision{LastFinalPeriod: &lastId}
+	if gaps := uncovered(covered, first, last); len(gaps) > 0 {
+		d.Message = gapMessage(gaps)
+		return d
+	}
 	if start%length != 0 {
 		earliest := (start/length + 1) * length
 		d.EarliestFrom = isoDate(earliest)
@@ -145,6 +162,50 @@ func DecideSettlementInterval(newInterval string, state BillingState) Settlement
 	d.EffectiveFrom = isoDate(start)
 	d.Message = fmt.Sprintf("Das neue Intervall gilt ab %s.", longDate(start))
 	return d
+}
+
+// uncovered returns the runs of months first..last that covered lacks, as [first, last] pairs.
+func uncovered(covered map[int]bool, first, last int) [][2]int {
+	var gaps [][2]int
+	for m := first; m <= last; m++ {
+		switch {
+		case covered[m]:
+		case len(gaps) > 0 && gaps[len(gaps)-1][1] == m-1:
+			gaps[len(gaps)-1][1] = m
+		default:
+			gaps = append(gaps, [2]int{m, m})
+		}
+	}
+	return gaps
+}
+
+// gapMessage names the months not billed: "Februar 2026 ist …", "Februar und Mai 2026 sind …", "November 2025 bis
+// Jänner 2026 sind …". The year is left out when the next gap ends in the same year.
+func gapMessage(gaps [][2]int) string {
+	parts := make([]string, len(gaps))
+	for i, g := range gaps {
+		year := ""
+		if i == len(gaps)-1 || gaps[i+1][1]/12 != g[1]/12 {
+			year = fmt.Sprintf(" %d", g[1]/12)
+		}
+		switch {
+		case g[0] == g[1]:
+			parts[i] = monthNames[g[0]%12] + year
+		case g[0]/12 == g[1]/12:
+			parts[i] = fmt.Sprintf("%s bis %s%s", monthNames[g[0]%12], monthNames[g[1]%12], year)
+		default:
+			parts[i] = fmt.Sprintf("%s bis %s%s", monthName(g[0]), monthNames[g[1]%12], year)
+		}
+	}
+	months := parts[len(parts)-1]
+	if len(parts) > 1 {
+		months = strings.Join(parts[:len(parts)-1], ", ") + " und " + months
+	}
+	verb := "sind"
+	if len(gaps) == 1 && gaps[0][0] == gaps[0][1] {
+		verb = "ist"
+	}
+	return fmt.Sprintf("%s %s noch nicht endgültig abgerechnet.", months, verb)
 }
 
 // runningFrom returns the first running period that ends in month start or later.
