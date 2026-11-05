@@ -17,6 +17,9 @@ import (
 // admin-backend stops the registration on it (261015-ca1).
 const statusEegExists = 409
 
+// statusInvalidArea in RegisteredEegReply.status: the community type is unknown, nothing was written.
+const statusInvalidArea = 400
+
 type RegisterService struct {
 	protobuf.UnimplementedRegisterEegServiceServer
 }
@@ -65,6 +68,12 @@ func (r *RegisterService) Register(ctx context.Context, eeg *protobuf.RegisterEe
 		//Periods:       nil,
 		Online:        eeg.Online,
 		ContactPerson: null.StringFrom(eeg.EegOwner),
+	}
+
+	// An enum value this backend does not know arrives as its number ("6"): refused, nothing written (platform#229).
+	if err := model.ValidateArea(newEeg.Area); err != nil {
+		log.Warnf("Register EEG refused: %v", err)
+		return &protobuf.RegisteredEegReply{Status: statusInvalidArea}, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	log.Printf("Register EEG: %s", newEeg.Id)

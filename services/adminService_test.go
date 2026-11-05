@@ -2,11 +2,17 @@ package services
 
 import (
 	"at.ourproject/vfeeg-backend/database"
+	"at.ourproject/vfeeg-backend/model"
 	protobuf "at.ourproject/vfeeg-backend/proto"
 	"context"
 	"errors"
 	"fmt"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 //func init() {
@@ -54,6 +60,24 @@ func TestRegisterEeg(t *testing.T) {
 	}
 
 	service.Register(context.Background(), eeg)
+}
+
+// The contract with admin-backend (register.proto GRID_AREA, platform#229): every enum value is a known community
+// type under its own name (P2P = 4, EVA = 5); a value this backend does not know is refused before any write.
+func TestRegisterEegArea(t *testing.T) {
+	assert.Len(t, protobuf.RegisterEegRequest_GRID_AREA_name, len(model.AreaTypes))
+	for _, area := range model.AreaTypes {
+		v, ok := protobuf.RegisterEegRequest_GRID_AREA_value[string(area)]
+		require.True(t, ok, area)
+		assert.NoError(t, model.ValidateArea(model.AreaType(protobuf.RegisterEegRequest_GRID_AREA(v).String())), area)
+	}
+	assert.Equal(t, int32(4), protobuf.RegisterEegRequest_GRID_AREA_value["P2P"])
+	assert.Equal(t, int32(5), protobuf.RegisterEegRequest_GRID_AREA_value["EVA"])
+
+	r, err := (&RegisterService{}).Register(context.Background(),
+		&protobuf.RegisterEegRequest{Tenant: "TE000045", RcNumber: "TE000045", Area: 6})
+	assert.Equal(t, uint32(400), r.GetStatus())
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
 }
 
 // The contract with admin-backend (RegisterService.scala): 409 without a gRPC error stops the registration (261015-ca1).

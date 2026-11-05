@@ -1,6 +1,9 @@
 package model
 
 import (
+	"fmt"
+	"slices"
+
 	"github.com/jjeffery/civil"
 	"gopkg.in/guregu/null.v4"
 )
@@ -10,7 +13,7 @@ type Eeg struct {
 	Name               string             `json:"name,omitempty" goqu:"omitempty"`
 	Description        string             `json:"description" goqu:"omitempty"`
 	BusinessNr         null.String        `json:"businessNr,omitempty" db:"businessNr" goqu:"omitempty"`
-	Area               AreaType           `json:"area" goqu:"omitempty"` /* LOCAL | REGIONAL | BEG | GEA */
+	Area               AreaType           `json:"area" goqu:"omitempty"` /* LOCAL | REGIONAL | BEG | GEA | P2P | EVA */
 	Legal              string             `json:"legal,omitempty" goqu:"omitempty"`
 	GridOperator       string             `json:"gridOperator,omitempty" db:"gridoperator_code" goqu:"omitempty"`
 	OperatorName       string             `json:"operatorName,omitempty" db:"gridoperator_name" goqu:"omitempty"`
@@ -45,7 +48,21 @@ const (
 	REGIONAL AreaType = "REGIONAL"
 	BEG      AreaType = "BEG"
 	GEA      AreaType = "GEA"
+	P2P      AreaType = "P2P" // Peer-to-Peer, ECType PP (eda-xp); no billing (platform#229)
+	EVA      AreaType = "EVA" // Eigenversorgung, ECType SC (eda-xp); no billing (platform#229)
 )
+
+// AreaTypes are the community types a registration may set (platform#229: one place in the code).
+var AreaTypes = []AreaType{LOCAL, REGIONAL, BEG, GEA, P2P, EVA}
+
+// ValidateArea refuses a community type outside AreaTypes, e.g. a gRPC enum value this backend does not know yet
+// (its String() is the number, "6").
+func ValidateArea(area AreaType) error {
+	if !slices.Contains(AreaTypes, area) {
+		return fmt.Errorf("unknown community type %q", string(area))
+	}
+	return nil
+}
 
 type AddressType string
 
