@@ -92,6 +92,9 @@ this changelog highlights the changes relevant for overview and operations.
   (`atlas-hash`/`atlas-diff` spelled right). The test seed data is `database/testdata/seed.sql`.
 
 ### Fixed
+- **gRPC registration refuses an unknown allocation or settlement interval** (found in the review of backend#147): a
+  `GRID_ALLOCATION` or `EEG_SETTELMENT` value the backend does not know was stored as its number. Now reply status
+  400 without a gRPC error, nothing written (admin-backend treats every status but 201 as failed).
 - **Metering point master data of larger communities within the deadline again** (support ticket 6611200): the
   view `base.activeMeteringPartition` numbered the partition factors of all communities before the community filter
   of the query applied; as the inner side of a nested loop (chosen since 1.13) it did so once per metering point, and
