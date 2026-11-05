@@ -130,6 +130,32 @@ make atlas-hash
 make atlas-diff
 ```
 
+#### Failed migration (dirty)
+
+The backend migrates before it serves (one replica, `Recreate`): while a migration runs or waits, the API is down.
+Every lock wait of a migration ends after 60 s (`lock_timeout`); the backend then exits with
+`event.action=db.migrate.failed` and restarts.
+
+golang-migrate marks a version dirty in `base.schema_migrations` before it runs the file and clears the mark after
+it. `dirty = true` therefore means: the file was started and did not finish (it failed, waited too long for a lock,
+or the pod was stopped). The backend does not start on a dirty version. The migrate CLI is not in the image; recover
+by hand with `psql`:
+
+1. `SELECT version, dirty FROM base.schema_migrations;` and read the file of that version in `migrations/`.
+2. Find out how much of the file is in place (cases below). Never only reset the version without this step.
+3. File fully in place: `UPDATE base.schema_migrations SET version = <that version>, dirty = false;`.
+   Not in place: undo what is left of it, then `UPDATE base.schema_migrations SET version = <the version before it>,
+   dirty = false;` — the next start runs the file again.
+4. Restart the backend and check the line `event.action=db.migrate.done`.
+
+Cases:
+
+| Dirty version | Check | Recovery |
+|---|---|---|
+| `20261105110000` (view `activeMeteringPartition`) | the statement either ran or not | `version = 20261028130000`: the file runs again (`CREATE OR REPLACE VIEW`) |
+| `20261105110100` (index, `CONCURRENTLY`) | `SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass('base.metering_partition_factor_tenant_idx');` | no row or `false`: `DROP INDEX CONCURRENTLY IF EXISTS base.metering_partition_factor_tenant_idx;`, then `version = 20261105110000` (with `IF NOT EXISTS` an invalid index would stay) |
+| `20261105120000` (table `settlement_interval_change`) | `SELECT to_regclass('base.settlement_interval_change');` | `version = 20261105110100`: the file runs again (`IF NOT EXISTS`) |
+
 ## Docker
 
 Build the Docker image:

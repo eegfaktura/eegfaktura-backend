@@ -181,5 +181,5 @@ func (db *sqlDatabase) RegisterEeg(ctx context.Context, eeg *model.Eeg) error {
 
 // MigrateDB applies the embedded migrations (source driver "embed", registered by server.go).
 func (db *sqlDatabase) MigrateDB() error {
-	return migrateDB("embed://", connInfo())
+	return migrateDB("embed://", connInfo(), migrationLockTimeout)
 }

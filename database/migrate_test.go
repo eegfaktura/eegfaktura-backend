@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"at.ourproject/vfeeg-backend/database/dbtest"
 	"at.ourproject/vfeeg-backend/logging"
@@ -87,7 +88,7 @@ func TestMigrateDBLogsTheResult(t *testing.T) {
 	latest := versions[len(versions)-1]
 
 	buf := migrateLog(t)
-	require.NoError(t, migrateDB(migrationsURL(t), dsn))
+	require.NoError(t, migrateDB(migrationsURL(t), dsn, time.Minute))
 	done := lineOf(t, buf, "db.migrate.done")
 	assert.Equal(t, "info", done["log.level"])
 	assert.Equal(t, "database migrations applied", done["message"])
@@ -96,10 +97,34 @@ func TestMigrateDBLogsTheResult(t *testing.T) {
 	assert.Equal(t, float64(len(versions)), done["migration.applied"])
 
 	buf.Reset()
-	require.NoError(t, migrateDB(migrationsURL(t), dsn))
+	require.NoError(t, migrateDB(migrationsURL(t), dsn, time.Minute))
 	done = lineOf(t, buf, "db.migrate.done")
 	assert.Equal(t, "database schema unchanged (no_change)", done["message"])
 	assert.Equal(t, latest, done["migration.version_before"])
 	assert.Equal(t, latest, done["migration.version_after"])
 	assert.Equal(t, float64(0), done["migration.applied"])
+}
+
+// eegfaktura-dev#54 #1: a migration waiting for a lock fails after the lock timeout instead of keeping the start
+// waiting, and says why.
+func TestMigrateDBBoundsTheLockWait(t *testing.T) {
+	dsn, dbx := emptyDB(t, "migrate_lock_test")
+	require.NoError(t, migrateDB(migrationsURL(t), dsn, time.Minute))
+
+	// a long transaction holding a lock the migration needs
+	tx, err := dbx.Begin()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = tx.Rollback() })
+	_, err = tx.Exec(`LOCK TABLE base.schema_migrations IN ACCESS EXCLUSIVE MODE`)
+	require.NoError(t, err)
+
+	buf := migrateLog(t)
+	start := time.Now()
+	err = migrateDB(migrationsURL(t), dsn, 300*time.Millisecond)
+	require.Error(t, err)
+	assert.Less(t, time.Since(start), 30*time.Second)
+	failed := lineOf(t, buf, "db.migrate.failed")
+	assert.Equal(t, "error", failed["log.level"])
+	assert.Contains(t, failed["message"], "lock_timeout")
+	assert.Contains(t, failed["error.message"], "lock timeout")
 }

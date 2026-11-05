@@ -3,6 +3,9 @@ package database
 import (
 	"database/sql"
 	"errors"
+	"fmt"
+	"strings"
+	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
@@ -10,16 +13,23 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// migrateDB applies the migrations of sourceURL to the database of dsn, on a connection of its own that is closed
-// afterwards. It logs the result once: db.migrate.done with the version before and after and the number of
-// migrations applied (0: no change), or the error.
-func migrateDB(sourceURL, dsn string) error {
+// migrationLockTimeout bounds every lock wait of the migrations (eegfaktura-dev#54 #1): the backend runs one replica
+// (Recreate) and migrates before it serves, so a migration waiting behind a long transaction or a pg_dump keeps the
+// API down. With the bound it fails, the pod exits and restarts; a failed migration file leaves the version dirty
+// (README, "Failed migration (dirty)").
+const migrationLockTimeout = 60 * time.Second
+
+// migrateDB applies the migrations of sourceURL to the database of dsn, on a connection of its own (lock_timeout
+// lockTimeout, also for the migration lock) that is closed afterwards. It logs the result once: db.migrate.done with
+// the version before and after and the number of migrations applied (0: no change), or the error.
+func migrateDB(sourceURL, dsn string, lockTimeout time.Duration) error {
 	log.Info("Start migration ...")
 	src, err := source.Open(sourceURL)
 	if err != nil {
 		return migrateFailed(err)
 	}
-	conn, err := sql.Open("postgres", dsn)
+	// lib/pq passes a parameter it does not know to the server as a run-time setting of the session
+	conn, err := sql.Open("postgres", fmt.Sprintf("%s lock_timeout=%d", dsn, lockTimeout.Milliseconds()))
 	if err != nil {
 		_ = src.Close()
 		return migrateFailed(err)
@@ -87,7 +97,13 @@ func appliedMigrations(src source.Driver, before, after uint) int {
 }
 
 func migrateFailed(err error) error {
+	message := "database migration failed"
+	// SQLSTATE 55P03; golang-migrate keeps only the text of the driver's error
+	if strings.Contains(err.Error(), "lock timeout") {
+		message = "database migration failed: a lock wait exceeded lock_timeout, check pg_stat_activity for long " +
+			"transactions or a running pg_dump"
+	}
 	log.WithField("event.action", "db.migrate.failed").WithField("event.outcome", "failure").WithError(err).
-		Error("database migration failed")
+		Error(message)
 	return err
 }

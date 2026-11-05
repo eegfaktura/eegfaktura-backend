@@ -68,6 +68,12 @@ this changelog highlights the changes relevant for overview and operations.
   `database schema unchanged (no_change)`), so a run that skipped migrations is visible. A failed migration is one
   ERROR line `db.migrate.failed` (before: `log.Fatal` with the bare error, then nothing). The migrations run on a
   connection of their own, closed afterwards (before: one connection of the pool stayed held).
+- **Migrations wait at most 60 s for a lock** (eegfaktura-dev#54 #1): the migration connection sets `lock_timeout`
+  (60 s per lock wait, also for golang-migrate's migration lock). Before, a migration behind a long transaction or a
+  `pg_dump` kept the start waiting with no log after `Start migration ...`, and the API down (one replica,
+  `Recreate`). Now the start fails with `event.action=db.migrate.failed` and a message naming the lock wait and
+  `pg_stat_activity`; the pod restarts. A migration file that was started stays dirty: recovery in the README,
+  section "Failed migration (dirty)".
 
 ### Fixed
 - **Metering point master data of larger communities within the deadline again** (support ticket 6611200): the
@@ -78,8 +84,13 @@ this changelog highlights the changes relevant for overview and operations.
   reaches the table: same columns, same rows (a member belongs to one community). Migration `20261105110100` adds
   the index `metering_partition_factor_tenant_idx` (`CONCURRENTLY`). The members list (`completeParticipants`) now
   also filters the view by tenant. No data change; no contract change.
-  **Rollout:** outside the backup window — check `pg_stat_activity` for long transactions or a running `pg_dump`
-  first: `CREATE OR REPLACE VIEW` and `CREATE INDEX CONCURRENTLY` wait behind them (old pods keep serving). After the
+  **Rollout:** plan a short outage window outside the backup window: the backend runs one replica (`Recreate`) and
+  migrates before it serves, so the API is down (502) while the migrations run or wait (eegfaktura-dev#54 #1).
+  Right before, check for long transactions or a running `pg_dump`, which `CREATE OR REPLACE VIEW` and
+  `CREATE INDEX CONCURRENTLY` wait behind (expected: no row older than a few seconds):
+  `SELECT pid, state, now() - xact_start AS age, left(query, 60) FROM pg_stat_activity WHERE datname =
+  current_database() AND xact_start IS NOT NULL AND pid <> pg_backend_pid() ORDER BY xact_start;`. A lock wait
+  longer than 60 s ends the migration (see Changed: lock timeout); the backend exits and restarts. After the
   rollout `pg_index.indisvalid` of the new index must be true. If the index build failed or the index is invalid:
   `DROP INDEX CONCURRENTLY IF EXISTS base.metering_partition_factor_tenant_idx`, then by hand
   `UPDATE base.schema_migrations SET version = 20261105110000, dirty = false` (the migrate CLI is not in the image),
