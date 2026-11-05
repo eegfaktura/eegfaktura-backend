@@ -123,3 +123,49 @@ func TestUpdateEcZoneLevel(t *testing.T) {
 	require.NoError(t, db.UpdateEegPartial(ctx, "GC000057", map[string]interface{}{"ecZoneLevel": 1, "description": "Z"}))
 	assert.Equal(t, null.IntFrom(6), zone("GC000057"))
 }
+
+// UpdateEegAreaFromList switches LOCAL and REGIONAL at every tenant of the community id and reports the old value;
+// GEA tenants of the same community id and other communities stay; only LOCAL or REGIONAL as target.
+func TestUpdateEegAreaFromList(t *testing.T) {
+	db, err := GetDB(context.Background())
+	require.NoError(t, err)
+	ctx := context.Background()
+	const ecId = "AT00999900000RC000090000000000001"
+	tenants := map[string][2]string{"TE000090": {ecId, "LOCAL"}, "TE000091": {ecId, "GEA"},
+		"TE000092": {"AT00999900000RC000092000000000001", "LOCAL"}}
+	cleanup := func() {
+		_, err := testDB.DbInstance.Exec(`DELETE FROM base.eeg WHERE tenant IN ('TE000090', 'TE000091', 'TE000092')`)
+		require.NoError(t, err)
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+	for tenant, v := range tenants {
+		eeg := registerEegFixture(tenant, tenant, "Typ")
+		eeg.CommunityId, eeg.Area = v[0], model.AreaType(v[1])
+		require.NoError(t, db.InsertEeg(ctx, tenant, eeg))
+	}
+	area := func(tenant string) model.AreaType {
+		e, err := db.GetEegById(ctx, tenant)
+		require.NoError(t, err)
+		return e.Area
+	}
+
+	changes, err := db.UpdateEegAreaFromList(ctx, ecId, model.REGIONAL)
+	require.NoError(t, err)
+	assert.Equal(t, []AreaChange{{Tenant: "TE000090", Old: model.LOCAL}}, changes)
+	assert.Equal(t, model.REGIONAL, area("TE000090"))
+	assert.Equal(t, model.GEA, area("TE000091"))
+	assert.Equal(t, model.LOCAL, area("TE000092"), "other community id")
+
+	changes, err = db.UpdateEegAreaFromList(ctx, ecId, model.REGIONAL)
+	require.NoError(t, err)
+	assert.Empty(t, changes, "nothing to change")
+
+	for _, target := range []model.AreaType{model.GEA, model.BEG, model.P2P, model.EVA, ""} {
+		_, err := db.UpdateEegAreaFromList(ctx, ecId, target)
+		assert.Error(t, err, target)
+	}
+	_, err = db.UpdateEegAreaFromList(ctx, "", model.LOCAL)
+	assert.Error(t, err)
+	assert.Equal(t, model.REGIONAL, area("TE000090"))
+}

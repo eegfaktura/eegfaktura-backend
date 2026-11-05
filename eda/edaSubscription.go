@@ -638,8 +638,8 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 }
 
 // zpListCommunityData takes the community data of a metering point list (platform#229): the Nahebereich goes to every
-// tenant of the community id, kept when the list has none, an invalid value is dropped; ECType is not stored, a
-// mismatch with the community type is logged. TechCode/FuelCode go with the metering points (SyncMeteringPoints).
+// tenant of the community id, kept when the list has none, an invalid value is dropped; ECType RC_L/RC_R switches
+// LOCAL and REGIONAL, any other mismatch with the community type is logged. TechCode/FuelCode go with the metering points (SyncMeteringPoints).
 func zpListCommunityData(ctx context.Context, db database.Database, eeg *model.Eeg, p *model.EbmsMessage) {
 	entry := logrus.WithContext(ctx).WithField("tenant", eeg.Id)
 	if p.EcZoneLevel != nil {
@@ -648,10 +648,24 @@ func zpListCommunityData(ctx context.Context, db database.Database, eeg *model.E
 			entry.WithError(err).Warn("ECZoneLevel of the metering point list not stored")
 		}
 	}
-	if p.EcTypeEda != "" {
-		if want, ok := model.EdaEcType(eeg.Area); !ok || want != p.EcTypeEda {
-			entry.Warnf("metering point list with ECType %s, the community type %s means %s: check the type", p.EcTypeEda, eeg.Area, want)
+	if p.EcTypeEda == "" {
+		return
+	}
+	// RC_L/RC_R from the grid operator decide between LOCAL and REGIONAL (decided 05.11.2026); every other mismatch is
+	// only a warning
+	if listArea, ok := eegAreaFromList[p.EcTypeEda]; ok && (eeg.Area == model.LOCAL || eeg.Area == model.REGIONAL) {
+		changes, err := db.UpdateEegAreaFromList(ctx, p.EcId, listArea)
+		if err != nil {
+			entry.WithError(err).Error("can not take the community type from the metering point list")
 		}
+		for _, c := range changes {
+			logrus.WithContext(ctx).WithFields(logrus.Fields{"tenant": c.Tenant, "event.action": "eeg.area.updated_from_list",
+				"eeg.area.old": string(c.Old), "eeg.area.new": string(listArea)}).Info("community type taken from the metering point list")
+		}
+		return
+	}
+	if want, ok := model.EdaEcType(eeg.Area); !ok || want != p.EcTypeEda {
+		entry.Warnf("metering point list with ECType %s, the community type %s means %s: check the type", p.EcTypeEda, eeg.Area, want)
 	}
 }
 
@@ -669,6 +683,9 @@ func dropInvalidCodes(ctx context.Context, tenant string, p *model.EbmsMessage) 
 		}
 	}
 }
+
+// eegAreaFromList: the ECTypes of a metering point list that set the community type (LOCAL/REGIONAL only).
+var eegAreaFromList = map[string]model.AreaType{"RC_L": model.LOCAL, "RC_R": model.REGIONAL}
 
 // zpListEeg returns the community a metering point list belongs to. In a GEA the list covers every tenant of the
 // community id, so its mail goes to the tenant that asked for it — never to all, each would get the other tenants'

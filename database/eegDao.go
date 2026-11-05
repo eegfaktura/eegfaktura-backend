@@ -36,6 +36,7 @@ type EegRepository interface {
 	UpdateOnlineState(ctx context.Context, tenant string, onlineState bool) error
 	UpdateEcZoneLevel(ctx context.Context, ecId string, level int) error
 	EcIdBelongsToRc(ctx context.Context, ecId, rcNumber string) (bool, error)
+	UpdateEegAreaFromList(ctx context.Context, ecId string, area model.AreaType) ([]AreaChange, error)
 	ChangeSettlementInterval(ctx context.Context, tenant, newInterval, changedBy string, state model.BillingState,
 		dryRun bool) (model.SettlementIntervalDecision, error)
 }
@@ -147,6 +148,27 @@ func (db *sqlDatabase) EcIdBelongsToRc(ctx context.Context, ecId, rcNumber strin
 	err := db.db.GetContext(ctx, &ok, `SELECT EXISTS (SELECT 1 FROM base.eeg WHERE "communityId" = $1
 		AND upper("rcNumber") = upper($2))`, ecId, rcNumber)
 	return ok, err
+}
+
+// AreaChange is a community type changed by the grid operator's metering point list.
+type AreaChange struct {
+	Tenant string         `db:"tenant"`
+	Old    model.AreaType `db:"old"`
+}
+
+// UpdateEegAreaFromList sets LOCAL or REGIONAL, as the grid operator's metering point list says (ECType RC_L/RC_R),
+// at every tenant of the community id that has the other of the two; no other type is changed (platform#229,
+// decided 05.11.2026). A system path: the generic updates still drop area.
+func (db *sqlDatabase) UpdateEegAreaFromList(ctx context.Context, ecId string, area model.AreaType) ([]AreaChange, error) {
+	if ecId == "" || (area != model.LOCAL && area != model.REGIONAL) {
+		return nil, fmt.Errorf("no area change from the list to %q", string(area))
+	}
+	changes := []AreaChange{}
+	err := db.db.SelectContext(ctx, &changes, `UPDATE base.eeg e SET area = $1
+		FROM (SELECT tenant, area AS old FROM base.eeg WHERE "communityId" = $2 AND area IN ('LOCAL', 'REGIONAL')
+		      AND area <> $1 FOR UPDATE) o
+		WHERE e.tenant = o.tenant RETURNING e.tenant, o.old`, string(area), ecId)
+	return changes, err
 }
 
 // UpdateEcZoneLevel sets the Nahebereich of every tenant of the community id (several for a GEA) from the grid
