@@ -62,7 +62,9 @@ this changelog highlights the changes relevant for overview and operations.
   its community id (an absent value keeps the stored one, an invalid one is dropped with a warning) and the codes at
   the metering points of these tenants (an empty code never overwrites); an ECType that does not fit the community
   type (GEA GC, LOCAL RC_L, REGIONAL RC_R, BEG CC, P2P PP, EVA SC) is logged as a warning, not stored. All three
-  values are read only: the generic updates drop them. Hardening of inbound metering point lists: security
+  values are read only: the generic updates drop them. ECType `RC_L`/`RC_R` in the list sets `LOCAL`/`REGIONAL` at
+  the tenants of the community id that have the other of the two (log event `eeg.area.updated_from_list` with old and
+  new value); every other type stays as it is with the warning above; the generic updates still drop `area`. Hardening of inbound metering point lists: security
   relevant — details not published.
   **Contract:**
   - MQTT from eegfaktura-eda-xp (EC_PODLIST): optional `ecZoneLevel` (number), `ecTypeEda` (text, EDA code as
