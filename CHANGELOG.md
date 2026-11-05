@@ -105,6 +105,8 @@ this changelog highlights the changes relevant for overview and operations.
   the check and was written as given.
 - **A handler panic after a flush aborts the connection** (dev#45 Q7) instead of a `WriteHeader(500)` on a response that
   had already begun.
+- **Two api tests pass when run again** (tracking backend 261105-mm6): `TestAddTariff_joiningFee` removes the tariff it
+  creates, `TestRequestMeteringPointValues` the energy request rows it stores; `go test -count=2` failed on both.
 
 ## [1.15.1] – 2026-11-02
 
