@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"at.ourproject/vfeeg-backend/model"
+	"github.com/doug-martin/goqu/v9"
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -39,7 +41,7 @@ func ampTx(t *testing.T) *sqlx.Tx {
 		require.NoError(t, err)
 	}
 
-	down, err := os.ReadFile("../migrations/20261105140000_activemeteringpartition_tenant.down.sql")
+	down, err := os.ReadFile("../migrations/20261105110000_activemeteringpartition_tenant.down.sql")
 	require.NoError(t, err)
 	const create = "CREATE OR REPLACE VIEW base.activeMeteringPartition AS"
 	require.Equal(t, 1, strings.Count(string(down), create))
@@ -101,42 +103,29 @@ func TestActiveMeteringPartition_tenantFilterBelowWindow(t *testing.T) {
 	tx := ampTx(t)
 	for view, pushed := range map[string]bool{"base.activeMeteringPartition": true, "amp_old": false} {
 		plan := explainJSON(t, tx, `EXPLAIN (FORMAT JSON) SELECT "partFact" FROM `+view+` WHERE tenant = '`+ampTenantA+`'`)
-		windows := planNodes(plan, "WindowAgg")
-		require.Len(t, windows, 1, view)
-		assert.Equal(t, pushed, tenantCondition(windows[0]["Plans"].([]interface{})[0].(map[string]interface{})),
-			"%s: tenant condition below the WindowAgg", view)
+		assert.Equal(t, pushed, tenantBelowWindow(t, plan, ampTenantA), "%s: tenant condition below the WindowAgg", view)
 	}
 }
 
-// The plan of the ticket: the view on the inner side of a nested loop, scanned once per metering point. The
-// LATERAL reference forces that shape (no materialisation, no memoize). Row counts only, no timing.
-func TestActiveMeteringPartition_innerSideOfNestedLoopReadsOneCommunity(t *testing.T) {
+// completeParticipants (members list) reads the view with the tenant filter: same metering points as without it.
+func TestCompleteParticipantsQuery_tenantFilterOnView(t *testing.T) {
 	tx := ampTx(t)
-	_, err := tx.Exec(`SET LOCAL enable_material = off; SET LOCAL enable_memoize = off`)
+	stmt, _, err := completeParticipantsQuery(ampTenantA).ToSQL()
 	require.NoError(t, err)
-	var all, community, meters float64
-	require.NoError(t, tx.Get(&all, `SELECT count(*) FROM base.metering_partition_factor`))
-	require.NoError(t, tx.Get(&community, `SELECT count(*) FROM base.metering_partition_factor WHERE tenant = $1`, ampTenantA))
-	require.NoError(t, tx.Get(&meters, `SELECT count(*) FROM base.meteringpoint WHERE tenant = $1`, ampTenantA))
-	require.Less(t, community, all)
+	former, _, err := buildGetParticipantQuery().
+		Where(goqu.C("tenant").Table("meteringpoint").Schema("base").Eq(ampTenantA)).ToSQL()
+	require.NoError(t, err)
 
-	for view, perLoop := range map[string]float64{"base.activeMeteringPartition": community, "amp_old": all} {
-		plan := explainJSON(t, tx, `EXPLAIN (ANALYZE, FORMAT JSON) SELECT m.metering_point_id, v."partFact"
-			FROM base.meteringpoint m,
-			     LATERAL (SELECT "partFact", metering_point_id AS mpfmid, participant_id AS mpfpid FROM `+view+`
-			              WHERE tenant = '`+ampTenantA+`' AND m.flag IS NOT NULL OFFSET 0) v
-			WHERE v.mpfmid = m.metering_point_id AND v.mpfpid = m.participant_id AND m.tenant = '`+ampTenantA+`'`)
-		require.Equal(t, "Nested Loop", plan["Node Type"], view)
-		assert.EqualValues(t, 3, plan["Actual Rows"], view)
-		windows := planNodes(plan, "WindowAgg")
-		require.Len(t, windows, 1, view)
-		assert.Equal(t, meters, windows[0]["Actual Loops"], "%s: one scan of the view per metering point", view)
-		input := windows[0]["Plans"].([]interface{})[0].(map[string]interface{})
-		assert.Equal(t, perLoop, input["Actual Rows"], "%s: factor rows numbered per scan of the view", view)
-	}
+	var got, want []model.MeteringPoint
+	require.NoError(t, tx.Select(&got, stmt))
+	require.NoError(t, tx.Select(&want, former))
+	assert.Len(t, got, 3)
+	assert.ElementsMatch(t, want, got)
+	assert.True(t, tenantBelowWindow(t, explainJSON(t, tx, "EXPLAIN (FORMAT JSON) "+stmt), ampTenantA))
+	assert.False(t, tenantBelowWindow(t, explainJSON(t, tx, "EXPLAIN (FORMAT JSON) "+former), ampTenantA))
 }
 
-// Migrations 20261105140000 (view) and 20261105140100 (index, CONCURRENTLY): up, down and up again.
+// Migrations 20261105110000 (view) and 20261105110100 (index, CONCURRENTLY): up, down and up again.
 func TestActiveMeteringPartitionMigrationUpDown(t *testing.T) {
 	dbx, m := migrationDB(t, "activemeteringpartition_migration_test")
 	state := func() (partitionedByTenant, index bool) {
@@ -146,7 +135,7 @@ func TestActiveMeteringPartitionMigrationUpDown(t *testing.T) {
 		require.NoError(t, dbx.Get(&index, `SELECT to_regclass('base.metering_partition_factor_tenant_idx') IS NOT NULL`))
 		return strings.Contains(def, "PARTITION BY metering_partition_factor.tenant,"), index
 	}
-	const indexMigration = 20261105140100
+	const indexMigration = 20261105110100
 	require.NoError(t, m.Migrate(indexMigration))
 	byTenant, index := state()
 	assert.True(t, byTenant && index, "up")
@@ -167,10 +156,30 @@ func explainJSON(t *testing.T, tx *sqlx.Tx, q string) map[string]interface{} {
 	return out[0]["Plan"].(map[string]interface{})
 }
 
-// planNodes are the nodes of the given type in the plan tree.
+// tenantBelowWindow: the plan has one WindowAgg, and below it the factor table is filtered or searched on the
+// tenant (a scan of metering_partition_factor, or its tenant index).
+func tenantBelowWindow(t *testing.T, plan map[string]interface{}, tenant string) bool {
+	t.Helper()
+	windows := planNodes(plan, "WindowAgg")
+	require.Len(t, windows, 1)
+	cond := "(tenant = '" + tenant + "'::text)"
+	for _, n := range planNodes(windows[0], "") {
+		if n["Relation Name"] != "metering_partition_factor" && n["Index Name"] != "metering_partition_factor_tenant_idx" {
+			continue
+		}
+		for _, k := range []string{"Filter", "Index Cond", "Recheck Cond"} {
+			if c, _ := n[k].(string); strings.Contains(c, cond) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// planNodes are the nodes of the given type in the plan tree ("": all nodes).
 func planNodes(n map[string]interface{}, nodeType string) []map[string]interface{} {
 	var found []map[string]interface{}
-	if n["Node Type"] == nodeType {
+	if nodeType == "" || n["Node Type"] == nodeType {
 		found = append(found, n)
 	}
 	children, _ := n["Plans"].([]interface{})
@@ -178,20 +187,4 @@ func planNodes(n map[string]interface{}, nodeType string) []map[string]interface
 		found = append(found, planNodes(c.(map[string]interface{}), nodeType)...)
 	}
 	return found
-}
-
-// tenantCondition: a node of the subtree filters or searches on tenant.
-func tenantCondition(n map[string]interface{}) bool {
-	for _, k := range []string{"Filter", "Index Cond", "Recheck Cond"} {
-		if c, ok := n[k].(string); ok && strings.Contains(c, "tenant") {
-			return true
-		}
-	}
-	children, _ := n["Plans"].([]interface{})
-	for _, c := range children {
-		if tenantCondition(c.(map[string]interface{})) {
-			return true
-		}
-	}
-	return false
 }
