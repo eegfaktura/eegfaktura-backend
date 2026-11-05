@@ -32,8 +32,10 @@ this changelog highlights the changes relevant for overview and operations.
 - **Community types P2P and EVA** (Peer-to-Peer, Eigenversorgung; konzept-buergerenergie-eigenversorgung-p2p.md,
   vfeeg-development/eegfaktura-platform#229 part 2): `area` knows `LOCAL`, `REGIONAL`, `BEG`, `GEA`, `P2P`, `EVA`, kept in
   one list (`model.AreaTypes()`, `model.ValidateArea`, checked in `insertEeg` for both registrations). P2P and EVA
-  run like an EEG: grid operator from the community settings (not the BEG path), the RC number stays unique (only
-  GEA is excepted).
+  run centrally over ebUtilities like the BEG and may span several grid operators (konzept section I, 05.11.2026):
+  one rule `model.HasMultipleGridOperators` (BEG, P2P, EVA) replaces the BEG checks — messages go to the grid
+  operator of the metering point, the metering point list is requested from the chosen grid operator. The RC number
+  stays unique (only GEA is excepted).
   **Contract:**
   - gRPC `register.proto` `GRID_AREA`: `P2P = 4`, `EVA = 5` appended (caller: eegfaktura-admin-backend, keep its copy
     the same). A value the backend does not know (its name is the number) is refused with reply status 400 and no
@@ -50,6 +52,22 @@ this changelog highlights the changes relevant for overview and operations.
   admin-backend: otherwise a P2P registration arrives as an unknown number; backend before billing: the new billing
   reads `eeg_area`. **Rollback:** roll back eegfaktura-billing#103 before migrating the backend down (the new billing
   reads `eeg_area`); before that, the operator SQL is reverted.
+- **Nahebereich and TechCode/FuelCode from the metering point list** (konzept section I, platform#229): new columns
+  `base.eeg.ec_zone_level` (1–7, CHECK, empty = unknown) and `base.meteringpoint.tech_code`, `fuel_code` (text).
+  Migration `20261106100000_ec_zone_level_tech_fuel_code` fills `ec_zone_level` once from `area` (GEA 1, LOCAL 3,
+  REGIONAL 4, BEG 7; P2P/EVA stay empty until the first list); down drops the three columns.
+  `base.billing_masterdata` is unchanged. A metering point list (SENDEN_ECP) sets the Nahebereich at every tenant of
+  its community id (an absent value keeps the stored one, an invalid one is dropped with a warning) and the codes at
+  the metering points of these tenants (an empty code never overwrites); an ECType that does not fit the community
+  type (GEA GC, LOCAL RC_L, REGIONAL RC_R, BEG CC, P2P PP, EVA SC) is logged as a warning, not stored. All three
+  values are read only: the generic updates drop them.
+  **Contract:**
+  - MQTT from eegfaktura-eda-xp (EC_PODLIST): optional `ecZoneLevel` (number), `ecTypeEda` (text, EDA code as
+    received) and per `meterList` entry `techCode`, `fuelCode` (text); an old backend ignores them, an old eda-xp
+    does not send them. eda-xp's copy `src/test/resources/contract/backend/mqtt.go.txt` follows `model/mqtt.go`.
+  - `GET /eeg`: new field `ecZoneLevel` (number or null); metering points: `techCode`, `fuelCode` (text or
+    null). Callers: eegfaktura-web.
+  **Deploy order:** eegfaktura-eda-xp → backend (migration on start) → eegfaktura-web.
 
 ### Changed
 - **`area` and `allocationMode` are dropped silently by the generic EEG updates** (platform#229, E5): `POST /eeg`, gRPC
