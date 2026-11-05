@@ -35,6 +35,11 @@ this changelog highlights the changes relevant for overview and operations.
   before, such a state read as "nothing billed" and the change applied at once. The change runs in one transaction on the locked
   `base.eeg` row and is recorded with user, time, old and new value in the new table `base.settlement_interval_change`
   (migration `20261105120000_settlement_interval_change`, down drops the table).
+- **Log events of the interval change** (eegfaktura-dev#54 #5): `event.action=eeg.settlement_interval.changed` (INFO)
+  with `settlementInterval.old`, `settlementInterval.new` and `settlementInterval.effectiveFrom` (empty: at once);
+  `eeg.settlement_interval.refused` with `code` and the reason in `event.reason` (INFO for a change the rule blocks,
+  409; WARN for invalid input, 400); `eeg.settlement_interval.failed` (ERROR, 500). `tenant.id` from the checked
+  request, no user name. A dry run writes no event.
 
 ### Changed
 - **`settlementInterval` is dropped silently by the generic EEG updates** (konzept-abrechnungsintervall.md): `POST /eeg`

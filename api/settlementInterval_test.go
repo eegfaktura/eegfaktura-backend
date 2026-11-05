@@ -1,8 +1,10 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -23,6 +25,13 @@ const (
 	siTenant      = "TE000231"
 	siOtherTenant = "TE000232"
 )
+
+func captureLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	return logtest.Capture(t, func(w io.Writer) {
+		logging.Setup(w, logging.Config{Level: slog.LevelInfo, JSON: true, Version: "test"})
+	})
+}
 
 // POST /eeg/settlementinterval (konzept-abrechnungsintervall.md): rule, record and the contract with web.
 func TestChangeSettlementInterval(t *testing.T) {
@@ -67,7 +76,8 @@ func TestChangeSettlementInterval(t *testing.T) {
 		}
 		return c, nil
 	}
-	router := InitEegRouter(mux.NewRouter(), db)
+	// AccessLog as in server.go: it puts the checked tenant on the lines of the request
+	router := logging.AccessLog(InitEegRouter(mux.NewRouter(), db))
 	call := func(token, path, body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
 		req.Header.Set("Authorization", middleware.BEARER_SCHEMA+token)
@@ -132,9 +142,7 @@ func TestChangeSettlementInterval(t *testing.T) {
 	})
 	t.Run("unreadable request: a warning, no Go names in the answer", func(t *testing.T) {
 		reset()
-		buf := logtest.Capture(t, func(w io.Writer) {
-			logging.Setup(w, logging.Config{Level: slog.LevelInfo, JSON: true, Version: "test"})
-		})
+		buf := captureLog(t)
 		for _, body := range []string{`{"settlementInterval":"QUARTER","dryRun":"yes",` + billedToMar + `}`,
 			`{"settlementInterval":"QUARTER","dryRun":true,` + billedToMar + `}x`} {
 			w := post("admin", body)
@@ -145,12 +153,50 @@ func TestChangeSettlementInterval(t *testing.T) {
 		var warnings int
 		for _, l := range logtest.Lines(t, buf) {
 			assert.NotEqual(t, "error", l["log.level"], l)
-			if l["message"] == "settlement interval request unreadable" {
+			if l["event.action"] == "eeg.settlement_interval.refused" {
 				assert.Equal(t, "warn", l["log.level"])
+				assert.Equal(t, float64(2000), l["code"])
+				assert.NotEmpty(t, l["error.message"], "the decoder's text stays in the log")
 				warnings++
 			}
 		}
 		assert.Equal(t, 2, warnings, buf.String())
+	})
+	// eegfaktura-dev#54 #5: a change and a refusal are logged with an event, old and new value, without the user name
+	t.Run("events", func(t *testing.T) {
+		reset()
+		buf := captureLog(t)
+		require.Equal(t, http.StatusConflict, post("admin", `{"settlementInterval":"QUARTER","dryRun":false,`+billedToFeb+`}`).Code)
+		require.Equal(t, http.StatusBadRequest, post("admin", `{"settlementInterval":"MONTHLY","dryRun":false,`+billedToMar+`}`).Code)
+		require.Equal(t, http.StatusOK, post("admin", `{"settlementInterval":"QUARTER","dryRun":true,`+billedToMar+`}`).Code)
+		require.Equal(t, http.StatusOK, post("admin", `{"settlementInterval":"QUARTER","dryRun":false,`+billedToMar+`}`).Code)
+
+		var events []map[string]any
+		for _, l := range logtest.Lines(t, buf) {
+			assert.NotContains(t, fmt.Sprint(l), "admin-admin", "no user name")
+			if a, _ := l["event.action"].(string); strings.HasPrefix(a, "eeg.settlement_interval.") {
+				delete(l, "@timestamp")
+				delete(l, "request.id")
+				for k := range l {
+					if strings.HasPrefix(k, "log.origin") || strings.HasPrefix(k, "service.") {
+						delete(l, k)
+					}
+				}
+				events = append(events, l)
+			}
+		}
+		require.Len(t, events, 3, buf.String())
+		assert.Equal(t, map[string]any{"event.action": "eeg.settlement_interval.refused", "event.outcome": "failure",
+			"log.level": "info", "message": "settlement interval change refused", "tenant.id": siTenant, "code": float64(1062),
+			"event.reason":           "Zuerst muss noch der Zeitraum März 2026 im bisherigen Intervall abgerechnet werden. Ein Wechsel ist dann ab 1. April 2026 möglich.",
+			"settlementInterval.old": "MONTHLY", "settlementInterval.new": "QUARTER"}, events[0])
+		assert.Equal(t, map[string]any{"event.action": "eeg.settlement_interval.refused", "event.outcome": "failure",
+			"log.level": "warn", "message": "settlement interval change refused", "tenant.id": siTenant, "code": float64(1061),
+			"event.reason":           "Das Abrechnungsintervall ist bereits eingestellt",
+			"settlementInterval.old": "MONTHLY", "settlementInterval.new": "MONTHLY"}, events[1])
+		assert.Equal(t, map[string]any{"event.action": "eeg.settlement_interval.changed", "event.outcome": "success",
+			"log.level": "info", "message": "settlement interval changed", "tenant.id": siTenant,
+			"settlementInterval.old": "MONTHLY", "settlementInterval.new": "QUARTER", "settlementInterval.effectiveFrom": "2026-04-01"}, events[2])
 	})
 	t.Run("dry run allowed", func(t *testing.T) {
 		reset()

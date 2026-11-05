@@ -32,9 +32,11 @@ func (db *sqlDatabase) ChangeSettlementInterval(ctx context.Context, tenant, new
 			return err
 		}
 		if current == newInterval {
+			decision.OldInterval = current
 			return ErrSettlementIntervalUnchanged
 		}
 		decision = model.DecideSettlementInterval(newInterval, state)
+		decision.OldInterval = current
 		if dryRun || !decision.Allowed {
 			return nil
 		}

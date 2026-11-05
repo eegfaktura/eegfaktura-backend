@@ -143,6 +143,8 @@ var allowedFields = map[string]bool{
 	"SQL": true, "STMT": true, "MSG": true, "PROTOCOL": true, "protocol": true,
 	"code": true, "command": true, "ecId": true, "participantId": true, "templates": true,
 	"sepaActiv": true, "settlementInterval": true,
+	// settlement interval change (api/settlementInterval.go)
+	"event.reason": true, "settlementInterval.old": true, "settlementInterval.new": true, "settlementInterval.effectiveFrom": true,
 	// migration result (database/migrate.go)
 	"migration.version_before": true, "migration.version_after": true, "migration.applied": true, "migration.version": true,
 	// db pool stats (database.go)

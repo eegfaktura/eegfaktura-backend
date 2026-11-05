@@ -60,6 +60,8 @@ type SettlementIntervalDecision struct {
 	LastFinalPeriod *string `json:"lastFinalPeriod"`
 	Message         string  `json:"message"`
 	EarliestFrom    *string `json:"earliestFrom"`
+	// OldInterval is the interval the change was decided against, set by the database (for the log, not in the answer).
+	OldInterval string `json:"-"`
 }
 
 // clearingPeriodPattern is billing's ClearingPeriodMonths.IDENTIFIER.

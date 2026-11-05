@@ -68,6 +68,7 @@ func TestChangeSettlementInterval(t *testing.T) {
 		require.NoError(t, err)
 		assert.False(t, d.Allowed)
 		assert.Equal(t, "2026-04-01", *d.EarliestFrom)
+		assert.Equal(t, model.SettlementMonthly, d.OldInterval, "for the log")
 		interval, rows := settlementState(t)
 		assert.Equal(t, model.SettlementMonthly, interval)
 		assert.Empty(t, rows)
