@@ -74,6 +74,11 @@ this changelog highlights the changes relevant for overview and operations.
   `Recreate`). Now the start fails with `event.action=db.migrate.failed` and a message naming the lock wait and
   `pg_stat_activity`; the pod restarts. A migration file that was started stays dirty: recovery in the README,
   section "Failed migration (dirty)".
+- **A dirty migration version points to its recovery** (eegfaktura-dev#54 #3): one ERROR line
+  `event.action=db.migrate.dirty` with `migration.version` and the pointer to the README section "Failed migration
+  (dirty)", at start on a dirty version and when a migration file fails. Before, only golang-migrate's
+  `Dirty database version … Fix and force version.`, which names a CLI that is not in the image and is wrong for an
+  invalid index.
 
 ### Fixed
 - **Metering point master data of larger communities within the deadline again** (support ticket 6611200): the
@@ -94,7 +99,10 @@ this changelog highlights the changes relevant for overview and operations.
   rollout `pg_index.indisvalid` of the new index must be true. If the index build failed or the index is invalid:
   `DROP INDEX CONCURRENTLY IF EXISTS base.metering_partition_factor_tenant_idx`, then by hand
   `UPDATE base.schema_migrations SET version = 20261105110000, dirty = false` (the migrate CLI is not in the image),
-  then restart. Never only reset the version: `IF NOT EXISTS` would keep the invalid index.
+  then restart. Never only reset the version: `IF NOT EXISTS` would keep the invalid index. If the pod was stopped
+  while the build waited (eegfaktura-dev#54 #3), PostgreSQL may finish the build anyway: `dirty = true` with
+  `indisvalid = true`; then only `UPDATE base.schema_migrations SET version = 20261105110100, dirty = false` and
+  restart. All cases: README, section "Failed migration (dirty)".
 - **GraphQL `updateEegModel` stores again** (tracking backend 261105-mm2): it returned the changed EEG but never stored
   anything, also not `sepaActiv`. It now goes through the guarded update of `POST /eeg` (`updateEegPartial`, protected
   fields dropped, `settlementInterval` included) for the tenant of the checked request, and returns the EEG read back.

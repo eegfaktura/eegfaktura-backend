@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -127,4 +128,45 @@ func TestMigrateDBBoundsTheLockWait(t *testing.T) {
 	assert.Equal(t, "error", failed["log.level"])
 	assert.Contains(t, failed["message"], "lock_timeout")
 	assert.Contains(t, failed["error.message"], "lock timeout")
+}
+
+// eegfaktura-dev#54 #3: a dirty version stops the start with the pointer to the recovery, as one ERROR line.
+func TestMigrateDBDirtyPointsToTheRecovery(t *testing.T) {
+	dsn, dbx := emptyDB(t, "migrate_dirty_test")
+	require.NoError(t, migrateDB(migrationsURL(t), dsn, time.Minute))
+	_, err := dbx.Exec(`UPDATE base.schema_migrations SET dirty = true`)
+	require.NoError(t, err)
+
+	buf := migrateLog(t)
+	require.Error(t, migrateDB(migrationsURL(t), dsn, time.Minute))
+	versions := migrationVersions(t)
+	dirty := lineOf(t, buf, "db.migrate.dirty")
+	assert.Equal(t, "error", dirty["log.level"])
+	assert.Equal(t, versions[len(versions)-1], dirty["migration.version"])
+	assert.Contains(t, dirty["message"], `README of eegfaktura-backend, section "Failed migration (dirty)"`)
+	errorLines := 0
+	for _, l := range logtest.Lines(t, buf) {
+		if l["log.level"] == "error" {
+			errorLines++
+		}
+	}
+	assert.Equal(t, 1, errorLines, buf.String())
+}
+
+// A file that fails leaves its version dirty: the line names it and the recovery.
+func TestMigrateDBFailedFileIsDirty(t *testing.T) {
+	dsn, _ := emptyDB(t, "migrate_failed_file_test")
+	dir := t.TempDir()
+	for name, content := range map[string]string{
+		"1_ok.up.sql":     `CREATE TABLE base.t1 (id int);`,
+		"2_broken.up.sql": `CREATE TABLE base.t1 (id int);`,
+	} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600))
+	}
+
+	buf := migrateLog(t)
+	require.Error(t, migrateDB("file:"+filepath.ToSlash(dir), dsn, time.Minute))
+	dirty := lineOf(t, buf, "db.migrate.dirty")
+	assert.Equal(t, float64(2), dirty["migration.version"])
+	assert.Contains(t, dirty["error.message"], "already exists")
 }

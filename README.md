@@ -153,7 +153,7 @@ Cases:
 | Dirty version | Check | Recovery |
 |---|---|---|
 | `20261105110000` (view `activeMeteringPartition`) | the statement either ran or not | `version = 20261028130000`: the file runs again (`CREATE OR REPLACE VIEW`) |
-| `20261105110100` (index, `CONCURRENTLY`) | `SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass('base.metering_partition_factor_tenant_idx');` | no row or `false`: `DROP INDEX CONCURRENTLY IF EXISTS base.metering_partition_factor_tenant_idx;`, then `version = 20261105110000` (with `IF NOT EXISTS` an invalid index would stay) |
+| `20261105110100` (index, `CONCURRENTLY`) | `SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass('base.metering_partition_factor_tenant_idx');` | no row or `false` (build failed or cancelled): `DROP INDEX CONCURRENTLY IF EXISTS base.metering_partition_factor_tenant_idx;`, then `version = 20261105110000` (with `IF NOT EXISTS` an invalid index would stay). `true` (the pod was stopped while the build waited; PostgreSQL finished the build): `version = 20261105110100` |
 | `20261105120000` (table `settlement_interval_change`) | `SELECT to_regclass('base.settlement_interval_change');` | `version = 20261105110100`: the file runs again (`IF NOT EXISTS`) |
 
 ## Docker

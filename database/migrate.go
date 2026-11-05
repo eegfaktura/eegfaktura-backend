@@ -53,6 +53,16 @@ func migrateDB(sourceURL, dsn string, lockTimeout time.Duration) error {
 		return migrateFailed(err)
 	}
 	if err = m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		var dirty migrate.ErrDirty
+		if !errors.As(err, &dirty) {
+			// a file that failed leaves its version dirty
+			if v, d, verr := m.Version(); verr == nil && d {
+				dirty.Version = int(v)
+			}
+		}
+		if dirty.Version != 0 {
+			return migrateDirty(err, dirty.Version)
+		}
 		return migrateFailed(err)
 	}
 	after, err := schemaVersion(m)
@@ -96,14 +106,27 @@ func appliedMigrations(src source.Driver, before, after uint) int {
 	return n
 }
 
-func migrateFailed(err error) error {
-	message := "database migration failed"
-	// SQLSTATE 55P03; golang-migrate keeps only the text of the driver's error
-	if strings.Contains(err.Error(), "lock timeout") {
-		message = "database migration failed: a lock wait exceeded lock_timeout, check pg_stat_activity for long " +
-			"transactions or a running pg_dump"
-	}
-	log.WithField("event.action", "db.migrate.failed").WithField("event.outcome", "failure").WithError(err).
-		Error(message)
+// migrateDirty logs a failure that leaves the version dirty with the pointer to the recovery: golang-migrate's own
+// advice "force version" names a CLI that is not in the image and is wrong for an invalid index.
+func migrateDirty(err error, version int) error {
+	log.WithFields(log.Fields{"event.action": "db.migrate.dirty", "event.outcome": "failure",
+		"migration.version": version}).WithError(err).
+		Error(fmt.Sprintf("database migration %d is dirty (started, not finished)%s: recover by hand as in the README "+
+			"of eegfaktura-backend, section \"Failed migration (dirty)\"; never only reset the version", version, lockHint(err)))
 	return err
+}
+
+func migrateFailed(err error) error {
+	log.WithField("event.action", "db.migrate.failed").WithField("event.outcome", "failure").WithError(err).
+		Error("database migration failed" + lockHint(err))
+	return err
+}
+
+// lockHint names the cause of a lock timeout (SQLSTATE 55P03; golang-migrate keeps only the text of the driver's
+// error).
+func lockHint(err error) string {
+	if strings.Contains(err.Error(), "lock timeout") {
+		return ": a lock wait exceeded lock_timeout, check pg_stat_activity for long transactions or a running pg_dump"
+	}
+	return ""
 }
