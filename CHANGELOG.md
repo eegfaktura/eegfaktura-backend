@@ -103,6 +103,16 @@ this changelog highlights the changes relevant for overview and operations.
   while the build waited (eegfaktura-dev#54 #3), PostgreSQL may finish the build anyway: `dirty = true` with
   `indisvalid = true`; then only `UPDATE base.schema_migrations SET version = 20261105110100, dirty = false` and
   restart. All cases: README, section "Failed migration (dirty)".
+  **Rollback** (eegfaktura-dev#54 #14), for the three migrations of this release (`20261105110000`,
+  `20261105110100`, `20261105120000`), by hand without the migrate CLI (not in the image): the schema can stay, an
+  older image (1.15.x) works with the view, the index and the table. It does not start, though, while
+  `base.schema_migrations` holds a version it does not know (golang-migrate: `no migration found for version …`), so
+  before deploying it: `UPDATE base.schema_migrations SET version = 20261028130000, dirty = false;`. Rolling forward
+  again runs the three files again (`CREATE OR REPLACE VIEW`, `IF NOT EXISTS`); the records in
+  `base.settlement_interval_change` stay. Taking the schema back too is not needed; if wanted, after the version
+  reset: `DROP INDEX CONCURRENTLY IF EXISTS base.metering_partition_factor_tenant_idx;` and the content of
+  `20261105110000_activemeteringpartition_tenant.down.sql`; `DROP TABLE base.settlement_interval_change` would delete
+  the records of the interval changes.
 - **GraphQL `updateEegModel` stores again** (tracking backend 261105-mm2): it returned the changed EEG but never stored
   anything, also not `sepaActiv`. It now goes through the guarded update of `POST /eeg` (`updateEegPartial`, protected
   fields dropped, `settlementInterval` included) for the tenant of the checked request, and returns the EEG read back.
