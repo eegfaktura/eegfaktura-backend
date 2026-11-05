@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/database"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source"
 	log "github.com/sirupsen/logrus"
@@ -19,9 +20,10 @@ import (
 // (README, "Failed migration (dirty)").
 const migrationLockTimeout = 60 * time.Second
 
-// migrateDB applies the migrations of sourceURL to the database of dsn, on a connection of its own (lock_timeout
-// lockTimeout, also for the migration lock) that is closed afterwards. It logs the result once: db.migrate.done with
-// the version before and after and the number of migrations applied (0: no change), or the error.
+// migrateDB applies the migrations of sourceURL to the database of dsn, on a connection of its own that is closed
+// afterwards: lock_timeout lockTimeout ends every lock wait of it, also the wait for the migration lock while the
+// driver opens (golang-migrate's own wait for it in Up ends after 15 s). It logs the result once: db.migrate.done
+// with the version before and after and the number of migrations applied (0: no change), or the error.
 func migrateDB(sourceURL, dsn string, lockTimeout time.Duration) error {
 	log.Info("Start migration ...")
 	src, err := source.Open(sourceURL)
@@ -75,11 +77,11 @@ func migrateDB(sourceURL, dsn string, lockTimeout time.Duration) error {
 		message = "database schema unchanged (no_change)"
 	}
 	log.WithFields(log.Fields{
-		"event.action":             "db.migrate.done",
-		"event.outcome":            "success",
-		"migration.version_before": before,
-		"migration.version_after":  after,
-		"migration.applied":        applied,
+		"event.action":            "db.migrate.done",
+		"event.outcome":           "success",
+		"migration.versionBefore": before,
+		"migration.versionAfter":  after,
+		"migration.applied":       applied,
 	}).Info(message)
 	return nil
 }
@@ -106,27 +108,65 @@ func appliedMigrations(src source.Driver, before, after uint) int {
 	return n
 }
 
-// migrateDirty logs a failure that leaves the version dirty with the pointer to the recovery: golang-migrate's own
-// advice "force version" names a CLI that is not in the image and is wrong for an invalid index.
+// migrateDirty logs a failure that leaves the version dirty with the pointer to the recovery. golang-migrate's own
+// text for a dirty start ("Fix and force version") is left out: it names a CLI that is not in the image and is wrong
+// for an invalid index; the error of a file that failed is kept.
 func migrateDirty(err error, version int) error {
-	log.WithFields(log.Fields{"event.action": "db.migrate.dirty", "event.outcome": "failure",
-		"migration.version": version}).WithError(err).
-		Error(fmt.Sprintf("database migration %d is dirty (started, not finished)%s: recover by hand as in the README "+
-			"of eegfaktura-backend, section \"Failed migration (dirty)\"; never only reset the version", version, lockHint(err)))
+	entry := log.WithFields(log.Fields{"event.action": "db.migrate.dirty", "event.outcome": "failure",
+		"migration.version": version})
+	if !errors.As(err, &migrate.ErrDirty{}) {
+		entry = entry.WithError(shortError(err))
+	}
+	entry.Error(fmt.Sprintf("database migration %d is dirty (started, not finished)%s: recover by hand as in the "+
+		"README of eegfaktura-backend, section \"Failed migration (dirty)\"; never only reset the version",
+		version, lockHint(err)))
 	return err
 }
 
 func migrateFailed(err error) error {
-	log.WithField("event.action", "db.migrate.failed").WithField("event.outcome", "failure").WithError(err).
-		Error("database migration failed" + lockHint(err))
+	log.WithField("event.action", "db.migrate.failed").WithField("event.outcome", "failure").
+		WithError(shortError(err)).Error("database migration failed" + lockHint(err))
 	return err
 }
 
-// lockHint names the cause of a lock timeout: PostgreSQL's lock_timeout (SQLSTATE 55P03; golang-migrate keeps only
-// the text of the driver's error) or golang-migrate's own wait for its migration lock (ErrLockTimeout, 15 s).
+// lockHint names the cause of a lock timeout: PostgreSQL's lock_timeout (SQLSTATE 55P03) or golang-migrate's own
+// wait for its migration lock in Up (ErrLockTimeout, 15 s).
 func lockHint(err error) string {
-	if errors.Is(err, migrate.ErrLockTimeout) || strings.Contains(err.Error(), "lock timeout") {
+	if errors.Is(err, migrate.ErrLockTimeout) || sqlState(err) == "55P03" {
 		return ": a lock wait took too long, check pg_stat_activity for long transactions or a running pg_dump"
 	}
 	return ""
+}
+
+// sqlState is the SQLSTATE of the driver's error. golang-migrate wraps it in database.Error (OrigErr, no Unwrap), as
+// a value or a pointer; the text of lib/pq is the fallback when the code is not reachable.
+func sqlState(err error) string {
+	var value database.Error
+	var pointer *database.Error
+	switch {
+	case errors.As(err, &value):
+		err = value.OrigErr
+	case errors.As(err, &pointer):
+		err = pointer.OrigErr
+	}
+	var coded interface{ SQLState() string }
+	if err != nil && errors.As(err, &coded) {
+		return coded.SQLState()
+	}
+	if err != nil && strings.Contains(err.Error(), "canceling statement due to lock timeout") {
+		return "55P03"
+	}
+	return ""
+}
+
+// maxErrorText bounds error.message of a failed migration: the text of database.Error holds the whole file.
+const maxErrorText = 200
+
+// shortError is the first line of err's text, at most maxErrorText characters.
+func shortError(err error) error {
+	text, _, _ := strings.Cut(err.Error(), "\n")
+	if r := []rune(text); len(r) > maxErrorText {
+		text = string(r[:maxErrorText]) + "…"
+	}
+	return errors.New(text)
 }

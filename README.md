@@ -133,8 +133,8 @@ make atlas-diff
 #### Failed migration (dirty)
 
 The backend migrates before it serves (one replica, `Recreate`): while a migration runs or waits, the API is down.
-Every lock wait of a migration ends after 60 s (`lock_timeout`); the backend then exits with
-`event.action=db.migrate.failed` and restarts.
+Every lock wait of the migration connection ends after 60 s (`lock_timeout`; golang-migrate's own wait for its
+migration lock ends after 15 s); the backend then exits with `event.action=db.migrate.failed` and restarts.
 
 golang-migrate marks a version dirty in `base.schema_migrations` before it runs the file and clears the mark after
 it. `dirty = true` therefore means: the file was started and did not finish (it failed, waited too long for a lock,

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 
 	"at.ourproject/vfeeg-backend/database/dbtest"
@@ -47,22 +46,13 @@ func columnNames(cols []viewColumn) []string {
 // migrationDB creates an empty database in the test container and returns it with a migrator on it.
 func migrationDB(t *testing.T, name string) (*sqlx.DB, *migrate.Migrate) {
 	t.Helper()
-	_, err := testDB.DbInstance.Exec(`DROP DATABASE IF EXISTS ` + name + ` WITH (FORCE)`)
-	require.NoError(t, err)
-	_, err = testDB.DbInstance.Exec(`CREATE DATABASE ` + name)
-	require.NoError(t, err)
+	_, dbx := testDB.CreateDatabase(t, name)
 	_, path, _, ok := runtime.Caller(0)
 	require.True(t, ok)
 	m, err := migrate.New("file:"+filepath.Dir(path)+"/../migrations",
 		fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", dbtest.DbUser, dbtest.DbPass, testDB.DbAddress, name))
 	require.NoError(t, err)
-	dbx, err := sqlx.Connect("postgres", strings.Replace(testDB.ConnectionString, "dbname="+dbtest.DbName, "dbname="+name, 1))
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_ = dbx.Close()
-		_, _ = m.Close()
-		_, _ = testDB.DbInstance.Exec(`DROP DATABASE IF EXISTS ` + name + ` WITH (FORCE)`)
-	})
+	t.Cleanup(func() { _, _ = m.Close() })
 	return dbx, m
 }
 

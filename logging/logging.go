@@ -146,7 +146,7 @@ var allowedFields = map[string]bool{
 	// settlement interval change (api/settlementInterval.go)
 	"event.reason": true, "settlementInterval.old": true, "settlementInterval.new": true, "settlementInterval.effectiveFrom": true,
 	// migration result (database/migrate.go)
-	"migration.version_before": true, "migration.version_after": true, "migration.applied": true, "migration.version": true,
+	"migration.versionBefore": true, "migration.versionAfter": true, "migration.applied": true, "migration.version": true,
 	// db pool stats (database.go)
 	"open": true, "inUse": true, "idle": true, "maxOpen": true, "waitCount": true, "waitDuration": true,
 	"maxIdleClosed": true, "maxLifetimeClosed": true,
