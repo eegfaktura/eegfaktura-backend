@@ -767,7 +767,9 @@ func insertParticipantPartial(ctx context.Context, db *sqlx.DB, participantId, n
 	return nil
 }
 
-func buildGetParticipantQuery() *goqu.SelectDataset {
+// buildGetParticipantQuery: partFactFilter restricts the partition factor view, e.g. to the tenant, which the view
+// can then apply below its window function (support ticket 6611200).
+func buildGetParticipantQuery(partFactFilter ...goqu.Expression) *goqu.SelectDataset {
 	stateStmt := pgDialect.From("base.meteringpoint").
 		Select(
 			goqu.C("activesince"),
@@ -780,7 +782,8 @@ func buildGetParticipantQuery() *goqu.SelectDataset {
 		Select(
 			goqu.C("partFact"),
 			goqu.C("metering_point_id").As("mpfmid"),
-			goqu.C("participant_id").As("mpfpid"))
+			goqu.C("participant_id").As("mpfpid")).
+		Where(partFactFilter...)
 
 	stmt := pgDialect.From("base.meteringpoint", stateStmt.As("state"), partFactStmt.As("mpfpF1")).Select(&model.MeteringPoint{}).
 		Where(
@@ -793,9 +796,14 @@ func buildGetParticipantQuery() *goqu.SelectDataset {
 	return stmt
 }
 
+// completeParticipantsQuery: the metering points of all members of a community.
+func completeParticipantsQuery(tenant string) *goqu.SelectDataset {
+	return buildGetParticipantQuery(goqu.C("tenant").Eq(tenant)).
+		Where(goqu.C("tenant").Table("meteringpoint").Schema("base").Eq(tenant))
+}
+
 func completeParticipants(ctx context.Context, db *sqlx.DB, tenant string, participants []*model.EegParticipant) error {
-	stmt, _, err := buildGetParticipantQuery().
-		Where(goqu.C("tenant").Table("meteringpoint").Schema("base").Eq(tenant)).ToSQL()
+	stmt, _, err := completeParticipantsQuery(tenant).ToSQL()
 
 	if err != nil {
 		return model.ErrCompleteParticipant(err)
