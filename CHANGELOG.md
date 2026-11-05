@@ -34,8 +34,7 @@ this changelog highlights the changes relevant for overview and operations.
 - **`settlementInterval` is dropped silently by the generic EEG updates** (konzept-abrechnungsintervall.md): `POST /eeg`
   and gRPC `AdminEegService.updateValue` (class EEG, caller: eegfaktura-admin-backend for the admin tool) no longer
   change it, like the other protected fields; it changes only through `POST /eeg/settlementinterval`. Registration
-  still sets the initial value. GraphQL `updateEegModel` never stored anything (also not `sepaActiv`); its response no
-  longer echoes `settlementInterval`.
+  still sets the initial value. GraphQL `updateEegModel` drops it the same way (see Fixed).
   **Deploy order:** release eegfaktura-admin#79 (removes the edit field of the admin tool) together with or before this
   backend; otherwise the old admin tool reports success over gRPC class EEG while nothing changes.
 - **`request.id` and `tenant.id` on the lines of an HTTP request** (dev#45 L12), no longer on the access line only;
@@ -66,6 +65,10 @@ this changelog highlights the changes relevant for overview and operations.
   (`atlas-hash`/`atlas-diff` spelled right). The test seed data is `database/testdata/seed.sql`.
 
 ### Fixed
+- **GraphQL `updateEegModel` stores again** (tracking backend 261105-mm2): it returned the changed EEG but never stored
+  anything, also not `sepaActiv`. It now goes through the guarded update of `POST /eeg` (`updateEegPartial`, protected
+  fields dropped, `settlementInterval` included) for the tenant of the checked request, and returns the EEG read back.
+  No known caller (web's `updateEegModel` calls `POST /eeg`); the GraphQL admin check stays in log-only mode.
 - **A failed COMMIT is reported as an error** (BE-CQ-7, BE-CQ-8): registering and moving a metering point, adding a
   tariff and activating metering points from an EDA message reported success when the COMMIT failed. Activating
   metering points also went on to COMMIT after a failed step instead of rolling back. One helper (`inTx`) now runs the
