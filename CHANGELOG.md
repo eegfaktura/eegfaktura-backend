@@ -113,8 +113,12 @@ this changelog highlights the changes relevant for overview and operations.
   Right before, check for long transactions or a running `pg_dump`, which `CREATE OR REPLACE VIEW` and
   `CREATE INDEX CONCURRENTLY` wait behind (expected: no row older than a few seconds):
   `SELECT pid, state, now() - xact_start AS age, left(query, 60) FROM pg_stat_activity WHERE datname =
-  current_database() AND xact_start IS NOT NULL AND pid <> pg_backend_pid() ORDER BY xact_start;`. A lock wait
-  longer than 60 s ends the migration (see Changed: lock timeout); the backend exits and restarts. After the
+  current_database() AND xact_start IS NOT NULL AND pid <> pg_backend_pid() ORDER BY xact_start;`. Run the release
+  outside the backup window (`pg_dump`). A lock wait longer than 60 s ends the migration (see Changed: lock
+  timeout) and the backend exits. A timeout before a migration file starts (the migration lock, the version check)
+  changes nothing: the restart simply tries again. A timeout inside a file leaves its version dirty, and the pod
+  keeps restarting until it is recovered by hand as in the README, section "Failed migration (dirty)"; a restart
+  alone does not heal it. After the
   rollout `pg_index.indisvalid` of the new index must be true. If the index build failed or the index is invalid:
   `DROP INDEX CONCURRENTLY IF EXISTS base.metering_partition_factor_tenant_idx`, then by hand
   `UPDATE base.schema_migrations SET version = 20261105110000, dirty = false` (the migrate CLI is not in the image),

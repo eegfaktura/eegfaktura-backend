@@ -148,7 +148,8 @@ by hand with `psql`:
    dirty = false;` — the next start runs the file again.
 4. Restart the backend and check the line `event.action=db.migrate.done`.
 
-Cases:
+Cases (a new migration of a later change adds its row here, in the same change; for a version without a row,
+follow the steps above):
 
 | Dirty version | Check | Recovery |
 |---|---|---|
