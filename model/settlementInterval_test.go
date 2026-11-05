@@ -16,7 +16,11 @@ func TestDecideSettlementInterval(t *testing.T) {
 		running  []string
 		want     SettlementIntervalDecision
 	}{
-		{"no final period: at once (R5)", SettlementAnnual, nil, []string{"Abr_YM-2026-4"},
+		{"no final period: at once (R5)", SettlementAnnual, nil, []string{},
+			SettlementIntervalDecision{Allowed: true, Message: "Das neue Intervall gilt sofort, es gibt noch keine endgültige Abrechnung."}},
+		{"no final period, a run running: blocked (R3)", SettlementAnnual, nil, []string{"kaputt", "Abr_YM-2026-4"},
+			SettlementIntervalDecision{Message: "Für April 2026 läuft gerade eine Berechnung. Bitte nach deren Ende erneut versuchen."}},
+		{"no final period, only unparseable running: at once", SettlementQuarter, []string{"Rechnung 3"}, []string{"kaputt"},
 			SettlementIntervalDecision{Allowed: true, Message: "Das neue Intervall gilt sofort, es gibt noch keine endgültige Abrechnung."}},
 		{"only identifiers of another form: at once", SettlementQuarter, []string{"Abr_YM-2026-13", "Abr_YQ-2026-5", "abr_YM-2026-3", "Rechnung 3"}, nil,
 			SettlementIntervalDecision{Allowed: true, Message: "Das neue Intervall gilt sofort, es gibt noch keine endgültige Abrechnung."}},
@@ -25,13 +29,13 @@ func TestDecideSettlementInterval(t *testing.T) {
 				Message: "Das neue Intervall gilt ab 1. April 2026."}},
 		{"monthly to February, quarterly blocked until April (R2)", SettlementQuarter, []string{"Abr_YM-2026-1", "Abr_YM-2026-2"}, nil,
 			SettlementIntervalDecision{EarliestFrom: str("2026-04-01"), LastFinalPeriod: str("Abr_YM-2026-2"),
-				Message: "Bis März 2026 muss noch im bisherigen Intervall abgerechnet werden. Ein Wechsel ist dann ab 1. April 2026 möglich."}},
+				Message: "Zuerst muss noch der Zeitraum März 2026 im bisherigen Intervall abgerechnet werden. Ein Wechsel ist dann ab 1. April 2026 möglich."}},
 		{"monthly to June, annual blocked until next January", SettlementAnnual, []string{"Abr_YM-2026-6"}, nil,
 			SettlementIntervalDecision{EarliestFrom: str("2027-01-01"), LastFinalPeriod: str("Abr_YM-2026-6"),
-				Message: "Bis Juli bis Dezember 2026 muss noch im bisherigen Intervall abgerechnet werden. Ein Wechsel ist dann ab 1. Jänner 2027 möglich."}},
+				Message: "Zuerst muss noch der Zeitraum Juli bis Dezember 2026 im bisherigen Intervall abgerechnet werden. Ein Wechsel ist dann ab 1. Jänner 2027 möglich."}},
 		{"monthly to November, biannual: months across the year end", SettlementBiannual, []string{"Abr_YM-2025-10"}, nil,
 			SettlementIntervalDecision{EarliestFrom: str("2026-01-01"), LastFinalPeriod: str("Abr_YM-2025-10"),
-				Message: "Bis November bis Dezember 2025 muss noch im bisherigen Intervall abgerechnet werden. Ein Wechsel ist dann ab 1. Jänner 2026 möglich."}},
+				Message: "Zuerst muss noch der Zeitraum November bis Dezember 2025 im bisherigen Intervall abgerechnet werden. Ein Wechsel ist dann ab 1. Jänner 2026 möglich."}},
 		{"quarterly to December, annual from January", SettlementAnnual, []string{"Abr_YQ-2025-4"}, nil,
 			SettlementIntervalDecision{Allowed: true, EffectiveFrom: str("2026-01-01"), LastFinalPeriod: str("Abr_YQ-2025-4"),
 				Message: "Das neue Intervall gilt ab 1. Jänner 2026."}},
@@ -55,7 +59,7 @@ func TestDecideSettlementInterval(t *testing.T) {
 				Message: "Das neue Intervall gilt ab 1. April 2026."}},
 		{"mixed types: year 2025 and February 2026", SettlementQuarter, []string{"Abr_YM-2026-2", "Abr_Y-2025"}, nil,
 			SettlementIntervalDecision{EarliestFrom: str("2026-04-01"), LastFinalPeriod: str("Abr_YM-2026-2"),
-				Message: "Bis März 2026 muss noch im bisherigen Intervall abgerechnet werden. Ein Wechsel ist dann ab 1. April 2026 möglich."}},
+				Message: "Zuerst muss noch der Zeitraum März 2026 im bisherigen Intervall abgerechnet werden. Ein Wechsel ist dann ab 1. April 2026 möglich."}},
 		{"mixed types: year 2025 last, monthly from January", SettlementMonthly, []string{"Abr_YM-2025-2", "Abr_Y-2025"}, nil,
 			SettlementIntervalDecision{Allowed: true, EffectiveFrom: str("2026-01-01"), LastFinalPeriod: str("Abr_Y-2025"),
 				Message: "Das neue Intervall gilt ab 1. Jänner 2026."}},
@@ -95,4 +99,11 @@ func TestIsSettlementInterval(t *testing.T) {
 	for _, v := range []string{"", "monthly", "YEARLY", "QUARTERLY"} {
 		assert.False(t, IsSettlementInterval(v), v)
 	}
+}
+
+// Every interval starts on 1 January, so a blocked range stays inside one year; the format covers the year end anyway.
+func TestMonthRange(t *testing.T) {
+	assert.Equal(t, "März 2026", monthRange(2026*12+2, 2026*12+2))
+	assert.Equal(t, "Juli bis Dezember 2026", monthRange(2026*12+6, 2026*12+11))
+	assert.Equal(t, "November 2026 bis Jänner 2027", monthRange(2026*12+10, 2027*12))
 }

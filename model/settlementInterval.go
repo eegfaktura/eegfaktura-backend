@@ -108,7 +108,8 @@ func (p clearingPeriod) name() string {
 // backend") to a valid new interval. Without a final period the change applies at once (R5). Otherwise L is the last
 // month of the final periods and S the month after it: allowed from S when S starts a period of the new interval
 // (R1, R2), else blocked with the next start after L; also blocked while a run for a period ending in S or later is
-// running (R3). Identifiers of another form are ignored, as in billing.
+// running (R3), without a final period while any run is running. Identifiers of another form are ignored, as in
+// billing.
 func DecideSettlementInterval(newInterval string, state BillingState) SettlementIntervalDecision {
 	last, lastId := -1, ""
 	for _, id := range state.FinalPeriods {
@@ -117,6 +118,11 @@ func DecideSettlementInterval(newInterval string, state BillingState) Settlement
 		}
 	}
 	if last < 0 {
+		// a final run finishing after a change at once would overlap the first period of the new interval: any
+		// running run blocks (R3)
+		if p, ok := runningFrom(state, 0); ok {
+			return SettlementIntervalDecision{Message: runningMessage(p)}
+		}
 		return SettlementIntervalDecision{Allowed: true,
 			Message: "Das neue Intervall gilt sofort, es gibt noch keine endgültige Abrechnung."}
 	}
@@ -127,18 +133,30 @@ func DecideSettlementInterval(newInterval string, state BillingState) Settlement
 	if start%length != 0 {
 		earliest := (start/length + 1) * length
 		d.EarliestFrom = isoDate(earliest)
-		d.Message = fmt.Sprintf("Bis %s muss noch im bisherigen Intervall abgerechnet werden. Ein Wechsel ist dann ab %s möglich.",
+		d.Message = fmt.Sprintf("Zuerst muss noch der Zeitraum %s im bisherigen Intervall abgerechnet werden. Ein Wechsel ist dann ab %s möglich.",
 			monthRange(start, earliest-1), longDate(earliest))
 		return d
 	}
-	for _, id := range state.RunningPeriods {
-		if p, ok := parseClearingPeriod(id); ok && p.last >= start {
-			d.Message = fmt.Sprintf("Für %s läuft gerade eine Berechnung. Bitte nach deren Ende erneut versuchen.", p.name())
-			return d
-		}
+	if p, ok := runningFrom(state, start); ok {
+		d.Message = runningMessage(p)
+		return d
 	}
 	d.Allowed = true
 	d.EffectiveFrom = isoDate(start)
 	d.Message = fmt.Sprintf("Das neue Intervall gilt ab %s.", longDate(start))
 	return d
+}
+
+// runningFrom returns the first running period that ends in month start or later.
+func runningFrom(state BillingState, start int) (clearingPeriod, bool) {
+	for _, id := range state.RunningPeriods {
+		if p, ok := parseClearingPeriod(id); ok && p.last >= start {
+			return p, true
+		}
+	}
+	return clearingPeriod{}, false
+}
+
+func runningMessage(p clearingPeriod) string {
+	return fmt.Sprintf("Für %s läuft gerade eine Berechnung. Bitte nach deren Ende erneut versuchen.", p.name())
 }

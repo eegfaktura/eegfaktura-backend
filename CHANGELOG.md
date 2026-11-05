@@ -23,7 +23,7 @@ this changelog highlights the changes relevant for overview and operations.
 - **EEG admins change the settlement interval** (konzept-abrechnungsintervall.md, platform#230; caller: eegfaktura-web):
   `POST /eeg/settlementinterval` (EEG_ADMIN, tenant from the checked header) with `settlementInterval`, `dryRun` and
   `billingState` (billing's `settlementState`, passed on by web). The rule: without a final period the change applies
-  at once; otherwise from the month after the last final period, if a period of the new interval starts there, and no
+  at once unless a run is running; otherwise from the month after the last final period, if a period of the new interval starts there, and no
   run is running for a period ending then or later. Answer 200 `{allowed, effectiveFrom, lastFinalPeriod, message,
   earliestFrom, eeg}`; a blocked change without `dryRun` is 409 (code 1062) with the reason; an invalid value, the
   current value or a missing `billingState` is 400 (1060, 1061). The change runs in one transaction on the locked

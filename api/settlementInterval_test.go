@@ -112,7 +112,7 @@ func TestChangeSettlementInterval(t *testing.T) {
 		w := post("admin", `{"settlementInterval":"QUARTER","dryRun":true,`+billedToFeb+`}`)
 		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 		assert.Equal(t, map[string]interface{}{"allowed": false, "effectiveFrom": nil, "lastFinalPeriod": "Abr_YM-2026-2",
-			"message":      "Bis März 2026 muss noch im bisherigen Intervall abgerechnet werden. Ein Wechsel ist dann ab 1. April 2026 möglich.",
+			"message":      "Zuerst muss noch der Zeitraum März 2026 im bisherigen Intervall abgerechnet werden. Ein Wechsel ist dann ab 1. April 2026 möglich.",
 			"earliestFrom": "2026-04-01", "eeg": nil}, decode(w))
 
 		w = post("admin", `{"settlementInterval":"QUARTER","dryRun":true,"billingState":{"finalPeriods":["Abr_YM-2026-3"],"runningPeriods":["Abr_YM-2026-4"]}}`)
@@ -127,7 +127,7 @@ func TestChangeSettlementInterval(t *testing.T) {
 		require.Equal(t, http.StatusConflict, w.Code, w.Body.String())
 		e := errorOf(w)
 		assert.Equal(t, 1062, e.Code)
-		assert.Equal(t, "Bis März 2026 muss noch im bisherigen Intervall abgerechnet werden. Ein Wechsel ist dann ab 1. April 2026 möglich.", e.Message)
+		assert.Equal(t, "Zuerst muss noch der Zeitraum März 2026 im bisherigen Intervall abgerechnet werden. Ein Wechsel ist dann ab 1. April 2026 möglich.", e.Message)
 		assert.Equal(t, "MONTHLY", interval())
 	})
 	t.Run("generic update drops settlementInterval", func(t *testing.T) {
