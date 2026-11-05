@@ -45,8 +45,12 @@ func (f *fakeMailServer) SendMail(context.Context, *protobuf.SendMailRequest) (*
 	return f.answer()
 }
 
-// startFakeMailServer points services.mail-server at the fake and shortens the timeout to 100 ms.
-func startFakeMailServer(t *testing.T, f *fakeMailServer) {
+// answerTimeout is the send timeout for a fake that answers at once: long enough that a loaded machine (full suite)
+// does not turn its answer into a deadline (a 100 ms timeout made "gRPC error" an unconfirmed warning at times).
+const answerTimeout = 10 * time.Second
+
+// startFakeMailServer points services.mail-server at the fake and sets the send timeout.
+func startFakeMailServer(t *testing.T, f *fakeMailServer, timeout time.Duration) {
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	s := grpc.NewServer()
@@ -54,7 +58,7 @@ func startFakeMailServer(t *testing.T, f *fakeMailServer) {
 	go func() { _ = s.Serve(lis) }()
 	origAddr, origTimeout := viper.GetString("services.mail-server"), mailTimeout
 	viper.Set("services.mail-server", lis.Addr().String())
-	mailTimeout = 100 * time.Millisecond
+	mailTimeout = timeout
 	t.Cleanup(func() {
 		s.Stop()
 		viper.Set("services.mail-server", origAddr)
@@ -75,7 +79,7 @@ func sendBoth() map[string]error {
 const testMeter = "AT0030000000000000000000000000001"
 
 func TestSendMail_DeadlineExceededIsUnconfirmed(t *testing.T) {
-	startFakeMailServer(t, &fakeMailServer{delay: 500 * time.Millisecond, reply: &protobuf.SendMailReply{Status: 200}})
+	startFakeMailServer(t, &fakeMailServer{delay: 500 * time.Millisecond, reply: &protobuf.SendMailReply{Status: 200}}, 100*time.Millisecond)
 	for fn, err := range sendBoth() {
 		require.Error(t, err, fn)
 		assert.ErrorIs(t, err, ErrMailUnconfirmed, fn)
@@ -99,7 +103,7 @@ func TestSendMail_RealFailuresKeepTheirText(t *testing.T) {
 	}
 	for name, f := range cases {
 		t.Run(name, func(t *testing.T) {
-			startFakeMailServer(t, f)
+			startFakeMailServer(t, f, answerTimeout)
 			for fn, err := range sendBoth() {
 				require.Error(t, err, fn)
 				assert.NotErrorIs(t, err, ErrMailUnconfirmed, fn)
@@ -140,7 +144,7 @@ func TestMailAddressesStayOutOfTheLog(t *testing.T) {
 
 // 261031-mm6: the proto field is optional; a failure answer without a message must not panic.
 func TestSendMail_FailureWithoutMessage(t *testing.T) {
-	startFakeMailServer(t, &fakeMailServer{reply: &protobuf.SendMailReply{Status: 500}})
+	startFakeMailServer(t, &fakeMailServer{reply: &protobuf.SendMailReply{Status: 500}}, answerTimeout)
 	for fn, err := range sendBoth() {
 		require.Error(t, err, fn)
 		assert.NotErrorIs(t, err, ErrMailUnconfirmed, fn)
@@ -188,7 +192,7 @@ func TestSendMail_NoHandshakeIsNotUnconfirmed(t *testing.T) {
 // the relay probably accepted the mail, so it is unconfirmed, not failed.
 func TestSendMail_Status202IsUnconfirmed(t *testing.T) {
 	msg := "SMTP unconfirmed: read timeout after DATA"
-	startFakeMailServer(t, &fakeMailServer{reply: &protobuf.SendMailReply{Status: 202, Message: &msg}})
+	startFakeMailServer(t, &fakeMailServer{reply: &protobuf.SendMailReply{Status: 202, Message: &msg}}, answerTimeout)
 	for fn, err := range sendBoth() {
 		require.Error(t, err, fn)
 		assert.ErrorIs(t, err, ErrMailUnconfirmed, fn)
