@@ -34,7 +34,8 @@ this changelog highlights the changes relevant for overview and operations.
   one list (`model.AreaTypes()`, `model.ValidateArea`, checked in `insertEeg` for both registrations). P2P and EVA
   run centrally over ebUtilities like the BEG and may span several grid operators (konzept section I, 05.11.2026):
   one rule `model.HasMultipleGridOperators` (BEG, P2P, EVA) replaces the BEG checks — messages go to the grid
-  operator of the metering point, the metering point list is requested from the chosen grid operator. The RC number
+  operator of the metering point (the community's when the metering point has none; without either nothing is sent),
+  the metering point list is requested from the chosen grid operator. The RC number
   stays unique (only GEA is excepted).
   **Contract:**
   - gRPC `register.proto` `GRID_AREA`: `P2P = 4`, `EVA = 5` appended (caller: eegfaktura-admin-backend, keep its copy
@@ -59,8 +60,9 @@ this changelog highlights the changes relevant for overview and operations.
   (`model.DefaultEcZoneLevel`); down drops the three columns.
   `base.billing_masterdata` is unchanged. A metering point list (SENDEN_ECP) sets the Nahebereich at every tenant of
   its community id (an absent value keeps the stored one, an invalid one is dropped with a warning) and the codes at
-  the metering points of these tenants (an empty code never overwrites, one longer than 10 characters is dropped
-  with a warning, never stored truncated); an ECType that does not fit the community
+  the metering points of these tenants (an empty code never overwrites; a code other than 1–10 letters, digits,
+  `.`, `_`, `-` is dropped with a warning, never stored truncated); a list without a community id is dropped;
+  an ECType that does not fit the community
   type (GEA GC, LOCAL RC_L, REGIONAL RC_R, BEG CC, P2P PP, EVA SC) is logged as a warning, not stored. All three
   values are read only: the generic updates drop them.
   **Contract:**
@@ -112,6 +114,8 @@ this changelog highlights the changes relevant for overview and operations.
   (`atlas-hash`/`atlas-diff` spelled right). The test seed data is `database/testdata/seed.sql`.
 
 ### Fixed
+- **Inbound metering point list checked against the receiving community** (security relevant, see tracking): a list
+  is processed only for a community of the RC number it came in for; otherwise it is dropped with a warning.
 - **gRPC registration refuses an unknown allocation or settlement interval** (found in the review of backend#147): a
   `GRID_ALLOCATION` or `EEG_SETTELMENT` value the backend does not know was stored as its number. Now reply status
   400 without a gRPC error, nothing written (admin-backend treats every status but 201 as failed).
