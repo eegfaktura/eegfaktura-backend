@@ -60,11 +60,10 @@ this changelog highlights the changes relevant for overview and operations.
   (`model.DefaultEcZoneLevel`); down drops the three columns.
   `base.billing_masterdata` is unchanged. A metering point list (SENDEN_ECP) sets the Nahebereich at every tenant of
   its community id (an absent value keeps the stored one, an invalid one is dropped with a warning) and the codes at
-  the metering points of these tenants (an empty code never overwrites; a code other than 1–10 letters, digits,
-  `.`, `_`, `-` is dropped with a warning, never stored truncated); a list without a community id is dropped;
-  an ECType that does not fit the community
+  the metering points of these tenants (an empty code never overwrites); an ECType that does not fit the community
   type (GEA GC, LOCAL RC_L, REGIONAL RC_R, BEG CC, P2P PP, EVA SC) is logged as a warning, not stored. All three
-  values are read only: the generic updates drop them.
+  values are read only: the generic updates drop them. Hardening of inbound metering point lists: security
+  relevant — details not published.
   **Contract:**
   - MQTT from eegfaktura-eda-xp (EC_PODLIST): optional `ecZoneLevel` (number), `ecTypeEda` (text, EDA code as
     received) and per `meterList` entry `techCode`, `fuelCode` (text); an old backend ignores them, an old eda-xp
@@ -114,8 +113,9 @@ this changelog highlights the changes relevant for overview and operations.
   (`atlas-hash`/`atlas-diff` spelled right). The test seed data is `database/testdata/seed.sql`.
 
 ### Fixed
-- **Inbound metering point list checked against the receiving community** (security relevant, see tracking): a list
-  is processed only for a community of the RC number it came in for; otherwise it is dropped with a warning.
+- **Inbound metering point list** (backend 261105-mm4): security relevant — details not published.
+- **Confirming a member sends nothing when a grid operator is missing** (platform#229): every metering point's
+  receiver is determined first; one missing answers 400 before the member is confirmed.
 - **gRPC registration refuses an unknown allocation or settlement interval** (found in the review of backend#147): a
   `GRID_ALLOCATION` or `EEG_SETTELMENT` value the backend does not know was stored as its number. Now reply status
   400 without a gRPC error, nothing written (admin-backend treats every status but 201 as failed).
