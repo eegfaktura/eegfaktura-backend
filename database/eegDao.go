@@ -238,11 +238,13 @@ func insertEeg(ctx context.Context, db *sqlx.DB, tenant string, eeg *model.Eeg) 
 // the identity/tenant key and rcNumber/online/createdAt (model: skipupdate),
 // plus communityId and tenant, which route incoming EDA messages and identify
 // the community, and settlementInterval, which changes only through
-// ChangeSettlementInterval with its rule (konzept-abrechnungsintervall.md). The
-// web round-trips the whole EEG object on save, so these are dropped silently
-// rather than rejected.
+// ChangeSettlementInterval with its rule (konzept-abrechnungsintervall.md), and
+// area and allocationMode, which are set at registration and otherwise only by
+// the operator (platform#229, E5: a P2P/EVA community must not switch itself to
+// an EEG type and around the billing block). The web round-trips the whole EEG
+// object on save, so these are dropped silently rather than rejected.
 var eegProtectedUpdateFields = func() map[string]struct{} {
-	m := map[string]struct{}{"tenant": {}, "communityId": {}, "settlementInterval": {}}
+	m := map[string]struct{}{"tenant": {}, "communityId": {}, "settlementInterval": {}, "area": {}, "allocationMode": {}}
 	for _, k := range model.SkipUpdateJSONKeys(model.Eeg{}) {
 		m[k] = struct{}{}
 	}

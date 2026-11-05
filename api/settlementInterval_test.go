@@ -155,6 +155,19 @@ func TestChangeSettlementInterval(t *testing.T) {
 		assert.Equal(t, "MONTHLY", decode(w)["settlementInterval"])
 		assert.Equal(t, "MONTHLY", interval())
 	})
+	// platform#229, E5: the type and the allocation mode are set at registration, otherwise only by the operator
+	t.Run("generic update drops area and allocationMode", func(t *testing.T) {
+		before, err := db.GetEegById(ctx, siTenant)
+		require.NoError(t, err)
+		w := call("admin", "/eeg", `{"area":"P2P","allocationMode":"STATIC","description":"Typ-Test"}`)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		after, err := db.GetEegById(ctx, siTenant)
+		require.NoError(t, err)
+		assert.Equal(t, "Typ-Test", after.Description)
+		assert.Equal(t, before.Area, after.Area)
+		assert.Equal(t, before.AllocationMode, after.AllocationMode)
+		assert.NotEqual(t, "STATIC", string(after.AllocationMode), "fixture")
+	})
 	t.Run("allowed change: stored, recorded, EEG returned", func(t *testing.T) {
 		reset()
 		w := post("admin", `{"settlementInterval":"QUARTER","dryRun":false,`+billedToMar+`}`)
