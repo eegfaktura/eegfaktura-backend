@@ -84,4 +84,14 @@ func TestPodList_zoneLevelAndCodes(t *testing.T) {
 	podList(4, ``, `,"techCode":"ABCDEFGHIJK","fuelCode":"0123456789"`)
 	assert.Equal(t, "PV/0123456789", codes(first))
 	assert.Contains(t, logged.String(), "TechCode of 11 characters")
+
+	// without a community id the list is dropped: nothing changes
+	msg := model.SubscribeMessage{MessageCode: model.EBMS_ZP_LIST_RESPONSE, Protocol: model.EC_PODLIST, Tenant: first}
+	require.NoError(t, json.Unmarshal([]byte(`{"conversationId":"GC000043202611050000000000000000009","sender":"AT003000",
+		"receiver":"GC000043","messageCode":"SENDEN_ECP","ecZoneLevel":4,"meterList":[{"meteringPoint":"`+meter+`",
+		"direction":"GENERATION","from":1759269600000,"partFact":100,"techCode":"WIND"}]}`), &msg.Payload))
+	protocolEcPodListHandler(context.Background(), msg)
+	assert.Equal(t, null.IntFrom(2), zone(first))
+	assert.Equal(t, "PV/0123456789", codes(first))
+	assert.Equal(t, 0, historyCount(t, first, "GC000043202611050000000000000000009"))
 }

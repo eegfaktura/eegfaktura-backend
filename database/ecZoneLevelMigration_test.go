@@ -116,6 +116,7 @@ func TestUpdateEcZoneLevel(t *testing.T) {
 	for _, invalid := range []int{0, 8, -1} {
 		assert.Error(t, db.UpdateEcZoneLevel(ctx, ecId, invalid), invalid)
 	}
+	assert.Error(t, db.UpdateEcZoneLevel(ctx, "", 3), "no community id")
 	assert.Equal(t, null.IntFrom(6), zone("GC000057"))
 
 	// the generic update drops it (write protection like area)

@@ -142,6 +142,9 @@ func (db *sqlDatabase) InsertEeg(ctx context.Context, tenant string, eeg *model.
 // UpdateEcZoneLevel sets the Nahebereich of every tenant of the community id (several for a GEA) from the grid
 // operator's metering point list; an invalid level is refused (platform#229).
 func (db *sqlDatabase) UpdateEcZoneLevel(ctx context.Context, ecId string, level int) error {
+	if ecId == "" {
+		return errors.New("no community id")
+	}
 	if !model.ValidEcZoneLevel(level) {
 		return fmt.Errorf("invalid ECZoneLevel %d", level)
 	}
