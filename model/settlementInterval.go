@@ -43,6 +43,9 @@ type SettlementIntervalDecision struct {
 // clearingPeriodPattern is billing's ClearingPeriodMonths.IDENTIFIER.
 var clearingPeriodPattern = regexp.MustCompile(`^Abr_(Y|YH|YQ|YM)-(\d{4})(?:-(\d{1,2}))?$`)
 
+// identifierMonths is the length of one period of each identifier type, in months.
+var identifierMonths = map[string]int{"Y": 12, "YH": 6, "YQ": 3, "YM": 1}
+
 // clearingPeriod is the months an identifier covers, counted as year*12 + month-1.
 type clearingPeriod struct {
 	kind        string
@@ -60,7 +63,7 @@ func parseClearingPeriod(id string) (clearingPeriod, bool) {
 	if m[3] != "" {
 		period, _ = strconv.Atoi(m[3])
 	}
-	length := map[string]int{"Y": 12, "YH": 6, "YQ": 3, "YM": 1}[m[1]]
+	length := identifierMonths[m[1]]
 	if m[1] == "Y" {
 		period = 1
 	} else if period < 1 || period > 12/length {
@@ -77,16 +80,13 @@ func monthName(m int) string { return fmt.Sprintf("%s %d", monthNames[m%12], m/1
 func isoDate(m int) *string  { s := fmt.Sprintf("%04d-%02d-01", m/12, m%12+1); return &s }
 func longDate(m int) string  { return fmt.Sprintf("1. %s %d", monthNames[m%12], m/12) }
 
-// monthRange names the months first..last: "März 2026", "März bis Mai 2026", "Dezember 2025 bis Februar 2026".
+// monthRange names the months first..last of one year: "März 2026", "März bis Mai 2026". Every interval starts a
+// period on 1 January, so a blocked range never crosses the year end.
 func monthRange(first, last int) string {
-	switch {
-	case first == last:
+	if first == last {
 		return monthName(first)
-	case first/12 == last/12:
-		return fmt.Sprintf("%s bis %s", monthNames[first%12], monthName(last))
-	default:
-		return fmt.Sprintf("%s bis %s", monthName(first), monthName(last))
 	}
+	return fmt.Sprintf("%s bis %s", monthNames[first%12], monthName(last))
 }
 
 // name is the period in words: "März 2026", "1. Quartal 2026", "1. Halbjahr 2026", "2026".

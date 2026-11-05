@@ -100,10 +100,3 @@ func TestIsSettlementInterval(t *testing.T) {
 		assert.False(t, IsSettlementInterval(v), v)
 	}
 }
-
-// Every interval starts on 1 January, so a blocked range stays inside one year; the format covers the year end anyway.
-func TestMonthRange(t *testing.T) {
-	assert.Equal(t, "März 2026", monthRange(2026*12+2, 2026*12+2))
-	assert.Equal(t, "Juli bis Dezember 2026", monthRange(2026*12+6, 2026*12+11))
-	assert.Equal(t, "November 2026 bis Jänner 2027", monthRange(2026*12+10, 2027*12))
-}
