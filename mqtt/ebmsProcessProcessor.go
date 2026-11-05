@@ -75,13 +75,9 @@ func RequestingMeteringPointList(eeg *model.Eeg, receiver string, from, to int64
 	ebmsMessage := createEbmsMessage(eeg, nil, model.EBMS_ZP_LIST)
 	ebmsMessage.Meter = &model.Meter{MeteringPoint: eeg.CommunityId}
 	ebmsMessage.Timeline = &model.Timeline{From: from, To: to}
-	ebmsMessage.Receiver = receiver
-
-	if eeg.Area != model.BEG {
-		if eeg.GridOperator == "" {
-			return model.ErrEdaCommunication(errors.New("no Grid Operator specified"))
-		}
-		ebmsMessage.Receiver = eeg.GridOperator
+	var err error
+	if ebmsMessage.Receiver, err = zpListReceiver(eeg, receiver); err != nil {
+		return err
 	}
 
 	log.WithField("tenant", eeg.Id).Info("Request MeteringPointList")
@@ -91,6 +87,18 @@ func RequestingMeteringPointList(eeg *model.Eeg, receiver string, from, to int64
 	Broker().SendMessage(ebmsMessage)
 	RememberZpListRequester(eeg.CommunityId, eeg.Id)
 	return nil
+}
+
+// zpListReceiver: with several grid operators possible (BEG, P2P, EVA) the list is requested from the chosen one,
+// else from the community's grid operator.
+func zpListReceiver(eeg *model.Eeg, receiver string) (string, error) {
+	if model.HasMultipleGridOperators(eeg.Area) {
+		return receiver, nil
+	}
+	if eeg.GridOperator == "" {
+		return "", model.ErrEdaCommunication(errors.New("no Grid Operator specified"))
+	}
+	return eeg.GridOperator, nil
 }
 
 // zpListRequesters remembers which tenant asked for the metering point list of a community id. In a GEA several
@@ -153,7 +161,7 @@ var ChangePartitionFactor = func(eeg *model.Eeg, meterReq []*model.ChangePartiti
 
 func getReceiverFrom(eeg *model.Eeg, meter *model.MeteringPoint) string {
 	receiver := eeg.GridOperator
-	if meter != nil && eeg.Area == model.BEG {
+	if meter != nil && model.HasMultipleGridOperators(eeg.Area) {
 		receiver = meter.GridOperatorId.String
 	}
 	return strings.ToUpper(receiver)

@@ -37,3 +37,29 @@ func TestRegisterEegRequestArea(t *testing.T) {
 	_, err := decode("PP")
 	assert.Error(t, err)
 }
+
+// platform#229 (I): BEG, P2P and EVA may span several grid operators; the EDA ECType of each type; Nahebereich 1–7.
+func TestAreaRules(t *testing.T) {
+	multi := map[AreaType]bool{BEG: true, P2P: true, EVA: true}
+	eda := map[AreaType]string{GEA: "GC", LOCAL: "RC_L", REGIONAL: "RC_R", BEG: "CC", P2P: "PP", EVA: "SC"}
+	for _, area := range AreaTypes() {
+		assert.Equal(t, multi[area], HasMultipleGridOperators(area), area)
+		code, ok := EdaEcType(area)
+		assert.True(t, ok, area)
+		assert.Equal(t, eda[area], code, area)
+	}
+	_, ok := EdaEcType("6")
+	assert.False(t, ok)
+	for level := -1; level <= 8; level++ {
+		assert.Equal(t, level >= 1 && level <= 7, ValidEcZoneLevel(level), level)
+	}
+}
+
+// The values of the grid operator's metering point list are read only: the generic updates drop or refuse them.
+func TestZoneLevelAndCodesReadOnly(t *testing.T) {
+	assert.Contains(t, SkipUpdateJSONKeys(Eeg{}), "ecZoneLevel")
+	for _, key := range []string{"techCode", "tech_code", "fuelCode", "fuel_code"} {
+		_, ok := AllowedUpdateColumn(MeteringPoint{}, key)
+		assert.False(t, ok, key)
+	}
+}

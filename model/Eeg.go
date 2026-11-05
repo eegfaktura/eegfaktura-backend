@@ -27,6 +27,7 @@ type Eeg struct {
 	ContactPerson      null.String        `json:"contactPerson" db:"contactPerson" goqu:"omitempty"`
 	Online             bool               `json:"online" goqu:"skipupdate"`
 	CreatedAt          civil.NullDate     `json:"createdAt,omitempty" db:"createdat" goqu:"skipinsert,skipupdate"`
+	EcZoneLevel        null.Int           `json:"ecZoneLevel" db:"ec_zone_level" goqu:"skipinsert,skipupdate"` /* Nahebereich 1–7 from the metering point list, empty = unknown */
 	EegAddress         `json:"address,omitempty" mapstructure:",squash" goqu:"omitempty"`
 	AccountInfo        `json:"accountInfo,omitempty" mapstructure:",squash" goqu:"omitempty"`
 	Contact            `json:"contact,omitempty" mapstructure:",squash" goqu:"omitempty"`
@@ -65,6 +66,27 @@ func ValidateArea(area AreaType) error {
 		return fmt.Errorf("unknown community type %q", string(area))
 	}
 	return nil
+}
+
+// HasMultipleGridOperators: the community may span several grid operators, so a message goes to the grid operator of
+// the metering point and the metering point list is requested per grid operator (BEG; P2P and EVA run centrally over
+// ebUtilities like the BEG, platform#229).
+func HasMultipleGridOperators(area AreaType) bool {
+	return area == BEG || area == P2P || area == EVA
+}
+
+// edaEcTypes maps the community type to the EDA ECType the grid operator uses (the mapping of eda-xp).
+var edaEcTypes = map[AreaType]string{GEA: "GC", LOCAL: "RC_L", REGIONAL: "RC_R", BEG: "CC", P2P: "PP", EVA: "SC"}
+
+// EdaEcType returns the EDA ECType of a community type, false for an unknown type.
+func EdaEcType(area AreaType) (string, bool) {
+	t, ok := edaEcTypes[area]
+	return t, ok
+}
+
+// ValidEcZoneLevel: ECZoneLevel (Nahebereich) is 1–7.
+func ValidEcZoneLevel(level int) bool {
+	return level >= 1 && level <= 7
 }
 
 type AddressType string
