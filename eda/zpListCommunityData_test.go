@@ -80,10 +80,16 @@ func TestPodList_zoneLevelAndCodes(t *testing.T) {
 	assert.Contains(t, logged.String(), "invalid ECZoneLevel 8")
 	assert.Contains(t, logged.String(), "ECType PP, the community type GEA means GC")
 
-	// a code longer than 10 characters is dropped with a warning, never stored truncated; 10 characters are kept
+	// a code longer than 10 characters or with other characters is dropped with a warning, never stored
+	// truncated; 10 characters are kept
 	podList(4, ``, `,"techCode":"ABCDEFGHIJK","fuelCode":"0123456789"`)
 	assert.Equal(t, "PV/0123456789", codes(first))
-	assert.Contains(t, logged.String(), "TechCode of 11 characters")
+	assert.Contains(t, logged.String(), "invalid TechCode (11 characters)")
+	podList(5, ``, `,"techCode":"P V","fuelCode":"E;1"`)
+	assert.Equal(t, "PV/0123456789", codes(first))
+	assert.Contains(t, logged.String(), "invalid FuelCode (3 characters)")
+	podList(6, ``, `,"techCode":"W.IND_1-A","fuelCode":"E002"`)
+	assert.Equal(t, "W.IND_1-A/E002", codes(first))
 
 	// without a community id the list is dropped: nothing changes
 	msg := model.SubscribeMessage{MessageCode: model.EBMS_ZP_LIST_RESPONSE, Protocol: model.EC_PODLIST, Tenant: first}
@@ -92,6 +98,6 @@ func TestPodList_zoneLevelAndCodes(t *testing.T) {
 		"direction":"GENERATION","from":1759269600000,"partFact":100,"techCode":"WIND"}]}`), &msg.Payload))
 	protocolEcPodListHandler(context.Background(), msg)
 	assert.Equal(t, null.IntFrom(2), zone(first))
-	assert.Equal(t, "PV/0123456789", codes(first))
+	assert.Equal(t, "W.IND_1-A/E002", codes(first))
 	assert.Equal(t, 0, historyCount(t, first, "GC000043202611050000000000000000009"))
 }

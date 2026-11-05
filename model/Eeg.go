@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 
 	"github.com/jjeffery/civil"
@@ -100,8 +101,14 @@ func DefaultEcZoneLevel(area AreaType) null.Int {
 	return null.Int{}
 }
 
-// MaxCodeLength is the longest TechCode/FuelCode stored; a longer one is dropped, never truncated.
-const MaxCodeLength = 10
+// validCode is a TechCode/FuelCode that may be stored: 1–10 letters, digits, ".", "_" or "-".
+var validCode = regexp.MustCompile(`^[A-Za-z0-9._-]{1,10}$`)
+
+// ValidCode: a TechCode/FuelCode of the metering point list that may be stored; another one is dropped, never
+// stored truncated.
+func ValidCode(code string) bool {
+	return validCode.MatchString(code)
+}
 
 // ValidEcZoneLevel: ECZoneLevel (Nahebereich) is 1–7.
 func ValidEcZoneLevel(level int) bool {

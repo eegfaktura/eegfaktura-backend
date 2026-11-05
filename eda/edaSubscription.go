@@ -596,7 +596,7 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 		} else if len(tenants) > 0 {
 			syncTenants = tenants
 		}
-		dropLongCodes(ctx, eeg.Id, &msg.Payload)
+		dropInvalidCodes(ctx, eeg.Id, &msg.Payload)
 		for _, tenant := range syncTenants {
 			if err = services.SyncMeteringPoints(tenant, &msg.Payload); err != nil {
 				logrus.WithField("tenant", tenant).Error(err)
@@ -656,13 +656,14 @@ func zpListCommunityData(ctx context.Context, db database.Database, eeg *model.E
 	}
 }
 
-// dropLongCodes drops a TechCode/FuelCode longer than model.MaxCodeLength with a warning; never stored truncated.
-func dropLongCodes(ctx context.Context, tenant string, p *model.EbmsMessage) {
+// dropInvalidCodes drops a TechCode/FuelCode that model.ValidCode refuses (e.g. longer than 10 characters) with a
+// warning; never stored truncated. An empty code means absent.
+func dropInvalidCodes(ctx context.Context, tenant string, p *model.EbmsMessage) {
 	for i := range p.MeterList {
 		m := &p.MeterList[i]
 		for name, code := range map[string]*string{"TechCode": &m.TechCode, "FuelCode": &m.FuelCode} {
-			if utf8.RuneCountInString(*code) > model.MaxCodeLength {
-				logrus.WithContext(ctx).WithField("tenant", tenant).Warnf("metering point list with a %s of %d characters for %s, not stored",
+			if *code != "" && !model.ValidCode(*code) {
+				logrus.WithContext(ctx).WithField("tenant", tenant).Warnf("metering point list with an invalid %s (%d characters) for %s, not stored",
 					name, utf8.RuneCountInString(*code), m.MeteringPoint)
 				*code = ""
 			}

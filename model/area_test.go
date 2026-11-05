@@ -55,6 +55,10 @@ func TestAreaRules(t *testing.T) {
 	}
 	_, ok := EdaEcType("6")
 	assert.False(t, ok)
+	for code, ok := range map[string]bool{"PV": true, "0123456789": true, "W.IND_1-A": true, "": false,
+		"ABCDEFGHIJK": false, "P V": false, "E;1": false, "Ä": false} {
+		assert.Equal(t, ok, ValidCode(code), code)
+	}
 	for level := -1; level <= 8; level++ {
 		assert.Equal(t, level >= 1 && level <= 7, ValidEcZoneLevel(level), level)
 	}
