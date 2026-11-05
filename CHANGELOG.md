@@ -20,8 +20,21 @@ this changelog highlights the changes relevant for overview and operations.
   list word of five or more letters also inside it), and a list word right before a format verb (`password=%s`); other
   string literals are not scanned, numbers, booleans and errors are skipped by type (dev#45 Q1). An
   exception needs an entry, keyed by file and finding, with its reason in `neverLogAllowed`. `-short` skips the scan.
+- **EEG admins change the settlement interval** (konzept-abrechnungsintervall.md, platform#230; caller: eegfaktura-web):
+  `POST /eeg/settlementinterval` (EEG_ADMIN, tenant from the checked header) with `settlementInterval`, `dryRun` and
+  `billingState` (billing's `settlementState`, passed on by web). The rule: without a final period the change applies
+  at once; otherwise from the month after the last final period, if a period of the new interval starts there, and no
+  run is running for a period ending then or later. Answer 200 `{allowed, effectiveFrom, lastFinalPeriod, message,
+  earliestFrom, eeg}`; a blocked change without `dryRun` is 409 (code 1062) with the reason; an invalid value, the
+  current value or a missing `billingState` is 400 (1060, 1061). The change runs in one transaction on the locked
+  `base.eeg` row and is recorded with user, time, old and new value in the new table `base.settlement_interval_change`
+  (migration `20261105120000_settlement_interval_change`, down drops the table).
 
 ### Changed
+- **`settlementInterval` is dropped silently by the generic EEG updates** (konzept-abrechnungsintervall.md): `POST /eeg`,
+  GraphQL `updateEegModel` and gRPC `AdminEegService.updateValue` (class EEG, caller: eegfaktura-admin-backend for the
+  admin tool) no longer change it, like the other protected fields; it changes only through
+  `POST /eeg/settlementinterval`. Registration still sets the initial value.
 - **`request.id` and `tenant.id` on the lines of an HTTP request** (dev#45 L12), no longer on the access line only;
   `trace.id` and `span.id` come along. In a request `tenant.id` is only what passed the tenant check, a tenant field
   of the line does not count. Not on: the notification DAO (`SaveNotification`, `SaveNotificationFromMap`,

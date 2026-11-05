@@ -37,9 +37,8 @@ func (r *mutationResolver) UpdateEegModel(ctx context.Context, tenant string, ee
 		return nil, err
 	}
 
-	if eegModel.SettlementInterval != nil {
-		eeg.SettlementInterval = *eegModel.SettlementInterval
-	}
+	// settlementInterval is dropped silently: it changes only through POST /eeg/settlementinterval with its rule
+	// (konzept-abrechnungsintervall.md).
 	if eegModel.SepaActiv != nil {
 		eeg.AccountInfo.Sepa = *eegModel.SepaActiv
 	}

@@ -31,6 +31,8 @@ type EegRepository interface {
 	FetchTenantsName(ctx context.Context, tenants []string, isSuperUser bool) ([]tenantsNameStruct, error)
 	InsertEeg(ctx context.Context, tenant string, eeg *model.Eeg) error
 	UpdateOnlineState(ctx context.Context, tenant string, onlineState bool) error
+	ChangeSettlementInterval(ctx context.Context, tenant, newInterval, changedBy string, state model.BillingState,
+		dryRun bool) (model.SettlementIntervalDecision, error)
 }
 
 func (db *sqlDatabase) GetEegById(ctx context.Context, tenant string) (*model.Eeg, error) {
@@ -235,10 +237,12 @@ func insertEeg(ctx context.Context, db *sqlx.DB, tenant string, eeg *model.Eeg) 
 // eegProtectedUpdateFields must never be set through the generic EEG update:
 // the identity/tenant key and rcNumber/online/createdAt (model: skipupdate),
 // plus communityId and tenant, which route incoming EDA messages and identify
-// the community. The web round-trips the whole EEG object on save, so these are
-// dropped silently rather than rejected.
+// the community, and settlementInterval, which changes only through
+// ChangeSettlementInterval with its rule (konzept-abrechnungsintervall.md). The
+// web round-trips the whole EEG object on save, so these are dropped silently
+// rather than rejected.
 var eegProtectedUpdateFields = func() map[string]struct{} {
-	m := map[string]struct{}{"tenant": {}, "communityId": {}}
+	m := map[string]struct{}{"tenant": {}, "communityId": {}, "settlementInterval": {}}
 	for _, k := range model.SkipUpdateJSONKeys(model.Eeg{}) {
 		m[k] = struct{}{}
 	}

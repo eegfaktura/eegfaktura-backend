@@ -284,7 +284,7 @@ func TestUpdateEegPartial1(t *testing.T) {
 }
 
 // TestUpdateEegPartialDropsProtectedFields deckt F6 ab: der generische EEG-Update
-// darf geschuetzte Felder (tenant, rcNumber, online, communityId) nicht setzen,
+// darf geschuetzte Felder (tenant, rcNumber, online, communityId, settlementInterval) nicht setzen,
 // auch wenn der Client sie mitschickt (die Web schickt das ganze Objekt zurueck).
 func TestUpdateEegPartialDropsProtectedFields(t *testing.T) {
 	db, err := GetDB(context.Background())
@@ -298,6 +298,8 @@ func TestUpdateEegPartialDropsProtectedFields(t *testing.T) {
 		"rcNumber":    "HIJACK",
 		"online":      true,
 		"communityId": "AT00000000000000000000000000HIJACK",
+		// only through ChangeSettlementInterval with its rule (konzept-abrechnungsintervall.md)
+		"settlementInterval": "ANNUAL",
 	})
 	require.NoError(t, err)
 
@@ -308,6 +310,7 @@ func TestUpdateEegPartialDropsProtectedFields(t *testing.T) {
 	assert.Equal(t, before.RcNumber, after.RcNumber, "rcNumber darf nicht geaendert sein")
 	assert.Equal(t, before.CommunityId, after.CommunityId, "communityId darf nicht geaendert sein")
 	assert.Equal(t, before.Online, after.Online, "online darf nicht geaendert sein")
+	assert.Equal(t, before.SettlementInterval, after.SettlementInterval, "settlementInterval darf nicht geaendert sein")
 }
 
 // TestUpdateEegPartialRejectsUnknownField: ein unbekannter Schluessel wird als
