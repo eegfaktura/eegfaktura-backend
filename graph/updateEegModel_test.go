@@ -2,6 +2,8 @@ package graph
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -10,7 +12,10 @@ import (
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/database/dbmock"
+	"at.ourproject/vfeeg-backend/graph/generated"
 	"at.ourproject/vfeeg-backend/graph/gmodel"
+	"at.ourproject/vfeeg-backend/logging"
+	"at.ourproject/vfeeg-backend/logging/logtest"
 	"at.ourproject/vfeeg-backend/model"
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
@@ -101,6 +106,40 @@ func TestUpdateEegModelTenantArgument(t *testing.T) {
 		assert.Nil(t, eeg)
 	}
 	assert.NoError(t, mock.ExpectationsWereMet(), "no statement expected")
+}
+
+// eegfaktura-dev#54 #13: a refused updateEegModel is one warning with an event; settlementInterval is marked
+// deprecated in the schema (it changes nothing).
+func TestUpdateEegModelRefusalIsLogged(t *testing.T) {
+	db, _, err := dbmock.New()
+	require.NoError(t, err)
+	database.SetDB(db)
+	t.Cleanup(func() { database.SetDB(nil) })
+	buf := logtest.Capture(t, func(w io.Writer) {
+		logging.Setup(w, logging.Config{Level: slog.LevelInfo, JSON: true, Version: "test"})
+	})
+
+	sepa := true
+	_, err = updateEegModel(t, middleware.AccessGroups{"/EEG_USER"}, "TE000233", &gmodel.EegModel{SepaActiv: &sepa})
+	require.Error(t, err)
+	_, err = updateEegModel(t, admin, "TE000234", &gmodel.EegModel{SepaActiv: &sepa})
+	require.Error(t, err)
+	var reasons []any
+	for _, l := range logtest.Lines(t, buf) {
+		if l["event.action"] == "graphql.update_eeg_model.refused" {
+			assert.Equal(t, "warn", l["log.level"])
+			assert.Equal(t, "failure", l["event.outcome"])
+			reasons = append(reasons, l["event.reason"])
+		}
+	}
+	assert.Equal(t, []any{"updateEegModel requires the EEG admin group",
+		"updateEegModel: the tenant argument differs from the tenant header"}, reasons, buf.String())
+
+	field := generated.NewExecutableSchema(generated.Config{Resolvers: &Resolver{}}).Schema().
+		Types["EegModel"].Fields.ForName("settlementInterval")
+	require.NotNil(t, field)
+	assert.NotNil(t, field.Directives.ForName("deprecated"))
+	assert.Contains(t, field.Description, "Ignored")
 }
 
 // A member token (no EEG admin group) is refused like on POST /eeg, nothing is written; /query stays log-only for the

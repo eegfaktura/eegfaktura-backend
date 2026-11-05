@@ -36,12 +36,12 @@ func (r *mutationResolver) UpdateEegModel(ctx context.Context, tenant string, ee
 
 	// Like POST /eeg (Protect) only for the EEG admin group (261105-mm2, admin check); nothing is written otherwise.
 	if !middleware.IsGQLAdmin(ctx) {
-		return nil, errors.New("updateEegModel requires the EEG admin group")
+		return nil, refuseUpdateEegModel(ctx, "updateEegModel requires the EEG admin group")
 	}
 	// A tenant argument other than the header (case-insensitive) is an error, nothing is written (eegfaktura-dev#54
 	// #6): before, it was ignored and the write went to the community of the header.
 	if !strings.EqualFold(arg, tenant) || (eegModel != nil && eegModel.Tenant != nil && !strings.EqualFold(*eegModel.Tenant, tenant)) {
-		return nil, errors.New("updateEegModel: the tenant argument differs from the tenant header")
+		return nil, refuseUpdateEegModel(ctx, "updateEegModel: the tenant argument differs from the tenant header")
 	}
 
 	// Stored through the guarded path of POST /eeg (261105-mm2: before, nothing was stored). settlementInterval is

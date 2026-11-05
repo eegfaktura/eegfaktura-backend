@@ -94,6 +94,10 @@ this changelog highlights the changes relevant for overview and operations.
   the text „Die Anfrage konnte nicht gelesen werden (kein gültiges JSON)“ and `"error":"Bad Process"` like the other
   answers of the route; the decoder's text (Go type and field names) only in the WARN line. Before, ERROR and the
   decoder's text in the answer.
+- **A refused GraphQL `updateEegModel` is logged** (eegfaktura-dev#54 #13): one WARN line
+  `event.action=graphql.update_eeg_model.refused` with the reason (no admin group, tenant argument); the access line
+  still says 200, the error is in the GraphQL answer. `EegModel.settlementInterval` is marked `@deprecated` in the
+  schema with a description that it is ignored; the behaviour is unchanged (dropped, no error).
 
 ### Fixed
 - **Metering point master data of larger communities within the deadline again** (support ticket 6611200): the
