@@ -2,8 +2,6 @@ package graph
 
 import (
 	"context"
-	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -14,7 +12,7 @@ import (
 	"at.ourproject/vfeeg-backend/database/dbmock"
 	"at.ourproject/vfeeg-backend/graph/generated"
 	"at.ourproject/vfeeg-backend/graph/gmodel"
-	"at.ourproject/vfeeg-backend/logging"
+	"at.ourproject/vfeeg-backend/logging/logcapture"
 	"at.ourproject/vfeeg-backend/logging/logtest"
 	"at.ourproject/vfeeg-backend/model"
 	"github.com/DATA-DOG/go-sqlmock"
@@ -115,9 +113,7 @@ func TestUpdateEegModelRefusalIsLogged(t *testing.T) {
 	require.NoError(t, err)
 	database.SetDB(db)
 	t.Cleanup(func() { database.SetDB(nil) })
-	buf := logtest.Capture(t, func(w io.Writer) {
-		logging.Setup(w, logging.Config{Level: slog.LevelInfo, JSON: true, Version: "test"})
-	})
+	buf := logcapture.JSON(t)
 
 	sepa := true
 	_, err = updateEegModel(t, middleware.AccessGroups{"/EEG_USER"}, "TE000233", &gmodel.EegModel{SepaActiv: &sepa})

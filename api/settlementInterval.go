@@ -100,11 +100,11 @@ func (h *EegHandler) changeSettlementInterval() middleware.JWTHandlerFunc {
 			WithFields(log.Fields{"event.action": "eeg.settlement_interval.changed", "event.outcome": "success"}).
 			Info("settlement interval changed")
 		if resp.Eeg, err = h.db.GetEegById(r.Context(), tenant); err != nil {
+			// the change is committed: 200 with the decision and without the EEG, not an error
 			log.WithContext(r.Context()).WithError(err).
-				WithFields(log.Fields{"event.action": "eeg.settlement_interval.failed", "event.outcome": "failure", "code": 1063}).
-				Error("settlement interval changed, reading the EEG failed")
-			respondWithHttpError(w, http.StatusInternalServerError, BadProcessError(1063, "Das Abrechnungsintervall wurde geändert, die Gemeinschaft konnte nicht neu geladen werden"))
-			return
+				WithFields(log.Fields{"event.action": "eeg.settlement_interval.reload_failed", "event.outcome": "failure"}).
+				Warn("settlement interval changed, reading the EEG back failed")
+			resp.Message += " Die Gemeinschaft konnte danach nicht neu geladen werden, bitte die Seite neu laden."
 		}
 		respondWithJSON(w, http.StatusOK, resp)
 	}

@@ -40,7 +40,9 @@ this changelog highlights the changes relevant for overview and operations.
   with `settlementInterval.old`, `settlementInterval.new` and `settlementInterval.effectiveFrom` (empty: at once);
   `eeg.settlement_interval.refused` with `code` and the reason in `event.reason` (INFO for a change the rule blocks,
   409; WARN for invalid input, 400); `eeg.settlement_interval.failed` (ERROR, 500). `tenant.id` from the checked
-  request, no user name. A dry run writes no event.
+  request, no user name. A dry run logs only a refusal of invalid input (400), not its decision. If reading the EEG
+  back fails after the change is stored, the answer is 200 with `eeg: null` and a note in `message`, logged as
+  `eeg.settlement_interval.reload_failed` (WARN); before, 500 (1063) although the change was stored.
 
 ### Changed
 - **`settlementInterval` is dropped silently by the generic EEG updates** (konzept-abrechnungsintervall.md): `POST /eeg`
@@ -76,21 +78,23 @@ this changelog highlights the changes relevant for overview and operations.
   `database/migration/000001_init-setup.up.sql` and config key `file-content.basedir`; stale Makefile targets
   (`atlas-hash`/`atlas-diff` spelled right). The test seed data is `database/testdata/seed.sql`.
 - **The start-up log names the migration result** (eegfaktura-dev#54 #4): one line `event.action=db.migrate.done` with
-  `migration.version_before`, `migration.version_after` (0: no version) and `migration.applied` (0 with the message
+  `migration.versionBefore`, `migration.versionAfter` (0: no version) and `migration.applied` (0 with the message
   `database schema unchanged (no_change)`), so a run that skipped migrations is visible. A failed migration is one
   ERROR line `db.migrate.failed` (before: `log.Fatal` with the bare error, then nothing). The migrations run on a
   connection of their own, closed afterwards (before: one connection of the pool stayed held).
 - **Migrations wait at most 60 s for a lock** (eegfaktura-dev#54 #1): the migration connection sets `lock_timeout`
-  (60 s per lock wait, also for golang-migrate's migration lock). Before, a migration behind a long transaction or a
+  (60 s per lock wait of the connection, also the wait for the migration lock while the driver opens; golang-migrate's
+  own wait for that lock in `Up` ends after 15 s). Before, a migration behind a long transaction or a
   `pg_dump` kept the start waiting with no log after `Start migration ...`, and the API down (one replica,
   `Recreate`). Now the start fails with `event.action=db.migrate.failed` and a message naming the lock wait and
-  `pg_stat_activity`; the pod restarts. A migration file that was started stays dirty: recovery in the README,
-  section "Failed migration (dirty)".
+  `pg_stat_activity` (detected by SQLSTATE 55P03); the pod restarts. A migration file that was started stays dirty:
+  recovery in the README, section "Failed migration (dirty)". `error.message` of a failed migration is the first line
+  of the error, at most 200 characters (golang-migrate's text holds the whole file).
 - **A dirty migration version points to its recovery** (eegfaktura-dev#54 #3): one ERROR line
   `event.action=db.migrate.dirty` with `migration.version` and the pointer to the README section "Failed migration
   (dirty)", at start on a dirty version and when a migration file fails. Before, only golang-migrate's
   `Dirty database version … Fix and force version.`, which names a CLI that is not in the image and is wrong for an
-  invalid index.
+  invalid index; that text is no longer logged (a failed file keeps its own error in `error.message`).
 - **`POST /eeg/settlementinterval`: an unreadable body is a warning** (eegfaktura-dev#54 #12): 400 (code 2000) with
   the text „Die Anfrage konnte nicht gelesen werden (kein gültiges JSON)“ and `"error":"Bad Process"` like the other
   answers of the route (a body over 1 MiB: „Die Anfrage ist zu groß“); the decoder's text (Go type and field names)

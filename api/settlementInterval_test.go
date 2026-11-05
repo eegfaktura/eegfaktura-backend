@@ -1,12 +1,10 @@
 package api
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -15,7 +13,9 @@ import (
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/logging"
+	"at.ourproject/vfeeg-backend/logging/logcapture"
 	"at.ourproject/vfeeg-backend/logging/logtest"
+	"at.ourproject/vfeeg-backend/model"
 	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -25,13 +25,6 @@ const (
 	siTenant      = "TE000231"
 	siOtherTenant = "TE000232"
 )
-
-func captureLog(t *testing.T) *bytes.Buffer {
-	t.Helper()
-	return logtest.Capture(t, func(w io.Writer) {
-		logging.Setup(w, logging.Config{Level: slog.LevelInfo, JSON: true, Version: "test"})
-	})
-}
 
 // POST /eeg/settlementinterval (konzept-abrechnungsintervall.md): rule, record and the contract with web.
 func TestChangeSettlementInterval(t *testing.T) {
@@ -142,7 +135,7 @@ func TestChangeSettlementInterval(t *testing.T) {
 	})
 	t.Run("unreadable request: a warning, no Go names in the answer", func(t *testing.T) {
 		reset()
-		buf := captureLog(t)
+		buf := logcapture.JSON(t)
 		for _, body := range []string{`{"settlementInterval":"QUARTER","dryRun":"yes",` + billedToMar + `}`,
 			`{"settlementInterval":"QUARTER","dryRun":true,` + billedToMar + `}x`} {
 			w := post("admin", body)
@@ -170,7 +163,7 @@ func TestChangeSettlementInterval(t *testing.T) {
 	// eegfaktura-dev#54 #5: a change and a refusal are logged with an event, old and new value, without the user name
 	t.Run("events", func(t *testing.T) {
 		reset()
-		buf := captureLog(t)
+		buf := logcapture.JSON(t)
 		require.Equal(t, http.StatusConflict, post("admin", `{"settlementInterval":"QUARTER","dryRun":false,`+billedToFeb+`}`).Code)
 		require.Equal(t, http.StatusBadRequest, post("admin", `{"settlementInterval":"MONTHLY","dryRun":false,`+billedToMar+`}`).Code)
 		require.Equal(t, http.StatusOK, post("admin", `{"settlementInterval":"QUARTER","dryRun":true,`+billedToMar+`}`).Code)
@@ -266,4 +259,36 @@ func TestChangeSettlementInterval(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "MONTHLY", other.SettlementInterval, "the other tenant is not touched")
 	})
+	t.Run("stored change, reading back fails: 200 without the EEG, a warning", func(t *testing.T) {
+		reset()
+		buf := logcapture.JSON(t)
+		failing := logging.AccessLog(InitEegRouter(mux.NewRouter(), reloadFails{db}))
+		req := httptest.NewRequest(http.MethodPost, "/eeg/settlementinterval",
+			strings.NewReader(`{"settlementInterval":"QUARTER","dryRun":false,`+billedToMar+`}`))
+		req.Header.Set("Authorization", middleware.BEARER_SCHEMA+"admin")
+		req.Header.Set("tenant", siTenant)
+		w := httptest.NewRecorder()
+		failing.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		m := decode(w)
+		assert.Nil(t, m["eeg"])
+		assert.Equal(t, "Das neue Intervall gilt ab 1. April 2026. Die Gemeinschaft konnte danach nicht neu geladen werden, bitte die Seite neu laden.", m["message"])
+		assert.Equal(t, "QUARTER", interval(), "stored")
+		var reload []map[string]any
+		for _, l := range logtest.Lines(t, buf) {
+			assert.NotEqual(t, "error", l["log.level"], l)
+			if l["event.action"] == "eeg.settlement_interval.reload_failed" {
+				reload = append(reload, l)
+			}
+		}
+		require.Len(t, reload, 1, buf.String())
+		assert.Equal(t, "warn", reload[0]["log.level"])
+	})
+}
+
+// reloadFails is the database whose GetEegById fails, as after a lost connection.
+type reloadFails struct{ database.Database }
+
+func (reloadFails) GetEegById(context.Context, string) (*model.Eeg, error) {
+	return nil, errors.New("connection lost")
 }
