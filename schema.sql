@@ -202,6 +202,7 @@ CREATE TABLE IF NOT EXISTS base.metering_partition_factor
     CONSTRAINT FK_MeteringpointPartition FOREIGN KEY (metering_point_id, tenant, participant_id)
         REFERENCES base.meteringpoint (metering_point_id, tenant, participant_id) ON DELETE CASCADE ON UPDATE CASCADE
 );
+CREATE INDEX IF NOT EXISTS metering_partition_factor_tenant_idx ON base.metering_partition_factor (tenant);
 
 CREATE TABLE IF NOT EXISTS base.notification
 (
@@ -297,7 +298,7 @@ FROM (SELECT metering_partition_factor.metering_point_id,
              metering_partition_factor."createdAt",
              metering_partition_factor."createdBy",
              row_number()
-             OVER (PARTITION BY metering_partition_factor.metering_point_id, metering_partition_factor.participant_id ORDER BY metering_partition_factor.version DESC) AS rowid
+             OVER (PARTITION BY metering_partition_factor.tenant, metering_partition_factor.metering_point_id, metering_partition_factor.participant_id ORDER BY metering_partition_factor.version DESC) AS rowid
       FROM base.metering_partition_factor) partp
 WHERE partp.rowid = 1;
 
