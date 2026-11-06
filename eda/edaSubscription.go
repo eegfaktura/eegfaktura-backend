@@ -637,22 +637,29 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 	_ = db.SaveHistory(historyTenant, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
 }
 
-// zpListCommunityData takes the community data of a metering point list (platform#229): the Nahebereich goes to every
-// tenant of the community id, kept when the list has none, an invalid value is dropped; ECType RC_L/RC_R switches
-// LOCAL and REGIONAL, any other mismatch with the community type is logged. TechCode/FuelCode go with the metering points (SyncMeteringPoints).
+// zpListCommunityData takes the community data of a metering point list (platform#229): ECType RC_L/RC_R switches
+// LOCAL and REGIONAL (the switch clears the Nahebereich), any other mismatch with the community type is logged; then
+// the Nahebereich goes to every tenant of the community id, kept when the list has none, an invalid value is
+// dropped. TechCode/FuelCode go with the metering points (SyncMeteringPoints).
 func zpListCommunityData(ctx context.Context, db database.Database, eeg *model.Eeg, p *model.EbmsMessage) {
 	entry := logrus.WithContext(ctx).WithField("tenant", eeg.Id)
+	// the type first: a switch without ECZoneLevel in the list leaves the Nahebereich empty, not the old type's
+	// (eegfaktura-dev#56 #10); with one the list's level is set below
+	zpListArea(ctx, db, eeg, p, entry)
 	if p.EcZoneLevel != nil {
 		// UpdateEcZoneLevel refuses an invalid level
 		if err := db.UpdateEcZoneLevel(ctx, p.EcId, *p.EcZoneLevel); err != nil {
 			entry.WithError(err).Warn("ECZoneLevel of the metering point list not stored")
 		}
 	}
+}
+
+// zpListArea: RC_L/RC_R from the grid operator decide between LOCAL and REGIONAL (decided 05.11.2026); every other
+// mismatch is only a warning.
+func zpListArea(ctx context.Context, db database.Database, eeg *model.Eeg, p *model.EbmsMessage, entry *logrus.Entry) {
 	if p.EcTypeEda == "" {
 		return
 	}
-	// RC_L/RC_R from the grid operator decide between LOCAL and REGIONAL (decided 05.11.2026); every other mismatch is
-	// only a warning
 	if listArea, ok := eegAreaFromList[p.EcTypeEda]; ok && (eeg.Area == model.LOCAL || eeg.Area == model.REGIONAL) {
 		changes, err := db.UpdateEegAreaFromList(ctx, p.EcId, listArea)
 		if err != nil {

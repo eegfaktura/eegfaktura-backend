@@ -159,13 +159,14 @@ type AreaChange struct {
 
 // UpdateEegAreaFromList sets LOCAL or REGIONAL, as the grid operator's metering point list says (ECType RC_L/RC_R),
 // at every tenant of the community id that has the other of the two; no other type is changed (platform#229,
-// decided 05.11.2026). A system path: the generic updates still drop area.
+// decided 05.11.2026). A switch clears the Nahebereich: the old one belongs to the old type; the caller sets the
+// list's own level afterwards (eegfaktura-dev#56 #10). A system path: the generic updates still drop area.
 func (db *sqlDatabase) UpdateEegAreaFromList(ctx context.Context, ecId string, area model.AreaType) ([]AreaChange, error) {
 	if ecId == "" || (area != model.LOCAL && area != model.REGIONAL) {
 		return nil, fmt.Errorf("no area change from the list to %q", string(area))
 	}
 	changes := []AreaChange{}
-	err := db.db.SelectContext(ctx, &changes, `UPDATE base.eeg e SET area = $1
+	err := db.db.SelectContext(ctx, &changes, `UPDATE base.eeg e SET area = $1, ec_zone_level = NULL
 		FROM (SELECT tenant, area AS old FROM base.eeg WHERE "communityId" = $2 AND area IN ('LOCAL', 'REGIONAL')
 		      AND area <> $1 FOR UPDATE) o
 		WHERE e.tenant = o.tenant RETURNING e.tenant, o.old`, string(area), ecId)

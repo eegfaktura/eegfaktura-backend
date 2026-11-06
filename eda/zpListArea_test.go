@@ -73,4 +73,38 @@ func TestPodList_areaFromEcType(t *testing.T) {
 	assert.Contains(t, logged.String(), "ECType CC, the community type LOCAL means RC_L")
 }
 
+// eegfaktura-dev#56 #10: a switch LOCAL<->REGIONAL from a list without ECZoneLevel leaves the Nahebereich empty
+// instead of the old type's; with ECZoneLevel in the list the reported level is stored.
+func TestPodList_areaSwitchClearsZoneLevel(t *testing.T) {
+	const tenant, rc = "TEAREA85", "RC000085"
+	_, err := testDB.DbInstance.Exec(`INSERT INTO base.eeg
+		(tenant, name, description, "rcNumber", area, gridoperator_code, gridoperator_name, "communityId",
+		 street, "streetNumber", city, zip, email, ec_zone_level)
+		VALUES ($1, 'Typ', 'Typ-Test', $2, 'LOCAL', 'AT003000', 'Netz OÖ', $3, 'Weg', '1', 'Linz', '4020',
+		 'typ@example.org', 3)`, tenant, rc, ecIdOf(rc))
+	require.NoError(t, err)
+	cleanupCommunities(t, tenant)
+
+	podList := func(n int, extra string) {
+		msg := model.SubscribeMessage{MessageCode: model.EBMS_ZP_LIST_RESPONSE, Protocol: model.EC_PODLIST, Tenant: rc}
+		require.NoError(t, json.Unmarshal([]byte(fmt.Sprintf(`{"conversationId":"%s2026110600000000000000000%d",
+			"sender":"AT003000","receiver":"%s","messageCode":"SENDEN_ECP","ecId":"%s"%s,"meterList":[]}`,
+			rc, n, rc, ecIdOf(rc), extra)), &msg.Payload))
+		protocolEcPodListHandler(context.Background(), msg)
+	}
+	state := func() string {
+		var s string
+		require.NoError(t, testDB.DbInstance.Get(&s, `SELECT area || ' ' || COALESCE(ec_zone_level::text, 'NULL')
+			FROM base.eeg WHERE tenant = $1`, tenant))
+		return s
+	}
+
+	podList(1, `,"ecTypeEda":"RC_R"`)
+	assert.Equal(t, "REGIONAL NULL", state(), "switch without ECZoneLevel")
+	podList(2, `,"ecTypeEda":"RC_L","ecZoneLevel":3`)
+	assert.Equal(t, "LOCAL 3", state(), "switch with ECZoneLevel")
+	podList(3, `,"ecTypeEda":"RC_L"`)
+	assert.Equal(t, "LOCAL 3", state(), "no switch: the stored level stays")
+}
+
 func ecIdOf(rc string) string { return "AT00300000000" + rc + "000000000001" }

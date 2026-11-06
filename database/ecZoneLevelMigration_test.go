@@ -156,6 +156,14 @@ func TestUpdateEegAreaFromList(t *testing.T) {
 	assert.Equal(t, model.REGIONAL, area("TE000090"))
 	assert.Equal(t, model.GEA, area("TE000091"))
 	assert.Equal(t, model.LOCAL, area("TE000092"), "other community id")
+	zone := func(tenant string) null.Int {
+		e, err := db.GetEegById(ctx, tenant)
+		require.NoError(t, err)
+		return e.EcZoneLevel
+	}
+	assert.False(t, zone("TE000090").Valid, "the switch clears the Nahebereich (eegfaktura-dev#56 #10)")
+	assert.Equal(t, null.IntFrom(1), zone("TE000091"), "GEA not switched, Nahebereich stays")
+	assert.Equal(t, null.IntFrom(3), zone("TE000092"), "other community id")
 
 	changes, err = db.UpdateEegAreaFromList(ctx, ecId, model.REGIONAL)
 	require.NoError(t, err)
