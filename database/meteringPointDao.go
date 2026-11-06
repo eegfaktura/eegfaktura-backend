@@ -747,9 +747,11 @@ func TenantNames(revoked []RevokedTenant) []string {
 // the first step that matches wins:
 //  1. tenants of the receiving RC number + exact consent id
 //  2. tenants of the receiving RC number + no consent id (or the migration placeholder), assigned
-//  3. any tenant + exact consent id
-//  4. any tenant + no consent id (or placeholder), assigned — only without a receiving RC number,
-//     otherwise it could revoke another community's participation of the same metering point
+//  3. any tenant + exact consent id — only without a receiving RC number
+//  4. any tenant + no consent id (or placeholder), assigned — only without a receiving RC number
+//
+// With a receiving RC number only its own tenants are revoked (steps 3 and 4 never run, decided
+// 06.11.2026); no match is an error, the caller records the message at the receiver.
 //
 // Without a consent id the "assigned" steps take any consent. A step may hit several tenants
 // only if they all belong to the same RC number (the consent is given per RC number); otherwise
@@ -788,10 +790,10 @@ func meteringPointRevokeByConsentId(ctx context.Context, db *sqlx.DB, receiver s
 		}
 		steps = append(steps, goqu.And(meter, inReceiver, assignedWithoutConsent))
 	}
-	if consentId != nil {
-		steps = append(steps, goqu.And(meter, goqu.C("consent_id").Eq(*consentId)))
-	}
 	if receiver == "" {
+		if consentId != nil {
+			steps = append(steps, goqu.And(meter, goqu.C("consent_id").Eq(*consentId)))
+		}
 		steps = append(steps, goqu.And(meter, assignedWithoutConsent))
 	}
 

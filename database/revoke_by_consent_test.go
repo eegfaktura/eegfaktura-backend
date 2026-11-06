@@ -52,8 +52,22 @@ func TestMeteringPointRevokeByConsentId_sameMeterInTwoTenants(t *testing.T) {
 		return s
 	}
 
-	t.Run("exact consent id wins, even without receiving tenant", func(t *testing.T) {
+	t.Run("exact consent id of another community: only without receiving RC number", func(t *testing.T) {
+		// a receiving RC number without a row of the metering point: the consent id of another
+		// community revokes nothing (decided 06.11.2026)
+		_, err := testDB.DbInstance.Exec(`INSERT INTO base.eeg (tenant, name, description, "rcNumber", area,
+			gridoperator_code, gridoperator_name, "communityId", street, "streetNumber", city, zip, email)
+			VALUES ('TE000014', 'REVOKE-TEST', 'Revoke-Test', 'TE000014', 'LOCAL', 'AT003000', 'Netz OÖ',
+			'AT00300000000TC000014000000000001', 'Weg', '1', 'Linz', '4020', 'revoke-test@example.org')
+			ON CONFLICT (tenant) DO NOTHING`)
+		require.NoError(t, err)
 		consent := "CONSENT-A"
+		_, err = db.MeteringPointRevokeByConsentId(ctx, "TE000014", &consent, meterA, end)
+		assert.ErrorContains(t, err, "not found")
+		assert.Equal(t, "ACTIVE", state("TE000012", meterA))
+		assert.Equal(t, "ACTIVE", state("TE000011", meterA))
+
+		// without a receiving RC number the exact consent id wins, as before
 		revoked, err := db.MeteringPointRevokeByConsentId(ctx, "", &consent, meterA, end)
 		tenants := TenantNames(revoked)
 		require.NoError(t, err)

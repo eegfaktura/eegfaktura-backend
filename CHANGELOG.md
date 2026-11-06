@@ -11,6 +11,12 @@ this changelog highlights the changes relevant for overview and operations.
 ### Security
 - **Inbound EDA messages** (backend 261105-mm5): security relevant — details not published.
 
+### Changed
+- **Consent revocations by grid operator or customer** (AUFHEBUNG_CCMC/CCMI, backend 261105-mm5): a revocation is
+  applied only to metering points of the communities of the receiving RC number. A revocation that matches none of
+  them changes nothing and sends no mail; it is recorded in the history of the receiving community, as an unmatched
+  revocation was so far.
+
 ## [1.16.0] – 2026-11-06
 
 ### Security
