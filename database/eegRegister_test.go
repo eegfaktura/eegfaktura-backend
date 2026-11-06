@@ -55,6 +55,15 @@ func TestInsertEegRefusesAnExistingTenant(t *testing.T) {
 		assert.ErrorIs(t, err, ErrEegExists)
 	})
 
+	// platform#229: only GEA is excepted from the RC number rule, P2P and EVA are not
+	for _, area := range []model.AreaType{model.P2P, model.EVA} {
+		t.Run("a new "+string(area)+" tenant on an existing RC number", func(t *testing.T) {
+			eeg := registerEegFixture("TE000031-"+string(area), "TE000031", string(area)+" auf fremder Nummer")
+			eeg.Area = area
+			assert.ErrorIs(t, db.InsertEeg(ctx, "TE000031", eeg), ErrEegExists)
+		})
+	}
+
 	t.Run("the first registration stays as it was", func(t *testing.T) {
 		var names []string
 		require.NoError(t, testDB.DbInstance.Select(&names, `SELECT name FROM base.eeg WHERE upper(tenant) LIKE 'TE000031%'`))
@@ -67,4 +76,53 @@ func TestInsertEegRefusesAnExistingTenant(t *testing.T) {
 		sub.Area = "GEA"
 		assert.NoError(t, db.InsertEeg(ctx, "TE000031", sub))
 	})
+}
+
+// platform#229: a P2P or EVA registration stores exactly this type, and the view hands it to billing as eeg_area.
+func TestInsertEegStoresP2PAndEva(t *testing.T) {
+	db, err := GetDB(context.Background())
+	require.NoError(t, err)
+	ctx := context.Background()
+	tenants := map[string]model.AreaType{"TE000041": model.P2P, "TE000042": model.EVA}
+	cleanup := func() {
+		_, err := testDB.DbInstance.Exec(`DELETE FROM base.participant WHERE tenant IN ('TE000041', 'TE000042')`)
+		require.NoError(t, err)
+		_, err = testDB.DbInstance.Exec(`DELETE FROM base.eeg WHERE tenant IN ('TE000041', 'TE000042')`)
+		require.NoError(t, err)
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+
+	for tenant, area := range tenants {
+		eeg := registerEegFixture(tenant, tenant, string(area))
+		eeg.Area = area
+		require.NoError(t, db.InsertEeg(ctx, tenant, eeg))
+
+		stored, err := db.GetEegById(ctx, tenant)
+		require.NoError(t, err)
+		assert.Equal(t, area, stored.Area)
+
+		_, err = testDB.DbInstance.Exec(`INSERT INTO base.participant (id, tenant, firstname, lastname, "createdBy",
+			"lastModifiedBy") VALUES (gen_random_uuid(), $1, 'P2P', 'Mitglied', 'test', 'test')`, tenant)
+		require.NoError(t, err)
+		var areas []string
+		require.NoError(t, testDB.DbInstance.Select(&areas, `SELECT eeg_area FROM base.billing_masterdata
+			WHERE tenant_id = $1`, tenant))
+		assert.Equal(t, []string{string(area)}, areas)
+	}
+}
+
+// platform#229: both registrations (gRPC, MQTT) refuse an unknown community type in insertEeg; nothing is written.
+// "6" is how a gRPC GRID_AREA value unknown to this backend arrives.
+func TestInsertEegRefusesAnUnknownArea(t *testing.T) {
+	db, err := GetDB(context.Background())
+	require.NoError(t, err)
+	for _, area := range []model.AreaType{"6", "", "PP"} {
+		eeg := registerEegFixture("TE000046", "TE000046", "Unbekannter Typ")
+		eeg.Area = area
+		assert.ErrorIs(t, db.InsertEeg(context.Background(), "TE000046", eeg), ErrInvalidEeg, string(area))
+	}
+	var n int
+	require.NoError(t, testDB.DbInstance.Get(&n, `SELECT count(*) FROM base.eeg WHERE tenant = 'TE000046'`))
+	assert.Zero(t, n, "nothing written")
 }

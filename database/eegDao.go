@@ -19,6 +19,9 @@ const TABLE_EEG_ADDRESS = "base.address"
 // ErrEegExists: the tenant is already registered; nothing was written (261015-ca1).
 var ErrEegExists = errors.New("eeg already exists")
 
+// ErrInvalidEeg: the registration carries a value outside the known ones (e.g. the community type); nothing was written.
+var ErrInvalidEeg = errors.New("invalid eeg registration")
+
 type EegRepository interface {
 	GetEegById(ctx context.Context, tenant string) (*model.Eeg, error)
 	GetEegByIdForUser(ctx context.Context, tenant string) (*model.Eeg, error)
@@ -28,9 +31,13 @@ type EegRepository interface {
 	GetTenantsByRcNumber(ctx context.Context, rcNumber string) ([]string, error)
 	UpdateEegPartial(ctx context.Context, tenant string, fields map[string]interface{}) error
 	GetGridOperators(ctx context.Context) (map[string]string, error)
+	MeteringPointGridOperators(ctx context.Context, tenant string) ([]string, error)
 	FetchTenantsName(ctx context.Context, tenants []string, isSuperUser bool) ([]tenantsNameStruct, error)
 	InsertEeg(ctx context.Context, tenant string, eeg *model.Eeg) error
 	UpdateOnlineState(ctx context.Context, tenant string, onlineState bool) error
+	UpdateEcZoneLevel(ctx context.Context, ecId string, level int) error
+	EcIdBelongsToRc(ctx context.Context, ecId, rcNumber string) (bool, error)
+	UpdateEegAreaFromList(ctx context.Context, ecId string, area model.AreaType) ([]AreaChange, error)
 	ChangeSettlementInterval(ctx context.Context, tenant, newInterval, changedBy string, state model.BillingState,
 		dryRun bool) (model.SettlementIntervalDecision, error)
 }
@@ -135,6 +142,50 @@ func (db *sqlDatabase) InsertEeg(ctx context.Context, tenant string, eeg *model.
 	return insertEeg(ctx, db.db, tenant, eeg)
 }
 
+// EcIdBelongsToRc: one of the tenants of the community id has the RC number (case-insensitive), e.g. the RC number
+// of the topic an inbound message came in on.
+func (db *sqlDatabase) EcIdBelongsToRc(ctx context.Context, ecId, rcNumber string) (bool, error) {
+	var ok bool
+	err := db.db.GetContext(ctx, &ok, `SELECT EXISTS (SELECT 1 FROM base.eeg WHERE "communityId" = $1
+		AND upper("rcNumber") = upper($2))`, ecId, rcNumber)
+	return ok, err
+}
+
+// AreaChange is a community type changed by the grid operator's metering point list.
+type AreaChange struct {
+	Tenant string         `db:"tenant"`
+	Old    model.AreaType `db:"old"`
+}
+
+// UpdateEegAreaFromList sets LOCAL or REGIONAL, as the grid operator's metering point list says (ECType RC_L/RC_R),
+// at every tenant of the community id that has the other of the two; no other type is changed (platform#229,
+// decided 05.11.2026). A switch clears the Nahebereich: the old one belongs to the old type; the caller sets the
+// list's own level afterwards (eegfaktura-dev#56 #10). A system path: the generic updates still drop area.
+func (db *sqlDatabase) UpdateEegAreaFromList(ctx context.Context, ecId string, area model.AreaType) ([]AreaChange, error) {
+	if ecId == "" || (area != model.LOCAL && area != model.REGIONAL) {
+		return nil, fmt.Errorf("no area change from the list to %q", string(area))
+	}
+	changes := []AreaChange{}
+	err := db.db.SelectContext(ctx, &changes, `UPDATE base.eeg e SET area = $1, ec_zone_level = NULL
+		FROM (SELECT tenant, area AS old FROM base.eeg WHERE "communityId" = $2 AND area IN ('LOCAL', 'REGIONAL')
+		      AND area <> $1 FOR UPDATE) o
+		WHERE e.tenant = o.tenant RETURNING e.tenant, o.old`, string(area), ecId)
+	return changes, err
+}
+
+// UpdateEcZoneLevel sets the Nahebereich of every tenant of the community id (several for a GEA) from the grid
+// operator's metering point list; an invalid level is refused (platform#229).
+func (db *sqlDatabase) UpdateEcZoneLevel(ctx context.Context, ecId string, level int) error {
+	if ecId == "" {
+		return errors.New("no community id")
+	}
+	if !model.ValidEcZoneLevel(level) {
+		return fmt.Errorf("invalid ECZoneLevel %d", level)
+	}
+	_, err := db.db.ExecContext(ctx, `UPDATE base.eeg SET ec_zone_level = $1 WHERE "communityId" = $2`, level, ecId)
+	return err
+}
+
 func (db *sqlDatabase) UpdateOnlineState(ctx context.Context, tenant string, onlineState bool) error {
 
 	stmt, _, err := goqu.Update(TABLE_EEG).
@@ -187,11 +238,17 @@ func getEegByEcId(ctx context.Context, tx *sqlx.DB, edId string) (*model.Eeg, er
 
 func insertEeg(ctx context.Context, db *sqlx.DB, tenant string, eeg *model.Eeg) error {
 
+	// Both registrations (gRPC, MQTT register-eeg) come through here: only a known community type (platform#229).
+	if err := model.ValidateArea(eeg.Area); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidEeg, err)
+	}
+	eeg.EcZoneLevel = model.DefaultEcZoneLevel(eeg.Area)
+
 	// Tenants compare case-insensitively, the primary key only sees the exact spelling. Outside GEA an RC number
 	// belongs to one community: a new tenant on it would reach that community's login and Ponton account.
 	var exists bool
 	if err := db.GetContext(ctx, &exists, `SELECT EXISTS (SELECT 1 FROM base.eeg WHERE upper(tenant) = upper($1)
-		OR ($2 AND upper("rcNumber") = upper($3)))`, eeg.Id, eeg.Area != model.AreaType("GEA"), eeg.RcNumber); err != nil {
+		OR ($2 AND upper("rcNumber") = upper($3)))`, eeg.Id, eeg.Area != model.GEA, eeg.RcNumber); err != nil {
 		log.WithContext(ctx).WithError(err).WithField("SQL", "SELECT").Error("SQL statement failed")
 		return err
 	}
@@ -238,11 +295,13 @@ func insertEeg(ctx context.Context, db *sqlx.DB, tenant string, eeg *model.Eeg) 
 // the identity/tenant key and rcNumber/online/createdAt (model: skipupdate),
 // plus communityId and tenant, which route incoming EDA messages and identify
 // the community, and settlementInterval, which changes only through
-// ChangeSettlementInterval with its rule (konzept-abrechnungsintervall.md). The
-// web round-trips the whole EEG object on save, so these are dropped silently
-// rather than rejected.
+// ChangeSettlementInterval with its rule (konzept-abrechnungsintervall.md), and
+// area and allocationMode, which are set at registration and otherwise only by
+// the operator (platform#229, E5: a P2P/EVA community must not switch itself to
+// an EEG type and around the billing block). The web round-trips the whole EEG
+// object on save, so these are dropped silently rather than rejected.
 var eegProtectedUpdateFields = func() map[string]struct{} {
-	m := map[string]struct{}{"tenant": {}, "communityId": {}, "settlementInterval": {}}
+	m := map[string]struct{}{"tenant": {}, "communityId": {}, "settlementInterval": {}, "area": {}, "allocationMode": {}}
 	for _, k := range model.SkipUpdateJSONKeys(model.Eeg{}) {
 		m[k] = struct{}{}
 	}

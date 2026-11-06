@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
@@ -563,6 +564,21 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 	switch msg.MessageCode {
 	case model.EBMS_ZP_LIST:
 	case model.EBMS_ZP_LIST_RESPONSE:
+		if msg.Payload.EcId == "" {
+			logrus.WithContext(ctx).WithFields(logrus.Fields{"tenant": msg.Tenant, "event.action": "eda.podlist.no_community_id"}).
+				Warn("metering point list without a community id, dropped")
+			return
+		}
+		// only for a community of the RC number the list came in for (several tenants in a GEA, one RC number)
+		if ok, err := db.EcIdBelongsToRc(ctx, msg.Payload.EcId, msg.Tenant); err != nil {
+			logrus.WithContext(ctx).WithFields(logrus.Fields{"tenant": msg.Tenant, "event.action": "eda.podlist.community_check_failed"}).
+				WithError(err).Error("can not check the community id of the metering point list")
+			return
+		} else if !ok {
+			logrus.WithContext(ctx).WithFields(logrus.Fields{"tenant": msg.Tenant, "event.action": "eda.podlist.foreign_community"}).
+				WithField("ecId", msg.Payload.EcId).Warn("metering point list for a community id of another RC number, dropped")
+			return
+		}
 		buf, err := database.ExportZPListToExcel(ctx, &msg.Payload)
 		if err != nil {
 			return
@@ -583,11 +599,13 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 		} else if len(tenants) > 0 {
 			syncTenants = tenants
 		}
+		dropInvalidCodes(ctx, eeg.Id, &msg.Payload)
 		for _, tenant := range syncTenants {
 			if err = services.SyncMeteringPoints(tenant, &msg.Payload); err != nil {
 				logrus.WithField("tenant", tenant).Error(err)
 			}
 		}
+		zpListCommunityData(ctx, db, eeg, &msg.Payload)
 
 		if eeg.Email.Valid {
 			now := time.Now()
@@ -621,6 +639,68 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 	}
 	_ = db.SaveHistory(historyTenant, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
 }
+
+// zpListCommunityData takes the community data of a metering point list (platform#229): ECType RC_L/RC_R switches
+// LOCAL and REGIONAL (the switch clears the Nahebereich), any other mismatch with the community type is logged; then
+// the Nahebereich goes to every tenant of the community id, kept when the list has none, an invalid value is
+// dropped. TechCode/FuelCode go with the metering points (SyncMeteringPoints).
+func zpListCommunityData(ctx context.Context, db database.Database, eeg *model.Eeg, p *model.EbmsMessage) {
+	entry := logrus.WithContext(ctx).WithField("tenant", eeg.Id)
+	// the type first: a switch without ECZoneLevel in the list leaves the Nahebereich empty, not the old type's
+	// (eegfaktura-dev#56 #10); with one the list's level is set below
+	zpListArea(ctx, db, eeg, p, entry)
+	if p.EcZoneLevel != nil {
+		// UpdateEcZoneLevel refuses an invalid level
+		if err := db.UpdateEcZoneLevel(ctx, p.EcId, *p.EcZoneLevel); err != nil {
+			entry.WithField("event.action", "eda.podlist.zone_level_dropped").WithError(err).
+				Warn("ECZoneLevel of the metering point list not stored")
+		}
+	}
+}
+
+// zpListArea: RC_L/RC_R from the grid operator decide between LOCAL and REGIONAL (decided 05.11.2026); every other
+// mismatch is only a warning.
+func zpListArea(ctx context.Context, db database.Database, eeg *model.Eeg, p *model.EbmsMessage, entry *logrus.Entry) {
+	if p.EcTypeEda == "" {
+		return
+	}
+	if listArea, ok := eegAreaFromList[p.EcTypeEda]; ok && (eeg.Area == model.LOCAL || eeg.Area == model.REGIONAL) {
+		changes, err := db.UpdateEegAreaFromList(ctx, p.EcId, listArea)
+		if err != nil {
+			entry.WithField("event.action", "eeg.area.update_from_list_failed").WithError(err).
+				Error("can not take the community type from the metering point list")
+		}
+		for _, c := range changes {
+			logrus.WithContext(ctx).WithFields(logrus.Fields{"tenant": c.Tenant, "event.action": "eeg.area.updated_from_list",
+				"eeg.area.old": string(c.Old), "eeg.area.new": string(listArea)}).Info("community type taken from the metering point list")
+		}
+		return
+	}
+	if want, ok := model.EdaEcType(eeg.Area); !ok || want != p.EcTypeEda {
+		entry.WithField("event.action", "eda.podlist.ectype_mismatch").
+			Warnf("metering point list with ECType %s, the community type %s means %s: check the type", p.EcTypeEda, eeg.Area, want)
+	}
+}
+
+// dropInvalidCodes drops a TechCode/FuelCode that model.ValidCode refuses (e.g. longer than 10 characters) with a
+// warning; never stored truncated. An empty code means absent.
+func dropInvalidCodes(ctx context.Context, tenant string, p *model.EbmsMessage) {
+	for i := range p.MeterList {
+		m := &p.MeterList[i]
+		for name, code := range map[string]*string{"TechCode": &m.TechCode, "FuelCode": &m.FuelCode} {
+			if *code != "" && !model.ValidCode(*code) {
+				// without the metering point number (eegfaktura-dev#56 #12): the conversation finds the list in the history
+				logrus.WithContext(ctx).WithFields(logrus.Fields{"tenant": tenant, "event.action": "eda.podlist.code_dropped"}).
+					Warnf("metering point list with an invalid %s (%d characters), not stored, conversation %s",
+						name, utf8.RuneCountInString(*code), p.ConversationId)
+				*code = ""
+			}
+		}
+	}
+}
+
+// eegAreaFromList: the ECTypes of a metering point list that set the community type (LOCAL/REGIONAL only).
+var eegAreaFromList = map[string]model.AreaType{"RC_L": model.LOCAL, "RC_R": model.REGIONAL}
 
 // zpListEeg returns the community a metering point list belongs to. In a GEA the list covers every tenant of the
 // community id, so its mail goes to the tenant that asked for it — never to all, each would get the other tenants'

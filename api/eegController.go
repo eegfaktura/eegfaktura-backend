@@ -181,8 +181,16 @@ func (h *EegHandler) syncParticipantsEda() middleware.JWTHandlerFunc {
 		from := time.Date(day.Year(), day.Month(), day.Day()-1, 0, 0, 0, 0, day.Location()).UnixMilli()
 		to := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location()).UnixMilli()
 
-		if err = mqttclient.RequestingMeteringPointList(eeg, operatorId, from, to); err != nil {
-			respondWith(r.Context(), w, http.StatusInternalServerError, tenant, err)
+		var operators []string
+		if model.HasMultipleGridOperators(eeg.Area) {
+			if operators, err = h.db.MeteringPointGridOperators(r.Context(), tenant); err != nil {
+				respondWith(r.Context(), w, http.StatusInternalServerError, tenant, model.ErrFindMeter(err))
+				return
+			}
+		}
+		// an error means the receiver is missing or not one of the community: nothing sent (eegfaktura-dev#56 #7)
+		if err = mqttclient.RequestingMeteringPointList(eeg, operatorId, operators, from, to); err != nil {
+			respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
 			return
 		}
 		respondWithStatus(w, http.StatusNoContent)
