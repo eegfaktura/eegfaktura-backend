@@ -34,6 +34,11 @@ func TestInbound_onlyForTheReceivingRcNumber(t *testing.T) {
 	}{
 		{"registration", "registration", protocolEcReqOnlHandler, model.EC_REQ_ONL, model.EBMS_ONLINE_REG_ANSWER,
 			`"responseData":[{"meteringPoint":"%[1]s","responseCode":[99]}]`, meterColumnIs("process_state", "PENDING")},
+		{"energy data", "crmsg", protocolCrMsgHandler, model.CR_MSG, model.EBMS_ENERGY_FILE_RESPONSE,
+			`"meter":{"meteringPoint":"%[1]s"},"energy":[{"start":1759269600000,"end":1759356000000}]`, nil},
+		{"energy data request", "energyrequest", protocolCrReqPtHandler, model.CR_REQ_PT, model.EBMS_ZP_RES,
+			`"meter":{"meteringPoint":"%[1]s"},"responseData":[{"meteringPoint":"%[1]s","responseCode":[99]}]`,
+			notified(model.EBMS_ZP_RES)},
 	}
 
 	var mails atomic.Int32
@@ -148,6 +153,15 @@ func meterColumnIs(column, value string) func(*testing.T, string, string) bool {
 		require.NoError(t, testDB.DbInstance.Get(&v, `SELECT `+column+` FROM base.meteringpoint
 			WHERE tenant = $1 AND metering_point_id = $2`, tenant, meter))
 		return v == value
+	}
+}
+
+func notified(code model.EbMsMessageType) func(*testing.T, string, string) bool {
+	return func(t *testing.T, tenant, _ string) bool {
+		var n int
+		require.NoError(t, testDB.DbInstance.Get(&n, `SELECT count(*) FROM base.notification WHERE tenant = $1
+			AND notification->>'type' = $2`, tenant, string(code)))
+		return n > 0
 	}
 }
 

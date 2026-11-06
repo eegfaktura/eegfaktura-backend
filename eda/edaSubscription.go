@@ -181,6 +181,10 @@ func protocolCrMsgHandler(ctx context.Context, msg model.SubscribeMessage) {
 		return
 	}
 
+	if !forReceivingRc(ctx, db, msg, "crmsg") {
+		return
+	}
+
 	eeg, err := db.GetEegByEcIdAndMeters(ctx, msg.Payload.EcId, messageMeters(&msg.Payload))
 	if err != nil {
 		logrus.WithField("tenant", msg.Tenant).WithError(err).Errorf("can not fetch eeg with message -> conversation %s", msg.Payload.ConversationId)
@@ -213,6 +217,10 @@ func protocolCrReqPtHandler(ctx context.Context, msg model.SubscribeMessage) {
 	db, err := database.GetDB(ctx)
 	if err != nil {
 		logrus.WithField("tenant", msg.Tenant).Error(err)
+		return
+	}
+
+	if !forReceivingRc(ctx, db, msg, "energyrequest") {
 		return
 	}
 
