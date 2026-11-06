@@ -264,10 +264,12 @@ func protocolEcReqOnlHandler(ctx context.Context, msg model.SubscribeMessage) {
 		return &cId
 	}
 
-	// the mails are queued after the status is written below, also on its early returns
+	// the mails are queued after the status is written below, also on its early returns, but only for a message
+	// that passed the receiving RC number check
 	var queueMails func()
+	checked := false
 	defer func() {
-		if queueMails != nil {
+		if checked && queueMails != nil {
 			queueMails()
 		}
 	}()
@@ -364,9 +366,9 @@ func protocolEcReqOnlHandler(ctx context.Context, msg model.SubscribeMessage) {
 	}
 
 	if !forReceivingRc(ctx, db, msg, "registration") {
-		queueMails = nil // no mail for a dropped message
 		return
 	}
+	checked = true
 
 	eeg, err := db.GetEegByEcIdAndMeters(ctx, msg.Payload.EcId, messageMeters(&msg.Payload))
 	if err != nil {
