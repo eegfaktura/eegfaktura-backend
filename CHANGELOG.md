@@ -8,6 +8,9 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Security
+- **Base image `debian:trixie-20261027-slim`** (published 2026-10-28) instead of `trixie-20261020-slim`: current Debian security updates of the runtime image.
+
 ### Added
 - **Start-up line and `deployment.environment`** (dev#45 L14, Q5): one line `service start` (`event.action=service.start`)
   with version and effective log level (`log.effective_level`), written by `logging.Setup` whatever `LOG_LEVEL` says, no
