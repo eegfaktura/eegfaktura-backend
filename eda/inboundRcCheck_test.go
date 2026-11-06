@@ -19,10 +19,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// 261105-mm5: an inbound EDA message is processed only for a community id of the RC number it came in for (the MQTT
-// topic). One naming the community id of another RC number, or none, writes nothing — no status, factor,
-// notification, history or mail. The receiving community still gets its message, and so does a GEA (two tenants,
-// one RC number and community id), at the tenant that holds the metering point.
+// 261105-mm5: the inbound EDA handlers process a message for a community id of the receiving RC number (the MQTT
+// topic): for the receiving community, and in a GEA (two tenants, one RC number and community id) for the tenant that
+// holds the metering point. Any other message is dropped: no status, factor, notification, history or mail.
 func TestInbound_onlyForTheReceivingRcNumber(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -44,8 +43,19 @@ func TestInbound_onlyForTheReceivingRcNumber(t *testing.T) {
 			`"consentEnd":1759269600000,"meter":{"meteringPoint":"%[1]s","consentId":"C-S4"},
 			"responseData":[{"meteringPoint":"%[1]s","responseCode":[176],"consentId":"C-S4"}]`,
 			meterColumnIs("status", "INACTIVE")},
+		{"revocation request echo", "revoke", protocolCmRevImpHandler, model.CM_REV_SP, model.EBMS_AUFHEBUNG_CCMS,
+			`"consentEnd":1759269600000,"meter":{"meteringPoint":"%[1]s","consentId":"C-S4"},
+			"responseData":[{"meteringPoint":"%[1]s","responseCode":[99],"consentId":"C-S4"}]`,
+			meterColumnIs("status", "INACTIVE")},
+		{"revocation rejected", "revoke", protocolCmRevImpHandler, model.CM_REV_SP, model.EBMS_ABLEHNUNG_CCMS,
+			`"meter":{"meteringPoint":"%[1]s","consentId":"C-S4"},
+			"responseData":[{"meteringPoint":"%[1]s","responseCode":[37],"consentId":"C-S4"}]`,
+			notified(model.EBMS_ABLEHNUNG_CCMS)},
 		{"participation factor", "partfact", protocolEcPrtChangeHandler, model.EC_PRTFACT_CHANGE, model.EBMS_ANS_CHANGE_PARTFACT,
 			`"meterList":[{"meteringPoint":"%[1]s","direction":"CONSUMPTION","partFact":50}]`, partFactStored(50)},
+		{"participation factor rejected", "partfact", protocolEcPrtChangeHandler, model.EC_PRTFACT_CHANGE,
+			model.EBMS_REJ_CHANGE_PARTFACT, `"responseData":[{"meteringPoint":"%[1]s","responseCode":[56]}]`,
+			notified(model.EBMS_REJ_CHANGE_PARTFACT)},
 	}
 
 	var mails atomic.Int32
@@ -68,7 +78,7 @@ func TestInbound_onlyForTheReceivingRcNumber(t *testing.T) {
 			inboundFixture(t, sole, sole, soleEc, meter(1), n, 1)
 			inboundFixture(t, geaBase, geaBase, geaEc, "", n, 2)
 			inboundFixture(t, gea, geaBase, geaEc, meter(2), n, 3)
-			// a community without community id: an inbound message without one used to land there
+			// a community without community id
 			inboundFixture(t, noEcId, noEcId, "", meter(3), n, 4)
 
 			send := func(topic, ecId, meter, conversation string) {
@@ -151,6 +161,51 @@ func TestPodListRejection_onlyForTheReceivingRcNumber(t *testing.T) {
 	assert.Equal(t, 1, historyCount(t, sole, "S4REJOWN"))
 	_, asked = mqttclient.TakeZpListRequester(soleEc)
 	assert.False(t, asked, "the own rejection clears the requester")
+}
+
+// 261105-mm5: AUFHEBUNG_CCMI/CCMC carry no community id; they revoke only within the receiving RC number. A consent id
+// of another community revokes nothing there: no mail, the message is recorded in the receiving community's history.
+func TestRevocationCcmi_onlyWithinTheReceivingRcNumber(t *testing.T) {
+	const sole, other, geaBase, gea = "TS000330", "TS000331", "GS000332", "GS000332-002"
+	meter := func(k int) string { return fmt.Sprintf("AT00300000000000000000000003%05d", 33000+k) }
+	inboundFixture(t, sole, sole, "AT00300000000TS000330000000000001", meter(1), 330, 1)
+	inboundFixture(t, other, other, "AT00300000000TS000331000000000001", "", 331, 1)
+	inboundFixture(t, geaBase, geaBase, "AT00300000000GS000332000000000001", "", 332, 1)
+	inboundFixture(t, gea, geaBase, "AT00300000000GS000332000000000001", meter(2), 332, 2)
+
+	var mails atomic.Int32
+	orig := sendInactiveMail
+	sendInactiveMail = func(string, string, string, *string, *bytes.Buffer, []*services.Attachment, *services.Attachment) error {
+		mails.Add(1)
+		return nil
+	}
+	t.Cleanup(func() { sendInactiveMail = orig })
+	revoke := func(topic, meter, conversation string) {
+		msg := model.SubscribeMessage{MessageCode: model.EBMS_AUFHEBUNG_CCMI, Protocol: model.CM_REV_IMP, Tenant: topic}
+		require.NoError(t, json.Unmarshal([]byte(fmt.Sprintf(`{"conversationId":"%s","sender":"AT003000","receiver":"%s",
+			"messageCode":"AUFHEBUNG_CCMI","consentEnd":1759269600000,"meter":{"meteringPoint":"%s","consentId":"C-S4"},
+			"responseData":[{"meteringPoint":"%s","responseCode":[1099],"consentEnd":1759269600000,"consentId":"C-S4"}]}`,
+			conversation, topic, meter, meter)), &msg.Payload))
+		protocolCmRevImpHandler(context.Background(), msg)
+		flushMails(t)
+	}
+	status := meterColumnIs("status", "INACTIVE")
+
+	// another RC number with the consent id of this community's metering point
+	revoke(strings.ToLower(other), meter(1), "S4CCMIFOREIGN")
+	assert.False(t, status(t, sole, meter(1)))
+	assert.Equal(t, 0, historyCount(t, sole, "S4CCMIFOREIGN"))
+	assert.Equal(t, 1, historyCount(t, other, "S4CCMIFOREIGN"))
+	assert.Equal(t, 0, notificationCount(t, sole))
+	assert.Equal(t, int32(0), mails.Load())
+
+	// its own RC number, and a GEA tenant by the GEA's RC number
+	revoke(strings.ToLower(sole), meter(1), "S4CCMIOWN")
+	assert.True(t, status(t, sole, meter(1)))
+	assert.Equal(t, 1, historyCount(t, sole, "S4CCMIOWN"))
+	revoke(strings.ToLower(geaBase), meter(2), "S4CCMIGEA")
+	assert.True(t, status(t, gea, meter(2)))
+	assert.Equal(t, int32(2), mails.Load())
 }
 
 // inboundFixture: a community (tenant, RC number, community id) and, with a meter, a member holding it (status ACTIVE,
