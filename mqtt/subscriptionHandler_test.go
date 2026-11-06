@@ -29,4 +29,21 @@ func TestErrorHandler_logsTheReason(t *testing.T) {
 	assert.Equal(t, "ERROR_MESSAGE", l["code"])
 	assert.Equal(t, "RC100100", l["tenant.id"])
 	assert.Contains(t, l["message"], "RC100100202611060000000000000001")
+
+	buf.Reset()
+	errorHandler(model.SubscribeMessage{MessageCode: "ERROR_MESSAGE", Protocol: model.ERROR, Tenant: "rc100100",
+		Payload: model.EbmsMessage{ConversationId: "1", ErrorMessage: "No Attachment for ERROR Mail. Subject: hi max@example.org"}})
+	assert.Equal(t, "No Attachment for ERROR Mail. Subject: hi <address>", logtest.Lines(t, buf)[0]["error.message"])
+}
+
+// The subject of a mail without attachment reaches errorMessage: e-mail addresses are masked as in eda-xp.
+func TestWithoutEmailAddresses(t *testing.T) {
+	for in, want := range map[string]string{
+		"Tenant not registered": "Tenant not registered",
+		"No Attachment for ERROR Mail. Subject: Re: from max@example.org (AT0030000000000000000000000000001)": "No Attachment for ERROR Mail. Subject: Re: from <address> (AT0030000000000000000000000000001)",
+		"<a.b@c.at>, x@y":   "<<address>>, <address>",
+		"@start end@ a @ b": "@start end@ a @ b",
+	} {
+		assert.Equal(t, want, withoutEmailAddresses(in), in)
+	}
 }

@@ -158,7 +158,11 @@ Order for the P2P/EVA release:
 3. Migrate down as above, while the new backend is scaled to 0 (it would migrate up again on a restart).
 4. Start the older backend image.
 
-The down migrations drop data: `ec_zone_level`, `tech_code`, `fuel_code` (they come back with the next metering point
+A down step that fails halfway leaves `dirty = true` in `base.schema_migrations`: check what the failed file already did,
+set the version with `migrate … force <version>` (the version before the failed step if it did nothing, else the
+failed one), then repeat `down`.
+
+The down migrations drop data: `ec_zone_level`, `tech_code`, `fuel_code` (after rolling forward again, with the next
 list) and, behind backend#145, the records of `base.settlement_interval_change`.
 
 ## Docker

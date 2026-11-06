@@ -1014,8 +1014,18 @@ func Test_UpdateMeteringPoint(t *testing.T) {
 
 // eegfaktura-dev#56 #14: the update does not store TechCode/FuelCode and hands back the stored ones, not those sent.
 func Test_UpdateMeteringPoint_returnsStoredCodes(t *testing.T) {
-	const tenant, participant, meter = "TE000002", "ea9942db-03da-11ee-b82b-5a985b4b033a", "AT0030000000000000000000030041724"
+	const tenant, participant, meter = "TE000002", "ea9942db-03da-11ee-b82b-5a985b4b033a", "AT0030000000000000000000030056114"
 	db, err := GetDB(context.Background())
+	require.NoError(t, err)
+	cleanup := func() {
+		_, err := testDB.DbInstance.Exec(`DELETE FROM base.meteringpoint WHERE tenant = $1 AND metering_point_id = $2`, tenant, meter)
+		require.NoError(t, err)
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+	_, err = testDB.DbInstance.Exec(`INSERT INTO base.meteringpoint (metering_point_id, participant_id, tenant, direction,
+		status, process_state, "modifiedAt", "modifiedBy", "registeredSince", tech_code, fuel_code)
+		VALUES ($1, $2, $3, 'GENERATION', 'ACTIVE', 'ACTIVE', now(), 'test', '2023-01-01', 'PV', 'E000')`, meter, participant, tenant)
 	require.NoError(t, err)
 	codes := func() (null.String, null.String) {
 		var tech, fuel null.String
@@ -1023,15 +1033,6 @@ func Test_UpdateMeteringPoint_returnsStoredCodes(t *testing.T) {
 			WHERE tenant = $1 AND metering_point_id = $2`, tenant, meter).Scan(&tech, &fuel))
 		return tech, fuel
 	}
-	oldTech, oldFuel := codes()
-	_, err = testDB.DbInstance.Exec(`UPDATE base.meteringpoint SET tech_code = 'PV', fuel_code = 'E000'
-		WHERE tenant = $1 AND metering_point_id = $2`, tenant, meter)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_, err := testDB.DbInstance.Exec(`UPDATE base.meteringpoint SET tech_code = $3, fuel_code = $4
-			WHERE tenant = $1 AND metering_point_id = $2`, tenant, meter, oldTech, oldFuel)
-		require.NoError(t, err)
-	})
 
 	m := model.MeteringPoint{MeteringPoint: meter, Direction: model.GENERATOR, Status: model.S_ACTIVE,
 		TechCode: null.StringFrom("HACK"), FuelCode: null.StringFrom("HACK"),

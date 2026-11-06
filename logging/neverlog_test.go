@@ -68,8 +68,6 @@ var neverLogAllowed = map[string]string{
 	"database/eegDao.go: name owners in owners[0]":                            "the tenant (community id) the metering points are applied to, no person",
 	"eda/edaSubscription.go: name Payload in msg.Payload.EcId": "the community id of a dropped metering point list, " +
 		"no person (eegfaktura-dev#56 #12)",
-	"mqtt/subscriptionHandler.go: name Payload in msg.Payload.ErrorMessage": "the reason eda-xp gives for a refused " +
-		"message, no personal data (eegfaktura-dev#56 #4)",
 }
 
 // fixtureDir is left out of TestNeverLog; TestNeverLog_FindsTheFixture checks it.

@@ -77,13 +77,16 @@ func TestPodList_areaFromEcType(t *testing.T) {
 // instead of the old type's; with ECZoneLevel in the list the reported level is stored.
 func TestPodList_areaSwitchClearsZoneLevel(t *testing.T) {
 	const tenant, rc = "TEAREA85", "RC000085"
-	_, err := testDB.DbInstance.Exec(`INSERT INTO base.eeg
+	cleanupCommunities(t, tenant)
+	// rows left by an aborted run (cleanupCommunities only cleans up after the test)
+	_, err := testDB.DbInstance.Exec(`DELETE FROM base.eeg WHERE tenant = $1`, tenant)
+	require.NoError(t, err)
+	_, err = testDB.DbInstance.Exec(`INSERT INTO base.eeg
 		(tenant, name, description, "rcNumber", area, gridoperator_code, gridoperator_name, "communityId",
 		 street, "streetNumber", city, zip, email, ec_zone_level)
 		VALUES ($1, 'Typ', 'Typ-Test', $2, 'LOCAL', 'AT003000', 'Netz OÖ', $3, 'Weg', '1', 'Linz', '4020',
 		 'typ@example.org', 3)`, tenant, rc, ecIdOf(rc))
 	require.NoError(t, err)
-	cleanupCommunities(t, tenant)
 
 	podList := func(n int, extra string) {
 		msg := model.SubscribeMessage{MessageCode: model.EBMS_ZP_LIST_RESPONSE, Protocol: model.EC_PODLIST, Tenant: rc}
