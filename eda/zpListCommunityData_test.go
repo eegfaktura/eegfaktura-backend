@@ -15,7 +15,7 @@ import (
 	"gopkg.in/guregu/null.v4"
 )
 
-// platform#229 (konzept-buergerenergie-eigenversorgung-p2p.md, I): a metering point list (SENDEN_ECP) sets the
+// platform#229 (konzept-buergerenergie-eigenversorgung-p2p.md, J): a metering point list (SENDEN_ECP) sets the
 // Nahebereich at every tenant of the community id and TechCode/FuelCode at their metering points; an absent or
 // invalid value keeps what is stored, an empty code never overwrites; a foreign tenant stays as it is; an ECType that
 // does not fit the community type is logged.

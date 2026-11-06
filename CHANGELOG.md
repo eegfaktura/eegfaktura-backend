@@ -32,7 +32,7 @@ this changelog highlights the changes relevant for overview and operations.
 - **Community types P2P and EVA** (Peer-to-Peer, Eigenversorgung; konzept-buergerenergie-eigenversorgung-p2p.md,
   vfeeg-development/eegfaktura-platform#229 part 2): `area` knows `LOCAL`, `REGIONAL`, `BEG`, `GEA`, `P2P`, `EVA`, kept in
   one list (`model.AreaTypes()`, `model.ValidateArea`, checked in `insertEeg` for both registrations). P2P and EVA
-  run centrally over ebUtilities like the BEG and may span several grid operators (konzept section I, 05.11.2026):
+  run centrally over ebUtilities like the BEG and may span several grid operators (konzept section J, 05.11.2026):
   one rule `model.HasMultipleGridOperators` (BEG, P2P, EVA) replaces the BEG checks — messages go to the grid
   operator of the metering point (the community's when the metering point has none; without either nothing is sent),
   the metering point list is requested from the chosen grid operator (one of the community's, see Fixed). The RC number
@@ -56,20 +56,21 @@ this changelog highlights the changes relevant for overview and operations.
   Order: revert the operator SQL, roll back eegfaktura-billing#103 (it reads `eeg_area`), migrate down with the
   new backend stopped (`migrate … down 2`; also behind backend#145/#146 `down 5`), then start the older image. The
   `migrate down 2` of backend#146 alone no longer fits once this release is in.
-- **Nahebereich and TechCode/FuelCode from the metering point list** (konzept section I, platform#229): new columns
+- **Nahebereich and TechCode/FuelCode from the metering point list** (konzept section J, platform#229): new columns
   `base.eeg.ec_zone_level` (1–7, CHECK, empty = unknown) and `base.meteringpoint.tech_code`, `fuel_code` (text).
   Migration `20261106100000_ec_zone_level_tech_fuel_code` fills `ec_zone_level` once from `area` (GEA 1, LOCAL 3,
   REGIONAL 4, BEG 7; P2P/EVA stay empty until the first list), a new registration gets the same value
   (`model.DefaultEcZoneLevel`); down drops the three columns.
-  `base.billing_masterdata` is unchanged. A metering point list (SENDEN_ECP) sets the Nahebereich at every tenant of
-  its community id (an absent value keeps the stored one, an invalid one is dropped with a warning) and the codes at
-  the metering points of these tenants (an empty code never overwrites); an ECType that does not fit the community
-  type (GEA GC, LOCAL RC_L, REGIONAL RC_R, BEG CC, P2P PP, EVA SC) is logged as a warning, not stored. All three
-  values are read only: the generic updates drop them. ECType `RC_L`/`RC_R` in the list sets `LOCAL`/`REGIONAL` at
-  the tenants of the community id that have the other of the two (log event `eeg.area.updated_from_list` with old and
-  new value); the switch sets their Nahebereich to the list's `ECZoneLevel`, or to empty when the list has none
-  (eegfaktura-dev#56 #10; the old type's level would not fit); every other type stays as it is with the warning above; the generic updates still drop `area`. Hardening of inbound metering point lists: security
-  relevant — details not published.
+  `base.billing_masterdata` is unchanged. Only a metering point list (`SENDEN_ECP`) sets them; `ABSCHLUSS_ECON`
+  carries zone and type as well, but the backend does not read them there (eegfaktura-dev#56 #11). The list sets the
+  Nahebereich at every tenant of its community id (an absent value keeps the stored one, an invalid one is dropped
+  with a warning) and the codes at the metering points of these tenants (an empty code never overwrites). ECType
+  `RC_L`/`RC_R` sets `LOCAL`/`REGIONAL` at the tenants of the community id that have the other of the two (log event
+  `eeg.area.updated_from_list` with old and new value); the switch sets their Nahebereich to the list's
+  `ECZoneLevel`, or to empty when the list has none (eegfaktura-dev#56 #10; the old type's level would not fit). Any
+  other ECType that does not fit the community type (GEA GC, LOCAL RC_L, REGIONAL RC_R, BEG CC, P2P PP, EVA SC) only
+  logs a warning and changes nothing (eegfaktura-dev#56 #16). All three values are read only, and the generic updates
+  still drop `area`. Hardening of inbound metering point lists: security relevant — details not published.
   **Contract:**
   - MQTT from eegfaktura-eda-xp (EC_PODLIST): optional `ecZoneLevel` (number), `ecTypeEda` (text, EDA code as
     received) and per `meterList` entry `techCode`, `fuelCode` (text); an old backend ignores them, an old eda-xp
