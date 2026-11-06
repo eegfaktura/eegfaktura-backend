@@ -103,3 +103,11 @@ func queryEegGridOperator(ctx context.Context, q sqlx.QueryerContext, tenant str
 	}
 	return code, name, err
 }
+
+// MeteringPointGridOperators returns the grid operators of the tenant's metering points, upper case, each once.
+func (db *sqlDatabase) MeteringPointGridOperators(ctx context.Context, tenant string) ([]string, error) {
+	operators := []string{}
+	err := db.db.SelectContext(ctx, &operators, `SELECT DISTINCT upper(trim(grid_operator_id)) FROM base.meteringpoint
+		WHERE tenant = $1 AND trim(COALESCE(grid_operator_id, '')) <> ''`, tenant)
+	return operators, err
+}

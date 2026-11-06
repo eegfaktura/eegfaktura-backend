@@ -35,7 +35,7 @@ this changelog highlights the changes relevant for overview and operations.
   run centrally over ebUtilities like the BEG and may span several grid operators (konzept section I, 05.11.2026):
   one rule `model.HasMultipleGridOperators` (BEG, P2P, EVA) replaces the BEG checks — messages go to the grid
   operator of the metering point (the community's when the metering point has none; without either nothing is sent),
-  the metering point list is requested from the chosen grid operator. The RC number
+  the metering point list is requested from the chosen grid operator (one of the community's, see Fixed). The RC number
   stays unique (only GEA is excepted).
   **Contract:**
   - gRPC `register.proto` `GRID_AREA`: `P2P = 4`, `EVA = 5` appended (caller: eegfaktura-admin-backend, keep its copy
@@ -123,6 +123,13 @@ this changelog highlights the changes relevant for overview and operations.
 
 ### Fixed
 - **Inbound metering point list** (backend 261105-mm4): security relevant — details not published.
+- **Metering point list request only to a grid operator of the community** (eegfaktura-dev#56 #7):
+  `POST /eeg/sync/participants/{oid}` for BEG, P2P and EVA takes `{oid}` trimmed and upper-cased and sends only when it
+  is the grid operator of one of the community's metering points or the community's own; blank or another one answers
+  400 (code 5000) and sends nothing. Before, `{oid}` went out as given (lower case, blank or any operator, answer 204).
+  BEG had the same behaviour before this release and is fixed with it (same code path). A refusal of this route,
+  also a missing grid operator of an EEG, now answers 400 instead of 500. Caller eegfaktura-web offers only these
+  operators.
 - **Confirming a member sends nothing when a grid operator is missing** (platform#229): every metering point's
   receiver is determined first; one missing answers 400 before the member is confirmed.
 - **gRPC registration refuses an unknown allocation or settlement interval** (found in the review of backend#147): a

@@ -2,6 +2,7 @@ package mqttclient
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 
@@ -82,9 +83,11 @@ func RevokeMeteringPoint(eeg *model.Eeg, meter *model.MeteringPoint, consentEnd 
 	return nil
 }
 
-func RequestingMeteringPointList(eeg *model.Eeg, receiver string, from, to int64) error {
+// RequestingMeteringPointList asks a grid operator for the metering point list of the community. operators are the
+// grid operators of its metering points (used for BEG, P2P, EVA). An error means nothing was sent.
+func RequestingMeteringPointList(eeg *model.Eeg, receiver string, operators []string, from, to int64) error {
 
-	zpReceiver, err := zpListReceiver(eeg, receiver)
+	zpReceiver, err := zpListReceiver(eeg, receiver, operators)
 	if err != nil {
 		return err
 	}
@@ -101,11 +104,17 @@ func RequestingMeteringPointList(eeg *model.Eeg, receiver string, from, to int64
 	return nil
 }
 
-// zpListReceiver: with several grid operators possible (BEG, P2P, EVA) the list is requested from the chosen one,
-// else from the community's grid operator.
-func zpListReceiver(eeg *model.Eeg, receiver string) (string, error) {
+// zpListReceiver: with several grid operators possible (BEG, P2P, EVA) the list is requested from the chosen one, which
+// must be the grid operator of one of the community's metering points (operators) or the community's own
+// (eegfaktura-dev#56 #7); else from the community's grid operator.
+func zpListReceiver(eeg *model.Eeg, receiver string, operators []string) (string, error) {
 	if model.HasMultipleGridOperators(eeg.Area) {
-		return receiver, nil
+		receiver = strings.ToUpper(strings.TrimSpace(receiver))
+		if receiver != "" && (receiver == strings.ToUpper(strings.TrimSpace(eeg.GridOperator)) ||
+			slices.Contains(operators, receiver)) {
+			return receiver, nil
+		}
+		return "", model.ErrEdaCommunication(errors.New("grid operator is not one of the community"))
 	}
 	if eeg.GridOperator == "" {
 		return "", model.ErrEdaCommunication(errors.New("no Grid Operator specified"))

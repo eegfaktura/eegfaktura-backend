@@ -54,8 +54,9 @@ func TestRegistrationForParticipationWithoutGridOperator(t *testing.T) {
 
 // The metering point list goes to the chosen grid operator for BEG, P2P and EVA, else to the community's one.
 func TestZpListReceiver(t *testing.T) {
+	operators := []string{"AT008000"}
 	for _, area := range model.AreaTypes() {
-		got, err := zpListReceiver(&model.Eeg{Area: area, GridOperator: "AT003000"}, "AT008000")
+		got, err := zpListReceiver(&model.Eeg{Area: area, GridOperator: "AT003000"}, "AT008000", operators)
 		assert.NoError(t, err, area)
 		want := "AT003000"
 		if multiGrid[area] {
@@ -63,7 +64,27 @@ func TestZpListReceiver(t *testing.T) {
 		}
 		assert.Equal(t, want, got, area)
 
-		_, err = zpListReceiver(&model.Eeg{Area: area}, "AT008000")
+		_, err = zpListReceiver(&model.Eeg{Area: area}, "AT008000", operators)
 		assert.Equal(t, multiGrid[area], err == nil, string(area)+" without the community's grid operator")
+	}
+}
+
+// BEG, P2P, EVA: the chosen grid operator, normalised, must be the one of a metering point or of the community; blank
+// or unknown is refused, nothing sent (eegfaktura-dev#56 #7).
+func TestZpListReceiver_onlyGridOperatorsOfTheCommunity(t *testing.T) {
+	operators := []string{"AT008000", "AT001000"}
+	for area := range multiGrid {
+		eeg := &model.Eeg{Area: area, GridOperator: "at003000"}
+		for given, want := range map[string]string{"AT008000": "AT008000", " at001000 ": "AT001000", "at003000": "AT003000"} {
+			got, err := zpListReceiver(eeg, given, operators)
+			assert.NoError(t, err, "%s %q", area, given)
+			assert.Equal(t, want, got, "%s %q", area, given)
+		}
+		for _, given := range []string{"", " ", "AT999999", "AT00800"} {
+			_, err := zpListReceiver(eeg, given, operators)
+			assert.Error(t, err, "%s %q", area, given)
+		}
+		_, err := zpListReceiver(&model.Eeg{Area: area}, "", nil)
+		assert.Error(t, err, "%s without any grid operator", area)
 	}
 }
