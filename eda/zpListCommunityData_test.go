@@ -85,6 +85,8 @@ func TestPodList_zoneLevelAndCodes(t *testing.T) {
 	podList(4, ``, `,"techCode":"ABCDEFGHIJK","fuelCode":"0123456789"`)
 	assert.Equal(t, "PV/0123456789", codes(first))
 	assert.Contains(t, logged.String(), "invalid TechCode (11 characters)")
+	assert.Contains(t, logged.String(), "event.action=eda.podlist.code_dropped")
+	assert.NotContains(t, logged.String(), meter, "metering point number masked (eegfaktura-dev#56 #12)")
 	podList(5, ``, `,"techCode":"P V","fuelCode":"E;1"`)
 	assert.Equal(t, "PV/0123456789", codes(first))
 	assert.Contains(t, logged.String(), "invalid FuelCode (3 characters)")

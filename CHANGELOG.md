@@ -84,6 +84,11 @@ this changelog highlights the changes relevant for overview and operations.
   `event.action=eda.error.received`, the tenant, the code, the conversation in the text and eda-xp's `errorMessage`
   as `error.message`. Before, the reason was dropped. A refused request (e.g. a CPF with an unknown `ecType`) still
   answers 204 and leaves no process history; whether the community sees it is a follow-up.
+- **Log lines of the inbound metering point list and of a refused registration carry `event.action`**
+  (eegfaktura-dev#56 #12): `eda.podlist.no_community_id`, `eda.podlist.community_check_failed`,
+  `eda.podlist.foreign_community` (with the community id as `ecId`), `eda.podlist.zone_level_dropped`,
+  `eda.podlist.ectype_mismatch`, `eda.podlist.code_dropped` (no metering point number, the conversation instead),
+  `eeg.area.update_from_list_failed`, `eeg.register.refused`.
 - **`area` and `allocationMode` are dropped silently by the generic EEG updates** (platform#229, E5): `POST /eeg`, gRPC
   `AdminEegService.updateValue` (class EEG) and GraphQL `updateEegModel` (no field for them; it maps only
   `sepaActiv` and `settlementInterval`, the latter dropped) no longer change them, like `settlementInterval`. They

@@ -76,7 +76,7 @@ func (r *RegisterService) Register(ctx context.Context, eeg *protobuf.RegisterEe
 	if !knownEnum(protobuf.RegisterEegRequest_GRID_ALLOCATION_name, int32(eeg.Allocation)) ||
 		!knownEnum(protobuf.RegisterEegRequest_EEG_SETTELMENT_name, int32(eeg.SettelmentInterval)) ||
 		!knownEnum(protobuf.RegisterEegRequest_EEG_LEGAL_name, int32(eeg.Legal)) {
-		log.Warnf("Register EEG refused: unknown allocation %d, settlement interval %d or legal form %d",
+		log.WithField("event.action", "eeg.register.refused").Warnf("Register EEG refused: unknown allocation %d, settlement interval %d or legal form %d",
 			eeg.Allocation, eeg.SettelmentInterval, eeg.Legal)
 		return &protobuf.RegisteredEegReply{Status: statusInvalidEeg}, nil
 	}
@@ -102,7 +102,7 @@ func registerReply(err error) (*protobuf.RegisteredEegReply, error) {
 		return &protobuf.RegisteredEegReply{Status: statusEegExists}, nil
 	}
 	if errors.Is(err, database.ErrInvalidEeg) {
-		log.Warnf("Register EEG refused: %v", err)
+		log.WithField("event.action", "eeg.register.refused").Warnf("Register EEG refused: %v", err)
 		return &protobuf.RegisteredEegReply{Status: statusInvalidEeg}, nil
 	}
 	if err != nil {

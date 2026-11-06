@@ -66,6 +66,8 @@ var neverLogAllowed = map[string]string{
 	"mqtt/subscriptionHandler.go: name Payload in msg.Payload.ConversationId": "only the conversation id is logged",
 	"database/eegDao.go: name owners in owners":                               "the tenants (community ids) holding the metering points, no person",
 	"database/eegDao.go: name owners in owners[0]":                            "the tenant (community id) the metering points are applied to, no person",
+	"eda/edaSubscription.go: name Payload in msg.Payload.EcId": "the community id of a dropped metering point list, " +
+		"no person (eegfaktura-dev#56 #12)",
 	"mqtt/subscriptionHandler.go: name Payload in msg.Payload.ErrorMessage": "the reason eda-xp gives for a refused " +
 		"message, no personal data (eegfaktura-dev#56 #4)",
 }

@@ -565,15 +565,18 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 	case model.EBMS_ZP_LIST:
 	case model.EBMS_ZP_LIST_RESPONSE:
 		if msg.Payload.EcId == "" {
-			logrus.WithField("tenant", msg.Tenant).Warn("metering point list without a community id, dropped")
+			logrus.WithContext(ctx).WithFields(logrus.Fields{"tenant": msg.Tenant, "event.action": "eda.podlist.no_community_id"}).
+				Warn("metering point list without a community id, dropped")
 			return
 		}
 		// only for a community of the RC number the list came in for (several tenants in a GEA, one RC number)
 		if ok, err := db.EcIdBelongsToRc(ctx, msg.Payload.EcId, msg.Tenant); err != nil {
-			logrus.WithField("tenant", msg.Tenant).WithError(err).Error("can not check the community id of the metering point list")
+			logrus.WithContext(ctx).WithFields(logrus.Fields{"tenant": msg.Tenant, "event.action": "eda.podlist.community_check_failed"}).
+				WithError(err).Error("can not check the community id of the metering point list")
 			return
 		} else if !ok {
-			logrus.WithField("tenant", msg.Tenant).Warn("metering point list for a community id of another RC number, dropped")
+			logrus.WithContext(ctx).WithFields(logrus.Fields{"tenant": msg.Tenant, "event.action": "eda.podlist.foreign_community"}).
+				WithField("ecId", msg.Payload.EcId).Warn("metering point list for a community id of another RC number, dropped")
 			return
 		}
 		buf, err := database.ExportZPListToExcel(ctx, &msg.Payload)
@@ -649,7 +652,8 @@ func zpListCommunityData(ctx context.Context, db database.Database, eeg *model.E
 	if p.EcZoneLevel != nil {
 		// UpdateEcZoneLevel refuses an invalid level
 		if err := db.UpdateEcZoneLevel(ctx, p.EcId, *p.EcZoneLevel); err != nil {
-			entry.WithError(err).Warn("ECZoneLevel of the metering point list not stored")
+			entry.WithField("event.action", "eda.podlist.zone_level_dropped").WithError(err).
+				Warn("ECZoneLevel of the metering point list not stored")
 		}
 	}
 }
@@ -663,7 +667,8 @@ func zpListArea(ctx context.Context, db database.Database, eeg *model.Eeg, p *mo
 	if listArea, ok := eegAreaFromList[p.EcTypeEda]; ok && (eeg.Area == model.LOCAL || eeg.Area == model.REGIONAL) {
 		changes, err := db.UpdateEegAreaFromList(ctx, p.EcId, listArea)
 		if err != nil {
-			entry.WithError(err).Error("can not take the community type from the metering point list")
+			entry.WithField("event.action", "eeg.area.update_from_list_failed").WithError(err).
+				Error("can not take the community type from the metering point list")
 		}
 		for _, c := range changes {
 			logrus.WithContext(ctx).WithFields(logrus.Fields{"tenant": c.Tenant, "event.action": "eeg.area.updated_from_list",
@@ -672,7 +677,8 @@ func zpListArea(ctx context.Context, db database.Database, eeg *model.Eeg, p *mo
 		return
 	}
 	if want, ok := model.EdaEcType(eeg.Area); !ok || want != p.EcTypeEda {
-		entry.Warnf("metering point list with ECType %s, the community type %s means %s: check the type", p.EcTypeEda, eeg.Area, want)
+		entry.WithField("event.action", "eda.podlist.ectype_mismatch").
+			Warnf("metering point list with ECType %s, the community type %s means %s: check the type", p.EcTypeEda, eeg.Area, want)
 	}
 }
 
@@ -683,8 +689,10 @@ func dropInvalidCodes(ctx context.Context, tenant string, p *model.EbmsMessage) 
 		m := &p.MeterList[i]
 		for name, code := range map[string]*string{"TechCode": &m.TechCode, "FuelCode": &m.FuelCode} {
 			if *code != "" && !model.ValidCode(*code) {
-				logrus.WithContext(ctx).WithField("tenant", tenant).Warnf("metering point list with an invalid %s (%d characters) for %s, not stored",
-					name, utf8.RuneCountInString(*code), m.MeteringPoint)
+				// without the metering point number (eegfaktura-dev#56 #12): the conversation finds the list in the history
+				logrus.WithContext(ctx).WithFields(logrus.Fields{"tenant": tenant, "event.action": "eda.podlist.code_dropped"}).
+					Warnf("metering point list with an invalid %s (%d characters), not stored, conversation %s",
+						name, utf8.RuneCountInString(*code), p.ConversationId)
 				*code = ""
 			}
 		}

@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"testing"
 
+	"at.ourproject/vfeeg-backend/logging/logtest"
 	"at.ourproject/vfeeg-backend/model"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/guregu/null.v4"
@@ -52,8 +55,12 @@ func TestPodList_onlyForTheReceivingRcNumber(t *testing.T) {
 		return status, code, zone
 	}
 
-	// the other RC number sends a list for this community id: dropped
+	// the other RC number sends a list for this community id: dropped, logged with event.action and the community id
+	// (eegfaktura-dev#56 #12)
+	logged := logtest.Capture(t, func(w io.Writer) { logrus.SetOutput(w) })
 	podList("RC000072", "RC000072202611050000000000000000001")
+	assert.Contains(t, logged.String(), "event.action=eda.podlist.foreign_community")
+	assert.Contains(t, logged.String(), "ecId="+ecId)
 	status, code, zone := state()
 	assert.Equal(t, "INIT", status)
 	assert.Equal(t, null.String{}, code)
