@@ -27,7 +27,8 @@ this changelog highlights the changes relevant for overview and operations.
   run is running for a period ending then or later. A month without a final period in the 12 months up to and
   including the last final month L (L-11 … L) blocks the change, before the other checks; the message names it, e.g.
   „Februar 2026 ist noch nicht endgültig abgerechnet.“ An older gap does not block: an allowed change adds a hint to
-  its message, e.g. „Hinweis: März bis Mai 2024 wurden nicht endgültig abgerechnet.“ (rule 6, eegfaktura-dev#54 #2,
+  its message, e.g. „Hinweis: März bis Mai 2024 wurden nicht endgültig abgerechnet.“ (at most five gaps named, then
+  „und N weitere Zeiträume“) (rule 6, eegfaktura-dev#54 #2,
   decided 05.11.2026, window decided 06.11.2026 from prod data: without it 13 communities would be blocked, five of
   them for good by gaps in 2023/24; months before the first final period do not count). Answer 200 `{allowed, effectiveFrom, lastFinalPeriod, message,
   earliestFrom, eeg}`; a blocked change without `dryRun` is 409 (code 1062) with the reason; an invalid value, the

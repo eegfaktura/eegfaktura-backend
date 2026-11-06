@@ -59,12 +59,15 @@ func CheckBillingState(s *BillingState) error {
 	return fmt.Errorf("Der Abrechnungsstand (billingState) enthält unlesbare Zeitraum-Kennungen: %s", quoteIds(unreadable))
 }
 
-// quoteIds names at most five identifiers, each quoted and cut to 40 characters (they come from the client).
+// maxNamed is how many identifiers or gaps a message names at most, so it stays short.
+const maxNamed = 5
+
+// quoteIds names at most maxNamed identifiers, each quoted and cut to 40 characters (they come from the client).
 func quoteIds(ids []string) string {
-	const most, length = 5, 40
-	quoted := make([]string, 0, most+1)
+	const length = 40
+	quoted := make([]string, 0, maxNamed+1)
 	for i, id := range ids {
-		if i == most {
+		if i == maxNamed {
 			quoted = append(quoted, "…")
 			break
 		}
@@ -259,45 +262,58 @@ func uncovered(covered map[int]bool, first, last int) [][2]int {
 // Jänner 2026 sind …".
 func gapMessage(gaps [][2]int) string {
 	verb := "sind"
-	if len(gaps) == 1 && gaps[0][0] == gaps[0][1] {
+	if oneMonth(gaps) {
 		verb = "ist"
 	}
-	return fmt.Sprintf("%s %s noch nicht endgültig abgerechnet.", gapMonths(gaps), verb)
+	return fmt.Sprintf("%s %s noch nicht endgültig abgerechnet.", gapList(gaps), verb)
 }
 
 // olderGapHint names the gaps before the window: "Hinweis: Februar 2024 wurde nicht endgültig abgerechnet.",
 // "Hinweis: März bis Mai 2024 wurden nicht endgültig abgerechnet."
 func olderGapHint(gaps [][2]int) string {
 	verb := "wurden"
-	if len(gaps) == 1 && gaps[0][0] == gaps[0][1] {
+	if oneMonth(gaps) {
 		verb = "wurde"
 	}
-	return fmt.Sprintf("Hinweis: %s %s nicht endgültig abgerechnet.", gapMonths(gaps), verb)
+	return fmt.Sprintf("Hinweis: %s %s nicht endgültig abgerechnet.", gapList(gaps), verb)
 }
 
-// gapMonths names the months of gaps: "Februar 2026", "Februar und Mai 2026", "November 2025 bis Jänner 2026". The
-// year is left out when the next gap ends in the same year.
-func gapMonths(gaps [][2]int) string {
+// gapList names the gaps, at most maxNamed of them: "Februar und Mai 2026", "Februar, April, Juni, August,
+// Oktober 2024 und 2 weitere Zeiträume".
+func gapList(gaps [][2]int) string {
+	if len(gaps) > maxNamed {
+		return fmt.Sprintf("%s und %d weitere Zeiträume", strings.Join(gapParts(gaps[:maxNamed]), ", "), len(gaps)-maxNamed)
+	}
+	parts := gapParts(gaps)
+	if len(parts) == 1 {
+		return parts[0]
+	}
+	return strings.Join(parts[:len(parts)-1], ", ") + " und " + parts[len(parts)-1]
+}
+
+// oneMonth reports whether gaps is a single month (singular in the texts).
+func oneMonth(gaps [][2]int) bool { return len(gaps) == 1 && gaps[0][0] == gaps[0][1] }
+
+// gapParts names each gap: "Februar 2026", "März bis Mai", "November 2025 bis Jänner 2026". The year is left out when
+// the next gap ends in the same year, except after a range across the year end, which always names both years.
+func gapParts(gaps [][2]int) []string {
 	parts := make([]string, len(gaps))
 	for i, g := range gaps {
+		if g[0]/12 != g[1]/12 {
+			parts[i] = fmt.Sprintf("%s bis %s", monthName(g[0]), monthName(g[1]))
+			continue
+		}
 		year := ""
 		if i == len(gaps)-1 || gaps[i+1][1]/12 != g[1]/12 {
 			year = fmt.Sprintf(" %d", g[1]/12)
 		}
-		switch {
-		case g[0] == g[1]:
+		if g[0] == g[1] {
 			parts[i] = monthNames[g[0]%12] + year
-		case g[0]/12 == g[1]/12:
+		} else {
 			parts[i] = fmt.Sprintf("%s bis %s%s", monthNames[g[0]%12], monthNames[g[1]%12], year)
-		default:
-			parts[i] = fmt.Sprintf("%s bis %s%s", monthName(g[0]), monthNames[g[1]%12], year)
 		}
 	}
-	months := parts[len(parts)-1]
-	if len(parts) > 1 {
-		months = strings.Join(parts[:len(parts)-1], ", ") + " und " + months
-	}
-	return months
+	return parts
 }
 
 // runningFrom returns the first running period that ends in month start or later.
