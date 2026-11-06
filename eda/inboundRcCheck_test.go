@@ -39,6 +39,10 @@ func TestInbound_onlyForTheReceivingRcNumber(t *testing.T) {
 		{"energy data request", "energyrequest", protocolCrReqPtHandler, model.CR_REQ_PT, model.EBMS_ZP_RES,
 			`"meter":{"meteringPoint":"%[1]s"},"responseData":[{"meteringPoint":"%[1]s","responseCode":[99]}]`,
 			notified(model.EBMS_ZP_RES)},
+		{"revocation", "revoke", protocolCmRevImpHandler, model.CM_REV_SP, model.EBMS_ANTWORT_CCMS,
+			`"consentEnd":1759269600000,"meter":{"meteringPoint":"%[1]s","consentId":"C-S4"},
+			"responseData":[{"meteringPoint":"%[1]s","responseCode":[176],"consentId":"C-S4"}]`,
+			meterColumnIs("status", "INACTIVE")},
 	}
 
 	var mails atomic.Int32

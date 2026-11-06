@@ -414,6 +414,13 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 	// where the metering point really went from ACTIVE to INACTIVE, an EEG deregistration only with
 	// the grid operator's confirmation (ANTWORT_CCMS 176)
 	var mailTenants []string
+	// CCMS messages find their community by the community id; CCMC/CCMI already go by the receiving RC number
+	switch msg.MessageCode {
+	case model.EBMS_AUFHEBUNG_CCMS, model.EBMS_ABLEHNUNG_CCMS, model.EBMS_ANTWORT_CCMS:
+		if !forReceivingRc(ctx, db, msg, "revoke") {
+			return
+		}
+	}
 	switch msg.MessageCode {
 	case model.EBMS_AUFHEBUNG_CCMS:
 		eeg, err = db.GetEegByEcIdAndMeters(ctx, msg.Payload.EcId, messageMeters(&msg.Payload))
