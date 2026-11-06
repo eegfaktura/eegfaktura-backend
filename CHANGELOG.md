@@ -9,6 +9,96 @@ this changelog highlights the changes relevant for overview and operations.
 ## [Unreleased]
 
 ### Added
+- **Log events of the interval change** (eegfaktura-dev#54 #5): `event.action=eeg.settlement_interval.changed` (INFO)
+  with `settlementInterval.old`, `settlementInterval.new` and `settlementInterval.effectiveFrom` (empty: at once);
+  `eeg.settlement_interval.refused` with `code` and the reason in `event.reason` (INFO for a change the rule blocks,
+  409; WARN for invalid input, 400); `eeg.settlement_interval.failed` (ERROR, 500). `tenant.id` from the checked
+  request, no user name. A dry run logs only a refusal of invalid input (400), not its decision. If reading the EEG
+  back fails after the change is stored, the answer is 200 with `eeg: null` and a note in `message`, logged as
+  `eeg.settlement_interval.reload_failed` (WARN); before, 500 (1063) although the change was stored.
+
+### Changed
+- **`POST /eeg/settlementinterval`: a gap in the final periods blocks the change** (rule 6, eegfaktura-dev#54 #2):
+  A month without a final period in the 12 months up to and
+  including the last final month L (L-11 … L) blocks the change, before the other checks; the message names it, e.g.
+  „Februar 2026 ist noch nicht endgültig abgerechnet.“ An older gap does not block: an allowed change adds a hint to
+  its message, e.g. „Hinweis: März bis Mai 2024 wurden nicht endgültig abgerechnet.“ (at most five gaps named, then
+  „und N weitere Zeiträume“) (rule 6, eegfaktura-dev#54 #2,
+  decided 05.11.2026, window decided 06.11.2026 from prod data: without it 13 communities would be blocked, five of
+  them for good by gaps in 2023/24; months before the first final period do not count).
+- **`POST /eeg/settlementinterval`: an unreadable `billingState` is refused** (eegfaktura-dev#54 #9): an invalid
+  value, the current value or a missing `billingState` is 400 (1060, 1061); so is (1060, eegfaktura-dev#54 #9) a
+  `billingState` with a list missing or `null`, or with an identifier the rule cannot read (another form than billing's
+  `Abr_(Y|YH|YQ|YM)-yyyy[-n]`, a period out of range, a year outside 2000–2100; the message names them, at most five,
+  each cut to 40 characters), and (2000) data after the JSON body;
+  before, such a state read as "nothing billed" and the change applied at once.
+- **The start-up log names the migration result** (eegfaktura-dev#54 #4): one line `event.action=db.migrate.done` with
+  `migration.versionBefore`, `migration.versionAfter` (0: no version) and `migration.applied` (0 with the message
+  `database schema unchanged (no_change)`), so a run that skipped migrations is visible. A failed migration is one
+  ERROR line `db.migrate.failed` (before: `log.Fatal` with the bare error, then nothing). The migrations run on a
+  connection of their own, closed afterwards (before: one connection of the pool stayed held).
+- **Migrations wait at most 60 s for a lock** (eegfaktura-dev#54 #1): the migration connection sets `lock_timeout`
+  (60 s per lock wait of the connection, also the wait for the migration lock while the driver opens; golang-migrate's
+  own wait for that lock in `Up` ends after 15 s). Before, a migration behind a long transaction or a
+  `pg_dump` kept the start waiting with no log after `Start migration ...`, and the API down (one replica,
+  `Recreate`). Now the start fails with `event.action=db.migrate.failed` and a message naming the lock wait and
+  `pg_stat_activity` (detected by SQLSTATE 55P03); the pod restarts. A migration file that was started stays dirty:
+  recovery in the README, section "Failed migration (dirty)". `error.message` of a failed migration is the first line
+  of the error, at most 200 characters (golang-migrate's text holds the whole file).
+- **A dirty migration version points to its recovery** (eegfaktura-dev#54 #3): one ERROR line
+  `event.action=db.migrate.dirty` with `migration.version` and the pointer to the README section "Failed migration
+  (dirty)", at start on a dirty version and when a migration file fails. Before, only golang-migrate's
+  `Dirty database version … Fix and force version.`, which names a CLI that is not in the image and is wrong for an
+  invalid index; that text is no longer logged (a failed file keeps its own error in `error.message`).
+- **`POST /eeg/settlementinterval`: an unreadable body is a warning** (eegfaktura-dev#54 #12): 400 (code 2000) with
+  the text „Die Anfrage konnte nicht gelesen werden (kein gültiges JSON)“ and `"error":"Bad Process"` like the other
+  answers of the route (a body over 1 MiB: „Die Anfrage ist zu groß“); the decoder's text (Go type and field names)
+  only in the WARN line. Before, ERROR and the
+  decoder's text in the answer.
+- **A refused GraphQL `updateEegModel` is logged** (eegfaktura-dev#54 #13): one WARN line
+  `event.action=graphql.update_eeg_model.refused` with the reason (no admin group, tenant argument); the access line
+  still says 200, the error is in the GraphQL answer. `EegModel.settlementInterval` is marked `@deprecated` in the
+  schema with a description that it is ignored; the behaviour is unchanged (dropped, no error).
+
+### Fixed
+- **GraphQL `updateEegModel` refuses a foreign tenant argument** (eegfaktura-dev#54 #6):
+  A `tenant` argument or `EegModel.tenant` other than the `tenant` header (case-insensitive) is an error and nothing
+  is written (eegfaktura-dev#54 #6); before, the argument was ignored and the write went to the header's community.
+- **Rollout and recovery of migrations** (eegfaktura-dev#54 #1 #3), for the release notes of 1.16.0 (index
+  `20261105110100`): **Rollout:** plan a short outage window outside the backup window: the backend runs one replica (`Recreate`) and
+  migrates before it serves, so the API is down (502) while the migrations run or wait (eegfaktura-dev#54 #1).
+  Right before, check for long transactions or a running `pg_dump`, which `CREATE OR REPLACE VIEW` and
+  `CREATE INDEX CONCURRENTLY` wait behind (expected: no row older than a few seconds):
+  `SELECT pid, state, now() - xact_start AS age, left(query, 60) FROM pg_stat_activity WHERE datname =
+  current_database() AND xact_start IS NOT NULL AND pid <> pg_backend_pid() ORDER BY xact_start;`. Run the release
+  outside the backup window (`pg_dump`). A lock wait longer than 60 s ends the migration (see Changed: lock
+  timeout) and the backend exits. A timeout before a migration file starts (the migration lock, the version check)
+  changes nothing: the restart simply tries again. A timeout inside a file leaves its version dirty, and the pod
+  keeps restarting until it is recovered by hand as in the README, section "Failed migration (dirty)"; a restart
+  alone does not heal it. If the pod was stopped
+  while the build of `metering_partition_factor_tenant_idx` waited (eegfaktura-dev#54 #3), PostgreSQL may finish the build anyway: `dirty = true` with
+  `indisvalid = true`; then only `UPDATE base.schema_migrations SET version = 20261105110100, dirty = false` and
+  restart. All cases: README, section "Failed migration (dirty)".
+- **Rollback without the migrate CLI** (eegfaktura-dev#54 #14), for the three migrations of backend#145/#146 (`20261105110000`,
+  `20261105110100`, `20261105120000`), by hand without the migrate CLI (not in the image): the schema can stay, an
+  older image (1.15.x) works with the view, the index and the table. It does not start, though, while
+  `base.schema_migrations` holds a version it does not know (golang-migrate: `no migration found for version …`), so
+  before deploying it: `UPDATE base.schema_migrations SET version = 20261028130000, dirty = false;`. Rolling forward
+  again runs the three files again (`CREATE OR REPLACE VIEW`, `IF NOT EXISTS`); the records in
+  `base.settlement_interval_change` stay. Taking the schema back too is not needed; if wanted, after the version
+  reset: `DROP INDEX CONCURRENTLY IF EXISTS base.metering_partition_factor_tenant_idx;` and the content of
+  `20261105110000_activemeteringpartition_tenant.down.sql`; `DROP TABLE base.settlement_interval_change` would delete
+  the records of the interval changes. 1.16.0 also holds the P2P/EVA migrations (`20261106090000`, `20261106100000`):
+  a rollback behind them follows the README, section "Rollback to an older image".
+- **Two api tests pass when run again** (tracking backend 261105-mm6): `TestAddTariff_joiningFee` removes the tariff it
+  creates, `TestRequestMeteringPointValues` the energy request rows it stores; `go test -count=2` failed on both.
+
+## [1.16.0] – 2026-11-06
+
+### Security
+- **Base image `debian:trixie-20261027-slim`** (published 2026-10-28) instead of `trixie-20261020-slim`: current Debian security updates of the runtime image.
+
+### Added
 - **Start-up line and `deployment.environment`** (dev#45 L14, Q5): one line `service start` (`event.action=service.start`)
   with version and effective log level (`log.effective_level`), written by `logging.Setup` whatever `LOG_LEVEL` says, no
   secrets. `deployment.environment` on every line
@@ -24,30 +114,77 @@ this changelog highlights the changes relevant for overview and operations.
   `POST /eeg/settlementinterval` (EEG_ADMIN, tenant from the checked header) with `settlementInterval`, `dryRun` and
   `billingState` (billing's `settlementState`, passed on by web). The rule: without a final period the change applies
   at once unless a run is running; otherwise from the month after the last final period, if a period of the new interval starts there, and no
-  run is running for a period ending then or later. A month without a final period in the 12 months up to and
-  including the last final month L (L-11 … L) blocks the change, before the other checks; the message names it, e.g.
-  „Februar 2026 ist noch nicht endgültig abgerechnet.“ An older gap does not block: an allowed change adds a hint to
-  its message, e.g. „Hinweis: März bis Mai 2024 wurden nicht endgültig abgerechnet.“ (at most five gaps named, then
-  „und N weitere Zeiträume“) (rule 6, eegfaktura-dev#54 #2,
-  decided 05.11.2026, window decided 06.11.2026 from prod data: without it 13 communities would be blocked, five of
-  them for good by gaps in 2023/24; months before the first final period do not count). Answer 200 `{allowed, effectiveFrom, lastFinalPeriod, message,
+  run is running for a period ending then or later. Answer 200 `{allowed, effectiveFrom, lastFinalPeriod, message,
   earliestFrom, eeg}`; a blocked change without `dryRun` is 409 (code 1062) with the reason; an invalid value, the
-  current value or a missing `billingState` is 400 (1060, 1061); so is (1060, eegfaktura-dev#54 #9) a `billingState`
-  with a list missing or `null`, or with an identifier the rule cannot read (another form than billing's
-  `Abr_(Y|YH|YQ|YM)-yyyy[-n]`, a period out of range, a year outside 2000–2100; the message names them, at most five,
-  each cut to 40 characters), and (2000) data after the JSON body;
-  before, such a state read as "nothing billed" and the change applied at once. The change runs in one transaction on the locked
+  current value or a missing `billingState` is 400 (1060, 1061). The change runs in one transaction on the locked
   `base.eeg` row and is recorded with user, time, old and new value in the new table `base.settlement_interval_change`
   (migration `20261105120000_settlement_interval_change`, down drops the table).
-- **Log events of the interval change** (eegfaktura-dev#54 #5): `event.action=eeg.settlement_interval.changed` (INFO)
-  with `settlementInterval.old`, `settlementInterval.new` and `settlementInterval.effectiveFrom` (empty: at once);
-  `eeg.settlement_interval.refused` with `code` and the reason in `event.reason` (INFO for a change the rule blocks,
-  409; WARN for invalid input, 400); `eeg.settlement_interval.failed` (ERROR, 500). `tenant.id` from the checked
-  request, no user name. A dry run logs only a refusal of invalid input (400), not its decision. If reading the EEG
-  back fails after the change is stored, the answer is 200 with `eeg: null` and a note in `message`, logged as
-  `eeg.settlement_interval.reload_failed` (WARN); before, 500 (1063) although the change was stored.
+- **Community types P2P and EVA** (Peer-to-Peer, Eigenversorgung; konzept-buergerenergie-eigenversorgung-p2p.md,
+  vfeeg-development/eegfaktura-platform#229 part 2): `area` knows `LOCAL`, `REGIONAL`, `BEG`, `GEA`, `P2P`, `EVA`, kept in
+  one list (`model.AreaTypes()`, `model.ValidateArea`, checked in `insertEeg` for both registrations). P2P and EVA
+  run centrally over ebUtilities like the BEG and may span several grid operators (konzept section J, 05.11.2026):
+  one rule `model.HasMultipleGridOperators` (BEG, P2P, EVA) replaces the BEG checks — messages go to the grid
+  operator of the metering point (the community's when the metering point has none; without either nothing is sent),
+  the metering point list is requested from the chosen grid operator (one of the community's, see Fixed). The RC number
+  stays unique (only GEA is excepted).
+  **Contract:**
+  - gRPC `register.proto` `GRID_AREA`: `P2P = 4`, `EVA = 5` appended (caller: eegfaktura-admin-backend, keep its copy
+    the same). A value the backend does not know (its name is the number) is refused with reply status 400 and no
+    gRPC error, like 409; nothing is written. Before, it was stored as the number.
+  - MQTT `register-eeg` (`registration.schema.json`): the `area` enum gets `P2P`, `EVA` (decode refuses other values;
+    `insertEeg` checks the same list).
+  - MQTT `eda/request` `ecType` (ANFORDERUNG_CPF, to eegfaktura-eda-xp): field unchanged, the new values pass through.
+  - View `base.billing_masterdata` (caller: eegfaktura-billing): new last column `eeg_area` (text, = `base.eeg.area`);
+    all other columns keep name, type and order. Migration `20261106090000_billing_masterdata_eeg_area`
+    (`CREATE OR REPLACE VIEW`; down restores the view as after `20261028130000_joining_fee`). No data change.
+  - `GET /eeg` `area` (web, admin portal): the new values, no new field.
+  **Deploy order:** eegfaktura-eda-xp → backend → eegfaktura-billing, eegfaktura-admin-backend → eegfaktura-admin,
+  eegfaktura-web → operator SQL (PP100784, PP102502 from LOCAL and PP102524 from BEG to P2P). Backend before
+  admin-backend: otherwise a P2P registration arrives as an unknown number; backend before billing: the new billing
+  reads `eeg_area`. **Rollback** (README, *Rollback to an older image*): the older image does not start on the
+  migrated database (`no migration found for version 20261106100000`), so the migrations go down **before** it starts.
+  Order: revert the operator SQL, roll back eegfaktura-billing#103 (it reads `eeg_area`), migrate down with the
+  new backend stopped (`migrate … down 2`; also behind backend#145/#146 `down 5`), then start the older image. The
+  `migrate down 2` of backend#146 alone no longer fits once this release is in.
+- **Nahebereich and TechCode/FuelCode from the metering point list** (konzept section J, platform#229): new columns
+  `base.eeg.ec_zone_level` (1–7, CHECK, empty = unknown) and `base.meteringpoint.tech_code`, `fuel_code` (text).
+  Migration `20261106100000_ec_zone_level_tech_fuel_code` fills `ec_zone_level` once from `area` (GEA 1, LOCAL 3,
+  REGIONAL 4, BEG 7; P2P/EVA stay empty until the first list), a new registration gets the same value
+  (`model.DefaultEcZoneLevel`); down drops the three columns.
+  `base.billing_masterdata` is unchanged. Only a metering point list (`SENDEN_ECP`) sets them; `ABSCHLUSS_ECON`
+  carries zone and type as well, but the backend does not read them there (eegfaktura-dev#56 #11). The list sets the
+  Nahebereich at every tenant of its community id (an absent value keeps the stored one, an invalid one is dropped
+  with a warning) and the codes at the metering points of these tenants (an empty code never overwrites). ECType
+  `RC_L`/`RC_R` sets `LOCAL`/`REGIONAL` at the tenants of the community id that have the other of the two (log event
+  `eeg.area.updated_from_list` with old and new value); the switch sets their Nahebereich to the list's
+  `ECZoneLevel`, or to empty when the list has none (eegfaktura-dev#56 #10; the old type's level would not fit). Any
+  other ECType that does not fit the community type (GEA GC, LOCAL RC_L, REGIONAL RC_R, BEG CC, P2P PP, EVA SC) only
+  logs a warning and changes nothing (eegfaktura-dev#56 #16). All three values are read only, and the generic updates
+  still drop `area`. Hardening of inbound metering point lists: security relevant — details not published.
+  **Contract:**
+  - MQTT from eegfaktura-eda-xp (EC_PODLIST): optional `ecZoneLevel` (number), `ecTypeEda` (text, EDA code as
+    received) and per `meterList` entry `techCode`, `fuelCode` (text); an old backend ignores them, an old eda-xp
+    does not send them. eda-xp's copy `src/test/resources/contract/backend/mqtt.go.txt` follows `model/mqtt.go`.
+  - `GET /eeg`: new field `ecZoneLevel` (number or null); metering points: `techCode`, `fuelCode` (text or
+    null). Callers: eegfaktura-web.
+  **Deploy order:** eegfaktura-eda-xp → backend (migration on start) → eegfaktura-web.
 
 ### Changed
+- **An ERROR message of eegfaktura-eda-xp is logged with its reason** (eegfaktura-dev#56 #4): one ERROR line with
+  `event.action=eda.error.received`, the tenant, the code, the conversation in the text and eda-xp's `errorMessage`
+  as `error.message`. Before, the reason was dropped. A refused request (e.g. a CPF with an unknown `ecType`) still
+  answers 204 and leaves no process history; whether the community sees it is a follow-up.
+- **Log lines of the inbound metering point list and of a refused registration carry `event.action`**
+  (eegfaktura-dev#56 #12): `eda.podlist.no_community_id`, `eda.podlist.community_check_failed`,
+  `eda.podlist.foreign_community` (with the community id as `ecId`), `eda.podlist.zone_level_dropped`,
+  `eda.podlist.ectype_mismatch`, `eda.podlist.code_dropped` (no metering point number, the conversation instead),
+  `eeg.area.update_from_list_failed`, `eeg.register.refused`.
+- **`area` and `allocationMode` are dropped silently by the generic EEG updates** (platform#229, E5): `POST /eeg`, gRPC
+  `AdminEegService.updateValue` (class EEG) and GraphQL `updateEegModel` (no field for them; it maps only
+  `sepaActiv` and `settlementInterval`, the latter dropped) no longer change them, like `settlementInterval`. They
+  are set at registration, otherwise only by the operator; a P2P/EVA community can no longer switch itself to an
+  EEG type and around the billing block. No current caller changes them (web shows
+  `allocationMode` read-only and has no field for `area`; the admin tool edits only the settlement).
 - **`settlementInterval` is dropped silently by the generic EEG updates** (konzept-abrechnungsintervall.md): `POST /eeg`
   and gRPC `AdminEegService.updateValue` (class EEG, caller: eegfaktura-admin-backend for the admin tool) no longer
   change it, like the other protected fields; it changes only through `POST /eeg/settlementinterval`. Registration
@@ -80,35 +217,29 @@ this changelog highlights the changes relevant for overview and operations.
   commented-out code in `server.go` and the DAOs, the unread `migration.sql`, `schema.hcl`,
   `database/migration/000001_init-setup.up.sql` and config key `file-content.basedir`; stale Makefile targets
   (`atlas-hash`/`atlas-diff` spelled right). The test seed data is `database/testdata/seed.sql`.
-- **The start-up log names the migration result** (eegfaktura-dev#54 #4): one line `event.action=db.migrate.done` with
-  `migration.versionBefore`, `migration.versionAfter` (0: no version) and `migration.applied` (0 with the message
-  `database schema unchanged (no_change)`), so a run that skipped migrations is visible. A failed migration is one
-  ERROR line `db.migrate.failed` (before: `log.Fatal` with the bare error, then nothing). The migrations run on a
-  connection of their own, closed afterwards (before: one connection of the pool stayed held).
-- **Migrations wait at most 60 s for a lock** (eegfaktura-dev#54 #1): the migration connection sets `lock_timeout`
-  (60 s per lock wait of the connection, also the wait for the migration lock while the driver opens; golang-migrate's
-  own wait for that lock in `Up` ends after 15 s). Before, a migration behind a long transaction or a
-  `pg_dump` kept the start waiting with no log after `Start migration ...`, and the API down (one replica,
-  `Recreate`). Now the start fails with `event.action=db.migrate.failed` and a message naming the lock wait and
-  `pg_stat_activity` (detected by SQLSTATE 55P03); the pod restarts. A migration file that was started stays dirty:
-  recovery in the README, section "Failed migration (dirty)". `error.message` of a failed migration is the first line
-  of the error, at most 200 characters (golang-migrate's text holds the whole file).
-- **A dirty migration version points to its recovery** (eegfaktura-dev#54 #3): one ERROR line
-  `event.action=db.migrate.dirty` with `migration.version` and the pointer to the README section "Failed migration
-  (dirty)", at start on a dirty version and when a migration file fails. Before, only golang-migrate's
-  `Dirty database version … Fix and force version.`, which names a CLI that is not in the image and is wrong for an
-  invalid index; that text is no longer logged (a failed file keeps its own error in `error.message`).
-- **`POST /eeg/settlementinterval`: an unreadable body is a warning** (eegfaktura-dev#54 #12): 400 (code 2000) with
-  the text „Die Anfrage konnte nicht gelesen werden (kein gültiges JSON)“ and `"error":"Bad Process"` like the other
-  answers of the route (a body over 1 MiB: „Die Anfrage ist zu groß“); the decoder's text (Go type and field names)
-  only in the WARN line. Before, ERROR and the
-  decoder's text in the answer.
-- **A refused GraphQL `updateEegModel` is logged** (eegfaktura-dev#54 #13): one WARN line
-  `event.action=graphql.update_eeg_model.refused` with the reason (no admin group, tenant argument); the access line
-  still says 200, the error is in the GraphQL answer. `EegModel.settlementInterval` is marked `@deprecated` in the
-  schema with a description that it is ignored; the behaviour is unchanged (dropped, no error).
 
 ### Fixed
+- **Inbound metering point list** (backend 261105-mm4): security relevant — details not published.
+- **Metering point list request only to a grid operator of the community** (eegfaktura-dev#56 #7):
+  `POST /eeg/sync/participants/{oid}` for BEG, P2P and EVA takes `{oid}` trimmed and upper-cased and sends only when it
+  is the grid operator of one of the community's metering points or the community's own; blank or another one answers
+  400 (code 5000) and sends nothing. Before, `{oid}` went out as given (lower case, blank or any operator, answer 204).
+  BEG had the same behaviour before this release and is fixed with it (same code path). A refusal of this route,
+  also a missing grid operator of an EEG, now answers 400 instead of 500. Caller eegfaktura-web offers only these
+  operators.
+- **Saving a metering point answers with the stored TechCode/FuelCode** (eegfaktura-dev#56 #14):
+  `PUT /meteringpoint/{pid}/update/{mid}` never stores them; its answer echoed the codes the client sent and now
+  carries the stored ones (empty when none or no row was updated). eegfaktura-web sends the codes unchanged and keeps
+  showing them, now from the stored values.
+  `PUT /meteringpoint/{pid}/create` (register) likewise no longer echoes them: a new metering point stores no codes, so the
+  answer carries none (eegfaktura-dev#56 #14, register).
+- **Confirming a member sends nothing when a grid operator is missing** (platform#229): every metering point's
+  receiver is determined first; one missing answers 400 before the member is confirmed.
+- **gRPC registration refuses an unknown allocation or settlement interval** (found in the review of backend#147): a
+  `GRID_ALLOCATION` or `EEG_SETTELMENT` value the backend does not know was stored as its number. Now reply status
+  400 without a gRPC error, nothing written (admin-backend treats every status but 201 as failed).
+- **gRPC registration refuses an unknown legal form** (found in the review of backend#147): an `EEG_LEGAL` value the
+  backend does not know was stored as its number. Now reply status 400 without a gRPC error, nothing written.
 - **Metering point master data of larger communities within the deadline again** (support ticket 6611200): the
   view `base.activeMeteringPartition` numbered the partition factors of all communities before the community filter
   of the query applied; as the inner side of a nested loop (chosen since 1.13) it did so once per metering point, and
@@ -117,39 +248,15 @@ this changelog highlights the changes relevant for overview and operations.
   reaches the table: same columns, same rows (a member belongs to one community). Migration `20261105110100` adds
   the index `metering_partition_factor_tenant_idx` (`CONCURRENTLY`). The members list (`completeParticipants`) now
   also filters the view by tenant. No data change; no contract change.
-  **Rollout:** plan a short outage window outside the backup window: the backend runs one replica (`Recreate`) and
-  migrates before it serves, so the API is down (502) while the migrations run or wait (eegfaktura-dev#54 #1).
-  Right before, check for long transactions or a running `pg_dump`, which `CREATE OR REPLACE VIEW` and
-  `CREATE INDEX CONCURRENTLY` wait behind (expected: no row older than a few seconds):
-  `SELECT pid, state, now() - xact_start AS age, left(query, 60) FROM pg_stat_activity WHERE datname =
-  current_database() AND xact_start IS NOT NULL AND pid <> pg_backend_pid() ORDER BY xact_start;`. Run the release
-  outside the backup window (`pg_dump`). A lock wait longer than 60 s ends the migration (see Changed: lock
-  timeout) and the backend exits. A timeout before a migration file starts (the migration lock, the version check)
-  changes nothing: the restart simply tries again. A timeout inside a file leaves its version dirty, and the pod
-  keeps restarting until it is recovered by hand as in the README, section "Failed migration (dirty)"; a restart
-  alone does not heal it. After the
+  **Rollout:** outside the backup window — check `pg_stat_activity` for long transactions or a running `pg_dump`
+  first: `CREATE OR REPLACE VIEW` and `CREATE INDEX CONCURRENTLY` wait behind them (old pods keep serving). After the
   rollout `pg_index.indisvalid` of the new index must be true. If the index build failed or the index is invalid:
   `DROP INDEX CONCURRENTLY IF EXISTS base.metering_partition_factor_tenant_idx`, then by hand
   `UPDATE base.schema_migrations SET version = 20261105110000, dirty = false` (the migrate CLI is not in the image),
-  then restart. Never only reset the version: `IF NOT EXISTS` would keep the invalid index. If the pod was stopped
-  while the build waited (eegfaktura-dev#54 #3), PostgreSQL may finish the build anyway: `dirty = true` with
-  `indisvalid = true`; then only `UPDATE base.schema_migrations SET version = 20261105110100, dirty = false` and
-  restart. All cases: README, section "Failed migration (dirty)".
-  **Rollback** (eegfaktura-dev#54 #14), for the three migrations of this release (`20261105110000`,
-  `20261105110100`, `20261105120000`), by hand without the migrate CLI (not in the image): the schema can stay, an
-  older image (1.15.x) works with the view, the index and the table. It does not start, though, while
-  `base.schema_migrations` holds a version it does not know (golang-migrate: `no migration found for version …`), so
-  before deploying it: `UPDATE base.schema_migrations SET version = 20261028130000, dirty = false;`. Rolling forward
-  again runs the three files again (`CREATE OR REPLACE VIEW`, `IF NOT EXISTS`); the records in
-  `base.settlement_interval_change` stay. Taking the schema back too is not needed; if wanted, after the version
-  reset: `DROP INDEX CONCURRENTLY IF EXISTS base.metering_partition_factor_tenant_idx;` and the content of
-  `20261105110000_activemeteringpartition_tenant.down.sql`; `DROP TABLE base.settlement_interval_change` would delete
-  the records of the interval changes.
+  then restart. Never only reset the version: `IF NOT EXISTS` would keep the invalid index.
 - **GraphQL `updateEegModel` stores again** (tracking backend 261105-mm2): it returned the changed EEG but never stored
   anything, also not `sepaActiv`. It now goes through the guarded update of `POST /eeg` (`updateEegPartial`, protected
   fields dropped, `settlementInterval` included) for the tenant of the checked request, and returns the EEG read back.
-  A `tenant` argument or `EegModel.tenant` other than the `tenant` header (case-insensitive) is an error and nothing
-  is written (eegfaktura-dev#54 #6); before, the argument was ignored and the write went to the header's community.
   `updateEegModel` requires the EEG admin group like `POST /eeg`; the other GraphQL operations stay in log-only mode.
   No known caller (web's `updateEegModel` calls `POST /eeg`).
 - **A failed COMMIT is reported as an error** (BE-CQ-7, BE-CQ-8): registering and moving a metering point, adding a
@@ -173,8 +280,6 @@ this changelog highlights the changes relevant for overview and operations.
   the check and was written as given.
 - **A handler panic after a flush aborts the connection** (dev#45 Q7) instead of a `WriteHeader(500)` on a response that
   had already begun.
-- **Two api tests pass when run again** (tracking backend 261105-mm6): `TestAddTariff_joiningFee` removes the tariff it
-  creates, `TestRequestMeteringPointValues` the energy request rows it stores; `go test -count=2` failed on both.
 
 ## [1.15.1] – 2026-11-02
 

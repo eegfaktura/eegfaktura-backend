@@ -1012,6 +1012,70 @@ func Test_UpdateMeteringPoint(t *testing.T) {
 	require.Equal(t, expectedactiveDate, mUnderTest.State.ActiveSince.Date)
 }
 
+// eegfaktura-dev#56 #14: the update does not store TechCode/FuelCode and hands back the stored ones, not those sent.
+func Test_UpdateMeteringPoint_returnsStoredCodes(t *testing.T) {
+	const tenant, participant, meter = "TE000002", "ea9942db-03da-11ee-b82b-5a985b4b033a", "AT0030000000000000000000030056114"
+	db, err := GetDB(context.Background())
+	require.NoError(t, err)
+	cleanup := func() {
+		_, err := testDB.DbInstance.Exec(`DELETE FROM base.meteringpoint WHERE tenant = $1 AND metering_point_id = $2`, tenant, meter)
+		require.NoError(t, err)
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+	_, err = testDB.DbInstance.Exec(`INSERT INTO base.meteringpoint (metering_point_id, participant_id, tenant, direction,
+		status, process_state, "modifiedAt", "modifiedBy", "registeredSince", tech_code, fuel_code)
+		VALUES ($1, $2, $3, 'GENERATION', 'ACTIVE', 'ACTIVE', now(), 'test', '2023-01-01', 'PV', 'E000')`, meter, participant, tenant)
+	require.NoError(t, err)
+	codes := func() (null.String, null.String) {
+		var tech, fuel null.String
+		require.NoError(t, testDB.DbInstance.QueryRow(`SELECT tech_code, fuel_code FROM base.meteringpoint
+			WHERE tenant = $1 AND metering_point_id = $2`, tenant, meter).Scan(&tech, &fuel))
+		return tech, fuel
+	}
+
+	m := model.MeteringPoint{MeteringPoint: meter, Direction: model.GENERATOR, Status: model.S_ACTIVE,
+		TechCode: null.StringFrom("HACK"), FuelCode: null.StringFrom("HACK"),
+		State: &model.MeterState{ActiveSince: civil.NullDate{Date: civil.DateFor(2023, 1, 1), Valid: true}}}
+	require.NoError(t, db.UpdateMeteringPoint(context.Background(), tenant, "test", participant, meter, &m))
+	assert.Equal(t, null.StringFrom("PV"), m.TechCode)
+	assert.Equal(t, null.StringFrom("E000"), m.FuelCode)
+	tech, fuel := codes()
+	assert.Equal(t, null.StringFrom("PV"), tech, "stored")
+	assert.Equal(t, null.StringFrom("E000"), fuel, "stored")
+
+	// no row of this participant: nothing stored, no codes handed back
+	m.TechCode = null.StringFrom("HACK")
+	require.NoError(t, db.UpdateMeteringPoint(context.Background(), tenant, "test", "00000000-0000-4000-8000-000000000000", meter, &m))
+	assert.False(t, m.TechCode.Valid)
+}
+
+// eegfaktura-dev#56 #14 (register): a new metering point stores no TechCode/FuelCode and hands back none, not those
+// sent.
+func Test_RegisterMeteringPoint_returnsNoUnstoredCodes(t *testing.T) {
+	const tenant, participant, meter = "TE000001", "ea9942da-03da-11ee-b82b-5a985b4b033a", "AT0030000000000000000000030056014"
+	cleanup := func() {
+		_, err := testDB.DbInstance.Exec(`DELETE FROM base.metering_partition_factor WHERE tenant = $1 AND metering_point_id = $2`, tenant, meter)
+		require.NoError(t, err)
+		_, err = testDB.DbInstance.Exec(`DELETE FROM base.meteringpoint WHERE tenant = $1 AND metering_point_id = $2`, tenant, meter)
+		require.NoError(t, err)
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+	db, err := GetDB(context.Background())
+	require.NoError(t, err)
+
+	m := &model.MeteringPoint{MeteringPoint: meter, Direction: model.GENERATOR,
+		TechCode: null.StringFrom("HACK"), FuelCode: null.StringFrom("HACK")}
+	require.NoError(t, db.RegisterMeteringPoint(context.Background(), tenant, "test", participant, m))
+	assert.False(t, m.TechCode.Valid, "techCode handed back")
+	assert.False(t, m.FuelCode.Valid, "fuelCode handed back")
+	var tech, fuel null.String
+	require.NoError(t, testDB.DbInstance.QueryRow(`SELECT tech_code, fuel_code FROM base.meteringpoint
+		WHERE tenant = $1 AND metering_point_id = $2`, tenant, meter).Scan(&tech, &fuel))
+	assert.False(t, tech.Valid || fuel.Valid, "nothing stored")
+}
+
 func Test_MeteringPointChangePartFact(t *testing.T) {
 	db, err := GetDB(context.Background())
 	require.NoError(t, err)

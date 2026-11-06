@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -361,13 +362,17 @@ func registerMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, p
 	}
 
 	// without the cancel of the request: a client that goes away does not roll back the save (as before inTx)
-	return inTx(context.WithoutCancel(ctx), db, func(tx *sqlx.Tx) error {
+	err := inTx(context.WithoutCancel(ctx), db, func(tx *sqlx.Tx) error {
 		if err := applyGridOperator(ctx, tx, tenant, []*model.MeteringPoint{point}); err != nil {
 			return err
 		}
 		meteringEntries, partFactEntries := createMeteringEntries(tenant, username, participantId, []*model.MeteringPoint{point}, &point.ProcessState)
 		return saveMeteringPoint(ctx, tx, tenant, meteringEntries, partFactEntries)
 	})
+	// the new row stores no TechCode/FuelCode (only the metering point list sets them): the caller gets none back,
+	// not what the client sent (eegfaktura-dev#56 #14, register)
+	point.TechCode, point.FuelCode = null.String{}, null.String{}
+	return err
 }
 
 func moveMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, sParticipantId, dParticipantId, meterId string) error {
@@ -478,12 +483,16 @@ func UpdateMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, par
 			"metering_point_id": goqu.Op{"eq": meterId},
 			"participant_id":    goqu.Op{"eq": participantId},
 		}).
+		Returning("tech_code", "fuel_code").
 		ToSQL()
 	if err != nil {
 		return model.ErrUpdateMeter(err)
 	}
-	_, err = db.Exec(statement)
-	if err != nil {
+	// TechCode/FuelCode are not written here (only the metering point list sets them): the caller gets the stored
+	// ones back, not what the client sent (eegfaktura-dev#56 #14); no row updated, none stored
+	meteringPoint.TechCode, meteringPoint.FuelCode = null.String{}, null.String{}
+	err = db.QueryRowx(statement).Scan(&meteringPoint.TechCode, &meteringPoint.FuelCode)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		log.WithContext(ctx).WithError(err).WithField("SQL", "UPDATE").Error("SQL statement failed")
 		return model.ErrUpdateMeter(err)
 	}

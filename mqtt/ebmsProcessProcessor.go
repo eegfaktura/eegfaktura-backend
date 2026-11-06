@@ -2,6 +2,7 @@ package mqttclient
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 
@@ -12,7 +13,11 @@ import (
 
 var RegistrationForParticipation = func(eeg *model.Eeg, meter *model.MeteringPoint, from *int64) error {
 
-	ebmsMessage := createEbmsMessage(eeg, meter, model.EBMS_ONLINE_REG_INIT)
+	receiver, err := getReceiverFrom(eeg, meter)
+	if err != nil {
+		return err
+	}
+	ebmsMessage := createEbmsMessage(eeg, receiver, model.EBMS_ONLINE_REG_INIT)
 	ebmsMessage.Meter = &model.Meter{MeteringPoint: meter.MeteringPoint, Direction: meter.Direction, PartFact: meter.PartFact}
 
 	log.WithField("tenant", eeg.Id).Infof("Start Meteringpoint %s ONLINE registration", meter.MeteringPoint)
@@ -37,7 +42,11 @@ func sendRegistrationForParticipation(eeg *model.Eeg, meter *model.MeteringPoint
 
 var RequestingEnergyData = func(eeg *model.Eeg, meter *model.MeteringPoint, fromDate, toDate int64) error {
 
-	ebmsMessage := createEbmsMessage(eeg, meter, model.EBMS_ZP_SYNC)
+	receiver, err := getReceiverFrom(eeg, meter)
+	if err != nil {
+		return err
+	}
+	ebmsMessage := createEbmsMessage(eeg, receiver, model.EBMS_ZP_SYNC)
 	ebmsMessage.Meter = &model.Meter{MeteringPoint: meter.MeteringPoint}
 	ebmsMessage.Timeline = &model.Timeline{From: fromDate, To: toDate}
 
@@ -57,7 +66,11 @@ func RevokeMeteringPoint(eeg *model.Eeg, meter *model.MeteringPoint, consentEnd 
 		reasonMsg = *reason
 	}
 
-	ebmsMessage := createEbmsMessage(eeg, meter, model.EBMS_AUFHEBUNG_CCMS)
+	receiver, err := getReceiverFrom(eeg, meter)
+	if err != nil {
+		return err
+	}
+	ebmsMessage := createEbmsMessage(eeg, receiver, model.EBMS_AUFHEBUNG_CCMS)
 	ebmsMessage.Meter = &model.Meter{MeteringPoint: meter.MeteringPoint, ConsentID: meter.ConsentId.ValueOrZero()}
 	ebmsMessage.ConsentEnd = consentEnd
 	ebmsMessage.Reason = reasonMsg
@@ -70,19 +83,17 @@ func RevokeMeteringPoint(eeg *model.Eeg, meter *model.MeteringPoint, consentEnd 
 	return nil
 }
 
-func RequestingMeteringPointList(eeg *model.Eeg, receiver string, from, to int64) error {
+// RequestingMeteringPointList asks a grid operator for the metering point list of the community. operators are the
+// grid operators of its metering points (used for BEG, P2P, EVA). An error means nothing was sent.
+func RequestingMeteringPointList(eeg *model.Eeg, receiver string, operators []string, from, to int64) error {
 
-	ebmsMessage := createEbmsMessage(eeg, nil, model.EBMS_ZP_LIST)
+	zpReceiver, err := zpListReceiver(eeg, receiver, operators)
+	if err != nil {
+		return err
+	}
+	ebmsMessage := createEbmsMessage(eeg, zpReceiver, model.EBMS_ZP_LIST)
 	ebmsMessage.Meter = &model.Meter{MeteringPoint: eeg.CommunityId}
 	ebmsMessage.Timeline = &model.Timeline{From: from, To: to}
-	ebmsMessage.Receiver = receiver
-
-	if eeg.Area != model.BEG {
-		if eeg.GridOperator == "" {
-			return model.ErrEdaCommunication(errors.New("no Grid Operator specified"))
-		}
-		ebmsMessage.Receiver = eeg.GridOperator
-	}
 
 	log.WithField("tenant", eeg.Id).Info("Request MeteringPointList")
 	//if err := SendEbmsMessage(ebmsMessage); err != nil {
@@ -91,6 +102,24 @@ func RequestingMeteringPointList(eeg *model.Eeg, receiver string, from, to int64
 	Broker().SendMessage(ebmsMessage)
 	RememberZpListRequester(eeg.CommunityId, eeg.Id)
 	return nil
+}
+
+// zpListReceiver: with several grid operators possible (BEG, P2P, EVA) the list is requested from the chosen one, which
+// must be the grid operator of one of the community's metering points (operators) or the community's own
+// (eegfaktura-dev#56 #7); else from the community's grid operator.
+func zpListReceiver(eeg *model.Eeg, receiver string, operators []string) (string, error) {
+	if model.HasMultipleGridOperators(eeg.Area) {
+		receiver = strings.ToUpper(strings.TrimSpace(receiver))
+		if receiver != "" && (receiver == strings.ToUpper(strings.TrimSpace(eeg.GridOperator)) ||
+			slices.Contains(operators, receiver)) {
+			return receiver, nil
+		}
+		return "", model.ErrEdaCommunication(errors.New("grid operator is not one of the community"))
+	}
+	if eeg.GridOperator == "" {
+		return "", model.ErrEdaCommunication(errors.New("no Grid Operator specified"))
+	}
+	return eeg.GridOperator, nil
 }
 
 // zpListRequesters remembers which tenant asked for the metering point list of a community id. In a GEA several
@@ -139,8 +168,7 @@ var ChangePartitionFactor = func(eeg *model.Eeg, meterReq []*model.ChangePartiti
 	}
 
 	for k, v := range operators {
-		ebmsMessage := createEbmsMessage(eeg, nil, model.EBMS_REQ_CHANGE_PARTFACT)
-		ebmsMessage.Receiver = k
+		ebmsMessage := createEbmsMessage(eeg, k, model.EBMS_REQ_CHANGE_PARTFACT)
 		ebmsMessage.EcType = eeg.Area
 		ebmsMessage.EcDisModel = model.AllocationModeType(eeg.AllocationMode)
 		ebmsMessage.MeterList = v
@@ -151,17 +179,26 @@ var ChangePartitionFactor = func(eeg *model.Eeg, meterReq []*model.ChangePartiti
 	return nil
 }
 
-func getReceiverFrom(eeg *model.Eeg, meter *model.MeteringPoint) string {
+// getReceiverFrom is the grid operator a message about the metering point goes to: with several grid operators
+// possible (BEG, P2P, EVA) the one of the metering point, else, or when the metering point has none, the
+// community's; without either nothing is sent.
+func getReceiverFrom(eeg *model.Eeg, meter *model.MeteringPoint) (string, error) {
 	receiver := eeg.GridOperator
-	if meter != nil && eeg.Area == model.BEG {
+	if meter != nil && model.HasMultipleGridOperators(eeg.Area) && meter.GridOperatorId.String != "" {
 		receiver = meter.GridOperatorId.String
 	}
-	return strings.ToUpper(receiver)
+	if receiver == "" {
+		return "", model.ErrEdaCommunication(errors.New("no Grid Operator specified"))
+	}
+	return strings.ToUpper(receiver), nil
 }
 
-func createEbmsMessage(eeg *model.Eeg, meter *model.MeteringPoint, code model.EbMsMessageType) model.EbmsMessage {
-	receiver := getReceiverFrom(eeg, meter)
+// ReceiverFor is getReceiverFrom for callers that check all metering points before they write or send anything.
+func ReceiverFor(eeg *model.Eeg, meter *model.MeteringPoint) (string, error) {
+	return getReceiverFrom(eeg, meter)
+}
 
+func createEbmsMessage(eeg *model.Eeg, receiver string, code model.EbMsMessageType) model.EbmsMessage {
 	return model.EbmsMessage{
 		Sender:   strings.ToUpper(eeg.RcNumber),
 		Receiver: receiver,

@@ -88,7 +88,7 @@ func TestUpdateEeg(t *testing.T) {
             "id": "TE100100",
             "name": "T-VIERE",
             "businessNr": "123456789",
-            "area": "",
+            "area": "LOCAL",
             "legal": "verein",
             "operatorName": "Netz OOE",
             "communityId": "AT00300000000TC100100000000000001",
@@ -284,7 +284,7 @@ func TestUpdateEegPartial1(t *testing.T) {
 }
 
 // TestUpdateEegPartialDropsProtectedFields deckt F6 ab: der generische EEG-Update
-// darf geschuetzte Felder (tenant, rcNumber, online, communityId, settlementInterval) nicht setzen,
+// darf geschuetzte Felder (tenant, rcNumber, online, communityId, settlementInterval, area, allocationMode) nicht setzen,
 // auch wenn der Client sie mitschickt (die Web schickt das ganze Objekt zurueck).
 func TestUpdateEegPartialDropsProtectedFields(t *testing.T) {
 	db, err := GetDB(context.Background())
@@ -293,6 +293,12 @@ func TestUpdateEegPartialDropsProtectedFields(t *testing.T) {
 	before, err := db.GetEegById(context.Background(), "TE000001")
 	require.NoError(t, err)
 
+	otherMode := model.STATIC
+	if before.AllocationMode == model.STATIC {
+		otherMode = model.DYNAMIC
+	}
+	require.NotEqual(t, model.P2P, before.Area, "fixture")
+
 	err = db.UpdateEegPartial(context.Background(), "TE000001", map[string]interface{}{
 		"description": "F6-probe",
 		"rcNumber":    "HIJACK",
@@ -300,6 +306,9 @@ func TestUpdateEegPartialDropsProtectedFields(t *testing.T) {
 		"communityId": "AT00000000000000000000000000HIJACK",
 		// only through ChangeSettlementInterval with its rule (konzept-abrechnungsintervall.md)
 		"settlementInterval": "ANNUAL",
+		// set at registration, otherwise only by the operator (platform#229, E5)
+		"area":           string(model.P2P),
+		"allocationMode": string(otherMode),
 	})
 	require.NoError(t, err)
 
@@ -311,6 +320,8 @@ func TestUpdateEegPartialDropsProtectedFields(t *testing.T) {
 	assert.Equal(t, before.CommunityId, after.CommunityId, "communityId darf nicht geaendert sein")
 	assert.Equal(t, before.Online, after.Online, "online darf nicht geaendert sein")
 	assert.Equal(t, before.SettlementInterval, after.SettlementInterval, "settlementInterval darf nicht geaendert sein")
+	assert.Equal(t, before.Area, after.Area, "area darf nicht geaendert sein")
+	assert.Equal(t, before.AllocationMode, after.AllocationMode, "allocationMode darf nicht geaendert sein")
 }
 
 // TestUpdateEegPartialRejectsUnknownField: ein unbekannter Schluessel wird als
