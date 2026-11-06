@@ -142,12 +142,12 @@ func (db *sqlDatabase) InsertEeg(ctx context.Context, tenant string, eeg *model.
 	return insertEeg(ctx, db.db, tenant, eeg)
 }
 
-// EcIdBelongsToRc: one of the tenants of the community id has the RC number (case-insensitive), e.g. the RC number
-// of the topic an inbound message came in on.
+// EcIdBelongsToRc: one of the tenants of the community id belongs to the RC number, e.g. the RC number of the topic
+// an inbound message came in on — by its RC number or its name, case-insensitive, the rule of GetTenantsByRcNumber.
 func (db *sqlDatabase) EcIdBelongsToRc(ctx context.Context, ecId, rcNumber string) (bool, error) {
 	var ok bool
 	err := db.db.GetContext(ctx, &ok, `SELECT EXISTS (SELECT 1 FROM base.eeg WHERE "communityId" = $1
-		AND upper("rcNumber") = upper($2))`, ecId, rcNumber)
+		AND (upper("rcNumber") = upper($2) OR upper(tenant) = upper($2)))`, ecId, rcNumber)
 	return ok, err
 }
 

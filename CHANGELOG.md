@@ -8,6 +8,9 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Security
+- **Inbound EDA messages** (backend 261105-mm5): security relevant — details not published.
+
 ### Added
 - **Log events of the interval change** (eegfaktura-dev#54 #5): `event.action=eeg.settlement_interval.changed` (INFO)
   with `settlementInterval.old`, `settlementInterval.new` and `settlementInterval.effectiveFrom` (empty: at once);
@@ -59,6 +62,10 @@ this changelog highlights the changes relevant for overview and operations.
   `event.action=graphql.update_eeg_model.refused` with the reason (no admin group, tenant argument); the access line
   still says 200, the error is in the GraphQL answer. `EegModel.settlementInterval` is marked `@deprecated` in the
   schema with a description that it is ignored; the behaviour is unchanged (dropped, no error).
+- **Consent revocations by grid operator or customer** (AUFHEBUNG_CCMC/CCMI, backend 261105-mm5): a revocation is
+  applied only to metering points of the communities of the receiving RC number. A revocation that matches none of
+  them changes nothing and sends no mail; it is recorded in the history of the receiving community, as an unmatched
+  revocation was so far.
 
 ### Fixed
 - **GraphQL `updateEegModel` refuses a foreign tenant argument** (eegfaktura-dev#54 #6):
