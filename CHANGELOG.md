@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.16.0] – 2026-11-06
+
 ### Security
 - **Base image `debian:trixie-20261027-slim`** (published 2026-10-28) instead of `trixie-20261020-slim`: current Debian security updates of the runtime image.
 
