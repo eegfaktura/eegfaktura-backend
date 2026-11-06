@@ -564,19 +564,7 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 	switch msg.MessageCode {
 	case model.EBMS_ZP_LIST:
 	case model.EBMS_ZP_LIST_RESPONSE:
-		if msg.Payload.EcId == "" {
-			logrus.WithContext(ctx).WithFields(logrus.Fields{"tenant": msg.Tenant, "event.action": "eda.podlist.no_community_id"}).
-				Warn("metering point list without a community id, dropped")
-			return
-		}
-		// only for a community of the RC number the list came in for (several tenants in a GEA, one RC number)
-		if ok, err := db.EcIdBelongsToRc(ctx, msg.Payload.EcId, msg.Tenant); err != nil {
-			logrus.WithContext(ctx).WithFields(logrus.Fields{"tenant": msg.Tenant, "event.action": "eda.podlist.community_check_failed"}).
-				WithError(err).Error("can not check the community id of the metering point list")
-			return
-		} else if !ok {
-			logrus.WithContext(ctx).WithFields(logrus.Fields{"tenant": msg.Tenant, "event.action": "eda.podlist.foreign_community"}).
-				WithField("ecId", msg.Payload.EcId).Warn("metering point list for a community id of another RC number, dropped")
+		if !forReceivingRc(ctx, db, msg, "podlist") {
 			return
 		}
 		buf, err := database.ExportZPListToExcel(ctx, &msg.Payload)
@@ -638,6 +626,29 @@ func protocolEcPodListHandler(ctx context.Context, msg model.SubscribeMessage) {
 		return
 	}
 	_ = db.SaveHistory(historyTenant, msg.MessageCode, msg.Payload.ConversationId, "ADMIN", "IN", msg.Protocol, msg.Payload)
+}
+
+// forReceivingRc: an inbound message is processed only for a community id of the RC number it came in for (msg.Tenant,
+// from the MQTT topic); in a GEA several tenants share the RC number and the community id. A message without a
+// community id, or with one of another RC number, is dropped with a warning (event.action eda.<process>.*).
+func forReceivingRc(ctx context.Context, db database.Database, msg model.SubscribeMessage, process string) bool {
+	entry := logrus.WithContext(ctx).WithField("tenant", msg.Tenant)
+	if msg.Payload.EcId == "" {
+		entry.WithField("event.action", "eda."+process+".no_community_id").
+			Warnf("%s message without a community id, dropped", msg.MessageCode)
+		return false
+	}
+	ok, err := db.EcIdBelongsToRc(ctx, msg.Payload.EcId, msg.Tenant)
+	if err != nil {
+		entry.WithField("event.action", "eda."+process+".community_check_failed").WithError(err).
+			Errorf("can not check the community id of the %s message", msg.MessageCode)
+		return false
+	}
+	if !ok {
+		entry.WithField("event.action", "eda."+process+".foreign_community").WithField("ecId", msg.Payload.EcId).
+			Warnf("%s message for a community id of another RC number, dropped", msg.MessageCode)
+	}
+	return ok
 }
 
 // zpListCommunityData takes the community data of a metering point list (platform#229): ECType RC_L/RC_R switches
