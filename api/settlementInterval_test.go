@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +12,10 @@ import (
 
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"at.ourproject/vfeeg-backend/database"
+	"at.ourproject/vfeeg-backend/logging"
+	"at.ourproject/vfeeg-backend/logging/logcapture"
+	"at.ourproject/vfeeg-backend/logging/logtest"
+	"at.ourproject/vfeeg-backend/model"
 	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -63,7 +69,8 @@ func TestChangeSettlementInterval(t *testing.T) {
 		}
 		return c, nil
 	}
-	router := InitEegRouter(mux.NewRouter(), db)
+	// AccessLog as in server.go: it puts the checked tenant on the lines of the request
+	router := logging.AccessLog(InitEegRouter(mux.NewRouter(), db))
 	call := func(token, path, body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
 		req.Header.Set("Authorization", middleware.BEARER_SCHEMA+token)
@@ -107,7 +114,17 @@ func TestChangeSettlementInterval(t *testing.T) {
 			`{"settlementInterval":"","dryRun":true,` + billedToMar + `}`:        1060,
 			`{"settlementInterval":"QUARTER","dryRun":true}`:                     1060,
 			`{"settlementInterval":"QUARTER","dryRun":true,"billingState":null}`: 1060,
-			`{"settlementInterval":"MONTHLY","dryRun":true,` + billedToMar + `}`: 1061,
+			// eegfaktura-dev#54 #9: incomplete or unreadable state, data after the body
+			`{"settlementInterval":"ANNUAL","dryRun":false,"billingState":{}}`:                                                                     1060,
+			`{"settlementInterval":"ANNUAL","dryRun":false,"billingState":{"finalPeriods":null,"runningPeriods":[]}}`:                              1060,
+			`{"settlementInterval":"ANNUAL","dryRun":false,"billingState":{"finalPeriods":[],"runningPeriods":null}}`:                              1060,
+			`{"settlementInterval":"ANNUAL","dryRun":false,"billingState":{"finalPeriods":["foo"],"runningPeriods":[]}}`:                           1060,
+			`{"settlementInterval":"ANNUAL","dryRun":false,"billingState":{"finalPeriods":["Abr_YM-2026-1"],"runningPeriods":["Abr_YM-2026-13"]}}`: 1060,
+			`{"settlementInterval":"ANNUAL","dryRun":false,"billingState":{"finalPeriods":["Abr_Y-9999"],"runningPeriods":[]}}`:                    1060,
+			`{"settlementInterval":"QUARTER","dryRun":false,` + billedToMar + `}garbage`:                                                           2000,
+			`{"settlementInterval":"QUARTER","dryRun":false,` + billedToMar + `}}`:                                                                 2000,
+			`{"settlementInterval":"QUARTER","dryRun":false,` + billedToMar + `} {}`:                                                               2000,
+			`{"settlementInterval":"MONTHLY","dryRun":true,` + billedToMar + `}`:                                                                   1061,
 			`{"settlementInterval":`: 2000,
 		} {
 			w := post("admin", body)
@@ -116,21 +133,90 @@ func TestChangeSettlementInterval(t *testing.T) {
 		}
 		assert.Equal(t, "MONTHLY", interval())
 	})
+	t.Run("unreadable request: a warning, no Go names in the answer", func(t *testing.T) {
+		reset()
+		buf := logcapture.JSON(t)
+		for _, body := range []string{`{"settlementInterval":"QUARTER","dryRun":"yes",` + billedToMar + `}`,
+			`{"settlementInterval":"QUARTER","dryRun":true,` + billedToMar + `}x`} {
+			w := post("admin", body)
+			require.Equal(t, http.StatusBadRequest, w.Code, body)
+			assert.Equal(t, HttpError{Code: 2000, Error: "Bad Process", Message: "Die Anfrage konnte nicht gelesen werden (kein gültiges JSON)"},
+				errorOf(w), body)
+		}
+		// over the size limit: its own text
+		w := post("admin", `{"settlementInterval":"QUARTER","dryRun":true,"billingState":{"finalPeriods":["`+
+			strings.Repeat("x", maxSettlementIntervalBytes)+`"],"runningPeriods":[]}}`)
+		require.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Equal(t, HttpError{Code: 2000, Error: "Bad Process", Message: "Die Anfrage ist zu groß"}, errorOf(w))
+		var warnings int
+		for _, l := range logtest.Lines(t, buf) {
+			assert.NotEqual(t, "error", l["log.level"], l)
+			if l["event.action"] == "eeg.settlement_interval.refused" {
+				assert.Equal(t, "warn", l["log.level"])
+				assert.Equal(t, float64(2000), l["code"])
+				assert.NotEmpty(t, l["error.message"], "the decoder's text stays in the log")
+				warnings++
+			}
+		}
+		assert.Equal(t, 3, warnings, buf.String())
+	})
+	// eegfaktura-dev#54 #5: a change and a refusal are logged with an event, old and new value, without the user name
+	t.Run("events", func(t *testing.T) {
+		reset()
+		buf := logcapture.JSON(t)
+		require.Equal(t, http.StatusConflict, post("admin", `{"settlementInterval":"QUARTER","dryRun":false,`+billedToFeb+`}`).Code)
+		require.Equal(t, http.StatusBadRequest, post("admin", `{"settlementInterval":"MONTHLY","dryRun":false,`+billedToMar+`}`).Code)
+		require.Equal(t, http.StatusOK, post("admin", `{"settlementInterval":"QUARTER","dryRun":true,`+billedToMar+`}`).Code)
+		require.Equal(t, http.StatusOK, post("admin", `{"settlementInterval":"QUARTER","dryRun":false,`+billedToMar+`}`).Code)
+
+		var events []map[string]any
+		for _, l := range logtest.Lines(t, buf) {
+			assert.NotContains(t, fmt.Sprint(l), "admin-admin", "no user name")
+			if a, _ := l["event.action"].(string); strings.HasPrefix(a, "eeg.settlement_interval.") {
+				delete(l, "@timestamp")
+				delete(l, "request.id")
+				for k := range l {
+					if strings.HasPrefix(k, "log.origin") || strings.HasPrefix(k, "service.") {
+						delete(l, k)
+					}
+				}
+				events = append(events, l)
+			}
+		}
+		require.Len(t, events, 3, buf.String())
+		assert.Equal(t, map[string]any{"event.action": "eeg.settlement_interval.refused", "event.outcome": "failure",
+			"log.level": "info", "message": "settlement interval change refused", "tenant.id": siTenant, "code": float64(1062),
+			"event.reason":           "Zuerst muss noch der Zeitraum März 2026 im bisherigen Intervall abgerechnet werden. Ein Wechsel ist dann ab 1. April 2026 möglich.",
+			"settlementInterval.old": "MONTHLY", "settlementInterval.new": "QUARTER"}, events[0])
+		assert.Equal(t, map[string]any{"event.action": "eeg.settlement_interval.refused", "event.outcome": "failure",
+			"log.level": "warn", "message": "settlement interval change refused", "tenant.id": siTenant, "code": float64(1061),
+			"event.reason":           "Das Abrechnungsintervall ist bereits eingestellt",
+			"settlementInterval.old": "MONTHLY", "settlementInterval.new": "MONTHLY"}, events[1])
+		assert.Equal(t, map[string]any{"event.action": "eeg.settlement_interval.changed", "event.outcome": "success",
+			"log.level": "info", "message": "settlement interval changed", "tenant.id": siTenant,
+			"settlementInterval.old": "MONTHLY", "settlementInterval.new": "QUARTER", "settlementInterval.effectiveFrom": "2026-04-01"}, events[2])
+	})
 	t.Run("dry run allowed", func(t *testing.T) {
 		reset()
-		w := post("admin", `{"settlementInterval":"QUARTER","dryRun":true,`+billedToMar+`}`)
+		w := post("admin", `{"settlementInterval":"QUARTER","dryRun":true,`+billedToMar+"}\n")
 		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 		assert.Equal(t, map[string]interface{}{"allowed": true, "effectiveFrom": "2026-04-01", "lastFinalPeriod": "Abr_YM-2026-3",
 			"message": "Das neue Intervall gilt ab 1. April 2026.", "earliestFrom": nil, "eeg": nil}, decode(w))
 		assert.Equal(t, "MONTHLY", interval())
 	})
-	t.Run("dry run blocked (R2, R3)", func(t *testing.T) {
+	t.Run("dry run blocked (R2, rule 6, R3)", func(t *testing.T) {
 		reset()
 		w := post("admin", `{"settlementInterval":"QUARTER","dryRun":true,`+billedToFeb+`}`)
 		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 		assert.Equal(t, map[string]interface{}{"allowed": false, "effectiveFrom": nil, "lastFinalPeriod": "Abr_YM-2026-2",
 			"message":      "Zuerst muss noch der Zeitraum März 2026 im bisherigen Intervall abgerechnet werden. Ein Wechsel ist dann ab 1. April 2026 möglich.",
 			"earliestFrom": "2026-04-01", "eeg": nil}, decode(w))
+
+		// rule 6 (eegfaktura-dev#54 #2): February between two final months blocks
+		w = post("admin", `{"settlementInterval":"QUARTER","dryRun":true,"billingState":{"finalPeriods":["Abr_YM-2026-1","Abr_YM-2026-3"],"runningPeriods":[]}}`)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		assert.Equal(t, map[string]interface{}{"allowed": false, "effectiveFrom": nil, "lastFinalPeriod": "Abr_YM-2026-3",
+			"message": "Februar 2026 ist noch nicht endgültig abgerechnet.", "earliestFrom": nil, "eeg": nil}, decode(w))
 
 		w = post("admin", `{"settlementInterval":"QUARTER","dryRun":true,"billingState":{"finalPeriods":["Abr_YM-2026-3"],"runningPeriods":["Abr_YM-2026-4"]}}`)
 		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
@@ -188,4 +274,36 @@ func TestChangeSettlementInterval(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "MONTHLY", other.SettlementInterval, "the other tenant is not touched")
 	})
+	t.Run("stored change, reading back fails: 200 without the EEG, a warning", func(t *testing.T) {
+		reset()
+		buf := logcapture.JSON(t)
+		failing := logging.AccessLog(InitEegRouter(mux.NewRouter(), reloadFails{db}))
+		req := httptest.NewRequest(http.MethodPost, "/eeg/settlementinterval",
+			strings.NewReader(`{"settlementInterval":"QUARTER","dryRun":false,`+billedToMar+`}`))
+		req.Header.Set("Authorization", middleware.BEARER_SCHEMA+"admin")
+		req.Header.Set("tenant", siTenant)
+		w := httptest.NewRecorder()
+		failing.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		m := decode(w)
+		assert.Nil(t, m["eeg"])
+		assert.Equal(t, "Das neue Intervall gilt ab 1. April 2026. Die Gemeinschaft konnte danach nicht neu geladen werden, bitte die Seite neu laden.", m["message"])
+		assert.Equal(t, "QUARTER", interval(), "stored")
+		var reload []map[string]any
+		for _, l := range logtest.Lines(t, buf) {
+			assert.NotEqual(t, "error", l["log.level"], l)
+			if l["event.action"] == "eeg.settlement_interval.reload_failed" {
+				reload = append(reload, l)
+			}
+		}
+		require.Len(t, reload, 1, buf.String())
+		assert.Equal(t, "warn", reload[0]["log.level"])
+	})
+}
+
+// reloadFails is the database whose GetEegById fails, as after a lost connection.
+type reloadFails struct{ database.Database }
+
+func (reloadFails) GetEegById(context.Context, string) (*model.Eeg, error) {
+	return nil, errors.New("connection lost")
 }

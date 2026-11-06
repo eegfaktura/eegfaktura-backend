@@ -80,6 +80,8 @@ func TestRequestMeteringPointValues(t *testing.T) {
 	t.Cleanup(func() { mqttclient.RequestingEnergyData = orig })
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// the stored run would skip the metering point as ALREADY_REQUESTED in a repeated run (261105-mm6)
+			isolateRuns(t)
 			req, _ := http.NewRequest("POST", "/meteringpoint/syncenergy", strings.NewReader(tt.args.request))
 			w := httptest.NewRecorder()
 			calls := 0

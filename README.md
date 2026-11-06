@@ -130,6 +130,35 @@ make atlas-hash
 make atlas-diff
 ```
 
+#### Failed migration (dirty)
+
+The backend migrates before it serves (one replica, `Recreate`): while a migration runs or waits, the API is down.
+Every lock wait of the migration connection ends after 60 s (`lock_timeout`; golang-migrate's own wait for its
+migration lock ends after 15 s); the backend then exits with `event.action=db.migrate.failed` and restarts.
+
+golang-migrate marks a version dirty in `base.schema_migrations` before it runs the file and clears the mark after
+it. `dirty = true` therefore means: the file was started and did not finish (it failed, waited too long for a lock,
+or the pod was stopped). The backend does not start on a dirty version. The migrate CLI is not in the image; recover
+by hand with `psql`:
+
+1. `SELECT version, dirty FROM base.schema_migrations;` and read the file of that version in `migrations/`.
+2. Find out how much of the file is in place (cases below). Never only reset the version without this step.
+3. File fully in place: `UPDATE base.schema_migrations SET version = <that version>, dirty = false;`.
+   Not in place: undo what is left of it, then `UPDATE base.schema_migrations SET version = <the version before it>,
+   dirty = false;` — the next start runs the file again.
+4. Restart the backend and check the line `event.action=db.migrate.done`.
+
+Cases (a new migration of a later change adds its row here, in the same change; for a version without a row,
+follow the steps above):
+
+| Dirty version | Check | Recovery |
+|---|---|---|
+| `20261105110000` (view `activeMeteringPartition`) | the statement either ran or not | `version = 20261028130000`: the file runs again (`CREATE OR REPLACE VIEW`) |
+| `20261105110100` (index, `CONCURRENTLY`) | `SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass('base.metering_partition_factor_tenant_idx');` | no row or `false` (build failed or cancelled): `DROP INDEX CONCURRENTLY IF EXISTS base.metering_partition_factor_tenant_idx;`, then `version = 20261105110000` (with `IF NOT EXISTS` an invalid index would stay). `true` (the pod was stopped while the build waited; PostgreSQL finished the build): `version = 20261105110100` |
+| `20261105120000` (table `settlement_interval_change`) | `SELECT to_regclass('base.settlement_interval_change');` | `version = 20261105110100`: the file runs again (`IF NOT EXISTS`) |
+| `20261106090000` (view `billing_masterdata`, column `eeg_area`) | the statement either ran or not | `version = 20261105120000`: the file runs again (`CREATE OR REPLACE VIEW`) |
+| `20261106100000` (columns `eeg.ec_zone_level`, `meteringpoint.tech_code`, `fuel_code`) | the file runs as one transaction: either all three columns are there or none (`SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'base' AND column_name IN ('ec_zone_level', 'tech_code', 'fuel_code');`) | `version = 20261106090000`: the file runs again (`IF NOT EXISTS`; the `UPDATE` fills only an empty `ec_zone_level`) |
+
 ### Rollback to an older image
 
 An older image does not start on a database migrated by a newer one: the start-up migration exits with

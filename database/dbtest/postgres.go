@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -79,6 +80,32 @@ func (tdb *TestDatabase) Open(ctx context.Context) error {
 // SeedConnectionString is the connection string of the untouched copy SeedDbName.
 func (tdb *TestDatabase) SeedConnectionString() string {
 	return strings.Replace(tdb.ConnectionString, "dbname="+DbName, "dbname="+SeedDbName, 1)
+}
+
+// CreateDatabase creates the empty database name (dropped first if a run left it behind) and drops it when the test
+// ends. It returns the connection string and a connection. DbInstance must be open.
+func (tdb *TestDatabase) CreateDatabase(t testing.TB, name string) (string, *sqlx.DB) {
+	t.Helper()
+	drop := func() error {
+		_, err := tdb.DbInstance.Exec(`DROP DATABASE IF EXISTS ` + name + ` WITH (FORCE)`)
+		return err
+	}
+	if err := drop(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tdb.DbInstance.Exec(`CREATE DATABASE ` + name); err != nil {
+		t.Fatal(err)
+	}
+	dsn := strings.Replace(tdb.ConnectionString, "dbname="+DbName, "dbname="+name, 1)
+	dbx, err := sqlx.Connect("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = dbx.Close()
+		_ = drop()
+	})
+	return dsn, dbx
 }
 
 func (tdb *TestDatabase) TearDown() {

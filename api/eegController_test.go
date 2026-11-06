@@ -113,6 +113,11 @@ func TestAddTariff_joiningFee(t *testing.T) {
 	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
 	var created map[string]interface{}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &created))
+	// a repeated run must find one tariff again (261105-mm6)
+	t.Cleanup(func() {
+		_, err := testDB.DbInstance.Exec(`DELETE FROM base.tariff WHERE tenant = 'TE000027' AND id = $1`, created["id"])
+		require.NoError(t, err)
+	})
 	assert.Equal(t, 49.9, created["joiningFee"])
 	assert.Equal(t, true, created["joiningFeeUseVat"])
 	assert.Equal(t, float64(20), created["joiningFeeVatInPercent"])
