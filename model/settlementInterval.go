@@ -163,9 +163,10 @@ func (p clearingPeriod) name() string {
 // backend") to a valid new interval. Without a final period the change applies at once (R5). Otherwise L is the last
 // month of the final periods and S the month after it: allowed from S when S starts a period of the new interval
 // (R1, R2), else blocked with the next start after L; also blocked while a run for a period ending in S or later is
-// running (R3), without a final period while any run is running. Before R2, a month between the first month of the
-// first final period and L that no final period covers blocks (rule 6, eegfaktura-dev#54 #2). state must have passed
-// CheckBillingState: every identifier is readable.
+// running (R3), without a final period while any run is running. Before R2, a month of the 12 months up to L
+// (L-11 … L) that no final period covers blocks (rule 6, eegfaktura-dev#54 #2, decided 06.11.2026); months before the
+// first month of the first final period do not count. An older gap does not block: an allowed change names it in a
+// hint after the message. state must have passed CheckBillingState: every identifier is readable.
 func DecideSettlementInterval(newInterval string, state BillingState) SettlementIntervalDecision {
 	first, last, lastId := -1, -1, ""
 	covered := map[int]bool{}
@@ -194,8 +195,9 @@ func DecideSettlementInterval(newInterval string, state BillingState) Settlement
 	start := last + 1
 	length := periodMonths[newInterval]
 	d := SettlementIntervalDecision{LastFinalPeriod: &lastId}
-	if gaps := uncovered(covered, first, last); len(gaps) > 0 {
-		d.Message = gapMessage(gaps)
+	recent, older := splitGaps(uncovered(covered, first, last), last-gapWindow+1)
+	if len(recent) > 0 {
+		d.Message = gapMessage(recent)
 		return d
 	}
 	if start%length != 0 {
@@ -212,7 +214,30 @@ func DecideSettlementInterval(newInterval string, state BillingState) Settlement
 	d.Allowed = true
 	d.EffectiveFrom = isoDate(start)
 	d.Message = fmt.Sprintf("Das neue Intervall gilt ab %s.", longDate(start))
+	if len(older) > 0 {
+		d.Message += " " + olderGapHint(older)
+	}
 	return d
+}
+
+// gapWindow is how many months up to and including L a gap blocks the change (rule 6, decided 06.11.2026): an older
+// gap would block a community for good.
+const gapWindow = 12
+
+// splitGaps splits gaps at month from: the months from on (recent) and the months before (older).
+func splitGaps(gaps [][2]int, from int) (recent, older [][2]int) {
+	for _, g := range gaps {
+		switch {
+		case g[0] >= from:
+			recent = append(recent, g)
+		case g[1] < from:
+			older = append(older, g)
+		default:
+			older = append(older, [2]int{g[0], from - 1})
+			recent = append(recent, [2]int{from, g[1]})
+		}
+	}
+	return recent, older
 }
 
 // uncovered returns the runs of months first..last that covered lacks, as [first, last] pairs.
@@ -231,8 +256,28 @@ func uncovered(covered map[int]bool, first, last int) [][2]int {
 }
 
 // gapMessage names the months not billed: "Februar 2026 ist …", "Februar und Mai 2026 sind …", "November 2025 bis
-// Jänner 2026 sind …". The year is left out when the next gap ends in the same year.
+// Jänner 2026 sind …".
 func gapMessage(gaps [][2]int) string {
+	verb := "sind"
+	if len(gaps) == 1 && gaps[0][0] == gaps[0][1] {
+		verb = "ist"
+	}
+	return fmt.Sprintf("%s %s noch nicht endgültig abgerechnet.", gapMonths(gaps), verb)
+}
+
+// olderGapHint names the gaps before the window: "Hinweis: Februar 2024 wurde nicht endgültig abgerechnet.",
+// "Hinweis: März bis Mai 2024 wurden nicht endgültig abgerechnet."
+func olderGapHint(gaps [][2]int) string {
+	verb := "wurden"
+	if len(gaps) == 1 && gaps[0][0] == gaps[0][1] {
+		verb = "wurde"
+	}
+	return fmt.Sprintf("Hinweis: %s %s nicht endgültig abgerechnet.", gapMonths(gaps), verb)
+}
+
+// gapMonths names the months of gaps: "Februar 2026", "Februar und Mai 2026", "November 2025 bis Jänner 2026". The
+// year is left out when the next gap ends in the same year.
+func gapMonths(gaps [][2]int) string {
 	parts := make([]string, len(gaps))
 	for i, g := range gaps {
 		year := ""
@@ -252,11 +297,7 @@ func gapMessage(gaps [][2]int) string {
 	if len(parts) > 1 {
 		months = strings.Join(parts[:len(parts)-1], ", ") + " und " + months
 	}
-	verb := "sind"
-	if len(gaps) == 1 && gaps[0][0] == gaps[0][1] {
-		verb = "ist"
-	}
-	return fmt.Sprintf("%s %s noch nicht endgültig abgerechnet.", months, verb)
+	return months
 }
 
 // runningFrom returns the first running period that ends in month start or later.

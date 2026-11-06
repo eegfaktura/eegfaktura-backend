@@ -1,6 +1,8 @@
 package model
 
 import (
+	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -165,6 +167,58 @@ func TestCheckBillingState(t *testing.T) {
 	assert.NoError(t, CheckBillingState(&BillingState{
 		FinalPeriods:   []string{"Abr_YM-2026-3", "Abr_YM-2026-12", "Abr_YM-2026-03", "Abr_YQ-2026-1", "Abr_YH-2026-2", "Abr_Y-2025", "Abr_Y-2025-1"},
 		RunningPeriods: []string{"Abr_YM-2000-1", "Abr_Y-2100"}}))
+}
+
+// months returns the monthly identifiers from year/month for n months, leaving out the months in skip ("2025-2").
+func months(year, month, n int, skip ...string) []string {
+	var ids []string
+	for i := 0; i < n; i++ {
+		y, m := year+(month-1+i)/12, (month-1+i)%12+1
+		if !slices.Contains(skip, fmt.Sprintf("%d-%d", y, m)) {
+			ids = append(ids, fmt.Sprintf("Abr_YM-%d-%d", y, m))
+		}
+	}
+	return ids
+}
+
+// Rule 6 as decided 06.11.2026 (eegfaktura-dev#54 #2): only a gap in the 12 months up to L (L-11 … L) blocks; an
+// older gap does not, an allowed change names it in a hint. Here L is March 2026, L-11 April 2025.
+func TestDecideSettlementIntervalGapWindow(t *testing.T) {
+	const fromApril = "Das neue Intervall gilt ab 1. April 2026."
+	cases := []struct {
+		name     string
+		interval string
+		final    []string
+		want     SettlementIntervalDecision
+	}{
+		{"a gap 13 months before L (February 2025): allowed, with the hint", SettlementQuarter, months(2025, 1, 15, "2025-2"),
+			SettlementIntervalDecision{Allowed: true, EffectiveFrom: str("2026-04-01"), LastFinalPeriod: str("Abr_YM-2026-3"),
+				Message: fromApril + " Hinweis: Februar 2025 wurde nicht endgültig abgerechnet."}},
+		{"a gap in L-12 (March 2025): allowed, with the hint", SettlementQuarter, months(2025, 1, 15, "2025-3"),
+			SettlementIntervalDecision{Allowed: true, EffectiveFrom: str("2026-04-01"), LastFinalPeriod: str("Abr_YM-2026-3"),
+				Message: fromApril + " Hinweis: März 2025 wurde nicht endgültig abgerechnet."}},
+		{"a gap in L-11 (April 2025): blocks", SettlementQuarter, months(2025, 1, 15, "2025-4"),
+			SettlementIntervalDecision{LastFinalPeriod: str("Abr_YM-2026-3"),
+				Message: "April 2025 ist noch nicht endgültig abgerechnet."}},
+		{"a gap across the window start: its part in the window blocks", SettlementQuarter, months(2025, 1, 15, "2025-2", "2025-3", "2025-4", "2025-5"),
+			SettlementIntervalDecision{LastFinalPeriod: str("Abr_YM-2026-3"),
+				Message: "April bis Mai 2025 sind noch nicht endgültig abgerechnet."}},
+		{"older gaps in two years: one hint", SettlementQuarter, append([]string{"Abr_YQ-2024-1", "Abr_YM-2024-6", "Abr_YH-2024-2"}, months(2025, 2, 14)...),
+			SettlementIntervalDecision{Allowed: true, EffectiveFrom: str("2026-04-01"), LastFinalPeriod: str("Abr_YM-2026-3"),
+				Message: fromApril + " Hinweis: April bis Mai 2024 und Jänner 2025 wurden nicht endgültig abgerechnet."}},
+		{"an older gap, blocked by R2: no hint", SettlementAnnual, months(2025, 1, 15, "2025-2"),
+			SettlementIntervalDecision{EarliestFrom: str("2027-01-01"), LastFinalPeriod: str("Abr_YM-2026-3"),
+				Message: "Zuerst muss noch der Zeitraum April bis Dezember 2026 im bisherigen Intervall abgerechnet werden. Ein Wechsel ist dann ab 1. Jänner 2027 möglich."}},
+		{"the example of the decision: March to May 2024", SettlementMonthly, append([]string{"Abr_YM-2024-1", "Abr_YM-2024-2", "Abr_YM-2024-6", "Abr_YH-2024-2"}, months(2025, 1, 15)...),
+			SettlementIntervalDecision{Allowed: true, EffectiveFrom: str("2026-04-01"), LastFinalPeriod: str("Abr_YM-2026-3"),
+				Message: fromApril + " Hinweis: März bis Mai 2024 wurden nicht endgültig abgerechnet."}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := DecideSettlementInterval(c.interval, BillingState{FinalPeriods: c.final, RunningPeriods: []string{}})
+			assert.Equal(t, c.want, got)
+		})
+	}
 }
 
 func TestIsSettlementInterval(t *testing.T) {
