@@ -12,6 +12,7 @@ import (
 
 	"at.ourproject/vfeeg-backend/logging/logtest"
 	"at.ourproject/vfeeg-backend/model"
+	mqttclient "at.ourproject/vfeeg-backend/mqtt"
 	"at.ourproject/vfeeg-backend/services"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
@@ -118,6 +119,38 @@ func TestInbound_onlyForTheReceivingRcNumber(t *testing.T) {
 			}
 		})
 	}
+}
+
+// 261105-mm5: a rejected metering point list request (ABLEHNUNG_ECP) clears the remembered requester only for a
+// community id of the receiving RC number; the history entry under the receiving RC number stays as before.
+func TestPodListRejection_onlyForTheReceivingRcNumber(t *testing.T) {
+	const sole, other = "TS000320", "TS000321"
+	const soleEc, otherEc = "AT00300000000TS000320000000000001", "AT00300000000TS000321000000000001"
+	inboundFixture(t, sole, sole, soleEc, "", 320, 1)
+	inboundFixture(t, other, other, otherEc, "", 321, 1)
+	t.Cleanup(func() { mqttclient.TakeZpListRequester(soleEc) })
+
+	reject := func(topic, ecId, conversation string) {
+		msg := model.SubscribeMessage{MessageCode: model.EBMS_ZP_LIST_REJECTION, Protocol: model.EC_PODLIST, Tenant: topic}
+		require.NoError(t, json.Unmarshal([]byte(fmt.Sprintf(`{"conversationId":"%s","sender":"AT003000","receiver":"%s",
+			"messageCode":"ABLEHNUNG_ECP","ecId":"%s","responseData":[{"responseCode":[56]}]}`, conversation, topic, ecId)), &msg.Payload))
+		protocolEcPodListHandler(context.Background(), msg)
+	}
+
+	mqttclient.RememberZpListRequester(soleEc, sole)
+	logged := logtest.Capture(t, func(w io.Writer) { logrus.SetOutput(w) })
+	reject(other, soleEc, "S4REJFOREIGN")
+	assert.Contains(t, logged.String(), "event.action=eda.podlist.foreign_community")
+	assert.Equal(t, 1, historyCount(t, other, "S4REJFOREIGN"))
+	requester, asked := mqttclient.TakeZpListRequester(soleEc)
+	assert.True(t, asked, "a foreign rejection keeps the requester")
+	assert.Equal(t, sole, requester)
+
+	mqttclient.RememberZpListRequester(soleEc, sole)
+	reject(sole, soleEc, "S4REJOWN")
+	assert.Equal(t, 1, historyCount(t, sole, "S4REJOWN"))
+	_, asked = mqttclient.TakeZpListRequester(soleEc)
+	assert.False(t, asked, "the own rejection clears the requester")
 }
 
 // inboundFixture: a community (tenant, RC number, community id) and, with a meter, a member holding it (status ACTIVE,
