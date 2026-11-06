@@ -355,6 +355,11 @@ func protocolEcReqOnlHandler(ctx context.Context, msg model.SubscribeMessage) {
 		return
 	}
 
+	if !forReceivingRc(ctx, db, msg, "registration") {
+		queueMails = nil // no mail for a dropped message
+		return
+	}
+
 	eeg, err := db.GetEegByEcIdAndMeters(ctx, msg.Payload.EcId, messageMeters(&msg.Payload))
 	if err != nil {
 		logrus.WithError(err).Errorf("can not fetch eeg with message -> conversation %s", msg.Payload.ConversationId)
