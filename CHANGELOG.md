@@ -51,8 +51,11 @@ this changelog highlights the changes relevant for overview and operations.
   **Deploy order:** eegfaktura-eda-xp → backend → eegfaktura-billing, eegfaktura-admin-backend → eegfaktura-admin,
   eegfaktura-web → operator SQL (PP100784, PP102502 from LOCAL and PP102524 from BEG to P2P). Backend before
   admin-backend: otherwise a P2P registration arrives as an unknown number; backend before billing: the new billing
-  reads `eeg_area`. **Rollback:** roll back eegfaktura-billing#103 before migrating the backend down (the new billing
-  reads `eeg_area`); before that, the operator SQL is reverted.
+  reads `eeg_area`. **Rollback** (README, *Rollback to an older image*): the older image does not start on the
+  migrated database (`no migration found for version 20261106100000`), so the migrations go down **before** it starts.
+  Order: revert the operator SQL, roll back eegfaktura-billing#103 (it reads `eeg_area`), migrate down with the
+  new backend stopped (`migrate … down 2`; also behind backend#145/#146 `down 5`), then start the older image. The
+  `migrate down 2` of backend#146 alone no longer fits once this release is in.
 - **Nahebereich and TechCode/FuelCode from the metering point list** (konzept section I, platform#229): new columns
   `base.eeg.ec_zone_level` (1–7, CHECK, empty = unknown) and `base.meteringpoint.tech_code`, `fuel_code` (text).
   Migration `20261106100000_ec_zone_level_tech_fuel_code` fills `ec_zone_level` once from `area` (GEA 1, LOCAL 3,

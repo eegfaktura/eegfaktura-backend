@@ -130,6 +130,37 @@ make atlas-hash
 make atlas-diff
 ```
 
+### Rollback to an older image
+
+An older image does not start on a database migrated by a newer one: the start-up migration exits with
+`no migration found for version <newest version>: read down for version … file does not exist`, and the pod loops.
+So the migrations go down **before** the older image starts. The image has no migrate CLI; run it from a checkout of
+the **newer** release (it holds the down files), with `search_path=base` (the version is in `base.schema_migrations`):
+
+```bash
+migrate -path ./migrations \
+  -database "postgres://<user>:<password>@<host>:5432/<db>?sslmode=<mode>&search_path=base" down <n>
+```
+
+| Back to | Newest version afterwards | `<n>` |
+|---|---|---|
+| before P2P/EVA (backend#147: `20261106090000`, `20261106100000`) | `20261105120000` | `2` |
+| also before backend#145/#146 (`20261105110000`, `20261105110100`, `20261105120000`) | `20261028130000` | `5` |
+
+`migrate … version` shows the current version first; `goto <version>` with the version of the second column does the
+same as `down <n>`. Without the CLI, apply the `.down.sql` files newest first with `psql -f` (not in one transaction:
+`DROP INDEX CONCURRENTLY` refuses that), then `UPDATE base.schema_migrations SET version = <version>, dirty = false`.
+
+Order for the P2P/EVA release:
+
+1. Revert the operator SQL (P2P communities back to their former type).
+2. Roll back eegfaktura-billing#103 (it reads `eeg_area` of `base.billing_masterdata`).
+3. Migrate down as above, while the new backend is scaled to 0 (it would migrate up again on a restart).
+4. Start the older backend image.
+
+The down migrations drop data: `ec_zone_level`, `tech_code`, `fuel_code` (they come back with the next metering point
+list) and, behind backend#145, the records of `base.settlement_interval_change`.
+
 ## Docker
 
 Build the Docker image:
