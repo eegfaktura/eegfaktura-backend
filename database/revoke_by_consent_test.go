@@ -61,6 +61,10 @@ func TestMeteringPointRevokeByConsentId_sameMeterInTwoTenants(t *testing.T) {
 			'AT00300000000TC000014000000000001', 'Weg', '1', 'Linz', '4020', 'revoke-test@example.org')
 			ON CONFLICT (tenant) DO NOTHING`)
 		require.NoError(t, err)
+		t.Cleanup(func() {
+			_, err := testDB.DbInstance.Exec(`DELETE FROM base.eeg WHERE tenant = 'TE000014'`)
+			require.NoError(t, err)
+		})
 		consent := "CONSENT-A"
 		_, err = db.MeteringPointRevokeByConsentId(ctx, "TE000014", &consent, meterA, end)
 		assert.ErrorContains(t, err, "not found")

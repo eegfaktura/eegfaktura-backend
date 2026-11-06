@@ -789,8 +789,7 @@ func meteringPointRevokeByConsentId(ctx context.Context, db *sqlx.DB, receiver s
 			steps = append(steps, goqu.And(meter, inReceiver, goqu.C("consent_id").Eq(*consentId)))
 		}
 		steps = append(steps, goqu.And(meter, inReceiver, assignedWithoutConsent))
-	}
-	if receiver == "" {
+	} else {
 		if consentId != nil {
 			steps = append(steps, goqu.And(meter, goqu.C("consent_id").Eq(*consentId)))
 		}
