@@ -138,10 +138,10 @@ func (h *MailTemplateHandler) uploadFile() middleware.JWTHandlerFunc {
 			return
 		}
 		if err != nil {
-			respondServerError(w, tenant, err)
+			respondServerError(r.Context(), w, tenant, err)
 			return
 		}
-		log.WithField("tenant", tenant).Infof("mail template %s: %s uploaded (%d bytes)", def.Key, kind, f.Size)
+		log.WithContext(r.Context()).WithField("tenant", tenant).Infof("mail template %s: %s uploaded (%d bytes)", def.Key, kind, f.Size)
 		respondWithJSON(w, http.StatusCreated, f)
 	}
 }
@@ -155,7 +155,7 @@ func (h *MailTemplateHandler) loadFile(w http.ResponseWriter, r *http.Request, t
 	}
 	f, err := h.db.GetMailTemplateFile(r.Context(), id)
 	if err != nil {
-		respondServerError(w, tenant, err)
+		respondServerError(r.Context(), w, tenant, err)
 		return nil, false
 	}
 	if f == nil {
@@ -163,7 +163,7 @@ func (h *MailTemplateHandler) loadFile(w http.ResponseWriter, r *http.Request, t
 		return nil, false
 	}
 	if !strings.EqualFold(f.Tenant, tenant) {
-		log.WithField("tenant", tenant).Warn("mail template file of another tenant requested")
+		log.WithContext(r.Context()).WithField("tenant", tenant).Warn("mail template file of another tenant requested")
 		w.WriteHeader(http.StatusForbidden)
 		return nil, false
 	}
@@ -184,7 +184,7 @@ func (h *MailTemplateHandler) getFile() middleware.JWTHandlerFunc {
 		if mux.Vars(r)["id"] == mailtemplate.BuiltinLogoId {
 			logo, err := public.Templates.ReadFile("templates/eegfaktura-logo.png")
 			if err != nil {
-				respondServerError(w, tenant, err)
+				respondServerError(r.Context(), w, tenant, err)
 				return
 			}
 			f = &model.MailTemplateFile{Filename: "eegfaktura-logo.png", MimeType: "image/png", Content: logo}
@@ -218,7 +218,7 @@ func (h *MailTemplateHandler) deleteFile() middleware.JWTHandlerFunc {
 		// deletes the ones it no longer uses), checked again under the save lock
 		deleted, err := h.db.DeleteMailTemplateFile(r.Context(), tenant, def.Key, f.Id)
 		if err != nil {
-			respondServerError(w, tenant, err)
+			respondServerError(r.Context(), w, tenant, err)
 			return
 		}
 		if !deleted {

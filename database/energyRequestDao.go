@@ -257,29 +257,31 @@ func (db *sqlDatabase) CloseEnergyRequest(ctx context.Context, tenant string, ru
 	if err != nil {
 		return false, err
 	}
-	tx, err := db.db.BeginTxx(ctx, nil)
-	if err != nil {
-		return false, err
+	inserted, clearCache := false, false
+	err = inTx(ctx, db.db, func(tx *sqlx.Tx) error {
+		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, energyRequestLock); err != nil {
+			return err
+		}
+		var exists bool
+		if err := tx.GetContext(ctx, &exists, `SELECT EXISTS (SELECT 1 FROM base.notification
+			WHERE id > $1 AND process = $2 AND notification->>'type' = $3 AND notification->>'runId' = $4)`,
+			runRowId, model.N_PROCESS_EDA_PROCESS, energyrequest.SummaryType, summary.RunId); err != nil {
+			return err
+		}
+		if exists {
+			return nil
+		}
+		clearCache = true
+		if _, err := tx.ExecContext(ctx, `INSERT INTO base.notification (tenant, notification, type, role, process, date)
+			VALUES ($1, $2, $3, 'ADMIN', $4, now() AT TIME ZONE 'utc')`,
+			tenant, string(msg), model.N_TYPE_MESSAGE, model.N_PROCESS_EDA_PROCESS); err != nil {
+			return err
+		}
+		inserted = true
+		return nil
+	})
+	if clearCache {
+		clearCommunityCache() // after the commit or rollback, as before
 	}
-	defer func() { _ = tx.Rollback() }()
-
-	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, energyRequestLock); err != nil {
-		return false, err
-	}
-	var exists bool
-	if err = tx.GetContext(ctx, &exists, `SELECT EXISTS (SELECT 1 FROM base.notification
-		WHERE id > $1 AND process = $2 AND notification->>'type' = $3 AND notification->>'runId' = $4)`,
-		runRowId, model.N_PROCESS_EDA_PROCESS, energyrequest.SummaryType, summary.RunId); err != nil {
-		return false, err
-	}
-	if exists {
-		return false, tx.Commit()
-	}
-	defer clearCommunityCache()
-	if _, err = tx.ExecContext(ctx, `INSERT INTO base.notification (tenant, notification, type, role, process, date)
-		VALUES ($1, $2, $3, 'ADMIN', $4, now() AT TIME ZONE 'utc')`,
-		tenant, string(msg), model.N_TYPE_MESSAGE, model.N_PROCESS_EDA_PROCESS); err != nil {
-		return false, err
-	}
-	return true, tx.Commit()
+	return inserted, err
 }

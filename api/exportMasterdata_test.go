@@ -30,7 +30,7 @@ func TestExportMasterdata_joiningFee(t *testing.T) {
 
 	// the member gets an EEG tariff with a joining fee; restored afterwards (fixture of other tests)
 	tariff := model.Tariff{Type: model.EEG, Name: "Beitrag mit Beitrittsgebühr", JoiningFee: 49.90}
-	require.NoError(t, db.AddTariff(tenant, "test", &tariff))
+	require.NoError(t, db.AddTariff(context.Background(), tenant, "test", &tariff))
 	var oldTariff *string
 	require.NoError(t, testDB.DbInstance.Get(&oldTariff, `SELECT "tariffId"::text FROM base.participant WHERE id = $1`, member))
 	_, err = testDB.DbInstance.Exec(`UPDATE base.participant SET "tariffId" = $1 WHERE id = $2`, tariff.Id.String(), member)

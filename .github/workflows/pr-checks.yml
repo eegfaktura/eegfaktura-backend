@@ -2,8 +2,8 @@
 # package with the race detector; the DAO tests start PostgreSQL through Testcontainers, which
 # needs the Docker of the GitHub-hosted runner).
 #
-# A fresh checkout does not compile without codegen: protoc for proto/*.proto
-# (the tracked *.pb.go are stale), then go-jsonschema for model/registration_model.go.
+# A fresh checkout does not compile without codegen (the generated code is not tracked):
+# `make tools generate` runs protoc for proto/*.proto, then go-jsonschema for model/registration_model.go.
 # Versions fixed, each release older than 7 days (checked 2026-10-28): Go 1.26.10 (2026-10-19),
 # protoc 29.3 (2025-01-08); protoc-gen-go, protoc-gen-go-grpc and go-jsonschema at the versions in
 # go.mod. Actions pinned by commit SHA.
@@ -62,13 +62,8 @@ jobs:
           unzip -q "$RUNNER_TEMP/protoc.zip" -d "$RUNNER_TEMP/protoc"
           gopath="$(go env GOPATH)"
           export PATH="$RUNNER_TEMP/protoc/bin:$gopath/bin:$PATH"
-          # inside the module: the versions come from go.mod
-          go install google.golang.org/protobuf/cmd/protoc-gen-go \
-            google.golang.org/grpc/cmd/protoc-gen-go-grpc github.com/atombender/go-jsonschema
-          protoc --experimental_allow_proto3_optional=true --proto_path=. \
-            --go_out=. --go_opt=paths=source_relative \
-            --go-grpc_out=. --go-grpc_opt=paths=source_relative ./proto/*.proto
-          (cd model && go generate ./...)
+          # inside the module: the generator versions come from go.mod
+          make tools generate
 
       - name: go vet
         run: go vet ./...
@@ -127,13 +122,8 @@ jobs:
           unzip -q "$RUNNER_TEMP/protoc.zip" -d "$RUNNER_TEMP/protoc"
           gopath="$(go env GOPATH)"
           export PATH="$RUNNER_TEMP/protoc/bin:$gopath/bin:$PATH"
-          # inside the module: the versions come from go.mod
-          go install google.golang.org/protobuf/cmd/protoc-gen-go \
-            google.golang.org/grpc/cmd/protoc-gen-go-grpc github.com/atombender/go-jsonschema
-          protoc --experimental_allow_proto3_optional=true --proto_path=. \
-            --go_out=. --go_opt=paths=source_relative \
-            --go-grpc_out=. --go-grpc_opt=paths=source_relative ./proto/*.proto
-          (cd model && go generate ./...)
+          # inside the module: the generator versions come from go.mod
+          make tools generate
 
       - name: Check Docker (Testcontainers)
         run: docker version --format 'Docker {{.Server.Version}}'

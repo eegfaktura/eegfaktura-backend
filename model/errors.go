@@ -32,7 +32,6 @@ func PartialWrap(code int) func(err error) *VfeegError {
 
 var ErrParseJson = PartialWrap(2000)
 
-var ErrConnectDatabase = PartialWrap(999)
 var ErrOpenTx = PartialWrap(998)
 
 var ErrGetEeg = PartialWrap(1000)
@@ -42,7 +41,6 @@ var ErrCompleteParticipant = PartialWrap(1101)
 var ErrUpdateParticipant = PartialWrap(1102)
 var ErrInsertParticipant = PartialWrap(1103)
 var ErrRegisterParticipant = PartialWrap(1104)
-var ErrArchiveParticipant = PartialWrap(1105)
 var ErrFindParticipant = PartialWrap(1106)
 var ErrDeleteParticipant = PartialWrap(1107)
 

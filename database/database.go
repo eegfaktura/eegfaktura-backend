@@ -130,6 +130,17 @@ func (db *sqlDatabase) logPoolStats(interval time.Duration) {
 	}
 }
 
+// NewDatabase wraps an open connection (tests: a container or a sqlmock connection).
+func NewDatabase(conn *sqlx.DB) Database {
+	return &sqlDatabase{db: conn}
+}
+
+// SetDB makes d the database GetDB returns, instead of connecting to the configured one (tests).
+func SetDB(d Database) {
+	db.Do(func() {})
+	db.Database = d
+}
+
 // GetDB returns the current DB.
 func GetDB(ctx context.Context) (Database, error) {
 	var err error

@@ -57,6 +57,7 @@ func syncEnergy(t *testing.T, body string, resp ...*syncResponse) (int, []sentRe
 // syncEnergyWith is syncEnergy on db.
 func syncEnergyWith(t *testing.T, db database.Database, body string, resp ...*syncResponse) (int, []sentRequest, energyrequest.Run) {
 	t.Helper()
+	isolateRuns(t)
 	h := NewMeteringHandler(db)
 	orig := mqttclient.RequestingEnergyData
 	t.Cleanup(func() { mqttclient.RequestingEnergyData = orig })
@@ -83,6 +84,19 @@ func syncEnergyWith(t *testing.T, db database.Database, body string, resp ...*sy
 	}
 
 	return w.Code, sent, lastRun(t)
+}
+
+// isolateRuns removes, when the test ends, the rows of TE001006 it stored in base.notification (runs, answers).
+// An answer goes to the oldest open request of the metering point, whatever its period, so a run another test
+// left behind would take the answer of this one and the result would depend on the order of the tests.
+func isolateRuns(t *testing.T) {
+	t.Helper()
+	var last int64
+	require.NoError(t, testDB.DbInstance.Get(&last, `SELECT COALESCE(max(id), 0) FROM base.notification`))
+	t.Cleanup(func() {
+		_, err := testDB.DbInstance.Exec(`DELETE FROM base.notification WHERE tenant = 'TE001006' AND id > $1`, last)
+		require.NoError(t, err)
+	})
 }
 
 // lastRun returns the run of TE001006 stored last.

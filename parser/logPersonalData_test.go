@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"testing"
 
+	"at.ourproject/vfeeg-backend/config/configtest"
 	"at.ourproject/vfeeg-backend/services"
 	log "github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/guregu/null.v4"
@@ -14,7 +14,7 @@ import (
 
 // 261008-ca1: a member without e-mail is logged by id, not by name.
 func TestMemberWithoutEmailIsLoggedById(t *testing.T) {
-	viper.Set("file-content.templates", t.TempDir())
+	configtest.Set(t, "file-content.templates", t.TempDir())
 	var out bytes.Buffer
 	orig := log.StandardLogger().Out
 	log.SetOutput(&out)

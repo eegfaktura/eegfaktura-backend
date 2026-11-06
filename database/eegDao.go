@@ -31,6 +31,8 @@ type EegRepository interface {
 	FetchTenantsName(ctx context.Context, tenants []string, isSuperUser bool) ([]tenantsNameStruct, error)
 	InsertEeg(ctx context.Context, tenant string, eeg *model.Eeg) error
 	UpdateOnlineState(ctx context.Context, tenant string, onlineState bool) error
+	ChangeSettlementInterval(ctx context.Context, tenant, newInterval, changedBy string, state model.BillingState,
+		dryRun bool) (model.SettlementIntervalDecision, error)
 }
 
 func (db *sqlDatabase) GetEegById(ctx context.Context, tenant string) (*model.Eeg, error) {
@@ -81,10 +83,10 @@ func (db *sqlDatabase) GetEegByEcIdAndMeters(ctx context.Context, ecId string, m
 	}
 	switch {
 	case len(owners) == 0:
-		log.WithField("ecId", ecId).Warnf("none of the tenants %v holds the metering points %v; using the base tenant", tenants, meters)
+		log.WithContext(ctx).WithField("ecId", ecId).Warnf("none of the tenants %v holds the metering points %v; using the base tenant", tenants, meters)
 		return db.GetBaseEegByEcId(ctx, ecId)
 	case len(owners) > 1:
-		log.WithField("ecId", ecId).Warnf("the metering points %v are held by the tenants %v; applying to %s", meters, owners, owners[0])
+		log.WithContext(ctx).WithField("ecId", ecId).Warnf("the metering points %v are held by the tenants %v; applying to %s", meters, owners, owners[0])
 	}
 	return getEegById(ctx, db.db, owners[0])
 }
@@ -161,7 +163,7 @@ func getEegById(ctx context.Context, tx *sqlx.DB, tenant string) (*model.Eeg, er
 
 	err = tx.GetContext(ctx, &eeg, stmt, args...)
 	if err != nil {
-		log.WithError(err).WithField("SQL", "SELECT").Error("SQL statement failed")
+		log.WithContext(ctx).WithError(err).WithField("SQL", "SELECT").Error("SQL statement failed")
 		return nil, model.ErrGetEeg(err)
 	}
 	return &eeg, nil
@@ -177,7 +179,7 @@ func getEegByEcId(ctx context.Context, tx *sqlx.DB, edId string) (*model.Eeg, er
 
 	err = tx.GetContext(ctx, &eeg, stmt, args...)
 	if err != nil {
-		log.WithError(err).WithField("SQL", "SELECT").Error("SQL statement failed")
+		log.WithContext(ctx).WithError(err).WithField("SQL", "SELECT").Error("SQL statement failed")
 		return nil, model.ErrGetEeg(err)
 	}
 	return &eeg, nil
@@ -190,7 +192,7 @@ func insertEeg(ctx context.Context, db *sqlx.DB, tenant string, eeg *model.Eeg) 
 	var exists bool
 	if err := db.GetContext(ctx, &exists, `SELECT EXISTS (SELECT 1 FROM base.eeg WHERE upper(tenant) = upper($1)
 		OR ($2 AND upper("rcNumber") = upper($3)))`, eeg.Id, eeg.Area != model.AreaType("GEA"), eeg.RcNumber); err != nil {
-		log.WithError(err).WithField("SQL", "SELECT").Error("SQL statement failed")
+		log.WithContext(ctx).WithError(err).WithField("SQL", "SELECT").Error("SQL statement failed")
 		return err
 	}
 	if exists {
@@ -217,7 +219,7 @@ func insertEeg(ctx context.Context, db *sqlx.DB, tenant string, eeg *model.Eeg) 
 	}
 	res, err := db.ExecContext(ctx, sql)
 	if err != nil {
-		log.WithError(err).WithField("SQL", "INSERT").Error("SQL statement failed")
+		log.WithContext(ctx).WithError(err).WithField("SQL", "INSERT").Error("SQL statement failed")
 		return err
 	}
 	// a parallel registration in the same spelling was faster
@@ -235,10 +237,12 @@ func insertEeg(ctx context.Context, db *sqlx.DB, tenant string, eeg *model.Eeg) 
 // eegProtectedUpdateFields must never be set through the generic EEG update:
 // the identity/tenant key and rcNumber/online/createdAt (model: skipupdate),
 // plus communityId and tenant, which route incoming EDA messages and identify
-// the community. The web round-trips the whole EEG object on save, so these are
-// dropped silently rather than rejected.
+// the community, and settlementInterval, which changes only through
+// ChangeSettlementInterval with its rule (konzept-abrechnungsintervall.md). The
+// web round-trips the whole EEG object on save, so these are dropped silently
+// rather than rejected.
 var eegProtectedUpdateFields = func() map[string]struct{} {
-	m := map[string]struct{}{"tenant": {}, "communityId": {}}
+	m := map[string]struct{}{"tenant": {}, "communityId": {}, "settlementInterval": {}}
 	for _, k := range model.SkipUpdateJSONKeys(model.Eeg{}) {
 		m[k] = struct{}{}
 	}
@@ -284,7 +288,7 @@ func updateEegPartial(ctx context.Context, db *sqlx.DB, tenant string, fields ma
 
 	statement, _, err := pgDialect.Update(TABLE_EEG).Set(updateRecord).Where(goqu.Ex{"tenant": goqu.V(tenant)}).ToSQL()
 	if err != nil {
-		log.WithError(err).Error("Update EEG VALUES failed")
+		log.WithContext(ctx).WithError(err).Error("Update EEG VALUES failed")
 		return err
 	}
 
@@ -312,7 +316,7 @@ func fetchTenantsName(ctx context.Context, db *sqlx.DB, tenants []string, isSupe
 		return nil, err
 	}
 	if err := db.SelectContext(ctx, &tenantsName, stmt); err != nil {
-		log.WithError(err).WithField("SQL", "SELECT").Error("SQL statement failed")
+		log.WithContext(ctx).WithError(err).WithField("SQL", "SELECT").Error("SQL statement failed")
 		return nil, err
 	}
 	return tenantsName, nil

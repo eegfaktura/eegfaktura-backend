@@ -190,7 +190,7 @@ func KeepSent(ctx context.Context, store Store, rowId int64, r *Run, sent []Mete
 		err = store.UpdateEnergyRequestRow(ctx, rowId, r)
 	}
 	if err != nil {
-		logrus.WithError(err).Error("energy request summary: cannot take unsent metering points out of the run")
+		logrus.WithContext(ctx).WithError(err).Error("energy request summary: cannot take unsent metering points out of the run")
 	}
 }
 

@@ -5,19 +5,18 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"at.ourproject/vfeeg-backend/database"
-	"github.com/spf13/viper"
+	"at.ourproject/vfeeg-backend/config/configtest"
+	"at.ourproject/vfeeg-backend/database/dbmock"
 	"github.com/stretchr/testify/require"
 )
 
 // The probes as wired by InitRouters, with the real database.Ping.
 func TestInitRouters_probes(t *testing.T) {
-	db, _, err := database.InitMockDatabase()
+	db, _, err := dbmock.New()
 	require.NoError(t, err)
 	// Nothing listens on port 1: the dedicated ping fails at once.
-	viper.Set("database.host", "127.0.0.1")
-	viper.Set("database.port", 1)
-	defer viper.Reset()
+	configtest.Set(t, "database.host", "127.0.0.1")
+	configtest.Set(t, "database.port", 1)
 	r := InitRouters(db)
 
 	tests := []struct {

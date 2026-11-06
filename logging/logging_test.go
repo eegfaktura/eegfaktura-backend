@@ -2,13 +2,14 @@ package logging
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"regexp"
 	"strings"
 	"testing"
 
+	"at.ourproject/vfeeg-backend/logging/logtest"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,38 +22,15 @@ func env(m map[string]string) func(string) (string, bool) {
 	}
 }
 
-// setup routes slog and logrus into a buffer for one test and restores them after.
+// setup routes slog, logrus and log into a buffer for one test and restores them after.
 func setup(t *testing.T, cfg Config) *bytes.Buffer {
 	t.Helper()
-	oldSlog := slog.Default()
-	std := logrus.StandardLogger()
-	oldLevel, oldOut, oldFmt, oldCaller := std.Level, std.Out, std.Formatter, std.ReportCaller
-	oldHooks := std.ReplaceHooks(logrus.LevelHooks{})
-	t.Cleanup(func() {
-		slog.SetDefault(oldSlog)
-		std.SetLevel(oldLevel)
-		std.SetOutput(oldOut)
-		std.SetFormatter(oldFmt)
-		std.SetReportCaller(oldCaller)
-		std.ReplaceHooks(oldHooks)
-	})
-	var buf bytes.Buffer
-	Setup(&buf, cfg)
-	return &buf
+	return logtest.Capture(t, func(w io.Writer) { Setup(w, cfg) })
 }
 
 func lines(t *testing.T, buf *bytes.Buffer) []map[string]any {
 	t.Helper()
-	var out []map[string]any
-	for _, l := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
-		if l == "" {
-			continue
-		}
-		var m map[string]any
-		require.NoError(t, json.Unmarshal([]byte(l), &m), l)
-		out = append(out, m)
-	}
-	return out
+	return logtest.Lines(t, buf)
 }
 
 func TestConfigFromEnv_Defaults(t *testing.T) {
@@ -164,10 +142,22 @@ func TestUnknownFieldsAreDropped(t *testing.T) {
 	require.Len(t, ls, 2)
 	assert.NotContains(t, buf.String(), "example.org")
 	assert.NotContains(t, buf.String(), "f81d4fae", "sub (user id) never appears")
-	assert.NotContains(t, allowedFields, "sub")
 	assert.NotContains(t, buf.String(), "AT611904300234573201")
 	assert.Equal(t, "AT00300000000RC100181000000000001", ls[0]["ecId"])
 	assert.Equal(t, "TE100100", ls[1]["tenant.id"])
+}
+
+// Outside a request the tenant field is checked and written upper-cased, as SetTenant does in a request.
+func TestTenantOutsideRequest_UpperCased(t *testing.T) {
+	buf := setup(t, Config{Level: slog.LevelInfo, JSON: true})
+	logrus.WithField("tenant", "te100100").Info("a")
+	slog.Info("b", "tenant.id", "gc123456-001")
+	logrus.WithField("tenant", "Erika Mustermann").Info("c")
+	ls := lines(t, buf)
+	require.Len(t, ls, 3)
+	assert.Equal(t, "TE100100", ls[0]["tenant.id"])
+	assert.Equal(t, "GC123456-001", ls[1]["tenant.id"])
+	assert.NotContains(t, ls[2], "tenant.id")
 }
 
 // slog.With / Logger.With: the allowlist applies to those fields as well.
@@ -179,4 +169,52 @@ func TestUnknownFieldsAreDropped_With(t *testing.T) {
 	assert.NotContains(t, buf.String(), "example.org")
 	assert.NotContains(t, ls[0], "user.email")
 	assert.Equal(t, "TE100100", ls[0]["tenant.id"])
+}
+
+// L14: deployment.environment is on every line, also on the bridged logrus lines.
+func TestDeploymentEnvironment(t *testing.T) {
+	cfg, err := ConfigFromEnv(env(map[string]string{"DEPLOYMENT_ENVIRONMENT": " pilot "}))
+	require.NoError(t, err)
+	assert.Equal(t, "pilot", cfg.Environment)
+
+	buf := setup(t, Config{Level: slog.LevelInfo, JSON: true, Version: "1.2.3", Environment: cfg.Environment})
+	logrus.Info("a")
+	slog.Info("b")
+
+	got := lines(t, buf)
+	require.Len(t, got, 2)
+	for _, l := range got {
+		assert.Equal(t, "pilot", l["deployment.environment"])
+	}
+}
+
+func TestDeploymentEnvironment_OmittedWhenUnset(t *testing.T) {
+	for _, e := range []map[string]string{nil, {"DEPLOYMENT_ENVIRONMENT": ""}, {"DEPLOYMENT_ENVIRONMENT": "  "}} {
+		cfg, err := ConfigFromEnv(env(e))
+		require.NoError(t, err)
+		buf := setup(t, cfg)
+		logrus.Info("a")
+		assert.NotContains(t, lines(t, buf)[0], "deployment.environment")
+	}
+}
+
+// L14: Setup writes the start-up line, which says which level is in force,
+// whatever that level is.
+func TestSetup_StartLine(t *testing.T) {
+	for level, want := range map[slog.Level]string{slog.LevelError: "error", slog.LevelInfo: "info", LevelTrace: "trace"} {
+		var start bytes.Buffer
+		logtest.Capture(t, func(w io.Writer) {
+			Setup(io.MultiWriter(w, &start), Config{Level: level, JSON: true, Version: "1.2.3", Environment: "dev"})
+		})
+
+		got := lines(t, &start)
+		require.Len(t, got, 1)
+		l := got[0]
+		assert.Equal(t, "service start", l["message"])
+		assert.Equal(t, "service.start", l["event.action"])
+		assert.Equal(t, want, l["log.effective_level"])
+		assert.Equal(t, "1.2.3", l["service.version"])
+		assert.Equal(t, "dev", l["deployment.environment"])
+		assert.Equal(t, "info", l["log.level"])
+	}
 }

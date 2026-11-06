@@ -17,9 +17,8 @@ import (
 
 func TestNewDatabase(t *testing.T) {
 
-	ctx := context.Background()
-	db, err := GetDB(ctx)
-	require.NoError(t, err)
+	// asserts the seed data: on the untouched copy, other tests change TE000001
+	db := seedDB(t)
 
 	eeg, err := db.GetEegByEcId(context.Background(), "AT00300000000TC000001000000000001")
 	require.NoError(t, err)
@@ -34,8 +33,8 @@ func TestNewDatabase(t *testing.T) {
 }
 
 func TestGetEeg(t *testing.T) {
-	db, err := GetDB(context.Background())
-	require.NoError(t, err)
+	// asserts the seed data: on the untouched copy, other tests change TE000001
+	db := seedDB(t)
 
 	eeg, err := db.GetEegById(context.Background(), "TE000001")
 	assert.NoError(t, err)
@@ -83,8 +82,7 @@ func TestGetEeg(t *testing.T) {
 }
 
 func TestUpdateEeg(t *testing.T) {
-	mDB, mock, err := InitMockDatabase()
-	require.NoError(t, err)
+	mDB, mock := newMockDatabase(t)
 
 	eegJson := `{
             "id": "TE100100",
@@ -126,7 +124,7 @@ func TestUpdateEeg(t *testing.T) {
         }`
 
 	var eeg model.Eeg
-	err = json.NewDecoder(strings.NewReader(eegJson)).Decode(&eeg)
+	err := json.NewDecoder(strings.NewReader(eegJson)).Decode(&eeg)
 	assert.NoError(t, err)
 
 	type args struct {
@@ -286,7 +284,7 @@ func TestUpdateEegPartial1(t *testing.T) {
 }
 
 // TestUpdateEegPartialDropsProtectedFields deckt F6 ab: der generische EEG-Update
-// darf geschuetzte Felder (tenant, rcNumber, online, communityId) nicht setzen,
+// darf geschuetzte Felder (tenant, rcNumber, online, communityId, settlementInterval) nicht setzen,
 // auch wenn der Client sie mitschickt (die Web schickt das ganze Objekt zurueck).
 func TestUpdateEegPartialDropsProtectedFields(t *testing.T) {
 	db, err := GetDB(context.Background())
@@ -300,6 +298,8 @@ func TestUpdateEegPartialDropsProtectedFields(t *testing.T) {
 		"rcNumber":    "HIJACK",
 		"online":      true,
 		"communityId": "AT00000000000000000000000000HIJACK",
+		// only through ChangeSettlementInterval with its rule (konzept-abrechnungsintervall.md)
+		"settlementInterval": "ANNUAL",
 	})
 	require.NoError(t, err)
 
@@ -310,6 +310,7 @@ func TestUpdateEegPartialDropsProtectedFields(t *testing.T) {
 	assert.Equal(t, before.RcNumber, after.RcNumber, "rcNumber darf nicht geaendert sein")
 	assert.Equal(t, before.CommunityId, after.CommunityId, "communityId darf nicht geaendert sein")
 	assert.Equal(t, before.Online, after.Online, "online darf nicht geaendert sein")
+	assert.Equal(t, before.SettlementInterval, after.SettlementInterval, "settlementInterval darf nicht geaendert sein")
 }
 
 // TestUpdateEegPartialRejectsUnknownField: ein unbekannter Schluessel wird als

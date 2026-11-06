@@ -30,6 +30,14 @@ func withGQLNonAdmin(ctx context.Context, claims *PlatformClaims, superuser bool
 	})
 }
 
+// IsGQLAdmin reports whether the GraphQL request passed GQLProtect with an EEG_ADMIN token. For the resolvers that
+// require the admin group like their REST counterpart (Protect), while other operations stay in log-only mode. A
+// context that did not pass GQLProtect has no tenant: the resolvers refuse it before.
+func IsGQLAdmin(ctx context.Context) bool {
+	_, nonAdmin := ctx.Value(gqlNonAdminCtxKey).(*gqlNonAdmin)
+	return !nonAdmin
+}
+
 // accessClass is the role class of the access groups: admin, user or none.
 func accessClass(ag AccessGroups) string {
 	switch {

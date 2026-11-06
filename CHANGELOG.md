@@ -8,6 +8,111 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Added
+- **Start-up line and `deployment.environment`** (dev#45 L14, Q5): one line `service start` (`event.action=service.start`)
+  with version and effective log level (`log.effective_level`), written by `logging.Setup` whatever `LOG_LEVEL` says, no
+  secrets. `deployment.environment` on every line
+  from the new optional env `DEPLOYMENT_ENVIRONMENT`; the field is left out when unset.
+- **Never-log test** (dev#45 L11, `logging/neverlog_test.go`, no new dependency): type-checks the source and fails on a
+  struct or `http.Header` printed whole in a log call (verb, bare argument, field value), `%+v`/`%#v` of an interface,
+  and names of personal data or secrets among the identifiers of log calls, split into words (camelCase, snake_case) and
+  compared as whole words with the list common to all services (also with a plural s; in an all lower-case identifier a
+  list word of five or more letters also inside it), and a list word right before a format verb (`password=%s`); other
+  string literals are not scanned, numbers, booleans and errors are skipped by type (dev#45 Q1). An
+  exception needs an entry, keyed by file and finding, with its reason in `neverLogAllowed`. `-short` skips the scan.
+- **EEG admins change the settlement interval** (konzept-abrechnungsintervall.md, platform#230; caller: eegfaktura-web):
+  `POST /eeg/settlementinterval` (EEG_ADMIN, tenant from the checked header) with `settlementInterval`, `dryRun` and
+  `billingState` (billing's `settlementState`, passed on by web). The rule: without a final period the change applies
+  at once unless a run is running; otherwise from the month after the last final period, if a period of the new interval starts there, and no
+  run is running for a period ending then or later. Answer 200 `{allowed, effectiveFrom, lastFinalPeriod, message,
+  earliestFrom, eeg}`; a blocked change without `dryRun` is 409 (code 1062) with the reason; an invalid value, the
+  current value or a missing `billingState` is 400 (1060, 1061). The change runs in one transaction on the locked
+  `base.eeg` row and is recorded with user, time, old and new value in the new table `base.settlement_interval_change`
+  (migration `20261105120000_settlement_interval_change`, down drops the table).
+
+### Changed
+- **`settlementInterval` is dropped silently by the generic EEG updates** (konzept-abrechnungsintervall.md): `POST /eeg`
+  and gRPC `AdminEegService.updateValue` (class EEG, caller: eegfaktura-admin-backend for the admin tool) no longer
+  change it, like the other protected fields; it changes only through `POST /eeg/settlementinterval`. Registration
+  still sets the initial value. GraphQL `updateEegModel` drops it the same way (see Fixed).
+  **Deploy order:** release eegfaktura-admin#79 (removes the edit field of the admin tool) together with or before this
+  backend; otherwise the old admin tool reports success over gRPC class EEG while nothing changes.
+- **`request.id` and `tenant.id` on the lines of an HTTP request** (dev#45 L12), no longer on the access line only;
+  `trace.id` and `span.id` come along. In a request `tenant.id` is only what passed the tenant check, a tenant field
+  of the line does not count. Not on: the notification DAO (`SaveNotification`, `SaveNotificationFromMap`,
+  `SaveHistory`), `SendMail`, the HTML mail parser and the lines of the MQTT send loop. No propagation over MQTT or
+  gRPC.
+- **One owner for the correlation fields** (dev#45 Q4): `request.id`, `trace.id`, `span.id` and `tenant.id` are written
+  by the context handler only, one key each; the same keys set on a line or through `With` are dropped (outside a
+  request a tenant field still counts, checked as above).
+- **Token check failures** (dev#45 Q6) log the error as `error.type`/`error.message` under a fixed message
+  (`token verification failed`, `no access token in the request or invalid Authorization header`) instead of the field
+  `error=JWT-Token` and the error in the text.
+- **Logging tests** (dev#45 Q2): one capture helper `logging/logtest` restores slog, logrus and the `log` package.
+- **Generated code is no longer tracked** (BE-CQ-23): `proto/*.pb.go` and `model/registration_model.go` are generated
+  by `make tools generate` (protoc on the `PATH`, generators at the `go.mod` versions); CI, the Dockerfile and the
+  README use it. A fresh clone did not compile before. The image build no longer runs gqlgen (`graph/generated` stays
+  tracked).
+- **Test helpers out of the service binary** (BE-CQ-30): Testcontainers, the Docker client and go-sqlmock are no
+  longer linked into it (`database/dbtest`, `database/dbmock`, test-only). Container tests: README notes
+  `go test -p 1 ./api ./database ./eda` for a shared Docker.
+- **Cleanup** (code-quality review 2026-11-03): removed unused code and files — `MigrateDatabase`, the `repository`
+  package, `UpdateTariff`/`OpenDbXConnection`, `GetTemplateFor`, unused response helpers in `api/common.go`
+  (`respondWithData` is `respondWithJSON`), unused middleware types (`BackendClaims`, `Authenticate`, `ClientCreds`,
+  `HasRole`, the superuser context key), `graph/gmodel/rate.go`, two unused error variables, the blank pgx import,
+  commented-out code in `server.go` and the DAOs, the unread `migration.sql`, `schema.hcl`,
+  `database/migration/000001_init-setup.up.sql` and config key `file-content.basedir`; stale Makefile targets
+  (`atlas-hash`/`atlas-diff` spelled right). The test seed data is `database/testdata/seed.sql`.
+
+### Fixed
+- **Metering point master data of larger communities within the deadline again** (support ticket 6611200): the
+  view `base.activeMeteringPartition` numbered the partition factors of all communities before the community filter
+  of the query applied; as the inner side of a nested loop (chosen since 1.13) it did so once per metering point, and
+  `MasterData_MeteringPoint` (gRPC, caller eegfaktura-energystore) ran past its 5 s deadline
+  (`error fetch Meteringpoints`). Migration `20261105110000` partitions the window by `tenant` as well, so the filter
+  reaches the table: same columns, same rows (a member belongs to one community). Migration `20261105110100` adds
+  the index `metering_partition_factor_tenant_idx` (`CONCURRENTLY`). The members list (`completeParticipants`) now
+  also filters the view by tenant. No data change; no contract change.
+  **Rollout:** outside the backup window — check `pg_stat_activity` for long transactions or a running `pg_dump`
+  first: `CREATE OR REPLACE VIEW` and `CREATE INDEX CONCURRENTLY` wait behind them (old pods keep serving). After the
+  rollout `pg_index.indisvalid` of the new index must be true. If the index build failed or the index is invalid:
+  `DROP INDEX CONCURRENTLY IF EXISTS base.metering_partition_factor_tenant_idx`, then by hand
+  `UPDATE base.schema_migrations SET version = 20261105110000, dirty = false` (the migrate CLI is not in the image),
+  then restart. Never only reset the version: `IF NOT EXISTS` would keep the invalid index.
+- **GraphQL `updateEegModel` stores again** (tracking backend 261105-mm2): it returned the changed EEG but never stored
+  anything, also not `sepaActiv`. It now goes through the guarded update of `POST /eeg` (`updateEegPartial`, protected
+  fields dropped, `settlementInterval` included) for the tenant of the checked request, and returns the EEG read back.
+  `updateEegModel` requires the EEG admin group like `POST /eeg`; the other GraphQL operations stay in log-only mode.
+  No known caller (web's `updateEegModel` calls `POST /eeg`).
+- **A failed COMMIT is reported as an error** (BE-CQ-7, BE-CQ-8): registering and moving a metering point, adding a
+  tariff and activating metering points from an EDA message reported success when the COMMIT failed. Activating
+  metering points also went on to COMMIT after a failed step instead of rolling back. One helper (`inTx`) now runs the
+  transactions of the DAOs; a failed BEGIN in them is `ErrOpenTx` (code 998) — before, some wrappers returned the raw
+  driver error. Registering a metering point, adding a tariff and activating metering points do not take the cancel
+  of the caller's context, as before.
+- **`POST /participant`: a failed registration answers with a code** (caller: eegfaktura-web): code 1104 and a
+  generic message, as the member update does; not found and invalid input keep their own code and text (an invalid
+  e-mail address: code 2000 with the reason). Before, the body was `{}` (the error was joined with the rollback's and
+  lost its type). No database text goes to the client.
+- **No names or cell values in the warn lines of the Excel import** (dev#45 L1). The import result shown to the user
+  is unchanged; the lines no longer repeat names, status, energy direction or community id of the row.
+- **The raw `tenant` header stays out of the log** (dev#45 L2): a failed check logs `tenant check failed`. A superuser
+  skips the check, so `tenant.id` takes only a value that passes `^[A-Z0-9][A-Z0-9_-]{0,63}$` after upper-casing, on
+  every line; the tenant value is out of the message texts. A refusal for a missing admin group now carries the checked
+  `tenant.id`, also on its access line.
+- **No debug print of field values** in `util.ConvertMapToStruct` (dev#45 L11, found by the never-log test).
+- **`tenant.id` outside a request is written upper-cased** (dev#45 Q3), as it is checked; before, `te100100` passed
+  the check and was written as given.
+- **A handler panic after a flush aborts the connection** (dev#45 Q7) instead of a `WriteHeader(500)` on a response that
+  had already begun.
+
+## [1.15.1] – 2026-11-02
+
+### Fixed
+- **Partition factor changes** (backend 261005-ca4): security relevant — details not published.
+
+## [1.15.0] – 2026-11-02
+
 ### Changed
 - **The tax number of a member is out of the master data Excel** (decided 2026-11-01). The sheet „Mitglieder“ of the
   export no longer has the column „SteuerNr.“, so the columns after it move one to the left; the import ignores the

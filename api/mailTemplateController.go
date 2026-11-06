@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -148,8 +149,8 @@ func respondValidation(w http.ResponseWriter, errs ...*mailtemplate.ValidationEr
 	respondWithJSON(w, http.StatusBadRequest, map[string]interface{}{"errors": errs})
 }
 
-func respondServerError(w http.ResponseWriter, tenant string, err error) {
-	log.WithField("tenant", tenant).WithError(err).Error("mail template")
+func respondServerError(ctx context.Context, w http.ResponseWriter, tenant string, err error) {
+	log.WithContext(ctx).WithField("tenant", tenant).WithError(err).Error("mail template")
 	respondWithJSON(w, http.StatusInternalServerError, map[string]string{"message": "Interner Fehler"})
 }
 
@@ -157,7 +158,7 @@ func respondServerError(w http.ResponseWriter, tenant string, err error) {
 func (h *MailTemplateHandler) loadTemplate(w http.ResponseWriter, r *http.Request, tenant string, def *mailtemplate.Definition) (*model.MailTemplate, bool) {
 	t, err := h.db.GetMailTemplate(r.Context(), tenant, def.Key)
 	if err != nil {
-		respondServerError(w, tenant, err)
+		respondServerError(r.Context(), w, tenant, err)
 		return nil, false
 	}
 	if t != nil && !strings.EqualFold(t.Tenant, tenant) {
@@ -171,7 +172,7 @@ func (h *MailTemplateHandler) loadTemplate(w http.ResponseWriter, r *http.Reques
 func (h *MailTemplateHandler) loadFiles(w http.ResponseWriter, r *http.Request, tenant string, def *mailtemplate.Definition, withContent bool) ([]model.MailTemplateFile, bool) {
 	files, err := h.db.ListMailTemplateFiles(r.Context(), tenant, def.Key, withContent)
 	if err != nil {
-		respondServerError(w, tenant, err)
+		respondServerError(r.Context(), w, tenant, err)
 		return nil, false
 	}
 	for _, f := range files {
@@ -187,7 +188,7 @@ func (h *MailTemplateHandler) list() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
 		stored, err := h.db.ListMailTemplates(r.Context(), tenant)
 		if err != nil {
-			respondServerError(w, tenant, err)
+			respondServerError(r.Context(), w, tenant, err)
 			return
 		}
 		byKey := map[string]*model.MailTemplate{}
@@ -309,14 +310,14 @@ func (h *MailTemplateHandler) save() middleware.JWTHandlerFunc {
 			return
 		}
 		if err != nil {
-			respondServerError(w, tenant, err)
+			respondServerError(r.Context(), w, tenant, err)
 			return
 		}
 		files, ok := h.loadFiles(w, r, tenant, def, false)
 		if !ok {
 			return
 		}
-		log.WithField("tenant", tenant).Infof("mail template %s saved, version %d", def.Key, saved.Version)
+		log.WithContext(r.Context()).WithField("tenant", tenant).Infof("mail template %s saved, version %d", def.Key, saved.Version)
 		respondWithJSON(w, http.StatusOK, dtoOf(def, saved, files))
 	}
 }
@@ -372,10 +373,10 @@ func (h *MailTemplateHandler) reset() middleware.JWTHandlerFunc {
 			return
 		}
 		if err := h.db.DeleteMailTemplate(r.Context(), tenant, def.Key); err != nil {
-			respondServerError(w, tenant, err)
+			respondServerError(r.Context(), w, tenant, err)
 			return
 		}
-		log.WithField("tenant", tenant).Infof("mail template %s reset to default", def.Key)
+		log.WithContext(r.Context()).WithField("tenant", tenant).Infof("mail template %s reset to default", def.Key)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

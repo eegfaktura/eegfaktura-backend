@@ -1,9 +1,9 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -11,9 +11,9 @@ import (
 	"testing"
 
 	"at.ourproject/vfeeg-backend/api/middleware"
-	"at.ourproject/vfeeg-backend/database"
+	"at.ourproject/vfeeg-backend/database/dbmock"
 	"at.ourproject/vfeeg-backend/logging"
-	"github.com/sirupsen/logrus"
+	"at.ourproject/vfeeg-backend/logging/logtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -54,21 +54,11 @@ func logLines(t *testing.T, claims *middleware.PlatformClaims, reqs ...*http.Req
 	middleware.VerifyTokenClaims = func(context.Context, string) (*middleware.PlatformClaims, error) {
 		return claims, nil
 	}
-	oldSlog := slog.Default()
-	std := logrus.StandardLogger()
-	oldLevel, oldOut, oldFmt := std.Level, std.Out, std.Formatter
-	oldHooks := std.ReplaceHooks(logrus.LevelHooks{})
-	t.Cleanup(func() {
-		slog.SetDefault(oldSlog)
-		std.SetLevel(oldLevel)
-		std.SetOutput(oldOut)
-		std.SetFormatter(oldFmt)
-		std.ReplaceHooks(oldHooks)
+	buf := logtest.Capture(t, func(w io.Writer) {
+		logging.Setup(w, logging.Config{Level: slog.LevelInfo, JSON: true, Version: "test"})
 	})
-	var buf bytes.Buffer
-	logging.Setup(&buf, logging.Config{Level: slog.LevelInfo, JSON: true, Version: "test"})
 
-	db, _, err := database.InitMockDatabase()
+	db, _, err := dbmock.New()
 	require.NoError(t, err)
 	r := InitRouters(db)
 	InitGraphQL(r)
@@ -77,13 +67,7 @@ func logLines(t *testing.T, claims *middleware.PlatformClaims, reqs ...*http.Req
 		h.ServeHTTP(httptest.NewRecorder(), req)
 	}
 
-	var out []map[string]any
-	for _, l := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
-		var m map[string]any
-		require.NoError(t, json.Unmarshal([]byte(l), &m), l)
-		out = append(out, m)
-	}
-	return out
+	return logtest.Lines(t, buf)
 }
 
 func authed(req *http.Request) *http.Request {

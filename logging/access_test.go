@@ -1,6 +1,8 @@
 package logging
 
 import (
+	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/gorilla/mux"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -243,4 +246,149 @@ func TestAccessLog_HandlerPanicAfterWrite(t *testing.T) {
 	require.Len(t, ls, 2)
 	assert.Equal(t, "late", ls[0]["error.message"])
 	assert.EqualValues(t, 500, ls[1]["http.response.status_code"])
+}
+
+// headerRecorder notes every WriteHeader call that reaches the connection.
+type headerRecorder struct {
+	*httptest.ResponseRecorder
+	codes []int
+}
+
+func (r *headerRecorder) WriteHeader(code int) {
+	r.codes = append(r.codes, code)
+	r.ResponseRecorder.WriteHeader(code)
+}
+
+// Q7: Flush sends the header, so a panic after it aborts the connection like
+// one after a write, instead of a WriteHeader(500) on a started response.
+func TestAccessLog_HandlerPanicAfterFlush(t *testing.T) {
+	buf := setup(t, Config{Level: slog.LevelInfo, JSON: true})
+	h := router(func(w http.ResponseWriter, r *http.Request) {
+		w.(http.Flusher).Flush()
+		panic("late")
+	})
+	rec := &headerRecorder{ResponseRecorder: httptest.NewRecorder()}
+	assert.PanicsWithValue(t, http.ErrAbortHandler, func() {
+		h.ServeHTTP(rec, httptest.NewRequest("GET", "/participant/1", nil))
+	})
+	assert.True(t, rec.Flushed)
+	assert.Empty(t, rec.codes, "no WriteHeader after the flush")
+	ls := lines(t, buf)
+	require.Len(t, ls, 2)
+	assert.Equal(t, "late", ls[0]["error.message"])
+	assert.EqualValues(t, 500, ls[1]["http.response.status_code"])
+}
+
+// L12: every line of a request carries request.id and, once checked, tenant.id.
+func TestRequestLines_CarryRequestAndTenant(t *testing.T) {
+	buf := setup(t, Config{Level: slog.LevelInfo, JSON: true, Version: "1.2.3"})
+	r := router(func(w http.ResponseWriter, r *http.Request) {
+		logrus.WithContext(r.Context()).Warn("before the check")
+		SetTenant(r.Context(), "TE100100")
+		logrus.WithContext(r.Context()).WithError(errors.New("boom")).Error("logrus")
+		slog.WarnContext(r.Context(), "slog")
+	})
+
+	req := httptest.NewRequest("GET", "/participant/1", nil)
+	req.Header.Set(headerRequestID, "req-1")
+	req.Header.Set(headerTraceparent, "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01")
+	serve(r, req)
+
+	got := lines(t, buf)
+	require.Len(t, got, 4)
+	assert.NotContains(t, got[0], "tenant.id")
+	for _, l := range got {
+		assert.Equal(t, "req-1", l["request.id"], l["message"])
+		assert.Equal(t, "0af7651916cd43dd8448eb211c80319c", l["trace.id"], l["message"])
+	}
+	for _, l := range got[1:] {
+		assert.Equal(t, "TE100100", l["tenant.id"], l["message"])
+	}
+	// one key only: a duplicate would make the JSON line ambiguous
+	for _, l := range strings.Split(strings.TrimSpace(buf.String()), "\n")[1:] {
+		assert.Equal(t, 1, strings.Count(l, `"tenant.id"`), l)
+	}
+}
+
+// In a request a tenant field of the record does not count, only what passed
+// the check. Outside a request (MQTT, jobs) the field stays.
+func TestTenantField_InARequestOnlyWhatPassedTheCheck(t *testing.T) {
+	buf := setup(t, Config{Level: slog.LevelInfo, JSON: true, Version: "1.2.3"})
+	r := router(func(w http.ResponseWriter, r *http.Request) {
+		logrus.WithContext(r.Context()).WithField("tenant", "UNCHECKED").Warn("before the check")
+		SetTenant(r.Context(), "TE100100")
+		logrus.WithContext(r.Context()).WithField("tenant", "OTHER").Warn("after the check")
+	})
+	serve(r, httptest.NewRequest("GET", "/participant/1", nil))
+	logrus.WithField("tenant", "TE200200").Info("mqtt handler")
+
+	got := lines(t, buf)
+	require.Len(t, got, 4)
+	assert.NotContains(t, got[0], "tenant.id")
+	assert.Equal(t, "TE100100", got[1]["tenant.id"])
+	assert.Equal(t, "TE200200", got[3]["tenant.id"])
+}
+
+// Q4: request.id, trace.id, span.id and tenant.id come from the context handler
+// only, one key each; the same keys from a record or from With are dropped.
+func TestCorrelationFields_OnlyFromTheContext(t *testing.T) {
+	buf := setup(t, Config{Level: slog.LevelInfo, JSON: true, Version: "1.2.3"})
+	forged := []any{"request.id", "forged", "trace.id", "forged", "span.id", "forged", "tenant.id", "FORGED"}
+	r := router(func(w http.ResponseWriter, r *http.Request) {
+		SetTenant(r.Context(), "TE100100")
+		slog.Default().With(forged...).InfoContext(r.Context(), "with")
+		slog.InfoContext(r.Context(), "record", forged...)
+	})
+	req := httptest.NewRequest("GET", "/participant/1", nil)
+	req.Header.Set(headerRequestID, "req-1")
+	req.Header.Set(headerTraceparent, "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01")
+	serve(r, req)
+	slog.Info("outside", forged[:6]...)
+	slog.Default().With("tenant.id", "te200200").Info("outside with")
+
+	raw := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	require.Len(t, raw, 5)
+	assert.NotContains(t, buf.String(), "forged")
+	assert.NotContains(t, buf.String(), "FORGED")
+	for _, l := range raw[:2] {
+		for _, k := range []string{"request.id", "trace.id", "span.id", "tenant.id"} {
+			assert.Equal(t, 1, strings.Count(l, `"`+k+`"`), l)
+		}
+	}
+	got := lines(t, buf)
+	assert.Equal(t, "req-1", got[0]["request.id"])
+	assert.Equal(t, "TE100100", got[1]["tenant.id"])
+	assert.Equal(t, "b7ad6b7169203331", got[1]["span.id"])
+	for _, k := range []string{"request.id", "trace.id", "span.id", "tenant.id"} {
+		assert.NotContains(t, got[3], k)
+	}
+	assert.Equal(t, "TE200200", got[4]["tenant.id"])
+}
+
+func TestSetTenant_OnlyIdShapedValues(t *testing.T) {
+	for tenant, kept := range map[string]bool{
+		"TE100100": true, "GC123456-001": true, "te100100": true, "RC_100": true, strings.Repeat("A", 64): true,
+		"": false, "a b": false, "a\nb": false, "a.b": false, "-TE100100": false, "_TE100100": false,
+		`x","y":"z`: false, strings.Repeat("A", 65): false,
+	} {
+		ai := &accessInfo{}
+		SetTenant(context.WithValue(context.Background(), accessCtxKey{}, ai), tenant)
+		assert.Equal(t, kept, ai.tenant != "", tenant)
+		if kept {
+			assert.Equal(t, strings.ToUpper(tenant), ai.tenant)
+		}
+	}
+}
+
+// Outside a request, on a path without a context (SendMail), the value of the
+// tenant field can be the header as sent: what fails the rule gets no tenant.id.
+func TestTenantField_OutsideARequestFollowsTheRule(t *testing.T) {
+	buf := setup(t, Config{Level: slog.LevelInfo, JSON: true, Version: "1.2.3"})
+	logrus.WithField("tenant", "GC123456-001").Info("fine")
+	logrus.WithField("tenant", "Erika Mustermann").Info("not an id")
+
+	got := lines(t, buf)
+	require.Len(t, got, 2)
+	assert.Equal(t, "GC123456-001", got[0]["tenant.id"])
+	assert.NotContains(t, got[1], "tenant.id")
 }

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"at.ourproject/vfeeg-backend/database/dbtest"
 	"at.ourproject/vfeeg-backend/model"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/jmoiron/sqlx"
@@ -53,9 +54,9 @@ func migrationDB(t *testing.T, name string) (*sqlx.DB, *migrate.Migrate) {
 	_, path, _, ok := runtime.Caller(0)
 	require.True(t, ok)
 	m, err := migrate.New("file:"+filepath.Dir(path)+"/../migrations",
-		fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", DbUser, DbPass, testDB.DbAddress, name))
+		fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", dbtest.DbUser, dbtest.DbPass, testDB.DbAddress, name))
 	require.NoError(t, err)
-	dbx, err := sqlx.Connect("postgres", strings.Replace(testDB.connectionString, "dbname="+DbName, "dbname="+name, 1))
+	dbx, err := sqlx.Connect("postgres", strings.Replace(testDB.ConnectionString, "dbname="+dbtest.DbName, "dbname="+name, 1))
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_ = dbx.Close()
@@ -144,7 +145,7 @@ func TestJoiningFeeTariffAndBillingView(t *testing.T) {
 
 	tariff := model.Tariff{Type: model.EEG, Name: "Beitrag mit Beitrittsgebühr", ParticipantFee: 2,
 		JoiningFee: 49.90, JoiningFeeUseVat: true, JoiningFeeVatInPercent: 20}
-	require.NoError(t, db.AddTariff(tenant, "test", &tariff))
+	require.NoError(t, db.AddTariff(context.Background(), tenant, "test", &tariff))
 	id := tariff.Id.String()
 
 	var stored string
@@ -159,7 +160,7 @@ func TestJoiningFeeTariffAndBillingView(t *testing.T) {
 		}
 		return nil
 	}
-	tariffs, err := db.GetTariff(tenant)
+	tariffs, err := db.GetTariff(context.Background(), tenant)
 	require.NoError(t, err)
 	got := find(tariffs)
 	require.NotNil(t, got)
@@ -167,7 +168,7 @@ func TestJoiningFeeTariffAndBillingView(t *testing.T) {
 	assert.True(t, got.JoiningFeeUseVat)
 	assert.Equal(t, model.IntOrString(20), got.JoiningFeeVatInPercent)
 
-	foreign, err := db.GetTariff("TE000004")
+	foreign, err := db.GetTariff(context.Background(), "TE000004")
 	require.NoError(t, err)
 	assert.Nil(t, find(foreign), "tariff of another tenant")
 
@@ -176,8 +177,8 @@ func TestJoiningFeeTariffAndBillingView(t *testing.T) {
 	update.JoiningFee = 25.5
 	update.JoiningFeeUseVat = false
 	update.JoiningFeeVatInPercent = 0
-	require.NoError(t, db.AddTariff(tenant, "test", &update))
-	history, err := db.GetTariffHistory(tenant, id)
+	require.NoError(t, db.AddTariff(context.Background(), tenant, "test", &update))
+	history, err := db.GetTariffHistory(context.Background(), tenant, id)
 	require.NoError(t, err)
 	require.Len(t, history, 2)
 	assert.Equal(t, 1, history[0].Version)

@@ -29,7 +29,7 @@ func TestTariffListWithDecimalBaseFee(t *testing.T) {
 		VALUES ($1, $3, 'EEG', 'Mit Komma', 0, 2.25), ($2, $3, 'EEG', 'Ganz', 0, 3)`, decimal, whole, tenant)
 	require.NoError(t, err)
 
-	tariffs, err := db.GetTariff(tenant)
+	tariffs, err := db.GetTariff(context.Background(), tenant)
 	require.NoError(t, err)
 	fees := map[string]model.FloatOrString{}
 	for _, tariff := range tariffs {
@@ -44,8 +44,8 @@ func TestTariffListWithDecimalBaseFee(t *testing.T) {
 			update = tariff
 		}
 	}
-	require.NoError(t, db.AddTariff(tenant, "test", &update))
-	history, err := db.GetTariffHistory(tenant, decimal)
+	require.NoError(t, db.AddTariff(context.Background(), tenant, "test", &update))
+	history, err := db.GetTariffHistory(context.Background(), tenant, decimal)
 	require.NoError(t, err)
 	require.Len(t, history, 2)
 	assert.Equal(t, model.FloatOrString(2.25), history[0].BaseFee)

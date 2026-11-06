@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"at.ourproject/vfeeg-backend/config"
+	"at.ourproject/vfeeg-backend/config/configtest"
 	"at.ourproject/vfeeg-backend/model"
-	"github.com/spf13/viper"
 	"gopkg.in/guregu/null.v4"
 )
 
@@ -16,7 +16,7 @@ import (
 // struct built in sendMailFromTemplate. If the field is dropped again the
 // render fails with "can't evaluate field MeteringPoint" and the mail is lost.
 func TestParseTemplateZpCompleteMeteringPoint(t *testing.T) {
-	viper.Set("file-content.templates", "../public")
+	configtest.Set(t, "file-content.templates", "../public")
 
 	eeg := &model.Eeg{
 		Name:          "TE-EEG",

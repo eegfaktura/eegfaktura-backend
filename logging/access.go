@@ -34,6 +34,7 @@ var skipRoutes = map[string]bool{"/healthz": true, "/readyz": true}
 
 var (
 	requestIDPattern   = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
+	tenantPattern      = regexp.MustCompile(`^[A-Z0-9][A-Z0-9_-]{0,63}$`)
 	traceparentPattern = regexp.MustCompile(`^([0-9a-f]{2})-([0-9a-f]{32})-([0-9a-f]{16})-[0-9a-f]{2}$`)
 )
 
@@ -58,6 +59,9 @@ func fromContext(ctx context.Context) *accessInfo {
 
 func (ai *accessInfo) correlation() []slog.Attr {
 	as := []slog.Attr{slog.String("request.id", ai.requestID)}
+	if ai.tenant != "" {
+		as = append(as, slog.String("tenant.id", ai.tenant))
+	}
 	if ai.traceID != "" {
 		as = append(as, slog.String("trace.id", ai.traceID), slog.String("span.id", ai.spanID))
 	}
@@ -72,10 +76,21 @@ func SetClient(ctx context.Context, clientID string) {
 	}
 }
 
-// SetTenant records the tenant the request was allowed for.
+// validTenant applies the rule of all services, on the upper-cased value. A
+// superuser skips the check against the token, so the header value can get
+// into the log as sent: what fails the rule gets no tenant.id.
+func validTenant(tenant string) (string, bool) {
+	upper := strings.ToUpper(tenant)
+	return upper, tenantPattern.MatchString(upper)
+}
+
+// SetTenant records the tenant the request was allowed for, upper-cased here
+// for every caller.
 func SetTenant(ctx context.Context, tenant string) {
 	if ai := fromContext(ctx); ai != nil {
-		ai.tenant = tenant
+		if upper, ok := validTenant(tenant); ok {
+			ai.tenant = upper
+		}
 	}
 }
 
@@ -152,9 +167,6 @@ func AccessLog(next http.Handler) http.Handler {
 			attrs = append(attrs, slog.String("http.route", ai.route))
 			msgRoute = ai.route
 		}
-		if ai.tenant != "" {
-			attrs = append(attrs, slog.String("tenant.id", ai.tenant))
-		}
 		if ai.clientID != "" {
 			attrs = append(attrs, slog.String("client.id", ai.clientID))
 		}
@@ -162,7 +174,7 @@ func AccessLog(next http.Handler) http.Handler {
 			attrs = append(attrs, slog.String("graphql.operation.name", ai.operation))
 		}
 
-		// the request context carries request.id, trace.id and span.id (contextHandler)
+		// the request context carries request.id, tenant.id, trace.id and span.id (contextHandler)
 		ctx := context.WithValue(context.Background(), accessCtxKey{}, ai)
 		slog.Default().LogAttrs(ctx, level, fmt.Sprintf("%s %s %d", r.Method, msgRoute, status), attrs...)
 		if abort {
@@ -237,8 +249,12 @@ func (w *statusWriter) Write(b []byte) (int, error) {
 	return w.ResponseWriter.Write(b)
 }
 
+// Flush sends the header (200 unless set), so it counts as written.
 func (w *statusWriter) Flush() {
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		if w.status == 0 {
+			w.status = http.StatusOK
+		}
 		f.Flush()
 	}
 }

@@ -3,10 +3,8 @@ package parser
 import (
 	"bytes"
 	"context"
-	"errors"
 	"html/template"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -17,7 +15,6 @@ import (
 	"at.ourproject/vfeeg-backend/services"
 	"github.com/gabriel-vasile/mimetype"
 	log "github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 )
 
 // ParseTemplate renders the HTML template named name from fsys with data.
@@ -121,20 +118,6 @@ func sendTemplateMail(sendMail services.SendMailFunc, store mailtemplate.Store, 
 		buildInlineContent(tmplFS, templateConfig.InlinePictures),
 		buildAttachment(tmplFS, templateConfig.Attachment.Name, templateConfig.Attachment.Mime),
 	)
-}
-
-func GetTemplateFor(templateType, tenant string) (string, error) {
-
-	path := filepath.Join(viper.GetString("file-content.templates"), tenant, "templates")
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		path = filepath.Join("../public/templates")
-	}
-
-	switch templateType {
-	case "ACTIVATION":
-		return filepath.Join(path, "AktivierungsEmail-templates.html"), nil
-	}
-	return "", errors.New("Template not found")
 }
 
 func buildInlineContent(tmplFS fs.FS, a []model.InlinePicture) []*services.Attachment {

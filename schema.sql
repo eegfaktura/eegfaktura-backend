@@ -202,6 +202,7 @@ CREATE TABLE IF NOT EXISTS base.metering_partition_factor
     CONSTRAINT FK_MeteringpointPartition FOREIGN KEY (metering_point_id, tenant, participant_id)
         REFERENCES base.meteringpoint (metering_point_id, tenant, participant_id) ON DELETE CASCADE ON UPDATE CASCADE
 );
+CREATE INDEX IF NOT EXISTS metering_partition_factor_tenant_idx ON base.metering_partition_factor (tenant);
 
 CREATE TABLE IF NOT EXISTS base.notification
 (
@@ -267,6 +268,19 @@ CREATE TABLE IF NOT EXISTS base.mail_template_file
 );
 CREATE INDEX IF NOT EXISTS idx_mail_template_file_tenant_key ON base.mail_template_file (tenant, mail_key);
 
+CREATE TABLE IF NOT EXISTS base.settlement_interval_change
+(
+    id                BIGSERIAL PRIMARY KEY,
+    tenant            TEXT        NOT NULL,
+    old_value         TEXT        NOT NULL,
+    new_value         TEXT        NOT NULL,
+    effective_from    DATE, /* NULL = applies at once (no final settlement yet) */
+    last_final_period TEXT, /* last final clearing period of the billing state passed on by web */
+    changed_by        TEXT        NOT NULL,
+    changed_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_settlement_interval_change_tenant ON base.settlement_interval_change (tenant);
+
 CREATE OR REPLACE VIEW base.activeMeteringPartition AS
 SELECT partp.metering_point_id,
        partp.version,
@@ -284,7 +298,7 @@ FROM (SELECT metering_partition_factor.metering_point_id,
              metering_partition_factor."createdAt",
              metering_partition_factor."createdBy",
              row_number()
-             OVER (PARTITION BY metering_partition_factor.metering_point_id, metering_partition_factor.participant_id ORDER BY metering_partition_factor.version DESC) AS rowid
+             OVER (PARTITION BY metering_partition_factor.tenant, metering_partition_factor.metering_point_id, metering_partition_factor.participant_id ORDER BY metering_partition_factor.version DESC) AS rowid
       FROM base.metering_partition_factor) partp
 WHERE partp.rowid = 1;
 

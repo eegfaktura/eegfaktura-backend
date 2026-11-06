@@ -27,7 +27,7 @@ golang-migrate + Atlas · Eclipse Paho (MQTT) · Keycloak/OIDC (JWT) · Viper ·
 - **Go**: version 1.26 or higher.
 - **PostgreSQL**: for data storage.
 - **MQTT Broker**: (e.g., Mosquitto) for real-time messaging.
-- **Protoc**: Protocol Buffers compiler (if modifying `.proto` files).
+- **Protoc**: Protocol Buffers compiler (the build generates the gRPC code; CI pins 29.3).
 
 ## Getting Started
 
@@ -37,6 +37,11 @@ golang-migrate + Atlas · Eclipse Paho (MQTT) · Keycloak/OIDC (JWT) · Viper ·
 2. Download dependencies:
    ```bash
    go mod download
+   ```
+3. Generate the gRPC code and the registration model (not tracked; protoc must be on the `PATH`, the
+   generators are installed at the versions in `go.mod`):
+   ```bash
+   make tools generate
    ```
 
 ### Configuration
@@ -89,6 +94,13 @@ Run the test suite using:
 make test
 ```
 
+The tests of `api`, `database` and `eda` start PostgreSQL through Testcontainers (Docker needed), one container per
+package. On a shared or slow Docker (e.g. Docker Desktop) run them one package at a time:
+
+```bash
+go test -p 1 ./api ./database ./eda
+```
+
 ## Development
 
 ### GraphQL
@@ -101,10 +113,11 @@ go generate ./...
 
 ### Protobuf/gRPC
 
-If you modify files in the `proto/` directory, regenerate the Go code:
+The Go code of `proto/*.proto` and `model/registration.schema.json` is generated, not tracked. After changing one
+of them, regenerate it:
 
 ```bash
-make protoc
+make generate
 ```
 
 ### Database Migrations
@@ -113,8 +126,8 @@ Migrations are stored in the `migrations/` directory. The application automatica
 
 For schema diffing and hashing:
 ```bash
-make altas-hash
-make altas-migrage
+make atlas-hash
+make atlas-diff
 ```
 
 ## Docker
@@ -122,7 +135,7 @@ make altas-migrage
 Build the Docker image:
 
 ```bash
-make docker
+docker build -t vfeeg-backend .
 ```
 
 Run with Docker:
