@@ -362,13 +362,17 @@ func registerMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, p
 	}
 
 	// without the cancel of the request: a client that goes away does not roll back the save (as before inTx)
-	return inTx(context.WithoutCancel(ctx), db, func(tx *sqlx.Tx) error {
+	err := inTx(context.WithoutCancel(ctx), db, func(tx *sqlx.Tx) error {
 		if err := applyGridOperator(ctx, tx, tenant, []*model.MeteringPoint{point}); err != nil {
 			return err
 		}
 		meteringEntries, partFactEntries := createMeteringEntries(tenant, username, participantId, []*model.MeteringPoint{point}, &point.ProcessState)
 		return saveMeteringPoint(ctx, tx, tenant, meteringEntries, partFactEntries)
 	})
+	// the new row stores no TechCode/FuelCode (only the metering point list sets them): the caller gets none back,
+	// not what the client sent (eegfaktura-dev#56 #14, register)
+	point.TechCode, point.FuelCode = null.String{}, null.String{}
+	return err
 }
 
 func moveMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, sParticipantId, dParticipantId, meterId string) error {

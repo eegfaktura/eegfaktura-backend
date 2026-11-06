@@ -141,6 +141,8 @@ this changelog highlights the changes relevant for overview and operations.
   `PUT /meteringpoint/{pid}/update/{mid}` never stores them; its answer echoed the codes the client sent and now
   carries the stored ones (empty when none or no row was updated). eegfaktura-web sends the codes unchanged and keeps
   showing them, now from the stored values.
+  `POST /meteringpoint/{pid}` (register) likewise no longer echoes them: a new metering point stores no codes, so the
+  answer carries none (eegfaktura-dev#56 #14, register).
 - **Confirming a member sends nothing when a grid operator is missing** (platform#229): every metering point's
   receiver is determined first; one missing answers 400 before the member is confirmed.
 - **gRPC registration refuses an unknown allocation or settlement interval** (found in the review of backend#147): a
