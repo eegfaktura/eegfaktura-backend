@@ -415,3 +415,38 @@ func TestGetEegByEcIdAndMeters(t *testing.T) {
 	_, err = db.GetEegByEcIdAndMeters(ctx, "AT00300000000XX000000000000000000", nil)
 	assert.Error(t, err)
 }
+
+// EcIdBelongsToRc and GetTenantsByRcNumber follow one rule: a tenant belongs to an RC number by its RC number or by
+// its name, case-insensitive (261105-mm5).
+func TestEcIdBelongsToRc(t *testing.T) {
+	ctx := context.Background()
+	db, err := GetTestDB(ctx, testDB)
+	require.NoError(t, err)
+	const ecId, otherEc = "AT00300000000TC000331000000000001", "AT00300000000TC000332000000000001"
+	t.Cleanup(func() {
+		_, err := testDB.DbInstance.Exec(`DELETE FROM base.eeg WHERE tenant IN ('TE000331', 'GC000333-002', 'TE000332')`)
+		require.NoError(t, err)
+	})
+	for _, e := range [][3]string{{"TE000331", "RC000331", ecId}, {"GC000333-002", "GC000333", ecId}, {"TE000332", "TE000332", otherEc}} {
+		_, err := testDB.DbInstance.Exec(`INSERT INTO base.eeg (tenant, name, description, "rcNumber", area,
+			gridoperator_code, gridoperator_name, "communityId", street, "streetNumber", city, zip, email)
+			VALUES ($1, 'RC-Test', 'RC-Test', $2, 'LOCAL', 'AT003000', 'Netz OÖ', $3, 'Weg', '1', 'Linz', '4020',
+			'rc-test@example.org') ON CONFLICT (tenant) DO NOTHING`, e[0], e[1], e[2])
+		require.NoError(t, err)
+	}
+	for _, c := range []struct {
+		rc   string
+		want bool
+	}{
+		{"rc000331", true},     // RC number, lower case
+		{"te000331", true},     // tenant name, as GetTenantsByRcNumber
+		{"GC000333", true},     // GEA tenant by its RC number
+		{"gc000333-002", true}, // GEA tenant by its name
+		{"TE000332", false},    // a tenant of another community id
+		{"RC000999", false},
+	} {
+		ok, err := db.EcIdBelongsToRc(ctx, ecId, c.rc)
+		require.NoError(t, err)
+		assert.Equal(t, c.want, ok, c.rc)
+	}
+}
