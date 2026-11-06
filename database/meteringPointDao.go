@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -478,12 +479,16 @@ func UpdateMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, par
 			"metering_point_id": goqu.Op{"eq": meterId},
 			"participant_id":    goqu.Op{"eq": participantId},
 		}).
+		Returning("tech_code", "fuel_code").
 		ToSQL()
 	if err != nil {
 		return model.ErrUpdateMeter(err)
 	}
-	_, err = db.Exec(statement)
-	if err != nil {
+	// TechCode/FuelCode are not written here (only the metering point list sets them): the caller gets the stored
+	// ones back, not what the client sent (eegfaktura-dev#56 #14); no row updated, none stored
+	meteringPoint.TechCode, meteringPoint.FuelCode = null.String{}, null.String{}
+	err = db.QueryRowx(statement).Scan(&meteringPoint.TechCode, &meteringPoint.FuelCode)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		log.WithContext(ctx).WithError(err).WithField("SQL", "UPDATE").Error("SQL statement failed")
 		return model.ErrUpdateMeter(err)
 	}

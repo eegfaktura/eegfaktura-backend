@@ -137,6 +137,10 @@ this changelog highlights the changes relevant for overview and operations.
   BEG had the same behaviour before this release and is fixed with it (same code path). A refusal of this route,
   also a missing grid operator of an EEG, now answers 400 instead of 500. Caller eegfaktura-web offers only these
   operators.
+- **Saving a metering point answers with the stored TechCode/FuelCode** (eegfaktura-dev#56 #14):
+  `PUT /meteringpoint/{pid}/update/{mid}` never stores them; its answer echoed the codes the client sent and now
+  carries the stored ones (empty when none or no row was updated). eegfaktura-web sends the codes unchanged and keeps
+  showing them, now from the stored values.
 - **Confirming a member sends nothing when a grid operator is missing** (platform#229): every metering point's
   receiver is determined first; one missing answers 400 before the member is confirmed.
 - **gRPC registration refuses an unknown allocation or settlement interval** (found in the review of backend#147): a
