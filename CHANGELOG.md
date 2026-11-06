@@ -78,6 +78,10 @@ this changelog highlights the changes relevant for overview and operations.
   **Deploy order:** eegfaktura-eda-xp → backend (migration on start) → eegfaktura-web.
 
 ### Changed
+- **An ERROR message of eegfaktura-eda-xp is logged with its reason** (eegfaktura-dev#56 #4): one ERROR line with
+  `event.action=eda.error.received`, the tenant, the code, the conversation in the text and eda-xp's `errorMessage`
+  as `error.message`. Before, the reason was dropped. A refused request (e.g. a CPF with an unknown `ecType`) still
+  answers 204 and leaves no process history; whether the community sees it is a follow-up.
 - **`area` and `allocationMode` are dropped silently by the generic EEG updates** (platform#229, E5): `POST /eeg`, gRPC
   `AdminEegService.updateValue` (class EEG) and GraphQL `updateEegModel` (no field for them; it maps only
   `sepaActiv` and `settlementInterval`, the latter dropped) no longer change them, like `settlementInterval`. They
