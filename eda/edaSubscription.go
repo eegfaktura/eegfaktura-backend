@@ -551,6 +551,10 @@ func protocolEcPrtChangeHandler(ctx context.Context, msg model.SubscribeMessage)
 		return
 	}
 
+	if !forReceivingRc(ctx, db, msg, "partfact") {
+		return
+	}
+
 	eeg, err := db.GetEegByEcIdAndMeters(ctx, msg.Payload.EcId, messageMeters(&msg.Payload))
 	if err != nil {
 		logrus.Errorf("can not fetch eeg with message -> conversation %s", msg.Payload.ConversationId)

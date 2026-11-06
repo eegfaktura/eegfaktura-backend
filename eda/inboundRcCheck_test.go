@@ -43,6 +43,8 @@ func TestInbound_onlyForTheReceivingRcNumber(t *testing.T) {
 			`"consentEnd":1759269600000,"meter":{"meteringPoint":"%[1]s","consentId":"C-S4"},
 			"responseData":[{"meteringPoint":"%[1]s","responseCode":[176],"consentId":"C-S4"}]`,
 			meterColumnIs("status", "INACTIVE")},
+		{"participation factor", "partfact", protocolEcPrtChangeHandler, model.EC_PRTFACT_CHANGE, model.EBMS_ANS_CHANGE_PARTFACT,
+			`"meterList":[{"meteringPoint":"%[1]s","direction":"CONSUMPTION","partFact":50}]`, partFactStored(50)},
 	}
 
 	var mails atomic.Int32
@@ -165,6 +167,15 @@ func notified(code model.EbMsMessageType) func(*testing.T, string, string) bool 
 		var n int
 		require.NoError(t, testDB.DbInstance.Get(&n, `SELECT count(*) FROM base.notification WHERE tenant = $1
 			AND notification->>'type' = $2`, tenant, string(code)))
+		return n > 0
+	}
+}
+
+func partFactStored(partFact int) func(*testing.T, string, string) bool {
+	return func(t *testing.T, tenant, meter string) bool {
+		var n int
+		require.NoError(t, testDB.DbInstance.Get(&n, `SELECT count(*) FROM base.metering_partition_factor
+			WHERE tenant = $1 AND metering_point_id = $2 AND "partFact" = $3`, tenant, meter, partFact))
 		return n > 0
 	}
 }
