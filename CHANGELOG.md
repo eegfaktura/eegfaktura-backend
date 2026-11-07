@@ -78,6 +78,10 @@ this changelog highlights the changes relevant for overview and operations.
   revocation was so far.
 
 ### Fixed
+- **`ABLEHNUNG_CCMS` with a `meter` element keeps its reason codes** (platform#238): such a rejection was read like
+  the echo of the EEG's own deregistration and got the code 99 („Meldung erhalten“); its codes from `responseData`
+  were lost. Now the codes always come from `responseData`, the metering point too (the `meter` element only when
+  it is missing there). eda-xp does not deliver such a rejection today.
 - **GraphQL `updateEegModel` refuses a foreign tenant argument** (eegfaktura-dev#54 #6):
   A `tenant` argument or `EegModel.tenant` other than the `tenant` header (case-insensitive) is an error and nothing
   is written (eegfaktura-dev#54 #6); before, the argument was ignored and the write went to the header's community.

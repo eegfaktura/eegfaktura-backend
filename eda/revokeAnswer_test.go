@@ -197,4 +197,33 @@ func TestRevokeOnlyAfterAnswer(t *testing.T) {
 		answer(tenant, model.EBMS_ABLEHNUNG_CCMS, conversation, "180", requestedMs)
 		assert.Equal(t, inactiveSince(civil.Today()), stateOf(tenant))
 	})
+
+	// a rejection that also carries a <meter> element: the reason codes still come from ResponseData, not the 99 of
+	// the request echo
+	rejectionWithMeter := []struct {
+		name, tenant, codes string
+		want                state
+	}{
+		{"rejection 177 with a meter element: inactive", "TR238053", "177", inactiveSince(requested)},
+		{"rejection 187 with a meter element: stays, notified with the code", "TR238054", "187", unchanged},
+		{"rejection with a meter element and no ResponseData: stays, no reason", "TR238055", "", unchanged},
+	}
+	for i, c := range rejectionWithMeter {
+		t.Run(c.name, func(t *testing.T) {
+			conversation := "RC238" + c.tenant
+			inboundFixture(t, c.tenant, c.tenant, ecId(c.tenant), meter, 238053+i, 1)
+			request(c.tenant, conversation)
+			body := fmt.Sprintf(`"meter":{"meteringPoint":"%s","consentId":"C-S4"},"consentEnd":%d`, meter, requestedMs)
+			if c.codes != "" {
+				body += fmt.Sprintf(`,"responseData":[{"meteringPoint":"%s","responseCode":[%s],"consentId":"C-S4"}]`, meter, c.codes)
+			}
+			before := notificationCount(t, c.tenant)
+			handle(c.tenant, model.EBMS_ABLEHNUNG_CCMS, conversation, body)
+			assert.Equal(t, c.want, stateOf(c.tenant))
+			require.Equal(t, before+1, notificationCount(t, c.tenant))
+			typ, codes := lastNotification(c.tenant)
+			assert.Equal(t, string(model.EBMS_ABLEHNUNG_CCMS), typ)
+			assert.Equal(t, codeTexts(c.codes), codes)
+		})
+	}
 }

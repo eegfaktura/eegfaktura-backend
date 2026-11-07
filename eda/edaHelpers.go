@@ -61,7 +61,8 @@ func extractResponseCodeAndMeteringPointV2(ebmsMessage *model.EbmsMessage) ([]re
 
 	switch ebmsMessage.MessageCode {
 	case model.EBMS_AUFHEBUNG_CCMS, model.EBMS_ABLEHNUNG_CCMS:
-		if ebmsMessage.Meter != nil {
+		// only the echo of the community's own request gets the synthetic 99
+		if ebmsMessage.MessageCode == model.EBMS_AUFHEBUNG_CCMS && ebmsMessage.Meter != nil {
 			codes = append(codes, 99)
 			response = []responseCodesPerMeter{{
 				meter:      ebmsMessage.Meter.MeteringPoint,
@@ -70,20 +71,33 @@ func extractResponseCodeAndMeteringPointV2(ebmsMessage *model.EbmsMessage) ([]re
 				consentId:  consentId(ebmsMessage.Meter.ConsentID),
 			}}
 		} else {
-			// A rejection (ABLEHNUNG_CCMS) carries no <meter> element; the metering
-			// point and reason codes arrive via ResponseData instead. Build from
-			// there so the rejection can still be recorded (and to avoid a
-			// nil-pointer dereference on ebmsMessage.Meter).
+			// A rejection (ABLEHNUNG_CCMS) carries the metering point and reason codes in ResponseData; build from
+			// there so the rejection can still be recorded (and to avoid a nil-pointer dereference on
+			// ebmsMessage.Meter). A <meter> element only stands in for a metering point missing there; its codes
+			// are never the reason (platform#238).
 			for _, rd := range ebmsMessage.ResponseData {
 				if len(rd.ResponseCode) > 0 {
 					codes = append(codes, rd.ResponseCode...)
 				}
+				meter := rd.MeteringPoint
+				if meter == "" && ebmsMessage.Meter != nil {
+					meter = ebmsMessage.Meter.MeteringPoint
+				}
 				response = append(response, responseCodesPerMeter{
-					meter:      rd.MeteringPoint,
+					meter:      meter,
 					codes:      rd.ResponseCode,
 					consentEnd: civil.DateOf(time.UnixMilli(rd.ConsentEnd)),
 					consentId:  consentId(rd.ConsentId),
 				})
+			}
+			// no ResponseData: the metering point without a reason, so the status stays and the rejection is recorded
+			if len(response) == 0 && ebmsMessage.Meter != nil {
+				response = []responseCodesPerMeter{{
+					meter:      ebmsMessage.Meter.MeteringPoint,
+					codes:      []int16{},
+					consentEnd: civil.DateOf(time.UnixMilli(ebmsMessage.ConsentEnd)),
+					consentId:  consentId(ebmsMessage.Meter.ConsentID),
+				}}
 			}
 		}
 	default:
