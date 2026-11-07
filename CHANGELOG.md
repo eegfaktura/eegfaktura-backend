@@ -26,11 +26,16 @@ this changelog highlights the changes relevant for overview and operations.
   metering point INACTIVE; it stays as it is, the process history and the notification show the request. The answer
   decides: `ANTWORT_CCMS` 176 and `ABLEHNUNG_CCMS` 177 (no data release) or 180 (consent expired) set it INACTIVE,
   since the consent end of the EEG's request (found in the process history by tenant and conversation id; without it
-  the day the answer arrives, logged as `eda.revoke.request_not_found`). A rejection with 82, 187, another or no code
-  leaves the status; notification and history as before. Before, a rejected deregistration left the point INACTIVE.
-  The member mail (platform#116) still goes out on 176 only. Log `event.action=eda.revoke.inactive` (INFO, tenant,
-  conversation id, codes, no personal data); `eda.revoke.date_mismatch` (WARN) when the answer carries another date
-  than the request. Points already set INACTIVE by a rejected deregistration are not reset.
+  the consent end the answer carries, which eda-xp copies from its stored request; only then the day the answer
+  arrives; logged as `eda.revoke.request_not_found`, `eda.revoke.request_without_end` or
+  `eda.revoke.history_lookup_failed`). Only an ACTIVE metering point changes: a repeated answer, an earlier
+  revocation by grid operator or member (CCMI/CCMC) or a new participation keep their status and date
+  (`eda.revoke.unchanged`). A rejection with 82, 187, another or no code leaves the status; notification and history
+  as before. Before, a rejected deregistration left the point INACTIVE. The member mail (platform#116) goes out on
+  176 only and only when the point changed; none on 177/180 (decided 07.11.2026). Log
+  `event.action=eda.revoke.inactive` (INFO, tenant, conversation id, codes, no personal data);
+  `eda.revoke.date_mismatch` (WARN) when the answer carries another date than the request. Points already set
+  INACTIVE by a rejected deregistration are not reset.
 - **`POST /eeg/settlementinterval`: a gap in the final periods blocks the change** (rule 6, eegfaktura-dev#54 #2):
   A month without a final period in the 12 months up to and
   including the last final month L (L-11 … L) blocks the change, before the other checks; the message names it, e.g.
@@ -78,6 +83,9 @@ this changelog highlights the changes relevant for overview and operations.
   revocation was so far.
 
 ### Fixed
+- **`ANTWORT_CCMS` 176 without a stored request no longer sets `inactivesince` to 01.01.1970** (platform#238): when
+  the answer carried no consent end (eda-xp had no stored request), the date became 01.01.1970. Now the date
+  follows the chain above, at the latest the day the answer arrives.
 - **`ABLEHNUNG_CCMS` with a `meter` element keeps its reason codes** (platform#238): such a rejection was read like
   the echo of the EEG's own deregistration and got the code 99 („Meldung erhalten“); its codes from `responseData`
   were lost. Now the codes always come from `responseData`, the metering point too (the `meter` element only when
