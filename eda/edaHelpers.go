@@ -58,18 +58,22 @@ func extractResponseCodeAndMeteringPointV2(ebmsMessage *model.EbmsMessage) ([]re
 		}
 		return &id
 	}
+	// fromMeterElement is the metering point of the <meter> element with the given codes
+	fromMeterElement := func(codes []int16) []responseCodesPerMeter {
+		return []responseCodesPerMeter{{
+			meter:      ebmsMessage.Meter.MeteringPoint,
+			codes:      codes,
+			consentEnd: civil.DateOf(time.UnixMilli(ebmsMessage.ConsentEnd)),
+			consentId:  consentId(ebmsMessage.Meter.ConsentID),
+		}}
+	}
 
 	switch ebmsMessage.MessageCode {
 	case model.EBMS_AUFHEBUNG_CCMS, model.EBMS_ABLEHNUNG_CCMS:
 		// only the echo of the community's own request gets the synthetic 99
 		if ebmsMessage.MessageCode == model.EBMS_AUFHEBUNG_CCMS && ebmsMessage.Meter != nil {
 			codes = append(codes, 99)
-			response = []responseCodesPerMeter{{
-				meter:      ebmsMessage.Meter.MeteringPoint,
-				codes:      []int16{99},
-				consentEnd: civil.DateOf(time.UnixMilli(ebmsMessage.ConsentEnd)),
-				consentId:  consentId(ebmsMessage.Meter.ConsentID),
-			}}
+			response = fromMeterElement([]int16{99})
 		} else {
 			// A rejection (ABLEHNUNG_CCMS) carries the metering point and reason codes in ResponseData; build from
 			// there so the rejection can still be recorded (and to avoid a nil-pointer dereference on
@@ -92,12 +96,7 @@ func extractResponseCodeAndMeteringPointV2(ebmsMessage *model.EbmsMessage) ([]re
 			}
 			// no ResponseData: the metering point without a reason, so the status stays and the rejection is recorded
 			if len(response) == 0 && ebmsMessage.Meter != nil {
-				response = []responseCodesPerMeter{{
-					meter:      ebmsMessage.Meter.MeteringPoint,
-					codes:      []int16{},
-					consentEnd: civil.DateOf(time.UnixMilli(ebmsMessage.ConsentEnd)),
-					consentId:  consentId(ebmsMessage.Meter.ConsentID),
-				}}
+				response = fromMeterElement([]int16{})
 			}
 		}
 	default:

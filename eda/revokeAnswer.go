@@ -14,32 +14,31 @@ import (
 // operator's answer (platform#238): sending it leaves the status as it is.
 
 // revokeAfterAnswer sets the metering point of an answer to the deregistration INACTIVE when the answer ends the
-// participation; meters[0].consentEnd becomes the inactive-since date. Only an ACTIVE metering point changes: a
-// repeated answer, an earlier revocation (CCMI/CCMC) or a new participation keep their row and date. ok is false when
-// the update fails; mail tells whether the member gets the "no longer part of the community" mail, only when the
-// metering point changed.
-func revokeAfterAnswer(ctx context.Context, db database.Database, tenant string, msg model.SubscribeMessage, meters []responseCodesPerMeter) (mail, ok bool) {
+// participation, since the date it returns. Only an ACTIVE metering point changes: a repeated answer, an earlier
+// revocation (CCMI/CCMC) or a new participation keep their row and date. ok is false when the update fails; mail
+// tells whether the member gets the "no longer part of the community" mail, only when the metering point changed.
+func revokeAfterAnswer(ctx context.Context, db database.Database, tenant string, msg model.SubscribeMessage, meters []responseCodesPerMeter) (inactiveSince civil.Date, mail, ok bool) {
 	if len(meters) == 0 || !revokeAnswerEndsParticipation(msg.MessageCode, meters[0].codes) {
-		return false, true
+		return civil.Date{}, false, true
 	}
-	meters[0].consentEnd = revokeInactiveSince(ctx, db, tenant, msg, meters[0].meter)
-	changed, err := db.MeteringPointRevokeActive(ctx, tenant, meters[0].meter, meters[0].consentEnd)
+	inactiveSince = revokeInactiveSince(ctx, db, tenant, msg, meters[0].meter)
+	changed, err := db.MeteringPointRevokeActive(ctx, tenant, meters[0].meter, inactiveSince)
 	if err != nil {
 		logrus.WithContext(ctx).WithField("tenant", tenant).WithError(err).Errorf("%s: can not revoke the metering point", msg.MessageCode)
-		return false, false
+		return inactiveSince, false, false
 	}
 	conversation := msg.Payload.ConversationId
 	entry := logrus.WithContext(ctx).WithField("tenant", tenant)
 	if !changed {
 		entry.WithField("event.action", "eda.revoke.unchanged").
 			Infof("%s %v: metering point not active (or active only after %s), left as it is (conversation %s)",
-				msg.MessageCode, meters[0].codes, meters[0].consentEnd, conversation)
-		return false, true
+				msg.MessageCode, meters[0].codes, inactiveSince, conversation)
+		return inactiveSince, false, true
 	}
 	entry.WithField("event.action", "eda.revoke.inactive").
 		Infof("%s %v: metering point inactive since %s (conversation %s)", msg.MessageCode, meters[0].codes,
-			meters[0].consentEnd, conversation)
-	return revokeAnswerMailsMember(msg.MessageCode, meters[0].codes), true
+			inactiveSince, conversation)
+	return inactiveSince, revokeAnswerMailsMember(msg.MessageCode, meters[0].codes), true
 }
 
 // revokeAnswerEndsParticipation tells whether an answer to the community's deregistration sets the metering point
@@ -58,7 +57,7 @@ func revokeAnswerEndsParticipation(code model.EbMsMessageType, codes []int16) bo
 }
 
 // revokeAnswerMailsMember tells whether the member gets the "no longer part of the community" mail (platform#116):
-// on the confirmation (176) only. Open question (platform#238): whether 177/180 send it too.
+// on the confirmation (176) only; no mail on 177/180 (decided 07.11.2026, platform#238).
 func revokeAnswerMailsMember(code model.EbMsMessageType, codes []int16) bool {
 	return code == model.EBMS_ANTWORT_CCMS && codesContains([]int16{Zustimmung_erfolgreich_entzogen}, codes)
 }

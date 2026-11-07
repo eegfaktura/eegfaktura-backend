@@ -446,12 +446,13 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 			logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg with message -> conversation %s", msg.Payload.ConversationId)
 			return
 		}
-		mail, ok := revokeAfterAnswer(ctx, db, eeg.Id, msg, meters)
+		inactiveSince, mail, ok := revokeAfterAnswer(ctx, db, eeg.Id, msg, meters)
 		if !ok {
 			return
 		}
 		if mail {
 			mailTenants = []string{eeg.Id}
+			meters[0].consentEnd = inactiveSince // the date in the mail
 		}
 
 	case model.EBMS_AUFHEBUNG_CCMC, model.EBMS_AUFHEBUNG_CCMI:
@@ -490,13 +491,14 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 			return
 		}
 		// only code 176 (consent ended) revokes and notifies; other answers go to the history only
-		notify = len(meters) > 0 && codesContains([]int16{176}, meters[0].codes)
-		mail, ok := revokeAfterAnswer(ctx, db, eeg.Id, msg, meters)
+		notify = len(meters) > 0 && codesContains([]int16{Zustimmung_erfolgreich_entzogen}, meters[0].codes)
+		inactiveSince, mail, ok := revokeAfterAnswer(ctx, db, eeg.Id, msg, meters)
 		if !ok {
 			return
 		}
 		if mail {
 			mailTenants = []string{eeg.Id}
+			meters[0].consentEnd = inactiveSince // the date in the mail
 		}
 	default:
 		return
