@@ -64,30 +64,47 @@ func revokeAnswerMailsMember(code model.EbMsMessageType, codes []int16) bool {
 }
 
 // revokeInactiveSince is the "inactive since" date when an answer ends the participation. Decision (a) of
-// platform#238 (agreed by Harald in the issue): the consent end the community chose in its deregistration request,
-// which the history of the tenant holds under the conversation id of the answer (eda-xp's echo of the sent request).
-// Without that request the date the answer is received (b).
+// platform#238 (agreed by Harald in the issue on 06.11.2026): the consent end the community chose in its
+// deregistration request. In this order:
+//  1. the consent end of the request in the history of the tenant, under the conversation id of the answer
+//     (eda-xp's echo of the sent request);
+//  2. the consent end the answer carries, which eda-xp copies from the request it stored;
+//  3. the day the answer arrives (b).
+//
+// Each fallback logs why the request did not give the date.
 func revokeInactiveSince(ctx context.Context, db database.Database, tenant string, msg model.SubscribeMessage, meter string) civil.Date {
 	conversation, answerEnd := msg.Payload.ConversationId, msg.Payload.ConsentEnd
 	entry := logrus.WithContext(ctx).WithField("tenant", tenant)
 	request, err := db.FindHistoryMessage(ctx, tenant, conversation, model.EBMS_AUFHEBUNG_CCMS)
-	if err != nil {
-		entry.WithError(err).Errorf("can not read the deregistration request from the history (conversation %s)", conversation)
-	}
-	if request == nil || request.ConsentEnd == 0 || request.Meter == nil || request.Meter.MeteringPoint != meter {
-		entry.WithField("event.action", "eda.revoke.request_not_found").
-			Warnf("%s: no deregistration request in the history, inactive since the date of the answer (conversation %s)",
-				msg.MessageCode, conversation)
-		return civil.Today()
-	}
-	requested := civil.DateOf(time.UnixMilli(request.ConsentEnd))
-	// eda-xp copies the consent end of the request it stored into the answer: a different one is only logged
-	if answerEnd != 0 {
-		if answered := civil.DateOf(time.UnixMilli(answerEnd)); answered != requested {
-			entry.WithField("event.action", "eda.revoke.date_mismatch").
-				Warnf("%s carries %s, the request %s: the requested date is used (conversation %s)",
-					msg.MessageCode, answered, requested, conversation)
+	if err == nil && request != nil && request.Meter != nil && request.Meter.MeteringPoint == meter && request.ConsentEnd != 0 {
+		requested := civil.DateOf(time.UnixMilli(request.ConsentEnd))
+		if answerEnd != 0 {
+			if answered := civil.DateOf(time.UnixMilli(answerEnd)); answered != requested {
+				entry.WithField("event.action", "eda.revoke.date_mismatch").
+					Warnf("%s carries %s, the request %s: the requested date is used (conversation %s)",
+						msg.MessageCode, answered, requested, conversation)
+			}
 		}
+		return requested
 	}
-	return requested
+
+	date, source := civil.Today(), "the day of the answer"
+	if answerEnd != 0 {
+		date, source = civil.DateOf(time.UnixMilli(answerEnd)), "the consent end of the answer"
+	}
+	switch {
+	case err != nil:
+		entry.WithError(err).WithField("event.action", "eda.revoke.history_lookup_failed").
+			Errorf("%s: can not read the deregistration request from the history, inactive since %s, %s (conversation %s)",
+				msg.MessageCode, date, source, conversation)
+	case request == nil || request.Meter == nil || request.Meter.MeteringPoint != meter:
+		entry.WithField("event.action", "eda.revoke.request_not_found").
+			Warnf("%s: no deregistration request in the history, inactive since %s, %s (conversation %s)",
+				msg.MessageCode, date, source, conversation)
+	default:
+		entry.WithField("event.action", "eda.revoke.request_without_end").
+			Warnf("%s: the deregistration request has no consent end, inactive since %s, %s (conversation %s)",
+				msg.MessageCode, date, source, conversation)
+	}
+	return date
 }

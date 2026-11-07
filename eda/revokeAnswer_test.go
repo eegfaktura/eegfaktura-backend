@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/logging/logtest"
 	"at.ourproject/vfeeg-backend/model"
 	"at.ourproject/vfeeg-backend/services"
@@ -114,8 +116,8 @@ func TestRevokeOnlyAfterAnswer(t *testing.T) {
 		{"rejection 187 (consent and metering point do not match)", model.EBMS_ABLEHNUNG_CCMS, "187", false, unchanged, true, 0},
 		{"rejection with another code", model.EBMS_ABLEHNUNG_CCMS, "37", false, unchanged, true, 0},
 		{"rejection without code", model.EBMS_ABLEHNUNG_CCMS, "", false, unchanged, true, 0},
-		{"176 without the request in the history: date of the answer", model.EBMS_ANTWORT_CCMS, "176", true, inactiveSince(civil.Today()), true, 1},
-		{"177 without the request in the history: date of the answer", model.EBMS_ABLEHNUNG_CCMS, "177", true, inactiveSince(civil.Today()), true, 0},
+		{"176 without the request in the history and without a date in the answer: the day of the answer", model.EBMS_ANTWORT_CCMS, "176", true, inactiveSince(civil.Today()), true, 1},
+		{"177 without the request in the history and without a date in the answer: the day of the answer", model.EBMS_ABLEHNUNG_CCMS, "177", true, inactiveSince(civil.Today()), true, 0},
 	}
 	for i, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -188,14 +190,54 @@ func TestRevokeOnlyAfterAnswer(t *testing.T) {
 		assert.Contains(t, logged.String(), "event.action=eda.revoke.date_mismatch")
 	})
 
-	t.Run("a request of another metering point in the conversation: date of the answer", func(t *testing.T) {
-		const tenant, conversation = "TR238052", "RC238TR238052"
-		inboundFixture(t, tenant, tenant, ecId(tenant), meter, 238052, 1)
-		handle(tenant, model.EBMS_AUFHEBUNG_CCMS, conversation, fmt.Sprintf(
-			`"meter":{"meteringPoint":"AT0030000000000000000000000238999","consentId":"C-X"},"consentEnd":%d`, requestedMs))
-		require.Equal(t, 1, historyCount(t, tenant, conversation))
-		answer(tenant, model.EBMS_ABLEHNUNG_CCMS, conversation, "180", requestedMs)
-		assert.Equal(t, inactiveSince(civil.Today()), stateOf(tenant))
+	// fallback chain of the date: the request in the history, the consent end of the answer, the day of the answer
+	later := civil.DateFor(2026, 10, 20)
+	laterMs := time.Date(2026, 10, 20, 0, 0, 0, 0, time.Local).UnixMilli()
+	fallbacks := []struct {
+		name, tenant string
+		echo         string // body of the request echo, "" for none
+		answerEnd    int64
+		want         civil.Date
+		event        string
+	}{
+		{"no request in the history: the consent end of the answer", "TR238052", "", laterMs, later,
+			"eda.revoke.request_not_found"},
+		{"a request of another metering point in the conversation: the consent end of the answer", "TR238056",
+			fmt.Sprintf(`"meter":{"meteringPoint":"AT0030000000000000000000000238999","consentId":"C-X"},"consentEnd":%d`, requestedMs),
+			laterMs, later, "eda.revoke.request_not_found"},
+		{"a request without consent end: the consent end of the answer", "TR238057",
+			fmt.Sprintf(`"meter":{"meteringPoint":"%s","consentId":"C-S4"}`, meter), laterMs, later,
+			"eda.revoke.request_without_end"},
+		{"a request without consent end, an answer without one: the day of the answer", "TR238058",
+			fmt.Sprintf(`"meter":{"meteringPoint":"%s","consentId":"C-S4"}`, meter), 0, civil.Today(),
+			"eda.revoke.request_without_end"},
+	}
+	for i, c := range fallbacks {
+		t.Run(c.name, func(t *testing.T) {
+			conversation := "RC238" + c.tenant
+			inboundFixture(t, c.tenant, c.tenant, ecId(c.tenant), meter, 238056+i, 1)
+			if c.echo != "" {
+				handle(c.tenant, model.EBMS_AUFHEBUNG_CCMS, conversation, c.echo)
+				require.Equal(t, 1, historyCount(t, c.tenant, conversation))
+			}
+			logged := logtest.Capture(t, func(w io.Writer) { logrus.SetOutput(w) })
+			answer(c.tenant, model.EBMS_ABLEHNUNG_CCMS, conversation, "180", c.answerEnd)
+			assert.Equal(t, inactiveSince(c.want), stateOf(c.tenant))
+			assert.Contains(t, logged.String(), "event.action="+c.event)
+		})
+	}
+
+	t.Run("the history can not be read: the consent end of the answer, else the day; not reported as not found", func(t *testing.T) {
+		db, err := database.GetDB(context.Background())
+		require.NoError(t, err)
+		msg := model.SubscribeMessage{MessageCode: model.EBMS_ANTWORT_CCMS,
+			Payload: model.EbmsMessage{ConversationId: "RC238FAIL", ConsentEnd: laterMs}}
+		logged := logtest.Capture(t, func(w io.Writer) { logrus.SetOutput(w) })
+		assert.Equal(t, later, revokeInactiveSince(context.Background(), failingHistory{db}, "TR238059", msg, meter))
+		msg.Payload.ConsentEnd = 0
+		assert.Equal(t, civil.Today(), revokeInactiveSince(context.Background(), failingHistory{db}, "TR238059", msg, meter))
+		assert.Contains(t, logged.String(), "event.action=eda.revoke.history_lookup_failed")
+		assert.NotContains(t, logged.String(), "request_not_found")
 	})
 
 	// a rejection that also carries a <meter> element: the reason codes still come from ResponseData, not the 99 of
@@ -228,7 +270,6 @@ func TestRevokeOnlyAfterAnswer(t *testing.T) {
 	}
 
 	// only an ACTIVE metering point is set inactive: the first end of the participation keeps its date
-	laterMs := time.Date(2026, 10, 20, 0, 0, 0, 0, time.Local).UnixMilli()
 	ccmc := func(tenant string, consentEndMs int64) {
 		msg := model.SubscribeMessage{MessageCode: model.EBMS_AUFHEBUNG_CCMC, Protocol: model.CM_REV_CUS, Tenant: strings.ToLower(tenant)}
 		require.NoError(t, json.Unmarshal([]byte(fmt.Sprintf(`{"conversationId":"CCMC%s","sender":"AT003000",
@@ -299,4 +340,11 @@ func TestRevokeOnlyAfterAnswer(t *testing.T) {
 		assert.Equal(t, state{"ACTIVE", "ACTIVE", "2999-12-31"}, stateOf(tenant), "after the re-registration")
 		assert.Equal(t, int32(0), mails.Load())
 	})
+}
+
+// failingHistory is a database whose process history can not be read.
+type failingHistory struct{ database.Database }
+
+func (failingHistory) FindHistoryMessage(context.Context, string, string, model.EbMsMessageType) (*model.EbmsMessage, error) {
+	return nil, errors.New("connection refused")
 }
