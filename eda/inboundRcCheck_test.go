@@ -46,7 +46,10 @@ func TestInbound_onlyForTheReceivingRcNumber(t *testing.T) {
 		{"revocation request echo", "revoke", protocolCmRevImpHandler, model.CM_REV_SP, model.EBMS_AUFHEBUNG_CCMS,
 			`"consentEnd":1759269600000,"meter":{"meteringPoint":"%[1]s","consentId":"C-S4"},
 			"responseData":[{"meteringPoint":"%[1]s","responseCode":[99],"consentId":"C-S4"}]`,
-			meterColumnIs("status", "INACTIVE")},
+			// processed: notified, and the status stays ACTIVE (platform#238)
+			func(t *testing.T, tenant, meter string) bool {
+				return notified(model.EBMS_AUFHEBUNG_CCMS)(t, tenant, meter) && meterColumnIs("status", "ACTIVE")(t, tenant, meter)
+			}},
 		{"revocation rejected", "revoke", protocolCmRevImpHandler, model.CM_REV_SP, model.EBMS_ABLEHNUNG_CCMS,
 			`"meter":{"meteringPoint":"%[1]s","consentId":"C-S4"},
 			"responseData":[{"meteringPoint":"%[1]s","responseCode":[37],"consentId":"C-S4"}]`,

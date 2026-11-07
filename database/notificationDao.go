@@ -23,6 +23,7 @@ type NotificationRepository interface {
 	SaveNotification(tenant string, code model.EbMsMessageType, meters []string, errCodes []string, protocol model.EdaProtocol) error
 	SaveNotificationFromMap(notificationValue map[string]interface{}, tenant string, notificationType model.NotificationType, process model.NotificationProcess, role string) error
 	SaveHistory(tenant string, code model.EbMsMessageType, conversationId, role, dir string, protocol model.EdaProtocol, msg interface{}) error
+	FindHistoryMessage(ctx context.Context, tenant, conversationId string, code model.EbMsMessageType) (*model.EbmsMessage, error)
 	FetchEdaHistory(ctx context.Context, tenant, protocol string, start, end int64, pageSize uint) (interface{}, error)
 	GetNotification(ctx context.Context, tenant string, start int64, isAdmin bool) ([]model.EegNotification, error)
 }
@@ -236,6 +237,25 @@ func (db *sqlDatabase) SaveHistory(tenant string, code model.EbMsMessageType, co
 		}
 	}
 	return nil
+}
+
+// FindHistoryMessage returns the latest message of the given type in a conversation of the tenant, in either
+// direction, or nil when there is none.
+func (db *sqlDatabase) FindHistoryMessage(ctx context.Context, tenant, conversationId string, code model.EbMsMessageType) (*model.EbmsMessage, error) {
+	var raw []byte
+	err := db.db.GetContext(ctx, &raw, `SELECT message FROM base.processhistory
+		WHERE tenant = $1 AND "conversationId" = $2 AND type = $3 ORDER BY date DESC LIMIT 1`, tenant, conversationId, code)
+	if errors.Is(err, dbsql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	msg := &model.EbmsMessage{}
+	if err := json.Unmarshal(raw, msg); err != nil {
+		return nil, err
+	}
+	return msg, nil
 }
 
 func (db *sqlDatabase) FetchEdaHistory(ctx context.Context, tenant, protocol string, start, end int64, pageSize uint) (interface{}, error) {
