@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.17.0] – 2026-11-07
+
 ### Security
 - **Inbound EDA messages** (backend 261105-mm5): security relevant — details not published.
 
