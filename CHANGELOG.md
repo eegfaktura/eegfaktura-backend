@@ -21,6 +21,16 @@ this changelog highlights the changes relevant for overview and operations.
   `eeg.settlement_interval.reload_failed` (WARN); before, 500 (1063) although the change was stored.
 
 ### Changed
+- **Deregistering a metering point: inactive only after the grid operator's answer** (platform#238, covers
+  platform#125). **Behaviour change for the EEGs:** sending a deregistration (`AUFHEBUNG_CCMS`) no longer sets the
+  metering point INACTIVE; it stays as it is, the process history and the notification show the request. The answer
+  decides: `ANTWORT_CCMS` 176 and `ABLEHNUNG_CCMS` 177 (no data release) or 180 (consent expired) set it INACTIVE,
+  since the consent end of the EEG's request (found in the process history by tenant and conversation id; without it
+  the day the answer arrives, logged as `eda.revoke.request_not_found`). A rejection with 82, 187, another or no code
+  leaves the status; notification and history as before. Before, a rejected deregistration left the point INACTIVE.
+  The member mail (platform#116) still goes out on 176 only. Log `event.action=eda.revoke.inactive` (INFO, tenant,
+  conversation id, codes, no personal data); `eda.revoke.date_mismatch` (WARN) when the answer carries another date
+  than the request. Points already set INACTIVE by a rejected deregistration are not reset.
 - **`POST /eeg/settlementinterval`: a gap in the final periods blocks the change** (rule 6, eegfaktura-dev#54 #2):
   A month without a final period in the 12 months up to and
   including the last final month L (L-11 … L) blocks the change, before the other checks; the message names it, e.g.

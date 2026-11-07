@@ -46,7 +46,7 @@ func TestInbound_onlyForTheReceivingRcNumber(t *testing.T) {
 		{"revocation request echo", "revoke", protocolCmRevImpHandler, model.CM_REV_SP, model.EBMS_AUFHEBUNG_CCMS,
 			`"consentEnd":1759269600000,"meter":{"meteringPoint":"%[1]s","consentId":"C-S4"},
 			"responseData":[{"meteringPoint":"%[1]s","responseCode":[99],"consentId":"C-S4"}]`,
-			meterColumnIs("status", "INACTIVE")},
+			notified(model.EBMS_AUFHEBUNG_CCMS)}, // the request leaves the status (platform#238)
 		{"revocation rejected", "revoke", protocolCmRevImpHandler, model.CM_REV_SP, model.EBMS_ABLEHNUNG_CCMS,
 			`"meter":{"meteringPoint":"%[1]s","consentId":"C-S4"},
 			"responseData":[{"meteringPoint":"%[1]s","responseCode":[37],"consentId":"C-S4"}]`,

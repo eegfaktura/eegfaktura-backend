@@ -684,9 +684,29 @@ func TestMeteringPointRevokeActivationFlow(t *testing.T) {
 		check         func(t *testing.T, m *model.MeteringPoint)
 	}{
 		{
-			name:          "Revoke - CCMS",
+			// sending the deregistration leaves the metering point as it is (platform#238)
+			name:          "Revoke - CCMS sent",
 			msg:           `{"conversationId":"RC101607202504231745391480000487069","messageId":"RC101607202504231745391480000487068","sender":"RC101607","receiver":"AT004000","messageCode":"AUFHEBUNG_CCMS","messageCodeVersion":"","requestId":"JEZ6SG7","meter":{"meteringPoint":"AT0040000520100000000000010295156","consentId":"123456789015"},"ecId":"AT00300000000TC000015000000000001","consentEnd":1745445600000}`,
 			msgType:       model.EBMS_AUFHEBUNG_CCMS,
+			msgProto:      model.CM_REV_SP,
+			meter:         "AT0030000000000000000000000153013",
+			expectedState: model.S_ACTIVE,
+			invoke: func(msg model.SubscribeMessage) {
+				protocolCmRevImpHandler(context.Background(), msg)
+			},
+			check: func(t *testing.T, m *model.MeteringPoint) {
+				assert.Equal(t, "AT0030000000000000000000000153013", m.MeteringPoint)
+				assert.Equal(t, civil.DateFor(2023, 01, 01), m.State.ActiveSince.Date)
+				assert.Equal(t, civil.DateFor(2999, 12, 31), m.State.InactiveSince.Date)
+				assert.Equal(t, model.ACTIVE, m.ProcessState)
+				assert.Equal(t, model.S_ACTIVE, m.Status)
+			},
+		},
+		{
+			// the grid operator confirms: inactive since the consent end of the request
+			name:          "Revoke - CCMS confirmed",
+			msg:           `{"conversationId":"RC101607202504231745391480000487069","messageId":"AT004000202504231745391480000487070","sender":"AT004000","receiver":"RC101607","messageCode":"ANTWORT_CCMS","messageCodeVersion":"01.12","requestId":"JEZ6SG7","ecId":"AT00300000000TC000015000000000001","responseData":[{"meteringPoint":"AT0040000520100000000000010295156","responseCode":[176],"consentId":"123456789015"}],"consentEnd":1745445600000}`,
+			msgType:       model.EBMS_ANTWORT_CCMS,
 			msgProto:      model.CM_REV_SP,
 			meter:         "AT0030000000000000000000000153013",
 			expectedState: model.S_INACTIVE,
@@ -848,6 +868,22 @@ func TestMeteringPointRevokeActivationFlow(t *testing.T) {
 			},
 		},
 		{
+			name:          "Revoke - CCMS sent again",
+			msg:           `{"conversationId":"RC103619202506161750092130000917203","messageId":"RC103619202506161750092130000917202","sender":"RC103619","receiver":"AT008000","messageCode":"AUFHEBUNG_CCMS","messageCodeVersion":"","requestId":"NZCUR5C3","meter":{"meteringPoint":"AT0080000885400000202006120074147","consentId":"AT002000202504071118158864B2hYwr"},"ecId":"AT00300000000TC000015000000000001","consentEnd":1751234400000}`,
+			msgType:       model.EBMS_AUFHEBUNG_CCMS,
+			msgProto:      model.CM_REV_SP,
+			meter:         "AT0030000000000000000000000153013",
+			expectedState: model.S_ACTIVE,
+			invoke: func(msg model.SubscribeMessage) {
+				protocolCmRevImpHandler(context.Background(), msg)
+			},
+			check: func(t *testing.T, m *model.MeteringPoint) {
+				assert.Equal(t, civil.DateFor(2999, 12, 31), m.State.InactiveSince.Date)
+				assert.Equal(t, model.ACTIVE, m.ProcessState)
+				assert.Equal(t, model.S_ACTIVE, m.Status)
+			},
+		},
+		{
 			name:          "Antwort - CCMS",
 			msg:           `{"conversationId":"RC103619202506161750092130000917203","messageId":"AT008000202506161842410660000066105","sender":"AT008000","receiver":"RC103619","messageCode":"ANTWORT_CCMS","messageCodeVersion":"01.12","requestId":"NZCUR5C3","ecId":"AT00300000000TC000015000000000001","responseData":[{"meteringPoint":"AT0080000885400000202006120074147","responseCode":[176],"consentId":"AT002000202504071118158864B2hYwr"}],"consentEnd":1751234400000}`,
 			msgType:       model.EBMS_ANTWORT_CCMS,
@@ -869,6 +905,10 @@ func TestMeteringPointRevokeActivationFlow(t *testing.T) {
 	}
 
 	db, err := database.GetDB(context.Background())
+	require.NoError(t, err)
+	// the flow starts from the seeded active metering point, also on a repeated run (-count=2)
+	_, err = testDB.DbInstance.Exec(`UPDATE base.meteringpoint SET status = 'ACTIVE', process_state = 'ACTIVE',
+		inactivesince = '2999-12-31' WHERE tenant = 'TE000015' AND metering_point_id = 'AT0030000000000000000000000153013'`)
 	require.NoError(t, err)
 
 	for _, tt := range tests {

@@ -424,6 +424,8 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 	}
 	switch msg.MessageCode {
 	case model.EBMS_AUFHEBUNG_CCMS:
+		// the community's own deregistration (eda-xp's echo of the sent request): the metering point stays as it
+		// is until the grid operator answers (platform#238); notification and history only
 		eeg, err = db.GetEegByEcIdAndMeters(ctx, msg.Payload.EcId, messageMeters(&msg.Payload))
 		if err != nil {
 			logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg with message -> conversation %s", msg.Payload.ConversationId)
@@ -435,20 +437,21 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 			return
 		}
 
-		if err := db.MeteringPointRevoke(ctx, eeg.Id, meters[0].meter, meters[0].consentEnd); err != nil {
-			logrus.WithField("tenant", eeg.Id).Errorf("can not revoke metering point %+v - %+v", meters, err)
-			return
-		}
-
 	case model.EBMS_ABLEHNUNG_CCMS:
-		// The grid operator rejected the termination of the data-release consent
-		// (Customer Consent Management), so the data release stays active and the
-		// metering point must NOT be revoked. Only fetch the EEG so the rejection
-		// is persisted as a notification (see below) and stays visible to the user.
+		// The grid operator rejected the deregistration. With 177/180 there is no data release (any more) and the
+		// metering point becomes INACTIVE; with any other code it stays as it is. The rejection is always
+		// persisted as a notification (see below) and stays visible to the user.
 		eeg, err = db.GetEegByEcIdAndMeters(ctx, msg.Payload.EcId, messageMeters(&msg.Payload))
 		if err != nil {
 			logrus.WithField("tenant", msg.Tenant).Errorf("can not fetch eeg with message -> conversation %s", msg.Payload.ConversationId)
 			return
+		}
+		mail, ok := revokeAfterAnswer(ctx, db, eeg.Id, msg, meters)
+		if !ok {
+			return
+		}
+		if mail {
+			mailTenants = []string{eeg.Id}
 		}
 
 	case model.EBMS_AUFHEBUNG_CCMC, model.EBMS_AUFHEBUNG_CCMI:
@@ -488,12 +491,11 @@ func protocolCmRevImpHandler(ctx context.Context, msg model.SubscribeMessage) {
 		}
 		// only code 176 (consent ended) revokes and notifies; other answers go to the history only
 		notify = len(meters) > 0 && codesContains([]int16{176}, meters[0].codes)
-		if notify {
-			meters[0].consentEnd = civil.DateOf(time.UnixMilli(msg.Payload.ConsentEnd))
-			if err := db.MeteringPointRevoke(ctx, eeg.Id, meters[0].meter, meters[0].consentEnd); err != nil {
-				logrus.WithField("tenant", eeg.Id).Errorf("can not revoke metering point %+v - %+v", meters, err)
-				return
-			}
+		mail, ok := revokeAfterAnswer(ctx, db, eeg.Id, msg, meters)
+		if !ok {
+			return
+		}
+		if mail {
 			mailTenants = []string{eeg.Id}
 		}
 	default:
