@@ -74,6 +74,19 @@ func TestRevokeOnlyAfterAnswer(t *testing.T) {
 	}
 	unchanged := state{"ACTIVE", "INIT", "2999-12-31"}
 	inactiveSince := func(d civil.Date) state { return state{"INACTIVE", "INACTIVE", d.String()} }
+	// inactiveToday expects the day the answer arrives; assertState accepts any day from "from" (taken before the
+	// handler ran) to the end of the check, so a run across midnight passes
+	const today = "today"
+	inactiveToday := state{"INACTIVE", "INACTIVE", today}
+	assertState := func(t *testing.T, want, got state, from civil.Date) {
+		t.Helper()
+		if want.inactiveSince == today {
+			assert.True(t, got.inactiveSince >= from.String() && got.inactiveSince <= civil.Today().String(),
+				"inactive since %s, expected the day of the answer", got.inactiveSince)
+			want.inactiveSince = got.inactiveSince
+		}
+		assert.Equal(t, want, got)
+	}
 	// lastNotification is the type and codes of the newest notification of the tenant
 	lastNotification := func(tenant string) (string, []string) {
 		var raw string
@@ -116,8 +129,8 @@ func TestRevokeOnlyAfterAnswer(t *testing.T) {
 		{"rejection 187 (consent and metering point do not match)", model.EBMS_ABLEHNUNG_CCMS, "187", false, unchanged, true, 0},
 		{"rejection with another code", model.EBMS_ABLEHNUNG_CCMS, "37", false, unchanged, true, 0},
 		{"rejection without code", model.EBMS_ABLEHNUNG_CCMS, "", false, unchanged, true, 0},
-		{"176 without the request in the history and without a date in the answer: the day of the answer", model.EBMS_ANTWORT_CCMS, "176", true, inactiveSince(civil.Today()), true, 1},
-		{"177 without the request in the history and without a date in the answer: the day of the answer", model.EBMS_ABLEHNUNG_CCMS, "177", true, inactiveSince(civil.Today()), true, 0},
+		{"176 without the request in the history and without a date in the answer: the day of the answer", model.EBMS_ANTWORT_CCMS, "176", true, inactiveToday, true, 1},
+		{"177 without the request in the history and without a date in the answer: the day of the answer", model.EBMS_ABLEHNUNG_CCMS, "177", true, inactiveToday, true, 0},
 	}
 	for i, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -141,9 +154,10 @@ func TestRevokeOnlyAfterAnswer(t *testing.T) {
 			if c.noRequest {
 				consentEnd = 0
 			}
+			from := civil.Today()
 			answer(tenant, c.code, conversation, c.codes, consentEnd)
 
-			assert.Equal(t, c.want, stateOf(tenant))
+			assertState(t, c.want, stateOf(tenant), from)
 			assert.Equal(t, unchanged, stateOf(other), "the other community keeps its metering point")
 			assert.Equal(t, c.mailsAfter, mails.Load())
 			if c.notifies {
@@ -197,19 +211,19 @@ func TestRevokeOnlyAfterAnswer(t *testing.T) {
 		name, tenant string
 		echo         string // body of the request echo, "" for none
 		answerEnd    int64
-		want         civil.Date
+		want         state
 		event        string
 	}{
-		{"no request in the history: the consent end of the answer", "TR238052", "", laterMs, later,
+		{"no request in the history: the consent end of the answer", "TR238052", "", laterMs, inactiveSince(later),
 			"eda.revoke.request_not_found"},
 		{"a request of another metering point in the conversation: the consent end of the answer", "TR238056",
 			fmt.Sprintf(`"meter":{"meteringPoint":"AT0030000000000000000000000238999","consentId":"C-X"},"consentEnd":%d`, requestedMs),
-			laterMs, later, "eda.revoke.request_not_found"},
+			laterMs, inactiveSince(later), "eda.revoke.request_not_found"},
 		{"a request without consent end: the consent end of the answer", "TR238057",
-			fmt.Sprintf(`"meter":{"meteringPoint":"%s","consentId":"C-S4"}`, meter), laterMs, later,
+			fmt.Sprintf(`"meter":{"meteringPoint":"%s","consentId":"C-S4"}`, meter), laterMs, inactiveSince(later),
 			"eda.revoke.request_without_end"},
 		{"a request without consent end, an answer without one: the day of the answer", "TR238058",
-			fmt.Sprintf(`"meter":{"meteringPoint":"%s","consentId":"C-S4"}`, meter), 0, civil.Today(),
+			fmt.Sprintf(`"meter":{"meteringPoint":"%s","consentId":"C-S4"}`, meter), 0, inactiveToday,
 			"eda.revoke.request_without_end"},
 	}
 	for i, c := range fallbacks {
@@ -221,8 +235,9 @@ func TestRevokeOnlyAfterAnswer(t *testing.T) {
 				require.Equal(t, 1, historyCount(t, c.tenant, conversation))
 			}
 			logged := logtest.Capture(t, func(w io.Writer) { logrus.SetOutput(w) })
+			from := civil.Today()
 			answer(c.tenant, model.EBMS_ABLEHNUNG_CCMS, conversation, "180", c.answerEnd)
-			assert.Equal(t, inactiveSince(c.want), stateOf(c.tenant))
+			assertState(t, c.want, stateOf(c.tenant), from)
 			assert.Contains(t, logged.String(), "event.action="+c.event)
 		})
 	}
@@ -235,7 +250,9 @@ func TestRevokeOnlyAfterAnswer(t *testing.T) {
 		logged := logtest.Capture(t, func(w io.Writer) { logrus.SetOutput(w) })
 		assert.Equal(t, later, revokeInactiveSince(context.Background(), failingHistory{db}, "TR238059", msg, meter))
 		msg.Payload.ConsentEnd = 0
-		assert.Equal(t, civil.Today(), revokeInactiveSince(context.Background(), failingHistory{db}, "TR238059", msg, meter))
+		from := civil.Today()
+		got := revokeInactiveSince(context.Background(), failingHistory{db}, "TR238059", msg, meter)
+		assertState(t, inactiveToday, inactiveSince(got), from)
 		assert.Contains(t, logged.String(), "event.action=eda.revoke.history_lookup_failed")
 		assert.NotContains(t, logged.String(), "request_not_found")
 	})

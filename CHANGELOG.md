@@ -35,7 +35,9 @@ this changelog highlights the changes relevant for overview and operations.
   176 only and only when the point changed; none on 177/180 (decided 07.11.2026). Log
   `event.action=eda.revoke.inactive` (INFO, tenant, conversation id, codes, no personal data);
   `eda.revoke.date_mismatch` (WARN) when the answer carries another date than the request. Points already set
-  INACTIVE by a rejected deregistration are not reset.
+  INACTIVE by a rejected deregistration are not reset. Known limit: if neither the stored request nor the answer carries a date, today is used;
+  then a late answer after a re-registration whose new participation started on or before today can still end it
+  (logged as `eda.revoke.request_not_found` or `eda.revoke.request_without_end`).
 - **`POST /eeg/settlementinterval`: a gap in the final periods blocks the change** (rule 6, eegfaktura-dev#54 #2):
   A month without a final period in the 12 months up to and
   including the last final month L (L-11 … L) blocks the change, before the other checks; the message names it, e.g.
