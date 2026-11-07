@@ -14,19 +14,29 @@ import (
 // operator's answer (platform#238): sending it leaves the status as it is.
 
 // revokeAfterAnswer sets the metering point of an answer to the deregistration INACTIVE when the answer ends the
-// participation; meters[0].consentEnd becomes the inactive-since date. ok is false when that fails, mail tells
-// whether the member gets the "no longer part of the community" mail.
+// participation; meters[0].consentEnd becomes the inactive-since date. Only an ACTIVE metering point changes: a
+// repeated answer, an earlier revocation (CCMI/CCMC) or a new participation keep their row and date. ok is false when
+// the update fails; mail tells whether the member gets the "no longer part of the community" mail, only when the
+// metering point changed.
 func revokeAfterAnswer(ctx context.Context, db database.Database, tenant string, msg model.SubscribeMessage, meters []responseCodesPerMeter) (mail, ok bool) {
 	if len(meters) == 0 || !revokeAnswerEndsParticipation(msg.MessageCode, meters[0].codes) {
 		return false, true
 	}
 	meters[0].consentEnd = revokeInactiveSince(ctx, db, tenant, msg, meters[0].meter)
-	if err := db.MeteringPointRevoke(ctx, tenant, meters[0].meter, meters[0].consentEnd); err != nil {
+	changed, err := db.MeteringPointRevokeActive(ctx, tenant, meters[0].meter, meters[0].consentEnd)
+	if err != nil {
 		logrus.WithContext(ctx).WithField("tenant", tenant).WithError(err).Errorf("%s: can not revoke the metering point", msg.MessageCode)
 		return false, false
 	}
 	conversation := msg.Payload.ConversationId
-	logrus.WithContext(ctx).WithField("tenant", tenant).WithField("event.action", "eda.revoke.inactive").
+	entry := logrus.WithContext(ctx).WithField("tenant", tenant)
+	if !changed {
+		entry.WithField("event.action", "eda.revoke.unchanged").
+			Infof("%s %v: metering point not active (or active only after %s), left as it is (conversation %s)",
+				msg.MessageCode, meters[0].codes, meters[0].consentEnd, conversation)
+		return false, true
+	}
+	entry.WithField("event.action", "eda.revoke.inactive").
 		Infof("%s %v: metering point inactive since %s (conversation %s)", msg.MessageCode, meters[0].codes,
 			meters[0].consentEnd, conversation)
 	return revokeAnswerMailsMember(msg.MessageCode, meters[0].codes), true

@@ -226,4 +226,77 @@ func TestRevokeOnlyAfterAnswer(t *testing.T) {
 			assert.Equal(t, codeTexts(c.codes), codes)
 		})
 	}
+
+	// only an ACTIVE metering point is set inactive: the first end of the participation keeps its date
+	laterMs := time.Date(2026, 10, 20, 0, 0, 0, 0, time.Local).UnixMilli()
+	ccmc := func(tenant string, consentEndMs int64) {
+		msg := model.SubscribeMessage{MessageCode: model.EBMS_AUFHEBUNG_CCMC, Protocol: model.CM_REV_CUS, Tenant: strings.ToLower(tenant)}
+		require.NoError(t, json.Unmarshal([]byte(fmt.Sprintf(`{"conversationId":"CCMC%s","sender":"AT003000",
+			"receiver":"%s","messageCode":"AUFHEBUNG_CCMC","responseData":[{"meteringPoint":"%s","responseCode":[1099],
+			"consentEnd":%d,"consentId":"C-S4"}]}`, tenant, tenant, meter, consentEndMs)), &msg.Payload))
+		protocolCmRevImpHandler(context.Background(), msg)
+		flushMails(t)
+	}
+
+	t.Run("176 twice, then a second deregistration answered later: one mail, the first date stays", func(t *testing.T) {
+		const tenant, conversation = "TR238060", "RC238TR238060"
+		inboundFixture(t, tenant, tenant, ecId(tenant), meter, 238060, 1)
+		mails.Store(0)
+		request(tenant, conversation)
+		answer(tenant, model.EBMS_ANTWORT_CCMS, conversation, "176", requestedMs)
+		answer(tenant, model.EBMS_ANTWORT_CCMS, conversation, "176", requestedMs)
+		handle(tenant, model.EBMS_AUFHEBUNG_CCMS, conversation+"B", fmt.Sprintf(
+			`"meter":{"meteringPoint":"%s","consentId":"C-S4"},"consentEnd":%d`, meter, laterMs))
+		logged := logtest.Capture(t, func(w io.Writer) { logrus.SetOutput(w) })
+		answer(tenant, model.EBMS_ANTWORT_CCMS, conversation+"B", "176", laterMs)
+		assert.Equal(t, inactiveSince(requested), stateOf(tenant))
+		assert.Equal(t, int32(1), mails.Load())
+		assert.Contains(t, logged.String(), "event.action=eda.revoke.unchanged")
+	})
+
+	for i, c := range []struct{ name, codes string }{
+		{"CCMC first, then 177: the date of the CCMC stays", "177"},
+		{"CCMC first, then 176: the date of the CCMC stays, no second mail", "176"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			tenant := fmt.Sprintf("TR23807%d", i)
+			conversation := "RC238" + tenant
+			inboundFixture(t, tenant, tenant, ecId(tenant), meter, 238070+i, 1)
+			request(tenant, conversation)
+			ccmc(tenant, time.Date(2026, 10, 1, 0, 0, 0, 0, time.Local).UnixMilli())
+			// the CCMC sets the status, it leaves the process state of the fixture (INIT)
+			afterCcmc := state{"INACTIVE", "INIT", "2026-10-01"}
+			require.Equal(t, afterCcmc, stateOf(tenant))
+			mails.Store(0)
+			code := model.EBMS_ABLEHNUNG_CCMS
+			if c.codes == "176" {
+				code = model.EBMS_ANTWORT_CCMS
+			}
+			answer(tenant, code, conversation, c.codes, requestedMs)
+			assert.Equal(t, afterCcmc, stateOf(tenant))
+			assert.Equal(t, int32(0), mails.Load())
+		})
+	}
+
+	// A re-registration after a CCMC: during it the point is INACTIVE (process INIT … APPROVED), ABSCHLUSS_ECON sets it
+	// ACTIVE with the new activesince. A late answer to the old deregistration leaves the new participation either way.
+	t.Run("late answer after a re-registration: the new participation stays", func(t *testing.T) {
+		const tenant, conversation = "TR238080", "RC238TR238080"
+		inboundFixture(t, tenant, tenant, ecId(tenant), meter, 238080, 1)
+		request(tenant, conversation)
+		ccmc(tenant, time.Date(2026, 10, 1, 0, 0, 0, 0, time.Local).UnixMilli())
+		_, err := testDB.DbInstance.Exec(`UPDATE base.meteringpoint SET status = 'INACTIVE', process_state = 'PENDING'
+			WHERE tenant = $1 AND metering_point_id = $2`, tenant, meter)
+		require.NoError(t, err)
+		answer(tenant, model.EBMS_ANTWORT_CCMS, conversation, "176", requestedMs)
+		assert.Equal(t, state{"INACTIVE", "PENDING", "2026-10-01"}, stateOf(tenant), "during the re-registration")
+
+		_, err = testDB.DbInstance.Exec(`UPDATE base.meteringpoint SET status = 'ACTIVE', process_state = 'ACTIVE',
+			activesince = '2026-11-01', inactivesince = '2999-12-31' WHERE tenant = $1 AND metering_point_id = $2`, tenant, meter)
+		require.NoError(t, err)
+		mails.Store(0)
+		answer(tenant, model.EBMS_ANTWORT_CCMS, conversation, "176", requestedMs)
+		assert.Equal(t, state{"ACTIVE", "ACTIVE", "2999-12-31"}, stateOf(tenant), "after the re-registration")
+		assert.Equal(t, int32(0), mails.Load())
+	})
 }

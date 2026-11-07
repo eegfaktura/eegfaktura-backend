@@ -34,6 +34,7 @@ type MeteringPointRepository interface {
 	RegisterMeteringPoint(ctx context.Context, tenant, username, participantId string, point *model.MeteringPoint) error
 	RemoveMeteringPoint(ctx context.Context, tenant, participantId, meterId string) error
 	MeteringPointRevoke(ctx context.Context, tenant, meterId string, consentEnd civil.Date) error
+	MeteringPointRevokeActive(ctx context.Context, tenant, meterId string, inactiveSince civil.Date) (bool, error)
 	MeteringPointRevokeByConsentId(ctx context.Context, receiver string, consentId *string, meterId string, consentEnd civil.Date) ([]RevokedTenant, error)
 	ImportMeteringPoints(ctx context.Context, tenant, username, participantId string, point []*model.MeteringPoint) error
 	UpdateMeteringPoint(ctx context.Context, tenant, username, participantId, meterId string, meteringPoint *model.MeteringPoint) error
@@ -108,6 +109,10 @@ func (db *sqlDatabase) RemoveMeteringPoint(ctx context.Context, tenant, particip
 
 func (db *sqlDatabase) MeteringPointRevoke(ctx context.Context, tenant, meterId string, consentEnd civil.Date) error {
 	return meteringPointRevoke(ctx, db.db, tenant, meterId, consentEnd)
+}
+
+func (db *sqlDatabase) MeteringPointRevokeActive(ctx context.Context, tenant, meterId string, inactiveSince civil.Date) (bool, error) {
+	return meteringPointRevokeActive(ctx, db.db, tenant, meterId, inactiveSince)
 }
 
 func (db *sqlDatabase) MeteringPointRevokeByConsentId(ctx context.Context, receiver string, consentId *string, meterId string, consentEnd civil.Date) ([]RevokedTenant, error) {
@@ -721,6 +726,37 @@ func meteringPointRevoke(ctx context.Context, db *sqlx.DB, tenant, meterId strin
 		return model.ErrUpdateMeter(err)
 	}
 	return nil
+}
+
+// meteringPointRevokeActive sets the assigned metering point INACTIVE since inactiveSince after the grid operator's
+// answer to a deregistration (platform#238), but only while it is ACTIVE and its participation started on or before
+// that date: an answer that arrives twice, after a revocation by grid operator or member (CCMI/CCMC), or after a new
+// participation leaves the row and its date. It returns whether the row changed.
+func meteringPointRevokeActive(ctx context.Context, db *sqlx.DB, tenant, meterId string, inactiveSince civil.Date) (bool, error) {
+	statement, _, _ := goqu.Update(TABLE_METERINGPOINT).
+		Set(goqu.Record{
+			"process_state": model.INACTIVE,
+			"status":        model.INACTIVE,
+			"modifiedAt":    civil.Now(),
+			"modifiedBy":    "EVU",
+			"inactivesince": inactiveSince}).
+		Where(
+			goqu.C("tenant").Eq(tenant),
+			goqu.C("metering_point_id").Eq(meterId),
+			goqu.C("flag").Eq(model.F_ASSIGNED),
+			goqu.C("status").Eq(model.S_ACTIVE),
+			goqu.Or(goqu.C("activesince").IsNull(), goqu.C("activesince").Lte(inactiveSince))).
+		ToSQL()
+
+	res, err := db.ExecContext(ctx, statement)
+	if err != nil {
+		return false, model.ErrUpdateMeter(err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, model.ErrUpdateMeter(err)
+	}
+	return n > 0, nil
 }
 
 // RevokedTenant is a tenant in which a revocation was applied. WasActive tells whether the
