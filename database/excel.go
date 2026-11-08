@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -224,13 +225,42 @@ func ExportMasterdataToExcel(ctx context.Context, participants []*model.EegParti
 	if err != nil {
 		return nil, err
 	}
-	err = generateParticipantMastersheet(ctx, f, participants, tariffMap, joiningFees, feeStates)
+	err = generateParticipantMastersheet(ctx, f, byMemberNumber(participants), tariffMap, joiningFees, feeStates)
 	if err != nil {
 		return nil, err
 	}
 
 	_ = f.DeleteSheet("Sheet1")
 	return f.WriteToBuffer()
+}
+
+// byMemberNumber orders the members of the export by member number (08.11.2026): numbers numerically ("2" before
+// "10"), then numbers with other characters alphabetically, members without a number last; equal numbers keep their
+// order. A copy: the caller's slice stays as it is.
+func byMemberNumber(participants []*model.EegParticipant) []*model.EegParticipant {
+	sorted := append([]*model.EegParticipant(nil), participants...)
+	rank := func(p *model.EegParticipant) (int, int64, string) {
+		nr := strings.TrimSpace(p.ParticipantNumber.String)
+		if nr == "" {
+			return 2, 0, ""
+		}
+		if n, err := strconv.ParseInt(nr, 10, 64); err == nil {
+			return 0, n, nr
+		}
+		return 1, 0, strings.ToLower(nr)
+	}
+	sort.SliceStable(sorted, func(i, j int) bool {
+		gi, ni, si := rank(sorted[i])
+		gj, nj, sj := rank(sorted[j])
+		if gi != gj {
+			return gi < gj
+		}
+		if ni != nj {
+			return ni < nj
+		}
+		return si < sj
+	})
+	return sorted
 }
 
 func generateEegMastersheet(f *excelize.File, eeg *model.Eeg) error {
