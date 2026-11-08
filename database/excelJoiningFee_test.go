@@ -2,6 +2,7 @@ package database
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 
@@ -65,8 +66,18 @@ func TestExportMasterdataToExcel_joiningFee(t *testing.T) {
 			JoiningFee: &model.JoiningFeeDocument{DocumentNumber: "RG-FREMD", DocumentDate: "2026-02-01"}},
 	}
 
+	t.Run("the tax number of a member is not exported", func(t *testing.T) {
+		withFee.TaxNumber = null.StringFrom("11 123/4567")
+		defer func() { withFee.TaxNumber = null.String{} }()
+		buf, err := ExportMasterdataToExcel(context.Background(), participants, eeg, tariffNames, joiningFees, states)
+		require.NoError(t, err)
+		rows := exportRows(t, buf)
+		assert.NotContains(t, rows[0], "SteuerNr.")
+		assert.NotContains(t, rows[1], "11 123/4567")
+	})
+
 	t.Run("with the list from billing", func(t *testing.T) {
-		buf, err := ExportMasterdataToExcel(participants, eeg, tariffNames, joiningFees, states)
+		buf, err := ExportMasterdataToExcel(context.Background(), participants, eeg, tariffNames, joiningFees, states)
 		require.NoError(t, err)
 		rows := exportRows(t, buf)
 		require.Len(t, rows, 4, "header + one row per metering point")
@@ -92,7 +103,7 @@ func TestExportMasterdataToExcel_joiningFee(t *testing.T) {
 	})
 
 	t.Run("empty list: no final document yet", func(t *testing.T) {
-		buf, err := ExportMasterdataToExcel(participants, eeg, tariffNames, joiningFees, []model.JoiningFeeState{})
+		buf, err := ExportMasterdataToExcel(context.Background(), participants, eeg, tariffNames, joiningFees, []model.JoiningFeeState{})
 		require.NoError(t, err)
 		rows := exportRows(t, buf)
 		tariffCol := column(t, rows[0], "Mitgliedstarif")
@@ -103,7 +114,7 @@ func TestExportMasterdataToExcel_joiningFee(t *testing.T) {
 	})
 
 	t.Run("without a list", func(t *testing.T) {
-		buf, err := ExportMasterdataToExcel(participants, eeg, tariffNames, joiningFees, nil)
+		buf, err := ExportMasterdataToExcel(context.Background(), participants, eeg, tariffNames, joiningFees, nil)
 		require.NoError(t, err)
 		rows := exportRows(t, buf)
 		require.Len(t, rows, 4)

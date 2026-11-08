@@ -18,6 +18,7 @@ func TestInboundMessage_geaTenantByMeteringPoint(t *testing.T) {
 	const ecId = "AT00300000000GC000041000000000001"
 	const first, second = "GC000041", "GC000041-002"
 	const meter = "AT0030000000000000000000000041002"
+	cleanupCommunities(t, first, second)
 	for _, tenant := range []string{first, second} {
 		_, err := testDB.DbInstance.Exec(`INSERT INTO base.eeg
 			(tenant, name, description, "rcNumber", area, gridoperator_code, gridoperator_name, "communityId",
@@ -80,6 +81,7 @@ func TestPodList_geaSyncsEveryTenant(t *testing.T) {
 	const ecId = "AT00300000000GC000042000000000001"
 	const first, second = "GC000042", "GC000042-002"
 	meters := map[string]string{first: "AT0030000000000000000000000042001", second: "AT0030000000000000000000000042002"}
+	cleanupCommunities(t, first, second)
 	for _, tenant := range []string{first, second} {
 		_, err := testDB.DbInstance.Exec(`INSERT INTO base.eeg
 			(tenant, name, description, "rcNumber", area, gridoperator_code, gridoperator_name, "communityId",

@@ -32,7 +32,6 @@ func PartialWrap(code int) func(err error) *VfeegError {
 
 var ErrParseJson = PartialWrap(2000)
 
-var ErrConnectDatabase = PartialWrap(999)
 var ErrOpenTx = PartialWrap(998)
 
 var ErrGetEeg = PartialWrap(1000)
@@ -42,7 +41,6 @@ var ErrCompleteParticipant = PartialWrap(1101)
 var ErrUpdateParticipant = PartialWrap(1102)
 var ErrInsertParticipant = PartialWrap(1103)
 var ErrRegisterParticipant = PartialWrap(1104)
-var ErrArchiveParticipant = PartialWrap(1105)
 var ErrFindParticipant = PartialWrap(1106)
 var ErrDeleteParticipant = PartialWrap(1107)
 
@@ -50,10 +48,17 @@ var ErrDeleteParticipant = PartialWrap(1107)
 // (ErrFindParticipant, "participant not found"); getrennt werden die beiden nur im Log.
 var ErrForeignTenantParticipant = PartialWrap(1108)
 
+// A metering point of the member was active or is on its way there: the delete would take its history along.
+var ErrParticipantHasActivatedMeter = PartialWrap(1109)
+
 var ErrRemoveMeteringPoint = PartialWrap(1201)
 var ErrStatusMeter = PartialWrap(1202)
 var ErrSaveMeteringPoint = PartialWrap(1203)
-var ErrWrongActivationCode = PartialWrap(1204)
+var ErrUnknownActivationMode = PartialWrap(1204)
+
+// activationMode OFFLINE (ANFORDERUNG_ECOF with activation code): the grid operators no longer
+// support it (decision 2026-10-30). Rejected before anything is written or sent.
+var ErrOfflineRegistrationUnsupported = PartialWrap(1205)
 
 var ErrEdaCommunication = PartialWrap(5000)
 var ErrRequestEnergyData = PartialWrap(5100)
@@ -100,10 +105,10 @@ func NewLogMessageFromVfeegError(identifier string, err error) *LogMessage {
 	switch {
 	case errors.As(err, &e):
 		lm.MessageCode = fmt.Sprintf("E_DB_%d", e.Code)
-		lm.Message = e.Err.Error()
+		lm.Message = UserText(e.Err)
 	default:
 		lm.MessageCode = "E_UNDEFINED_0"
-		lm.Message = err.Error()
+		lm.Message = UserText(err)
 	}
 	return lm
 }

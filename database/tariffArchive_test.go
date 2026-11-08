@@ -25,7 +25,7 @@ func TestArchiveTariff_inUse(t *testing.T) {
 	}
 	newTariff := func(t *testing.T, name string) string {
 		tariff := model.Tariff{Name: name, Type: "EEG", BillingPeriod: "monthly"}
-		require.NoError(t, db.AddTariff(tenant, "test", &tariff))
+		require.NoError(t, db.AddTariff(context.Background(), tenant, "test", &tariff))
 		return tariff.Id.String()
 	}
 	status := func(t *testing.T, id string) string {
@@ -107,7 +107,7 @@ func TestArchiveTariff_inUse(t *testing.T) {
 
 	t.Run("tariff of another tenant is not found and stays", func(t *testing.T) {
 		foreign := model.Tariff{Name: "fremder Tarif", Type: "EEG", BillingPeriod: "monthly"}
-		require.NoError(t, db.AddTariff("TE000418", "test", &foreign))
+		require.NoError(t, db.AddTariff(context.Background(), "TE000418", "test", &foreign))
 		t.Cleanup(func() {
 			_, _ = testDB.DbInstance.Exec(`DELETE FROM base.tariff WHERE tenant = 'TE000418'`)
 		})

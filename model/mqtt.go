@@ -130,6 +130,8 @@ type Meter struct {
 	PlantCategory string        `json:"plantCategory,omitempty"`
 	Share         float64       `json:"share,omitempty"`
 	ConsentID     string        `json:"consentId,omitempty"`
+	TechCode      string        `json:"techCode,omitempty"` // inbound ECMPList: TechCode of the metering point (platform#229)
+	FuelCode      string        `json:"fuelCode,omitempty"` // inbound ECMPList: FuelCode of the metering point (platform#229)
 }
 
 type ResponseData struct {
@@ -166,6 +168,8 @@ type EbmsMessage struct {
 	ErrorMessage       string             `json:"errorMessage,omitempty"`
 	ConsentEnd         int64              `json:"consentEnd,omitempty"`
 	Reason             string             `json:"reason,omitempty"`
+	EcZoneLevel        *int               `json:"ecZoneLevel,omitempty"` // inbound ECMPList: Nahebereich 1–7 (platform#229)
+	EcTypeEda          string             `json:"ecTypeEda,omitempty"`   // inbound ECMPList: ECType as received, e.g. "PP"
 }
 
 func (ebms EbmsMessage) Meters() []string {

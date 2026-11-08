@@ -8,16 +8,17 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
-### Added
-- **Health endpoints for Kubernetes probes:** `GET /healthz` (liveness, always `ok`, no dependency checks) and
-  `GET /readyz` (readiness, `ok` when Postgres answers `SELECT 1`, otherwise 503 `unavailable`), served
-  on the main HTTP port without a bearer token. The public ingress blocks `/api/healthz` and `/api/readyz`
-  (vfeeg-development/eegfaktura-gitops#159); kubelet probes reach the pods directly. They answer only
-  `ok`/`unavailable`. `/readyz` pings on its own short-lived connection outside the
-  application pool (driver timeouts: connect 2 s, statement 2 s); at most one ping runs at a time and calls within
-  1 s share its result, so callers cannot multiply the database load. If Postgres refuses the ping with
-  `too_many_connections` (SQLSTATE 53300), `/readyz` still answers `ok` and logs a warning at most once a minute: the
-  application pool can still serve, and saturation of the shared Postgres must not take the service out of service.
+### Changed
+- **Master data export ordered by member number** (08.11.2026): the sheet „Mitglieder“ of `GET/POST
+  /eeg/export/masterdata` lists the members by member number — numbers numerically („2“ before „10“), then numbers
+  with other characters alphabetically, members without a number last; a member's rows stay together. Before, the
+  order of the participant query. Columns and values are unchanged.
+
+### Changed
+- **CI: no image build for a commit that only changes `CHANGELOG.md`** (platform#239): pushes and pull requests whose
+  only change is the CHANGELOG, such as the release PR, skip the image build and the checks (PR checks, security
+  scan, Snyk Code; the weekly schedules still run). Tag pushes still build. A release promotes
+  the image of the last commit before the release PR; it has the same content.
 
 ### Contract
 - **`revokemeters` reads `reason`, not `to`, and has three new 400 answers.** The only caller is eegfaktura-web
@@ -27,20 +28,6 @@ this changelog highlights the changes relevant for overview and operations.
   does not belong to the member `{pid}`; **5013** a metering point has no active entry of the member (nothing is sent).
   The web shows them readable (eegfaktura/eegfaktura-web#245). Downstream eda-xp writes the reason to CMRevoke as
   ReasonKey 0 + Reason (eegfaktura/eegfaktura-eda-xp#59).
-- **New caller of `GET /participant`: eegfaktura-energystore** (energystore 261025-ca1). energystore forwards a
-  member's bearer token (header `tenant`, once per tenant of the token) and reads `meters[].meteringPoint`, `meters[].status` (`ACTIVE`/`INACTIVE`/`INIT`/…, absent when empty), `meters[].registeredSince` and
-  `meters[].participantState.activeSince`/`inactiveSince` (yyyy-mm-dd or null) to find the member's own metering
-  points and their participation windows. A change to these fields, the route or its status codes (200 with a JSON
-  array) is a cross-component change. Contract test: `model/participant_contract_test.go`.
-
-### Security
-- **CI: the release workflow pins its actions by commit SHA** (eegfaktura-dev tracking W-261028-mm6). `rolling-release.yml`
-  builds and pushes the shipped image, but used floating tags (`@v4`, `@v3`, …); a moved tag ran in the job that holds
-  the push credentials. Now every action is pinned to a commit, the same SHAs `pr-checks.yml` and `security-scan.yml` already
-  use where the action is the same, otherwise the commit the floating tag pointed to on 2026-10-28.
-- **Keycloak sample configuration** (tracking 1): security relevant — details not published. The `keycloak.json` in
-  the repository is now a sample. Deployments that mount their own file via `KEYCLOAK_CONFIG` are not affected; a
-  local run without `KEYCLOAK_CONFIG` needs its own `keycloak.json` (see README, not to be committed).
 
 ### Fixed
 - **A revoke only reaches metering points of the member in the path** (pre-existing, found in the review of
@@ -67,6 +54,552 @@ this changelog highlights the changes relevant for overview and operations.
   on its protocol topic, and the backend stores that echo in the EDA process history (`db.SaveHistory`), so the reason
   text now lands in the stored history; eda-xp also keeps it in its conversation store. Before, both held no reason
   because none was ever sent. The web asks not to enter personal data in the field.
+
+## [1.17.0] – 2026-11-07
+
+### Security
+- **Inbound EDA messages** (backend 261105-mm5): security relevant — details not published.
+
+### Added
+- **Log events of the interval change** (eegfaktura-dev#54 #5): `event.action=eeg.settlement_interval.changed` (INFO)
+  with `settlementInterval.old`, `settlementInterval.new` and `settlementInterval.effectiveFrom` (empty: at once);
+  `eeg.settlement_interval.refused` with `code` and the reason in `event.reason` (INFO for a change the rule blocks,
+  409; WARN for invalid input, 400); `eeg.settlement_interval.failed` (ERROR, 500). `tenant.id` from the checked
+  request, no user name. A dry run logs only a refusal of invalid input (400), not its decision. If reading the EEG
+  back fails after the change is stored, the answer is 200 with `eeg: null` and a note in `message`, logged as
+  `eeg.settlement_interval.reload_failed` (WARN); before, 500 (1063) although the change was stored.
+
+### Changed
+- **Deregistering a metering point: inactive only after the grid operator's answer** (platform#238, covers
+  platform#125). **Behaviour change for the EEGs:** sending a deregistration (`AUFHEBUNG_CCMS`) no longer sets the
+  metering point INACTIVE; it stays as it is, the process history and the notification show the request. The answer
+  decides: `ANTWORT_CCMS` 176 and `ABLEHNUNG_CCMS` 177 (no data release) or 180 (consent expired) set it INACTIVE,
+  since the consent end of the EEG's request (found in the process history by tenant and conversation id; without it
+  the consent end the answer carries, which eda-xp copies from its stored request; only then the day the answer
+  arrives; logged as `eda.revoke.request_not_found`, `eda.revoke.request_without_end` or
+  `eda.revoke.history_lookup_failed`). Only an ACTIVE metering point changes: a repeated answer, an earlier
+  revocation by grid operator or member (CCMI/CCMC) or a new participation keep their status and date
+  (`eda.revoke.unchanged`). A rejection with 82, 187, another or no code leaves the status; notification and history
+  as before. Before, a rejected deregistration left the point INACTIVE. The member mail (platform#116) goes out on
+  176 only and only when the point changed; none on 177/180 (decided 07.11.2026). Log
+  `event.action=eda.revoke.inactive` (INFO, tenant, conversation id, codes, no personal data);
+  `eda.revoke.date_mismatch` (WARN) when the answer carries another date than the request. Points already set
+  INACTIVE by a rejected deregistration are not reset. Known limit: if neither the stored request nor the answer carries a date, today is used;
+  then a late answer after a re-registration whose new participation started on or before today can still end it
+  (logged as `eda.revoke.request_not_found` or `eda.revoke.request_without_end`).
+- **`POST /eeg/settlementinterval`: a gap in the final periods blocks the change** (rule 6, eegfaktura-dev#54 #2):
+  A month without a final period in the 12 months up to and
+  including the last final month L (L-11 … L) blocks the change, before the other checks; the message names it, e.g.
+  „Februar 2026 ist noch nicht endgültig abgerechnet.“ An older gap does not block: an allowed change adds a hint to
+  its message, e.g. „Hinweis: März bis Mai 2024 wurden nicht endgültig abgerechnet.“ (at most five gaps named, then
+  „und N weitere Zeiträume“) (rule 6, eegfaktura-dev#54 #2,
+  decided 05.11.2026, window decided 06.11.2026 from prod data: without it 13 communities would be blocked, five of
+  them for good by gaps in 2023/24; months before the first final period do not count).
+- **`POST /eeg/settlementinterval`: an unreadable `billingState` is refused** (eegfaktura-dev#54 #9): an invalid
+  value, the current value or a missing `billingState` is 400 (1060, 1061); so is (1060, eegfaktura-dev#54 #9) a
+  `billingState` with a list missing or `null`, or with an identifier the rule cannot read (another form than billing's
+  `Abr_(Y|YH|YQ|YM)-yyyy[-n]`, a period out of range, a year outside 2000–2100; the message names them, at most five,
+  each cut to 40 characters), and (2000) data after the JSON body;
+  before, such a state read as "nothing billed" and the change applied at once.
+- **The start-up log names the migration result** (eegfaktura-dev#54 #4): one line `event.action=db.migrate.done` with
+  `migration.versionBefore`, `migration.versionAfter` (0: no version) and `migration.applied` (0 with the message
+  `database schema unchanged (no_change)`), so a run that skipped migrations is visible. A failed migration is one
+  ERROR line `db.migrate.failed` (before: `log.Fatal` with the bare error, then nothing). The migrations run on a
+  connection of their own, closed afterwards (before: one connection of the pool stayed held).
+- **Migrations wait at most 60 s for a lock** (eegfaktura-dev#54 #1): the migration connection sets `lock_timeout`
+  (60 s per lock wait of the connection, also the wait for the migration lock while the driver opens; golang-migrate's
+  own wait for that lock in `Up` ends after 15 s). Before, a migration behind a long transaction or a
+  `pg_dump` kept the start waiting with no log after `Start migration ...`, and the API down (one replica,
+  `Recreate`). Now the start fails with `event.action=db.migrate.failed` and a message naming the lock wait and
+  `pg_stat_activity` (detected by SQLSTATE 55P03); the pod restarts. A migration file that was started stays dirty:
+  recovery in the README, section "Failed migration (dirty)". `error.message` of a failed migration is the first line
+  of the error, at most 200 characters (golang-migrate's text holds the whole file).
+- **A dirty migration version points to its recovery** (eegfaktura-dev#54 #3): one ERROR line
+  `event.action=db.migrate.dirty` with `migration.version` and the pointer to the README section "Failed migration
+  (dirty)", at start on a dirty version and when a migration file fails. Before, only golang-migrate's
+  `Dirty database version … Fix and force version.`, which names a CLI that is not in the image and is wrong for an
+  invalid index; that text is no longer logged (a failed file keeps its own error in `error.message`).
+- **`POST /eeg/settlementinterval`: an unreadable body is a warning** (eegfaktura-dev#54 #12): 400 (code 2000) with
+  the text „Die Anfrage konnte nicht gelesen werden (kein gültiges JSON)“ and `"error":"Bad Process"` like the other
+  answers of the route (a body over 1 MiB: „Die Anfrage ist zu groß“); the decoder's text (Go type and field names)
+  only in the WARN line. Before, ERROR and the
+  decoder's text in the answer.
+- **A refused GraphQL `updateEegModel` is logged** (eegfaktura-dev#54 #13): one WARN line
+  `event.action=graphql.update_eeg_model.refused` with the reason (no admin group, tenant argument); the access line
+  still says 200, the error is in the GraphQL answer. `EegModel.settlementInterval` is marked `@deprecated` in the
+  schema with a description that it is ignored; the behaviour is unchanged (dropped, no error).
+- **Consent revocations by grid operator or customer** (AUFHEBUNG_CCMC/CCMI, backend 261105-mm5): a revocation is
+  applied only to metering points of the communities of the receiving RC number. A revocation that matches none of
+  them changes nothing and sends no mail; it is recorded in the history of the receiving community, as an unmatched
+  revocation was so far.
+
+### Fixed
+- **`ANTWORT_CCMS` 176 without a stored request no longer sets `inactivesince` to 01.01.1970** (platform#238): when
+  the answer carried no consent end (eda-xp had no stored request), the date became 01.01.1970. Now the date
+  follows the chain above, at the latest the day the answer arrives.
+- **`ABLEHNUNG_CCMS` with a `meter` element keeps its reason codes** (platform#238): such a rejection was read like
+  the echo of the EEG's own deregistration and got the code 99 („Meldung erhalten“); its codes from `responseData`
+  were lost. Now the codes always come from `responseData`, the metering point too (the `meter` element only when
+  it is missing there). eda-xp does not deliver such a rejection today.
+- **GraphQL `updateEegModel` refuses a foreign tenant argument** (eegfaktura-dev#54 #6):
+  A `tenant` argument or `EegModel.tenant` other than the `tenant` header (case-insensitive) is an error and nothing
+  is written (eegfaktura-dev#54 #6); before, the argument was ignored and the write went to the header's community.
+- **Rollout and recovery of migrations** (eegfaktura-dev#54 #1 #3), for the release notes of 1.16.0 (index
+  `20261105110100`): **Rollout:** plan a short outage window outside the backup window: the backend runs one replica (`Recreate`) and
+  migrates before it serves, so the API is down (502) while the migrations run or wait (eegfaktura-dev#54 #1).
+  Right before, check for long transactions or a running `pg_dump`, which `CREATE OR REPLACE VIEW` and
+  `CREATE INDEX CONCURRENTLY` wait behind (expected: no row older than a few seconds):
+  `SELECT pid, state, now() - xact_start AS age, left(query, 60) FROM pg_stat_activity WHERE datname =
+  current_database() AND xact_start IS NOT NULL AND pid <> pg_backend_pid() ORDER BY xact_start;`. Run the release
+  outside the backup window (`pg_dump`). A lock wait longer than 60 s ends the migration (see Changed: lock
+  timeout) and the backend exits. A timeout before a migration file starts (the migration lock, the version check)
+  changes nothing: the restart simply tries again. A timeout inside a file leaves its version dirty, and the pod
+  keeps restarting until it is recovered by hand as in the README, section "Failed migration (dirty)"; a restart
+  alone does not heal it. If the pod was stopped
+  while the build of `metering_partition_factor_tenant_idx` waited (eegfaktura-dev#54 #3), PostgreSQL may finish the build anyway: `dirty = true` with
+  `indisvalid = true`; then only `UPDATE base.schema_migrations SET version = 20261105110100, dirty = false` and
+  restart. All cases: README, section "Failed migration (dirty)".
+- **Rollback without the migrate CLI** (eegfaktura-dev#54 #14), for the three migrations of backend#145/#146 (`20261105110000`,
+  `20261105110100`, `20261105120000`), by hand without the migrate CLI (not in the image): the schema can stay, an
+  older image (1.15.x) works with the view, the index and the table. It does not start, though, while
+  `base.schema_migrations` holds a version it does not know (golang-migrate: `no migration found for version …`), so
+  before deploying it: `UPDATE base.schema_migrations SET version = 20261028130000, dirty = false;`. Rolling forward
+  again runs the three files again (`CREATE OR REPLACE VIEW`, `IF NOT EXISTS`); the records in
+  `base.settlement_interval_change` stay. Taking the schema back too is not needed; if wanted, after the version
+  reset: `DROP INDEX CONCURRENTLY IF EXISTS base.metering_partition_factor_tenant_idx;` and the content of
+  `20261105110000_activemeteringpartition_tenant.down.sql`; `DROP TABLE base.settlement_interval_change` would delete
+  the records of the interval changes. 1.16.0 also holds the P2P/EVA migrations (`20261106090000`, `20261106100000`):
+  a rollback behind them follows the README, section "Rollback to an older image".
+- **Two api tests pass when run again** (tracking backend 261105-mm6): `TestAddTariff_joiningFee` removes the tariff it
+  creates, `TestRequestMeteringPointValues` the energy request rows it stores; `go test -count=2` failed on both.
+
+## [1.16.0] – 2026-11-06
+
+### Security
+- **Base image `debian:trixie-20261027-slim`** (published 2026-10-28) instead of `trixie-20261020-slim`: current Debian security updates of the runtime image.
+
+### Added
+- **Start-up line and `deployment.environment`** (dev#45 L14, Q5): one line `service start` (`event.action=service.start`)
+  with version and effective log level (`log.effective_level`), written by `logging.Setup` whatever `LOG_LEVEL` says, no
+  secrets. `deployment.environment` on every line
+  from the new optional env `DEPLOYMENT_ENVIRONMENT`; the field is left out when unset.
+- **Never-log test** (dev#45 L11, `logging/neverlog_test.go`, no new dependency): type-checks the source and fails on a
+  struct or `http.Header` printed whole in a log call (verb, bare argument, field value), `%+v`/`%#v` of an interface,
+  and names of personal data or secrets among the identifiers of log calls, split into words (camelCase, snake_case) and
+  compared as whole words with the list common to all services (also with a plural s; in an all lower-case identifier a
+  list word of five or more letters also inside it), and a list word right before a format verb (`password=%s`); other
+  string literals are not scanned, numbers, booleans and errors are skipped by type (dev#45 Q1). An
+  exception needs an entry, keyed by file and finding, with its reason in `neverLogAllowed`. `-short` skips the scan.
+- **EEG admins change the settlement interval** (konzept-abrechnungsintervall.md, platform#230; caller: eegfaktura-web):
+  `POST /eeg/settlementinterval` (EEG_ADMIN, tenant from the checked header) with `settlementInterval`, `dryRun` and
+  `billingState` (billing's `settlementState`, passed on by web). The rule: without a final period the change applies
+  at once unless a run is running; otherwise from the month after the last final period, if a period of the new interval starts there, and no
+  run is running for a period ending then or later. Answer 200 `{allowed, effectiveFrom, lastFinalPeriod, message,
+  earliestFrom, eeg}`; a blocked change without `dryRun` is 409 (code 1062) with the reason; an invalid value, the
+  current value or a missing `billingState` is 400 (1060, 1061). The change runs in one transaction on the locked
+  `base.eeg` row and is recorded with user, time, old and new value in the new table `base.settlement_interval_change`
+  (migration `20261105120000_settlement_interval_change`, down drops the table).
+- **Community types P2P and EVA** (Peer-to-Peer, Eigenversorgung; konzept-buergerenergie-eigenversorgung-p2p.md,
+  vfeeg-development/eegfaktura-platform#229 part 2): `area` knows `LOCAL`, `REGIONAL`, `BEG`, `GEA`, `P2P`, `EVA`, kept in
+  one list (`model.AreaTypes()`, `model.ValidateArea`, checked in `insertEeg` for both registrations). P2P and EVA
+  run centrally over ebUtilities like the BEG and may span several grid operators (konzept section J, 05.11.2026):
+  one rule `model.HasMultipleGridOperators` (BEG, P2P, EVA) replaces the BEG checks — messages go to the grid
+  operator of the metering point (the community's when the metering point has none; without either nothing is sent),
+  the metering point list is requested from the chosen grid operator (one of the community's, see Fixed). The RC number
+  stays unique (only GEA is excepted).
+  **Contract:**
+  - gRPC `register.proto` `GRID_AREA`: `P2P = 4`, `EVA = 5` appended (caller: eegfaktura-admin-backend, keep its copy
+    the same). A value the backend does not know (its name is the number) is refused with reply status 400 and no
+    gRPC error, like 409; nothing is written. Before, it was stored as the number.
+  - MQTT `register-eeg` (`registration.schema.json`): the `area` enum gets `P2P`, `EVA` (decode refuses other values;
+    `insertEeg` checks the same list).
+  - MQTT `eda/request` `ecType` (ANFORDERUNG_CPF, to eegfaktura-eda-xp): field unchanged, the new values pass through.
+  - View `base.billing_masterdata` (caller: eegfaktura-billing): new last column `eeg_area` (text, = `base.eeg.area`);
+    all other columns keep name, type and order. Migration `20261106090000_billing_masterdata_eeg_area`
+    (`CREATE OR REPLACE VIEW`; down restores the view as after `20261028130000_joining_fee`). No data change.
+  - `GET /eeg` `area` (web, admin portal): the new values, no new field.
+  **Deploy order:** eegfaktura-eda-xp → backend → eegfaktura-billing, eegfaktura-admin-backend → eegfaktura-admin,
+  eegfaktura-web → operator SQL (PP100784, PP102502 from LOCAL and PP102524 from BEG to P2P). Backend before
+  admin-backend: otherwise a P2P registration arrives as an unknown number; backend before billing: the new billing
+  reads `eeg_area`. **Rollback** (README, *Rollback to an older image*): the older image does not start on the
+  migrated database (`no migration found for version 20261106100000`), so the migrations go down **before** it starts.
+  Order: revert the operator SQL, roll back eegfaktura-billing#103 (it reads `eeg_area`), migrate down with the
+  new backend stopped (`migrate … down 2`; also behind backend#145/#146 `down 5`), then start the older image. The
+  `migrate down 2` of backend#146 alone no longer fits once this release is in.
+- **Nahebereich and TechCode/FuelCode from the metering point list** (konzept section J, platform#229): new columns
+  `base.eeg.ec_zone_level` (1–7, CHECK, empty = unknown) and `base.meteringpoint.tech_code`, `fuel_code` (text).
+  Migration `20261106100000_ec_zone_level_tech_fuel_code` fills `ec_zone_level` once from `area` (GEA 1, LOCAL 3,
+  REGIONAL 4, BEG 7; P2P/EVA stay empty until the first list), a new registration gets the same value
+  (`model.DefaultEcZoneLevel`); down drops the three columns.
+  `base.billing_masterdata` is unchanged. Only a metering point list (`SENDEN_ECP`) sets them; `ABSCHLUSS_ECON`
+  carries zone and type as well, but the backend does not read them there (eegfaktura-dev#56 #11). The list sets the
+  Nahebereich at every tenant of its community id (an absent value keeps the stored one, an invalid one is dropped
+  with a warning) and the codes at the metering points of these tenants (an empty code never overwrites). ECType
+  `RC_L`/`RC_R` sets `LOCAL`/`REGIONAL` at the tenants of the community id that have the other of the two (log event
+  `eeg.area.updated_from_list` with old and new value); the switch sets their Nahebereich to the list's
+  `ECZoneLevel`, or to empty when the list has none (eegfaktura-dev#56 #10; the old type's level would not fit). Any
+  other ECType that does not fit the community type (GEA GC, LOCAL RC_L, REGIONAL RC_R, BEG CC, P2P PP, EVA SC) only
+  logs a warning and changes nothing (eegfaktura-dev#56 #16). All three values are read only, and the generic updates
+  still drop `area`. Hardening of inbound metering point lists: security relevant — details not published.
+  **Contract:**
+  - MQTT from eegfaktura-eda-xp (EC_PODLIST): optional `ecZoneLevel` (number), `ecTypeEda` (text, EDA code as
+    received) and per `meterList` entry `techCode`, `fuelCode` (text); an old backend ignores them, an old eda-xp
+    does not send them. eda-xp's copy `src/test/resources/contract/backend/mqtt.go.txt` follows `model/mqtt.go`.
+  - `GET /eeg`: new field `ecZoneLevel` (number or null); metering points: `techCode`, `fuelCode` (text or
+    null). Callers: eegfaktura-web.
+  **Deploy order:** eegfaktura-eda-xp → backend (migration on start) → eegfaktura-web.
+
+### Changed
+- **An ERROR message of eegfaktura-eda-xp is logged with its reason** (eegfaktura-dev#56 #4): one ERROR line with
+  `event.action=eda.error.received`, the tenant, the code, the conversation in the text and eda-xp's `errorMessage`
+  as `error.message`. Before, the reason was dropped. A refused request (e.g. a CPF with an unknown `ecType`) still
+  answers 204 and leaves no process history; whether the community sees it is a follow-up.
+- **Log lines of the inbound metering point list and of a refused registration carry `event.action`**
+  (eegfaktura-dev#56 #12): `eda.podlist.no_community_id`, `eda.podlist.community_check_failed`,
+  `eda.podlist.foreign_community` (with the community id as `ecId`), `eda.podlist.zone_level_dropped`,
+  `eda.podlist.ectype_mismatch`, `eda.podlist.code_dropped` (no metering point number, the conversation instead),
+  `eeg.area.update_from_list_failed`, `eeg.register.refused`.
+- **`area` and `allocationMode` are dropped silently by the generic EEG updates** (platform#229, E5): `POST /eeg`, gRPC
+  `AdminEegService.updateValue` (class EEG) and GraphQL `updateEegModel` (no field for them; it maps only
+  `sepaActiv` and `settlementInterval`, the latter dropped) no longer change them, like `settlementInterval`. They
+  are set at registration, otherwise only by the operator; a P2P/EVA community can no longer switch itself to an
+  EEG type and around the billing block. No current caller changes them (web shows
+  `allocationMode` read-only and has no field for `area`; the admin tool edits only the settlement).
+- **`settlementInterval` is dropped silently by the generic EEG updates** (konzept-abrechnungsintervall.md): `POST /eeg`
+  and gRPC `AdminEegService.updateValue` (class EEG, caller: eegfaktura-admin-backend for the admin tool) no longer
+  change it, like the other protected fields; it changes only through `POST /eeg/settlementinterval`. Registration
+  still sets the initial value. GraphQL `updateEegModel` drops it the same way (see Fixed).
+  **Deploy order:** release eegfaktura-admin#79 (removes the edit field of the admin tool) together with or before this
+  backend; otherwise the old admin tool reports success over gRPC class EEG while nothing changes.
+- **`request.id` and `tenant.id` on the lines of an HTTP request** (dev#45 L12), no longer on the access line only;
+  `trace.id` and `span.id` come along. In a request `tenant.id` is only what passed the tenant check, a tenant field
+  of the line does not count. Not on: the notification DAO (`SaveNotification`, `SaveNotificationFromMap`,
+  `SaveHistory`), `SendMail`, the HTML mail parser and the lines of the MQTT send loop. No propagation over MQTT or
+  gRPC.
+- **One owner for the correlation fields** (dev#45 Q4): `request.id`, `trace.id`, `span.id` and `tenant.id` are written
+  by the context handler only, one key each; the same keys set on a line or through `With` are dropped (outside a
+  request a tenant field still counts, checked as above).
+- **Token check failures** (dev#45 Q6) log the error as `error.type`/`error.message` under a fixed message
+  (`token verification failed`, `no access token in the request or invalid Authorization header`) instead of the field
+  `error=JWT-Token` and the error in the text.
+- **Logging tests** (dev#45 Q2): one capture helper `logging/logtest` restores slog, logrus and the `log` package.
+- **Generated code is no longer tracked** (BE-CQ-23): `proto/*.pb.go` and `model/registration_model.go` are generated
+  by `make tools generate` (protoc on the `PATH`, generators at the `go.mod` versions); CI, the Dockerfile and the
+  README use it. A fresh clone did not compile before. The image build no longer runs gqlgen (`graph/generated` stays
+  tracked).
+- **Test helpers out of the service binary** (BE-CQ-30): Testcontainers, the Docker client and go-sqlmock are no
+  longer linked into it (`database/dbtest`, `database/dbmock`, test-only). Container tests: README notes
+  `go test -p 1 ./api ./database ./eda` for a shared Docker.
+- **Cleanup** (code-quality review 2026-11-03): removed unused code and files — `MigrateDatabase`, the `repository`
+  package, `UpdateTariff`/`OpenDbXConnection`, `GetTemplateFor`, unused response helpers in `api/common.go`
+  (`respondWithData` is `respondWithJSON`), unused middleware types (`BackendClaims`, `Authenticate`, `ClientCreds`,
+  `HasRole`, the superuser context key), `graph/gmodel/rate.go`, two unused error variables, the blank pgx import,
+  commented-out code in `server.go` and the DAOs, the unread `migration.sql`, `schema.hcl`,
+  `database/migration/000001_init-setup.up.sql` and config key `file-content.basedir`; stale Makefile targets
+  (`atlas-hash`/`atlas-diff` spelled right). The test seed data is `database/testdata/seed.sql`.
+
+### Fixed
+- **Inbound metering point list** (backend 261105-mm4): security relevant — details not published.
+- **Metering point list request only to a grid operator of the community** (eegfaktura-dev#56 #7):
+  `POST /eeg/sync/participants/{oid}` for BEG, P2P and EVA takes `{oid}` trimmed and upper-cased and sends only when it
+  is the grid operator of one of the community's metering points or the community's own; blank or another one answers
+  400 (code 5000) and sends nothing. Before, `{oid}` went out as given (lower case, blank or any operator, answer 204).
+  BEG had the same behaviour before this release and is fixed with it (same code path). A refusal of this route,
+  also a missing grid operator of an EEG, now answers 400 instead of 500. Caller eegfaktura-web offers only these
+  operators.
+- **Saving a metering point answers with the stored TechCode/FuelCode** (eegfaktura-dev#56 #14):
+  `PUT /meteringpoint/{pid}/update/{mid}` never stores them; its answer echoed the codes the client sent and now
+  carries the stored ones (empty when none or no row was updated). eegfaktura-web sends the codes unchanged and keeps
+  showing them, now from the stored values.
+  `PUT /meteringpoint/{pid}/create` (register) likewise no longer echoes them: a new metering point stores no codes, so the
+  answer carries none (eegfaktura-dev#56 #14, register).
+- **Confirming a member sends nothing when a grid operator is missing** (platform#229): every metering point's
+  receiver is determined first; one missing answers 400 before the member is confirmed.
+- **gRPC registration refuses an unknown allocation or settlement interval** (found in the review of backend#147): a
+  `GRID_ALLOCATION` or `EEG_SETTELMENT` value the backend does not know was stored as its number. Now reply status
+  400 without a gRPC error, nothing written (admin-backend treats every status but 201 as failed).
+- **gRPC registration refuses an unknown legal form** (found in the review of backend#147): an `EEG_LEGAL` value the
+  backend does not know was stored as its number. Now reply status 400 without a gRPC error, nothing written.
+- **Metering point master data of larger communities within the deadline again** (support ticket 6611200): the
+  view `base.activeMeteringPartition` numbered the partition factors of all communities before the community filter
+  of the query applied; as the inner side of a nested loop (chosen since 1.13) it did so once per metering point, and
+  `MasterData_MeteringPoint` (gRPC, caller eegfaktura-energystore) ran past its 5 s deadline
+  (`error fetch Meteringpoints`). Migration `20261105110000` partitions the window by `tenant` as well, so the filter
+  reaches the table: same columns, same rows (a member belongs to one community). Migration `20261105110100` adds
+  the index `metering_partition_factor_tenant_idx` (`CONCURRENTLY`). The members list (`completeParticipants`) now
+  also filters the view by tenant. No data change; no contract change.
+  **Rollout:** outside the backup window — check `pg_stat_activity` for long transactions or a running `pg_dump`
+  first: `CREATE OR REPLACE VIEW` and `CREATE INDEX CONCURRENTLY` wait behind them (old pods keep serving). After the
+  rollout `pg_index.indisvalid` of the new index must be true. If the index build failed or the index is invalid:
+  `DROP INDEX CONCURRENTLY IF EXISTS base.metering_partition_factor_tenant_idx`, then by hand
+  `UPDATE base.schema_migrations SET version = 20261105110000, dirty = false` (the migrate CLI is not in the image),
+  then restart. Never only reset the version: `IF NOT EXISTS` would keep the invalid index.
+- **GraphQL `updateEegModel` stores again** (tracking backend 261105-mm2): it returned the changed EEG but never stored
+  anything, also not `sepaActiv`. It now goes through the guarded update of `POST /eeg` (`updateEegPartial`, protected
+  fields dropped, `settlementInterval` included) for the tenant of the checked request, and returns the EEG read back.
+  `updateEegModel` requires the EEG admin group like `POST /eeg`; the other GraphQL operations stay in log-only mode.
+  No known caller (web's `updateEegModel` calls `POST /eeg`).
+- **A failed COMMIT is reported as an error** (BE-CQ-7, BE-CQ-8): registering and moving a metering point, adding a
+  tariff and activating metering points from an EDA message reported success when the COMMIT failed. Activating
+  metering points also went on to COMMIT after a failed step instead of rolling back. One helper (`inTx`) now runs the
+  transactions of the DAOs; a failed BEGIN in them is `ErrOpenTx` (code 998) — before, some wrappers returned the raw
+  driver error. Registering a metering point, adding a tariff and activating metering points do not take the cancel
+  of the caller's context, as before.
+- **`POST /participant`: a failed registration answers with a code** (caller: eegfaktura-web): code 1104 and a
+  generic message, as the member update does; not found and invalid input keep their own code and text (an invalid
+  e-mail address: code 2000 with the reason). Before, the body was `{}` (the error was joined with the rollback's and
+  lost its type). No database text goes to the client.
+- **No names or cell values in the warn lines of the Excel import** (dev#45 L1). The import result shown to the user
+  is unchanged; the lines no longer repeat names, status, energy direction or community id of the row.
+- **The raw `tenant` header stays out of the log** (dev#45 L2): a failed check logs `tenant check failed`. A superuser
+  skips the check, so `tenant.id` takes only a value that passes `^[A-Z0-9][A-Z0-9_-]{0,63}$` after upper-casing, on
+  every line; the tenant value is out of the message texts. A refusal for a missing admin group now carries the checked
+  `tenant.id`, also on its access line.
+- **No debug print of field values** in `util.ConvertMapToStruct` (dev#45 L11, found by the never-log test).
+- **`tenant.id` outside a request is written upper-cased** (dev#45 Q3), as it is checked; before, `te100100` passed
+  the check and was written as given.
+- **A handler panic after a flush aborts the connection** (dev#45 Q7) instead of a `WriteHeader(500)` on a response that
+  had already begun.
+
+## [1.15.1] – 2026-11-02
+
+### Fixed
+- **Partition factor changes** (backend 261005-ca4): security relevant — details not published.
+
+## [1.15.0] – 2026-11-02
+
+### Changed
+- **The tax number of a member is out of the master data Excel** (decided 2026-11-01). The sheet „Mitglieder“ of the
+  export no longer has the column „SteuerNr.“, so the columns after it move one to the left; the import ignores the
+  column `SteuerNr`. There is no field for it in the app, and documents carry the UID. Stored numbers stay in the
+  database and the billing view; the tax number of the community itself is unchanged.
+
+## [1.14.0] – 2026-10-31
+
+### Added
+- **Health endpoints for Kubernetes probes:** `GET /healthz` (liveness, always `ok`, no dependency checks) and
+  `GET /readyz` (readiness, `ok` when Postgres answers `SELECT 1`, otherwise 503 `unavailable`), served
+  on the main HTTP port without a bearer token. The public ingress blocks `/api/healthz` and `/api/readyz`
+  (vfeeg-development/eegfaktura-gitops#159); kubelet probes reach the pods directly. They answer only
+  `ok`/`unavailable`. `/readyz` pings on its own short-lived connection outside the
+  application pool (driver timeouts: connect 2 s, statement 2 s); at most one ping runs at a time and calls within
+  1 s share its result, so callers cannot multiply the database load. If Postgres refuses the ping with
+  `too_many_connections` (SQLSTATE 53300), `/readyz` still answers `ok` and logs a warning at most once a minute: the
+  application pool can still serve, and saturation of the shared Postgres must not take the service out of service.
+
+### Changed
+- **Every mail send waits 30 s for the mail server** (261030-mm7): before 5 s (30 s only above 256 KB of files;
+  the metering point list mail always 5 s). One constant `services.MailSendTimeout` for all sends. Before the
+  request, the backend now waits up to 5 s for the connection to the mail server; a server that does not get ready
+  in that time is a failed send. A slow mail server therefore holds the test mail of the mail editor up to 35 s
+  instead of 5 s, and the mail worker (next entry) up to 35 s per mail.
+- **Mails from the EDA handlers go through a background worker** (261030-mm7, user decision 2026-10-31): the activation,
+  zp-active, zp-inactive and metering point list mails were sent inside the single MQTT broker loop, so one slow mail
+  held every EDA message and API-triggered EDA request behind it. One in-process worker now sends them one at a
+  time, in order, after the handler's writes (`services.MailQueueSize` 1000 jobs, no new dependency or table). A GEA
+  zp-inactive mail is one job, so a member still gets it once. Results are reported as before, only later.
+  **In normal operation members see no change; during a relay outage their mails arrive later:** a job can take up to
+  35 s, so 100 queued mails can take about an hour (with the eda-xp#60 timeouts usually less) and nothing goes out
+  in between. A full queue blocks nothing: the mail is not sent, and the community gets an error notification "Die
+  Mail wurde nicht verschickt, weil gerade zu viele Mails anstehen oder der Dienst neu startet. Bitte später noch
+  einmal versuchen." plus an error log line. On SIGTERM the server gives running requests 8 s (the rest is cut off and
+  logged), waits up to 2 s for the broker handler, sends what is queued for up to 14 s (`services.MailStopLimit`) and
+  reports what is left the same way for up to 3 s (`services.MailReportLimit`), all before the database closes. The
+  pod has 30 s.
+  **The queue is in memory:** a crash or kill loses the queued mails, without a notification and without a retry; the
+  mail being sent then has no known result. There are no retries.
+  **Rollout: eegfaktura/eegfaktura-eda-xp#60 before this release.** With an old eda-xp, which has no SMTP timeouts, a
+  relay hanging before DATA runs into the backend's 30 s and reads as "vermutlich verschickt", although nothing was
+  delivered.
+- **Log output is now one JSON object per line on stdout, with ECS field names** (logging concept W-261008-ca2).
+  **This changes what operators, `kubectl logs` and Dynatrace receive:** before, logrus text (`time=… level=… msg=…`)
+  on stderr; now e.g. `{"@timestamp":"…Z","log.level":"info","message":"…","service.name":"eegfaktura-backend",
+  "service.version":"<commit>","tenant.id":"…"}` on stdout. Parse rules or dashboards on the old text format must be
+  redone. One logging module (`logging/`, Go `log/slog`) writes every line; the existing logrus calls are routed into it
+  unchanged in content. Field mapping: logrus `tenant` → `tenant.id`, `WithError` → `error.type` + `error.message`, the
+  caller → `log.origin.function`/`log.origin.file.name`/`log.origin.file.line`. Only listed fields are written
+  (`logging/logging.go`, `allowedFields`): a field a log call adds that is not on the list is dropped — the list holds
+  the fields the existing calls use. No new dependency.
+  - `LOG_FORMAT`: `json` (default) or `text` (`key=value`, for local runs).
+  - `LOG_LEVEL`: `trace`, `debug`, `info` (default), `warn`, `error`. **An unknown value now stops the start**
+    (exit code 2, message on stderr) — this includes `fatal` and `panic`, which logrus accepted before; before, an unknown value fell back to `info` with a warning. An empty `LOG_LEVEL` or
+    `LOG_FORMAT` is the default (same rule as energystore). Prod/pilot set `info`.
+  - `SERVICE_VERSION` → `service.version`: set in the image (Dockerfile `ARG`/`ENV`, passed by the release workflow: the
+    commit, or the version for a `v*` tag build); `dev` otherwise. A promoted prod/pilot image is the same digest
+    re-tagged, so it keeps its commit: the release version is the image tag, not `service.version`.
+- **Access line: one line per HTTP request** (`event.action=http.access`), written after the token check: method,
+  route template (`http.route`, e.g. `/eeg/tariff/{id}` — no ids, no query), status, `event.duration` (nanoseconds,
+  ECS), `event.outcome` (`success` for 2xx/3xx, `refused` for 401/403 at level warn, `failure` for any other status ≥ 400),
+  message `<method> <route> <status>`, `request.id`,
+  `tenant.id` (the tenant the request was allowed for; absent on refusals), `client.id` (the token's `azp` — the
+  Keycloak client, not a person) and, on `/query`, `graphql.operation.name`. `trace.id`/`span.id` when the request
+  has a W3C `traceparent`. **No user id, user name, e-mail, user agent, IP or query value** (no user tracking,
+  2026-10-29); a test guards the field list. `/healthz` and `/readyz` are not logged. `X-Request-Id` is taken from
+  the request when it is 1–128 characters of `[A-Za-z0-9._:-]` (ingress-nginx sends one), otherwise generated (UUID v4 as
+  32 hex characters), and returned in the response header. `traceparent` is checked strictly (no version `ff`, no
+  all-zero ids). The former per-request line `Access granted for tenant …` of `/query` is
+  replaced by the access line. The backend had no access log with IP or user agent before.
+  Requests that match no route (404) get an access line and `X-Request-Id` too, without `http.route` (message
+  `GET - 404`); the backend's router also answers a wrong method with 404. An anonymous GraphQL operation has no
+  `graphql.operation.name`. **Known limit:** GraphQL answers a refused or failed operation with HTTP 200 and an
+  `errors` array; its access line says `event.outcome=success` — the outcome reflects the HTTP status only (same in
+  energystore). More known limits (follow-ups, unchanged now): CORS preflights (`OPTIONS`, answered by the CORS wrapper
+  outside the access log) get no access line and no `X-Request-Id`; `X-Request-Id` is not an exposed CORS header and
+  `X-Request-Id`/`traceparent` are not in the allowed request headers, so browsers cannot send or read them; the
+  GraphQL websocket transport on `/query` is logged as one line with status 200 and the socket's lifetime as duration,
+  and operations on one socket share the operation name.
+- **A panic in a REST handler** is logged as one error line (`event.action=http.panic`, `error.type`, `error.message`,
+  `error.stack_trace`) and answered with 500; the access line says 500. Before, net/http logged `http: panic serving
+  <remote address>` with a plain stack (an IP in the log) and there was no access line. If the response had already
+  begun, the connection is aborted.
+- **A panic in a GraphQL resolver is logged as one error line** (`event.action=graphql.panic`, `error.type`,
+  `error.message`, `error.stack_trace`) through the logging module, instead of gqlgen's plain-text stack on stderr. The
+  client gets the same generic `internal system error` as before.
+- **The temporary line `gql-admin-check: non-admin token` no longer logs the user id (`sub`)** (no user tracking,
+  2026-10-29). It now holds `tenant.id`, `client.id`, `graphql.operation.name`, `operation_type`, `superuser` and
+  `access_groups.class` (`user`/`none`) instead of `azp`, `sub`, `access_groups_count`, `is_user` and `operation_name`;
+  the count of non-admin GraphQL calls stays available.
+
+### Removed
+- **Offline registration of metering points (`ANFORDERUNG_ECOF` with activation code)** — the grid operators no
+  longer support it (decision 2026-10-30; behaviour change towards the grid operators). The backend no longer sends
+  `ANFORDERUNG_ECOF`. On `PUT /meteringpoint/{pid}/create`, `POST /meteringpoint/{pid}/register` and
+  `POST /participant/{id}/confirm` a missing or empty `activationMode` now means `ONLINE` (before: `register`
+  answered 400 code 1204; `create` for an active member of an online EEG did the same, but only after the metering
+  point was saved; `confirm` sent an offline registration). For an **online EEG**, `activationMode: "OFFLINE"` is
+  answered with 400, code **1205**, message "Offline-Registrierung wird von den Netzbetreibern nicht mehr
+  unterstützt"; any other unknown value with 400, code 1204. In both cases nothing is written and nothing is sent —
+  on `confirm` the whole request is checked before the participant is confirmed; on `create` only a NEW metering
+  point of an active member is checked (other metering points are not registered, so the mode is ignored, as
+  before). **Non-online EEGs** never send a registration and keep ignoring the mode on all three routes.
+  eegfaktura-web has no text for code 1205 and shows the raw key
+  `E_1205_Offline-Registrierung wird von den Netzbetreibern nicht mehr unterstützt`; web 1.19.0 always sends `ONLINE`,
+  so only a tab still open on an older web gets it (**roll out web 1.19.0 first**). `activationCode` is no longer read (removed from
+  the request models; a client that still sends it is not rejected). Inbound `ANTWORT_ECOF`, `ZUSTIMMUNG_ECOF`,
+  `ABLEHNUNG_ECOF`, `ABSCHLUSS_ECOF` and `ABBRUCH_ECOF` are still processed, so offline registrations sent before
+  this release still complete. Web counterpart: eegfaktura/eegfaktura-web#246.
+
+### Contract
+- `DELETE /participant/v2/{id}`: new answer 409 with code 1109. Caller: eegfaktura-web, which shows its own text with
+  the matching version; an older web shows its general error message. No rollout order needed.
+- gRPC `RegisterEegService.register`: `RegisteredEegReply.status` can be **409** (tenant exists, no gRPC error). Caller:
+  admin-backend, which stops the registration on it (admin-backend PR of 261015-ca1). The proto is unchanged. Rollout
+  order: admin-backend, then backend, then admin. A new backend with an old admin-backend treats 409 as a failed
+  registration, without a Keycloak change, but still writes Ponton for the existing community.
+- REST `/eeg/tariff` (and the tariff history): `baseFee` can carry decimals, in the answer and on save (number or
+  string, as before). Whole amounts are unchanged. Web has no input for it and no display reads it (`TariffHelper`'s
+  `amountInEuro` has no caller), so there is no functional effect there. Billing reads the view, unchanged.
+- **Mail server answer status 202 = unconfirmed** (261030-mm7, with eegfaktura/eegfaktura-eda-xp#60, decided
+  2026-10-30): the xp-connector answers `SendMail` / `SendMailWithInlineAttachment` with status 202 ("SMTP
+  unconfirmed: …") when its SMTP read timeout hit after the mail body was sent (the relay probably accepted it). The
+  backend treats 202 like its own timeout: `ErrMailUnconfirmed`, notification code `W_MAIL_UNCONFIRMED`, test mail 504.
+  200 = sent; every other status stays a failure with the server's message, including 504 ("SMTP timeout: …",
+  nothing delivered).
+- **`activationMode` on `create`/`register`/`confirm` (see Removed):** callers are eegfaktura-web (before 1.19.0 it
+  offers the offline checkbox and sends `OFFLINE` + `activationCode`; 1.19.0, eegfaktura-web#246, always sends `ONLINE`).
+  eegfaktura-admin, eegfaktura-admin-backend and eegfaktura-eda-xp do not call these routes. Tests:
+  `api/offlineRegistration_test.go`, `eda/edaEcofInbound_test.go`.
+- **New caller of `GET /participant`: eegfaktura-energystore** (energystore 261025-ca1). energystore forwards a
+  member's bearer token (header `tenant`, once per tenant of the token) and reads `meters[].meteringPoint`, `meters[].status` (`ACTIVE`/`INACTIVE`/`INIT`/…, absent when empty), `meters[].registeredSince` and
+  `meters[].participantState.activeSince`/`inactiveSince` (yyyy-mm-dd or null) to find the member's own metering
+  points and their participation windows. A change to these fields, the route or its status codes (200 with a JSON
+  array) is a cross-component change. Contract test: `model/participant_contract_test.go`.
+
+### Security
+- **CI: the release workflow pins its actions by commit SHA** (eegfaktura-dev tracking W-261028-mm6). `rolling-release.yml`
+  builds and pushes the shipped image, but used floating tags (`@v4`, `@v3`, …); a moved tag ran in the job that holds
+  the push credentials. Now every action is pinned to a commit, the same SHAs `pr-checks.yml` and `security-scan.yml` already
+  use where the action is the same, otherwise the commit the floating tag pointed to on 2026-10-28.
+- **Keycloak sample configuration** (tracking 1): security relevant — details not published. The `keycloak.json` in
+  the repository is now a sample. Deployments that mount their own file via `KEYCLOAK_CONFIG` are not affected; a
+  local run without `KEYCLOAK_CONFIG` needs its own `keycloak.json` (see README, not to be committed).
+- **excelize pinned to `v2.11.1-0.20261003002531-6258dcebc4e2`** (commit 6258dceb of 2026-10-03, pseudo-version up to
+  v2.12.0; the latest release v2.11.0 of 2026-07-06 lacks the fixes). Closes the Dependabot alerts GHSA-mx22-3794-2vpv,
+  GHSA-jw42-f3rr-4cc3, GHSA-r7x5-4969-99p7, GHSA-x2q3-8cjh-766f, GHSA-wp2g-vpjj-g53r, GHSA-2j4c-ffch-9f23,
+  GHSA-c85p-xxjj-2r75, GHSA-fq3v-74gv-27gm, GHSA-jrfj-fhj2-jjvm (high) and GHSA-8mcq-6wmr-jrjv, GHSA-5h23-36rv-pm65,
+  GHSA-fw94-4wwp-w8pw, GHSA-g27h-8qhm-6pff, GHSA-rxcj-4pj5-74gr, GHSA-8jjq-8j9w-m2v6 (medium): panics, endless loops
+  and unbounded allocations on crafted workbooks — relevant for the master-data Excel import. Indirect modules moved
+  with it: `xuri/efp` v0.0.1 → v0.0.2 (2026-09-21), `richardlehane/mscfb` v1.0.7 → v1.0.8 (2026-08-19); `go.sum` also
+  records `golang.org/x/image` v0.44.0 (2026-07-08, excelize test-only). No change to import or export output.
+- **Bearer tokens: RS256 only** (platform#191). Both go-oidc verifiers took the allowed signing algorithms from
+  the Keycloak discovery (HS* and `none` were already dropped); they now accept RS256 only, as required.
+  - App verifier (`Protect`, `GQLProtect`, `ConditionProtect`): a client-supplied bearer token signed with
+    RS384/RS512/PS*/ES*/EdDSA under a realm key was accepted; it is now rejected (401).
+  - API verifier (`ProtectApi`): it only checks the ID token the backend fetches itself via password grant, so a
+    client cannot choose its algorithm. Effect: if the ID-token signature algorithm of the api client in
+    Keycloak were ever set to something other than RS256, every `ProtectApi` call would fail with 403.
+  - The Keycloak realms sign with one RS256 key, so logins are not affected.
+- **JWT library: `github.com/golang-jwt/jwt` v3.2.2+incompatible → `github.com/golang-jwt/jwt/v5` v5.3.1**
+  (platform#191). v3 is unmaintained (GO-2025-3553, no fix in v3). The library only decodes the token claims;
+  token validation (signature, `iss`, `exp`, `nbf`) is done by go-oidc and is unchanged by this entry (for the
+  allowed algorithms see "RS256 only" above). Two differences from the claim decoding: a token with `aud` as an
+  array and a fractional `exp` now decode and reach the tenant and admin checks. v3 failed to decode them: 401 on the bearer
+  paths (`Protect`, `GQLProtect`, `ConditionProtect`), 403 on `ProtectApi` (Basic auth). Keycloak issues integer `exp`.
+  **Behaviour change (accepted 2026-10-30): tokens of the admin frontend client `at.ourproject.vfeeg.admin` are now
+  accepted.** Its audience mapper gives `aud = [at.ourproject.vfeeg.admin, account]`; v3 refused these tokens with
+  401 only because the claims struct could not decode an array, not by design. The Go services deliberately check
+  neither `aud` nor `azp` (eegfaktura-docs `docs/architecture/auth.md`); filestore already accepts such tokens
+  (`aud` contains `account`). No new privilege for the user: the tenant and admin checks on the token's `tenant` and
+  roles are unchanged. A uniform `azp`/client rule across the services is an open point (eegfaktura-dev tracking
+  W-261030-mm2). The unused `jwt.TimeFunc` override is removed (nothing called the v3 validation). New regression
+  tests cover the validation paths without a live Keycloak.
+- `github.com/go-jose/go-jose/v4` 4.1.4 → 4.1.6 (indirect, Dependabot).
+
+### Fixed
+- **Registering an existing tenant is refused** (261015-ca1). The gRPC `register` answered 201 for a tenant that already
+  existed, dropped the given community data and admin-backend attached the new admin to that community. Now nothing is
+  written and the reply carries status 409; the comparison is case-insensitive. The same goes for a new tenant on an
+  existing RC number, except when it is registered with area GEA (stem and sub communities share the RC number). The MQTT
+  command `register-eeg` uses the same insert: it now
+  logs an error for an existing tenant instead of nothing, it writes and publishes nothing either way.
+- **Tariff list with a decimal `baseFee`** (261026-mm1). `base.tariff."baseFee"` is `double precision`, the model read it
+  as an integer, so one tariff with e.g. 2.25 failed the list of the whole community. The field is now a decimal type:
+  the amount is read and saved unchanged, which is also what billing reads from the view. A whole amount looks the same
+  in the JSON as before.
+- **A failing tariff query no longer looks like an empty list.** `GetTariff` returned an empty list without an error when
+  the query failed on the first row (with 261026-mm1 this hid the scan error for a community whose first tariff had
+  decimals). **This also reaches the Excel master-data export:** `GetTariffNameMap` reads the same list, so when the first
+  tariff of a community cannot be read, `GET /eeg/tariff` and the export answer an error instead of working with no tariffs.
+
+- **A member with a metering point that took part can no longer be deleted** (261005-ca10). `DELETE /participant/v2/{id}`
+  had no check and the delete cascaded to active and past metering points with their partition factors. It now answers
+  **409** with error code 1109 and deletes nothing, unless every metering point has status `INIT`, no `activesince` and
+  process state `INVALID`, `NEW` or `REJECTED`. `PENDING` is refused: the grid operator answered, the activation mail is out
+  and the member can still approve. A member without metering points can be deleted as before.
+- **Removing a single metering point no longer reports success when nothing was removed** (261005-ca10). In state `PENDING`
+  it is now refused for the same reason. Every refused state answered 202 and web dropped the metering point from the view
+  until the next load; it now answers 400 with code 1201 and web shows its error text.
+- Test only: `TestAccessLine_ThroughRouter` failed at random when a generated `request.id` contained `4711`, the value the test forbids in a line (261031-mm1). Generated values are now left out of that check.
+- Test only: six `eda` tests left fixed rows behind and failed at `-count=2` (261031-mm3); they now clean up.
+- **The consent-request mail goes out once per metering point** (261031-mm4): an answer with two metering points
+  carries code 99 twice and sent two mails per metering point.
+- **A partial delivery counts as sent for the next GEA tenant** (261031-mm5): the valid recipients already have the mail, so the second tenant no longer sends it again. The notification about the rejected address stays.
+- **A mail server failure answer without a message no longer panics** (261031-mm6).
+- **No e-mail addresses in the log from rejected or invalid addresses** (261031-mm7): the rejected-recipient error and
+  the `ValidateEmailList` text were logged in full. API answers on the REST routes and admin notifications keep the
+  address. **Changed for gRPC callers (admin-backend):** their error now reads "invalid email" without the address.
+- **A mail server timeout is no longer reported as "Mailversand fehlgeschlagen"** (261030-mm7): when the request
+  reached the mail server (xp-connector) but it did not answer within 30 s, the mail was probably sent anyway, and
+  communities that sent it again produced duplicates. Such a send is now logged as a warning and the admin
+  notification entry reads **"Zeitüberschreitung – die Mail wurde vermutlich trotzdem verschickt. Vor einem erneuten
+  Versand bitte beim Empfänger nachfragen."** (message code `W_MAIL_UNCONFIRMED`, kind `WARNING`, same metering point /
+  identifier as before) instead of the gRPC error `rpc error: code = DeadlineExceeded …` (code `E_UNDEFINED_0`).
+  The same applies when the mail server answers status 202 (see Contract).
+  Affects the zp-active / consent-request mail, the zp-inactive mail and the metering point list mail. The test mail
+  of the mail editor answers **504** with the same text instead of 502 "Die Testmail konnte nicht verschickt
+  werden.". In a GEA, a zp-inactive mail that was not confirmed counts as sent, so the second tenant does not send it
+  again. Real failures (connection refused, status other than 200, rejected recipients) keep their texts and codes;
+  a mail server that does not get ready within 5 s reads "mail server not reachable within 5s (state …)" (code
+  `E_UNDEFINED_0`) instead of the gRPC timeout error. A send error is logged once, by the caller. web shows the new entry after the prefix "Mailversand nicht
+  bestätigt:" (eegfaktura/eegfaktura-web#251); eda-xp gets SMTP timeouts in eegfaktura/eegfaktura-eda-xp#60.
+
+- **`service.version` in the log names the build.** Images built from a branch carried the branch name (`master`), which
+  cannot tell builds apart, and a promoted prod/pilot image keeps what was set at build time. It is now the commit, or
+  the version without `v` for a `v*` tag build; same as billing.
+
+- **`POST /participant/{id}/confirm` with a `null` element in the metering point array** answered with a panic; it
+  now answers 400, code 2000, before anything is written or sent (found in the review of
+  eegfaktura/eegfaktura-backend#129).
 - **Member list no longer fails when one member has no address, bank or contact row** (261029-mm1): the list LEFT JOINs
   both addresses, the bank account and the contact row; a member without a billing or residence address made the
   whole list of the community fail with a scan error. Such a member is now listed with empty fields, and saving the
@@ -87,8 +620,8 @@ this changelog highlights the changes relevant for overview and operations.
   `participantState` answer 400; `POST /meteringpoint/{pid}/register` for a metering point the member does not have
   answers 404; a partition factor request with an empty (`null`) metering point entry answers 400 on both routes.
   Before, the request panicked and the proxy answered 502.
-- **Logging** (261008-ca1): security relevant — details not published. Without `LOG_LEVEL` (or with an unknown value)
-  the backend now logs at `info` instead of `debug`; an unknown value is reported once at start. Log lines name ids
+- **Logging** (261008-ca1): security relevant — details not published. Without `LOG_LEVEL`
+  the backend now logs at `info` instead of `debug`; an unknown value stops the start (see Changed). Log lines name ids
   (tenant, member, metering point, conversation, tariff) or counts instead of names, whole objects, request bodies,
   free-text reasons, mail-server answers, message payloads or SQL statements.
 - **Partition factor routes stop after a failed MQTT send** (261015-ca2, pre-existing): `POST

@@ -21,12 +21,17 @@ on:
       - 'env/**'
     tags:
       - v*
+    # a commit that only changes the CHANGELOG (release PR) builds no image; the release promotes the image of the
+    # commit before (platform#239). Tag pushes still build: path filters do not apply to tags.
+    paths-ignore: ['CHANGELOG.md']
   # ready_for_review: a draft gets no image build; it runs once the PR is marked ready
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     branches:
       - master
       - main
+    # a pull request that only changes the CHANGELOG (release PR) builds no image either (platform#239)
+    paths-ignore: ['CHANGELOG.md']
 
 env:
   REGISTRY: "ghcr.io"
@@ -99,6 +104,11 @@ jobs:
           tags: ${{ steps.meta.outputs.tags || 'latest' }}
           labels: ${{ steps.meta.outputs.labels || '' }}
           annotations: ${{ steps.meta.outputs.annotations }}
+          # service.version in the log identifies the BUILD: the version for a tag build, else the commit (a branch
+          # name cannot tell builds apart). Prod/pilot images are re-tagged dev-tier digests (gitops promote-image.yml,
+          # no rebuild), so the release version of a running image is its tag, not this value.
+          build-args: |
+            SERVICE_VERSION=${{ github.ref_type == 'tag' && steps.meta.outputs.version || github.sha }}
 
       - name: Generate artifact attestation
         if: github.event_name == 'push'

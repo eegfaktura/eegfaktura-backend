@@ -64,13 +64,13 @@ func (rd *readiness) check() error {
 		// The app pool still holds its connections; saturation of the shared
 		// Postgres must not take the service out of the load balancer.
 		if time.Since(rd.saturatedLog) >= saturatedLogEvery {
-			log.Warnf("readyz: %v; reporting ready", rd.err)
+			log.WithContext(ctx).Warnf("readyz: %v; reporting ready", rd.err)
 			rd.saturatedLog = time.Now()
 		}
 		rd.err = nil
 	}
 	if rd.err != nil {
-		log.Warnf("readyz: database not ready: %v", rd.err)
+		log.WithContext(ctx).Warnf("readyz: database not ready: %v", rd.err)
 	}
 	return rd.err
 }

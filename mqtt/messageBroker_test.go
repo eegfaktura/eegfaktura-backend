@@ -1,10 +1,34 @@
 package mqttclient
 
 import (
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"at.ourproject/vfeeg-backend/model"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// The caller stops the mail worker and closes the database after Stop: a handler still running in
+// Listen must be finished by then.
+func TestMessageBroker_StopWaitsForTheRunningHandler(t *testing.T) {
+	m, err := NewMessageBroker()
+	require.NoError(t, err)
+	entered := make(chan struct{})
+	var finished atomic.Bool
+	m.Subscribe(model.Subscriptions{Protocol: model.CM_REV_IMP, Handler: func(model.SubscribeMessage) {
+		close(entered)
+		time.Sleep(100 * time.Millisecond)
+		finished.Store(true)
+	}})
+	go m.Listen()
+	m.Inbound <- InboundMessage{"TE000001", model.CM_REV_IMP, []byte(`{}`)}
+	<-entered
+
+	m.Stop()
+	assert.True(t, finished.Load())
+}
 
 func TestMessageBroker_command(t *testing.T) {
 

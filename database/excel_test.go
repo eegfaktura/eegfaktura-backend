@@ -35,7 +35,7 @@ func Test_transformExcelData(t *testing.T) {
 	require.NoError(t, err)
 
 	importLog := &model.Log{Operation: "Excel Master Data Import", Messages: []*model.LogMessage{}}
-	participants := transformExcelData(rows, func(id string) string { return id }, false, "AT00999900000TC100200000000000002", importLog)
+	participants := transformExcelData(context.Background(), rows, func(id string) string { return id }, false, "AT00999900000TC100200000000000002", importLog)
 
 	findParticipant := func(n string, p []*model.EegParticipant) *model.EegParticipant {
 		for i := range p {
@@ -48,7 +48,8 @@ func Test_transformExcelData(t *testing.T) {
 
 	assert.Equal(t, 7, len(participants))
 	assert.Equal(t, 2, len(findParticipant("Finnegan", participants).MeteringPoint))
-	assert.Equal(t, null.StringFrom("001-3456"), findParticipant("Finnegan", participants).TaxNumber)
+	// the template still has the column SteuerNr, the import leaves it out
+	assert.False(t, findParticipant("Finnegan", participants).TaxNumber.Valid)
 
 	assert.Equal(t, null.StringFrom("003"), findParticipant("Finnegan", participants).ParticipantNumber)
 	assert.Equal(t, null.StringFrom("005"), findParticipant("Beckett", participants).ParticipantNumber)
@@ -130,65 +131,6 @@ func TestImportMasterdataFromExcel(t *testing.T) {
 	}
 }
 
-//func TestImportMasterdataFromExcel(t *testing.T) {
-//	var mockDb, err = GetDatabaseMock()
-//	require.NoError(t, err)
-//
-//	reader, err := os.Open("../tests/TE100200-Muster-Stammdatenimport.xlsx")
-//	require.NoError(t, err)
-//	defer reader.Close()
-//
-//	type args struct {
-//		dbConn   OpenDbXConnection
-//		r        io.Reader
-//		filename string
-//		sheet    string
-//		tenant   string
-//	}
-//	tests := []struct {
-//		name    string
-//		args    args
-//		prepare func()
-//		test    func(t *testing.T, args args)
-//	}{
-//		{
-//			name: "import file",
-//			args: args{
-//				dbConn:   mockDb.OpenMockDb,
-//				r:        reader,
-//				filename: "TE100200-Muster-Stammdatenimport.xlsx",
-//				sheet:    "EEG Stammdaten",
-//				tenant:   "TE100200",
-//			},
-//			prepare: func() {
-//
-//			},
-//			test: func(t *testing.T, args args) {
-//				require.NoError(t, err)
-//				//mockDb.mock.ExpectExec("^INSERT INTO (.+) VALUES (.+)") //.WithArgs("firstname", "lastname")
-//				//mockDb.Mock.ExpectQuery("^SELECT (.+)").WillReturnError(sql.ErrNoRows)
-//				mockDb.Mock.ExpectBegin()
-//				// , 'excel', 'Mustermann', '001', '2023-08-19T13:15:07.776003233Z', 'ACTIVE', '001-9876', 'TE100200', '', '', '', DEFAULT
-//				mockDb.Mock.ExpectQuery("INSERT (.+)").WillReturnRows(sqlmock.NewRows([]string{"id"}).FromCSVString("1")) //.WillReturnResult(sqlmock.NewResult(1, 1)) //.WithArgs("firstname", "lastname")
-//				mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
-//				mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
-//				mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
-//				mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
-//				//mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
-//				//mockDb.Mock.ExpectExec("INSERT (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
-//
-//				require.NoError(t, ImportMasterdataFromExcel(args.dbConn, args.r, args.filename, args.sheet, args.tenant))
-//				//require.NoError(t, mockDb.Mock.ExpectationsWereMet())
-//			},
-//		},
-//	}
-//	for _, tt := range tests {
-//		t.Run(tt.name, func(t *testing.T) {
-//			tt.test(t, tt.args)
-//		})
-//	}
-//}
-
 func TestExportMasterdataToExcel(t *testing.T) {
 	db, err := GetDB(context.Background())
 	require.NoError(t, err)
@@ -200,7 +142,7 @@ func TestExportMasterdataToExcel(t *testing.T) {
 	participants, err := db.GetParticipants(context.Background(), tenant)
 	require.NoError(t, err)
 
-	tariffMap, err := db.GetTariffNameMap(tenant)
+	tariffMap, err := db.GetTariffNameMap(context.Background(), tenant)
 	require.NoError(t, err)
 
 	type args struct {
@@ -236,12 +178,12 @@ func TestExportMasterdataToExcel(t *testing.T) {
 				}
 
 				assert.Equal(t, 6, len(cols))
-				assert.Equal(t, "6", cols[1][19])
+				assert.Equal(t, "6", cols[1][18])
 
-				// platform#165: both Status columns (E, X) show the member status derived from the metering points
+				// platform#165: both Status columns (E, W) show the member status derived from the metering points
 				for _, row := range cols[1:] {
 					assert.Contains(t, []string{"aktiv", "in Anmeldung", "inaktiv"}, row[4])
-					assert.Equal(t, row[4], row[23])
+					assert.Equal(t, row[4], row[22])
 				}
 
 				// the filter covers every header column and all rows (was A1:AH10)
@@ -260,7 +202,7 @@ func TestExportMasterdataToExcel(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ExportMasterdataToExcel(tt.args.participants, tt.args.eeg, tt.args.tariffMap, nil, nil)
+			got, err := ExportMasterdataToExcel(context.Background(), tt.args.participants, tt.args.eeg, tt.args.tariffMap, nil, nil)
 			if !tt.wantErr(t, err, fmt.Sprintf("ExportMasterdataToExcel(%v, %v, %v)", tt.args.participants, tt.args.eeg, tt.args.tariffMap)) {
 				return
 			}
@@ -276,9 +218,19 @@ func TestExportZPListToExcel(t *testing.T) {
 	err := json.Unmarshal([]byte(testMsg), &ebmsMsgTest)
 	require.NoError(t, err)
 
-	buf, err := ExportZPListToExcel(&ebmsMsgTest)
-	err = os.WriteFile("./test.xlsx", buf.Bytes(), 0644)
+	buf, err := ExportZPListToExcel(context.Background(), &ebmsMsgTest)
 	require.NoError(t, err)
+
+	f, err := excelize.OpenReader(buf)
+	require.NoError(t, err)
+	defer func() { _ = f.Close() }()
+	assert.Equal(t, []string{"ZP-List"}, f.GetSheetList())
+	rows, err := f.GetRows("ZP-List")
+	require.NoError(t, err)
+	require.Len(t, rows, 1+len(ebmsMsgTest.MeterList), "header and one row per metering point")
+	assert.Equal(t, "Zählpunktname", rows[0][1])
+	assert.Equal(t, ebmsMsgTest.MeterList[0].MeteringPoint, rows[1][1])
+	assert.Equal(t, ebmsMsgTest.MeterList[len(ebmsMsgTest.MeterList)-1].MeteringPoint, rows[len(rows)-1][1])
 }
 
 // withTempDir points the process temp directory to an empty test directory.

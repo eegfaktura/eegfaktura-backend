@@ -20,18 +20,16 @@ import (
 	"at.ourproject/vfeeg-backend/energyrequest"
 	"at.ourproject/vfeeg-backend/graph"
 	"at.ourproject/vfeeg-backend/graph/generated"
+	"at.ourproject/vfeeg-backend/logging"
 	"at.ourproject/vfeeg-backend/mailtemplate"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
 	"at.ourproject/vfeeg-backend/parser"
 	"at.ourproject/vfeeg-backend/services"
 	"github.com/99designs/gqlgen/graphql/handler"
-	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source"
 	"github.com/golang-migrate/migrate/v4/source/httpfs"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
-	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
@@ -40,30 +38,6 @@ var (
 	//go:embed migrations/*.sql
 	migrations embed.FS
 )
-
-func init() {
-	lvl, ok := os.LookupEnv("LOG_LEVEL")
-	ll, err := logLevel(lvl, ok)
-	// set global log level
-	log.SetLevel(ll)
-	if err != nil {
-		log.Warnf("unknown LOG_LEVEL %q, using info", lvl)
-	}
-}
-
-// logLevel defaults to info when LOG_LEVEL is not set or unknown: debug logs import
-// rows and other personal data (261008-ca1).
-func logLevel(lvl string, set bool) (log.Level, error) {
-	if !set {
-		return log.InfoLevel, nil
-	}
-	// parse string, this is built-in feature of logrus
-	ll, err := log.ParseLevel(lvl)
-	if err != nil {
-		return log.InfoLevel, err
-	}
-	return ll, nil
-}
 
 func captureOsInterrupt() chan bool {
 	quit := make(chan bool)
@@ -85,9 +59,6 @@ func captureOsInterrupt() chan bool {
 
 func InitRouters(db database.Database) *mux.Router {
 
-	//middleware.InitKeycloak()
-
-	//r := mux.NewRouter().PathPrefix("/api").Subrouter()
 	r := mux.NewRouter()
 	s := r.PathPrefix("/").Subrouter()
 	s = api.InitEegRouter(s, db)
@@ -96,8 +67,18 @@ func InitRouters(db database.Database) *mux.Router {
 	s = api.InitProcessRouter(s, db)
 	s = api.InitApiRouter(s, db)
 	s = api.InitHealthRouter(s, database.Ping)
+	s.Use(logging.MuxRoute)
 
 	return s
+}
+
+// InitGraphQL registers /query on the router.
+func InitGraphQL(r *mux.Router) {
+	gqlSrv := handler.NewDefaultServer(generated.NewExecutableSchema(generated.Config{Resolvers: &graph.Resolver{}}))
+	gqlSrv.SetRecoverFunc(middleware.GQLRecover)
+	gqlSrv.AroundOperations(middleware.GQLAdminCheckLog)
+	gqlSrv.AroundOperations(middleware.GQLAccessOperation)
+	r.Handle("/query", middleware.GQLProtect(gqlSrv))
 }
 
 type driver struct {
@@ -114,6 +95,15 @@ func (d *driver) Open(rawURL string) (source.Driver, error) {
 }
 
 func main() {
+	// LOG_LEVEL (default info), LOG_FORMAT (default json), SERVICE_VERSION (image build),
+	// DEPLOYMENT_ENVIRONMENT (optional); an unknown level or format stops the start. Debug logs import rows and other personal data (261008-ca1).
+	logCfg, err := logging.ConfigFromEnv(os.LookupEnv)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	logging.Setup(os.Stdout, logCfg)
+
 	var configPath = flag.String("configPath", ".", "Configfile Path")
 	flag.Parse()
 	config.ReadConfig(*configPath)
@@ -127,15 +117,10 @@ func main() {
 		panic(err)
 	}
 
+	// MigrateDB has logged the error
 	if err = db.MigrateDB(); err != nil {
-		log.Fatalf("failed to migrate database")
 		os.Exit(1)
 	}
-
-	//if err := MigrateDatabase(); err != nil {
-	//	log.Fatalf("failed to migrate database")
-	//	os.Exit(1)
-	//}
 
 	parser.WarnIgnoredVolumeTemplates()
 	StartServer(db)
@@ -146,29 +131,18 @@ func main() {
 	}
 }
 
-func MigrateDatabase(db *sqlx.DB) error {
-	log.Info("Start migration ...")
+// httpShutdownLimit is the share of the requests in the 30 s the pod has after SIGTERM: they, the
+// broker (2.5 s) and the mail worker (services.MailStopLimit + services.MailReportLimit) run in turn.
+const httpShutdownLimit = 8 * time.Second
 
-	source.Register("embed", &driver{})
-
-	dbDriver, err := postgres.WithInstance(db.DB, &postgres.Config{SchemaName: "base"})
-	if err != nil {
-		log.Fatal(err)
-		return err
+// shutdownHTTP waits up to limit for running requests; what is still running then is cut off.
+func shutdownHTTP(srv *http.Server, limit time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), limit)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Errorf("http server: requests still running after %v are cut off: %v", limit, err)
+		_ = srv.Close()
 	}
-
-	m, err := migrate.NewWithDatabaseInstance(
-		"embed://",
-		"postgres", dbDriver)
-	if err != nil {
-		log.Fatal(err)
-		return err
-	}
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		log.Fatal(err)
-		return err
-	}
-	return nil
 }
 
 func StartServer(db database.Database) {
@@ -182,6 +156,7 @@ func StartServer(db database.Database) {
 	ctx := context.Background()
 
 	mailtemplate.NotifyDefaultChanges(ctx, db)
+	eda.StartMailWorker()
 	eda.InitEdaSubscription(ctx)
 	energyrequest.Start(ctx, db)
 	mqttclient.InitErrorSubscriptions()
@@ -189,9 +164,7 @@ func StartServer(db database.Database) {
 	quit := captureOsInterrupt()
 	r := InitRouters(db)
 
-	gqlSrv := handler.NewDefaultServer(generated.NewExecutableSchema(generated.Config{Resolvers: &graph.Resolver{}}))
-	gqlSrv.AroundOperations(middleware.GQLAdminCheckLog)
-	r.Handle("/query", middleware.GQLProtect(gqlSrv))
+	InitGraphQL(r)
 
 	allowedOrigins := handlers.AllowedOrigins([]string{"*"})
 	allowedHeaders := handlers.AllowedHeaders(
@@ -214,12 +187,9 @@ func StartServer(db database.Database) {
 			"Cache-Control",
 			"tenant",
 			"X-tenant"})
-	//allowedHeaders := handlers.AllowedHeaders(
-	//	[]string{"authorization", "content-type"})
 	allowedMethods := handlers.AllowedMethods([]string{"GET", "HEAD", "POST", "PUT", "OPTIONS", "DELETE"})
 	allowedCredentials := handlers.AllowCredentials()
 
-	//repository.InitRepositories()
 	go services.StartGRPCServer(quit)
 
 	log.Infof("VFEEG BACKEND Config:  host: %s  port: %d  database:%s  user:%s",
@@ -230,7 +200,7 @@ func StartServer(db database.Database) {
 	log.Infof("VFEEG BACKEND is going to listen on %s", fmt.Sprintf("127.0.0.1:%d", viper.GetInt("port")))
 
 	srv := &http.Server{
-		Handler: handlers.CORS(allowedOrigins, allowedHeaders, allowedMethods, allowedCredentials)(r),
+		Handler: handlers.CORS(allowedOrigins, allowedHeaders, allowedMethods, allowedCredentials)(logging.AccessLog(r)),
 		Addr:    fmt.Sprintf("0.0.0.0:%d", viper.GetInt("port")),
 		// Good practice: enforce timeouts for servers you create!
 		WriteTimeout: 180 * time.Second,
@@ -245,13 +215,11 @@ func StartServer(db database.Database) {
 
 	<-quit
 	log.Println("got interruption signal")
-	if err := srv.Shutdown(context.Background()); err != nil {
-		log.Printf("server shutdown returned an err: %v\n", err)
-	}
+	shutdownHTTP(srv, httpShutdownLimit)
 
 	broker.Stop()
-	//repository.CloseRepositories()
+	eda.StopMailWorker()
 	log.Println("final")
 
-	fmt.Println("STOP PROGRAM")
+	log.Println("STOP PROGRAM")
 }

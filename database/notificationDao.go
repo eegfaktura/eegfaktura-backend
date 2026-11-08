@@ -23,7 +23,8 @@ type NotificationRepository interface {
 	SaveNotification(tenant string, code model.EbMsMessageType, meters []string, errCodes []string, protocol model.EdaProtocol) error
 	SaveNotificationFromMap(notificationValue map[string]interface{}, tenant string, notificationType model.NotificationType, process model.NotificationProcess, role string) error
 	SaveHistory(tenant string, code model.EbMsMessageType, conversationId, role, dir string, protocol model.EdaProtocol, msg interface{}) error
-	FetchEdaHistory(tenant, protocol string, start, end int64, pageSize uint) (interface{}, error)
+	FindHistoryMessage(ctx context.Context, tenant, conversationId string, code model.EbMsMessageType) (*model.EbmsMessage, error)
+	FetchEdaHistory(ctx context.Context, tenant, protocol string, start, end int64, pageSize uint) (interface{}, error)
 	GetNotification(ctx context.Context, tenant string, start int64, isAdmin bool) ([]model.EegNotification, error)
 }
 
@@ -81,7 +82,7 @@ func (db *sqlDatabase) GetNotification(ctx context.Context, tenant string, start
 	}
 	rows, tenants, err := db.energyRequestCommunityCached(ctx, tenant)
 	if err != nil {
-		entry := logrus.WithField("tenant", tenant).WithError(err)
+		entry := logrus.WithContext(ctx).WithField("tenant", tenant).WithError(err)
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			entry.Warn("notifications: no live energy request entries")
 		} else {
@@ -97,7 +98,7 @@ func (db *sqlDatabase) GetNotification(ctx context.Context, tenant string, start
 	n, latest, err := db.collapsedNotifications(ctx, tenant, start, true)
 	if err != nil {
 		// the runs or summaries could not be read: the plain list, without live entries
-		logrus.WithField("tenant", tenant).WithError(err).Error("notifications: energy request messages not collapsed")
+		logrus.WithContext(ctx).WithField("tenant", tenant).WithError(err).Error("notifications: energy request messages not collapsed")
 		n, _, err = db.collapsedNotifications(ctx, tenant, start, false)
 		return n, err
 	}
@@ -143,7 +144,7 @@ func (db *sqlDatabase) collapsedNotifications(ctx context.Context, tenant string
 	size := collapseFirstBatch
 	for i := 0; len(visible) < notificationPageSize; i++ {
 		if i == collapseMaxBatches {
-			logrus.WithField("tenant", tenant).Warnf("notifications: %d entries after reading %d batches", len(visible), i)
+			logrus.WithContext(ctx).WithField("tenant", tenant).Warnf("notifications: %d entries after reading %d batches", len(visible), i)
 			break
 		}
 		batch := []model.EegNotification{}
@@ -238,8 +239,27 @@ func (db *sqlDatabase) SaveHistory(tenant string, code model.EbMsMessageType, co
 	return nil
 }
 
-func (db *sqlDatabase) FetchEdaHistory(tenant, protocol string, start, end int64, pageSize uint) (interface{}, error) {
-	return fetchEdaHistory(db.db, tenant, protocol, start, end, pageSize)
+// FindHistoryMessage returns the latest message of the given type in a conversation of the tenant, in either
+// direction, or nil when there is none.
+func (db *sqlDatabase) FindHistoryMessage(ctx context.Context, tenant, conversationId string, code model.EbMsMessageType) (*model.EbmsMessage, error) {
+	var raw []byte
+	err := db.db.GetContext(ctx, &raw, `SELECT message FROM base.processhistory
+		WHERE tenant = $1 AND "conversationId" = $2 AND type = $3 ORDER BY date DESC LIMIT 1`, tenant, conversationId, code)
+	if errors.Is(err, dbsql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	msg := &model.EbmsMessage{}
+	if err := json.Unmarshal(raw, msg); err != nil {
+		return nil, err
+	}
+	return msg, nil
+}
+
+func (db *sqlDatabase) FetchEdaHistory(ctx context.Context, tenant, protocol string, start, end int64, pageSize uint) (interface{}, error) {
+	return fetchEdaHistory(ctx, db.db, tenant, protocol, start, end, pageSize)
 }
 
 func saveEdaHistory(db *sqlx.DB, history *model.EdaProcessHistory) error {
@@ -248,7 +268,7 @@ func saveEdaHistory(db *sqlx.DB, history *model.EdaProcessHistory) error {
 	return err
 }
 
-func fetchEdaHistory(db *sqlx.DB, tenant, protocol string, start, end int64, pageSize uint) (interface{} /*map[string]map[string][]model.EdaProcessHistory*/, error) {
+func fetchEdaHistory(ctx context.Context, db *sqlx.DB, tenant, protocol string, start, end int64, pageSize uint) (interface{} /*map[string]map[string][]model.EdaProcessHistory*/, error) {
 	startDate := civil.DateOf(time.UnixMilli(start))
 	endDate := civil.DateOf(time.UnixMilli(end))
 
@@ -270,7 +290,7 @@ func fetchEdaHistory(db *sqlx.DB, tenant, protocol string, start, end int64, pag
 	//fmt.Printf("STMT: %v\n", stmt)
 	err = db.Select(&h, stmt)
 	if err != nil && err != dbsql.ErrNoRows {
-		logrus.WithError(err).WithField("SQL", "SELECT").Error("Query History failed")
+		logrus.WithContext(ctx).WithError(err).WithField("SQL", "SELECT").Error("Query History failed")
 		return nil, err
 	}
 

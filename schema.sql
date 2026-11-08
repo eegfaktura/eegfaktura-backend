@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS base.EEG
     description          VARCHAR(100),
     periods              JSON             DEFAULT ('[]'),
     "rcNumber"           TEXT    NOT NULL,
-    area                 TEXT    NOT NULL, /* Ortsgebiet (LOCAL | REGIONAL) | BEG | GEA */
+    area                 TEXT    NOT NULL, /* Ortsgebiet (LOCAL | REGIONAL) | BEG | GEA | P2P | EVA */
     legal                TEXT    NOT NULL DEFAULT 'verein', /* Unternehmensform ("verein" | "genossenschaft" | "gesellschaft") */
     gridoperator_code    TEXT    NOT NULL,
     gridoperator_name    TEXT    NOT NULL,
@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS base.EEG
     phone                TEXT,
     email                TEXT    NOT NULL,
     website              TEXT,
+    ec_zone_level        SMALLINT CHECK (ec_zone_level BETWEEN 1 AND 7), /* Nahebereich, empty = unknown */
 
     online               BOOLEAN NOT NULL DEFAULT false
 );
@@ -182,6 +183,8 @@ CREATE TABLE IF NOT EXISTS base.meteringpoint
     inactiveSince      DATE,
     active             INT       NOT NULL DEFAULT 1,
     flag               INT       NOT NULL DEFAULT 1,
+    tech_code          TEXT, /* TechCode of the grid operator's metering point list */
+    fuel_code          TEXT, /* FuelCode of the grid operator's metering point list */
     CONSTRAINT meteringpointPK PRIMARY KEY (metering_point_id, tenant, participant_id),
     CONSTRAINT FK_ParticipantMeteringpoint FOREIGN KEY (participant_id) REFERENCES base.participant (id) ON DELETE CASCADE
 --    UNIQUE (metering_point_id, active)
@@ -202,6 +205,7 @@ CREATE TABLE IF NOT EXISTS base.metering_partition_factor
     CONSTRAINT FK_MeteringpointPartition FOREIGN KEY (metering_point_id, tenant, participant_id)
         REFERENCES base.meteringpoint (metering_point_id, tenant, participant_id) ON DELETE CASCADE ON UPDATE CASCADE
 );
+CREATE INDEX IF NOT EXISTS metering_partition_factor_tenant_idx ON base.metering_partition_factor (tenant);
 
 CREATE TABLE IF NOT EXISTS base.notification
 (
@@ -267,6 +271,19 @@ CREATE TABLE IF NOT EXISTS base.mail_template_file
 );
 CREATE INDEX IF NOT EXISTS idx_mail_template_file_tenant_key ON base.mail_template_file (tenant, mail_key);
 
+CREATE TABLE IF NOT EXISTS base.settlement_interval_change
+(
+    id                BIGSERIAL PRIMARY KEY,
+    tenant            TEXT        NOT NULL,
+    old_value         TEXT        NOT NULL,
+    new_value         TEXT        NOT NULL,
+    effective_from    DATE, /* NULL = applies at once (no final settlement yet) */
+    last_final_period TEXT, /* last final clearing period of the billing state passed on by web */
+    changed_by        TEXT        NOT NULL,
+    changed_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_settlement_interval_change_tenant ON base.settlement_interval_change (tenant);
+
 CREATE OR REPLACE VIEW base.activeMeteringPartition AS
 SELECT partp.metering_point_id,
        partp.version,
@@ -284,7 +301,7 @@ FROM (SELECT metering_partition_factor.metering_point_id,
              metering_partition_factor."createdAt",
              metering_partition_factor."createdBy",
              row_number()
-             OVER (PARTITION BY metering_partition_factor.metering_point_id, metering_partition_factor.participant_id ORDER BY metering_partition_factor.version DESC) AS rowid
+             OVER (PARTITION BY metering_partition_factor.tenant, metering_partition_factor.metering_point_id, metering_partition_factor.participant_id ORDER BY metering_partition_factor.version DESC) AS rowid
       FROM base.metering_partition_factor) partp
 WHERE partp.rowid = 1;
 
@@ -411,7 +428,8 @@ SELECT p.id                                                    AS participant_id
        c.creditor_id                                           AS eec_bank_creditor_id,
        COALESCE(tp."joiningFee", 0::numeric)                   AS tariff_joining_fee,
        COALESCE(tp."joiningFeeUseVat", false)                  AS tariff_joining_fee_use_vat,
-       COALESCE(tp."joiningFeeVatInPercent", 0::numeric)       AS tariff_joining_fee_vat_in_percent
+       COALESCE(tp."joiningFeeVatInPercent", 0::numeric)       AS tariff_joining_fee_vat_in_percent,
+       c.area                                                  AS eeg_area
 FROM base.participant p
          LEFT JOIN base.eeg c ON c.tenant::text = p.tenant::text
          LEFT JOIN base.meteringpoint pm ON pm.participant_id = p.id

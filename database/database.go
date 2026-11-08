@@ -8,8 +8,6 @@ import (
 	"time"
 
 	"at.ourproject/vfeeg-backend/model"
-	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -130,6 +128,17 @@ func (db *sqlDatabase) logPoolStats(interval time.Duration) {
 	}
 }
 
+// NewDatabase wraps an open connection (tests: a container or a sqlmock connection).
+func NewDatabase(conn *sqlx.DB) Database {
+	return &sqlDatabase{db: conn}
+}
+
+// SetDB makes d the database GetDB returns, instead of connecting to the configured one (tests).
+func SetDB(d Database) {
+	db.Do(func() {})
+	db.Database = d
+}
+
 // GetDB returns the current DB.
 func GetDB(ctx context.Context) (Database, error) {
 	var err error
@@ -170,25 +179,7 @@ func (db *sqlDatabase) RegisterEeg(ctx context.Context, eeg *model.Eeg) error {
 	return db.InsertEeg(ctx, eeg.RcNumber, eeg)
 }
 
+// MigrateDB applies the embedded migrations (source driver "embed", registered by server.go).
 func (db *sqlDatabase) MigrateDB() error {
-	log.Info("Start migration ...")
-
-	dbDriver, err := postgres.WithInstance(db.db.DB, &postgres.Config{SchemaName: "base"})
-	if err != nil {
-		log.Fatal(err)
-		return err
-	}
-
-	m, err := migrate.NewWithDatabaseInstance(
-		"embed://",
-		"postgres", dbDriver)
-	if err != nil {
-		log.Fatal(err)
-		return err
-	}
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		log.Fatal(err)
-		return err
-	}
-	return nil
+	return migrateDB("embed://", connInfo(), migrationLockTimeout)
 }

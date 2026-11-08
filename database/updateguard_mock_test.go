@@ -9,33 +9,30 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 var selectParticipantTenant = regexp.QuoteMeta(`SELECT "tenant" FROM "base"."participant"`)
 
 // UpdateParticipantValues (admin gRPC) prueft den Mandanten des Teilnehmers.
 func TestUpdateParticipantValuesRejectsForeignTenant(t *testing.T) {
-	mDB, mock, err := InitMockDatabase()
-	require.NoError(t, err)
+	mDB, mock := newMockDatabase(t)
 
 	mock.ExpectQuery(selectParticipantTenant).
 		WillReturnRows(sqlmock.NewRows([]string{"tenant"}).AddRow("OTHER"))
 
-	err = mDB.UpdateParticipantValues(context.Background(), "p-1", "TE000001", map[string]string{"firstname": "x"})
+	err := mDB.UpdateParticipantValues(context.Background(), "p-1", "TE000001", map[string]string{"firstname": "x"})
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet(), "kein Schreibzugriff erwartet")
 }
 
 // UpdateParticipantValues weist unbekannte Schluessel ab, bevor etwas geschrieben wird.
 func TestUpdateParticipantValuesRejectsUnknownKey(t *testing.T) {
-	mDB, mock, err := InitMockDatabase()
-	require.NoError(t, err)
+	mDB, mock := newMockDatabase(t)
 
 	mock.ExpectQuery(selectParticipantTenant).
 		WillReturnRows(sqlmock.NewRows([]string{"tenant"}).AddRow("TE000001"))
 
-	err = mDB.UpdateParticipantValues(context.Background(), "p-1", "TE000001", map[string]string{
+	err := mDB.UpdateParticipantValues(context.Background(), "p-1", "TE000001", map[string]string{
 		"firstname":               "x",
 		`firstname"=(SELECT 1)--`: "y",
 	})
@@ -45,8 +42,7 @@ func TestUpdateParticipantValuesRejectsUnknownKey(t *testing.T) {
 
 // AddTariff mit der ID eines fremden Tarifs wird abgelehnt und schreibt nichts.
 func TestAddTariffRejectsForeignTariffId(t *testing.T) {
-	mDB, mock, err := InitMockDatabase()
-	require.NoError(t, err)
+	mDB, mock := newMockDatabase(t)
 
 	mock.ExpectBegin()
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT "tenant" FROM "base"."tariff"`)).
@@ -54,7 +50,7 @@ func TestAddTariffRejectsForeignTariffId(t *testing.T) {
 	mock.ExpectRollback()
 
 	tariff := &model.Tariff{Id: uuid.NewUUID(), Version: 1}
-	err = mDB.AddTariff("TE000001", "user", tariff)
+	err := mDB.AddTariff(context.Background(), "TE000001", "user", tariff)
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet(), "kein INSERT/UPDATE erwartet")
 }
@@ -62,8 +58,7 @@ func TestAddTariffRejectsForeignTariffId(t *testing.T) {
 // Eine neue Version eines eigenen Tarifs geht durch; die Deaktivierung der
 // Vorversion ist auf den Mandanten beschraenkt.
 func TestAddTariffOwnTariffNewVersion(t *testing.T) {
-	mDB, mock, err := InitMockDatabase()
-	require.NoError(t, err)
+	mDB, mock := newMockDatabase(t)
 
 	mock.ExpectBegin()
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT "tenant" FROM "base"."tariff"`)).
@@ -73,7 +68,7 @@ func TestAddTariffOwnTariffNewVersion(t *testing.T) {
 	mock.ExpectCommit()
 
 	tariff := &model.Tariff{Id: uuid.NewUUID(), Version: 1}
-	err = mDB.AddTariff("TE000001", "user", tariff)
+	err := mDB.AddTariff(context.Background(), "TE000001", "user", tariff)
 	assert.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
