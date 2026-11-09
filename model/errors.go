@@ -64,9 +64,15 @@ var ErrOfflineRegistrationUnsupported = PartialWrap(1205)
 // through the process "Zählpunkt aktivieren", not added a second time (platform#247). Answered with 409.
 var ErrMeterExistsAtParticipant = PartialWrap(1206)
 
-// MeterExistsAtParticipantText is the German text of ErrMeterExistsAtParticipant for the user.
+// MeterExistsAtParticipantText is the German text of ErrMeterExistsAtParticipant for the user: the meter is
+// assigned to the member (shown in its list).
 const MeterExistsAtParticipantText = "Dieser Zählpunkt ist bei diesem Mitglied schon vorhanden. Einen inaktiven Zählpunkt " +
 	"meldest du unter Prozesse → Zählpunkt aktivieren wieder an."
+
+// MeterHiddenAtParticipantText: the member still has a moved or archived row of the meter, hidden from its list,
+// which the process cannot reach either.
+const MeterHiddenAtParticipantText = "Dieser Zählpunkt war bei diesem Mitglied schon einmal angelegt (verschoben oder " +
+	"archiviert) und kann hier nicht neu angelegt werden. Bitte wende dich an den Support."
 
 var ErrEdaCommunication = PartialWrap(5000)
 var ErrRequestEnergyData = PartialWrap(5100)
