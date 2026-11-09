@@ -132,6 +132,5 @@ func TestUpdateParticipantPartialInvalidEmailNamesTheReason(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body), w.Body.String())
 	assert.Equal(t, 2000, body.Error.Code)
-	assert.Contains(t, body.Error.Message, "invalid email")
-	assert.Contains(t, body.Error.Message, "no-address", "the person correcting it sees the value")
+	assert.Equal(t, "Die E-Mail-Adresse „no-address“ ist ungültig.", body.Error.Message, "the person correcting it sees the value")
 }
