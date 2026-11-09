@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -74,6 +75,31 @@ func MailErrorLevel(err error) log.Level {
 		return log.WarnLevel
 	}
 	return log.ErrorLevel
+}
+
+// smtpStatusRe finds the SMTP reply of the mail server in its text, e.g. "454 4.7.1": the reply class (4 temporary,
+// 5 permanent) and the subject of the enhanced status code (1 = address).
+var smtpStatusRe = regexp.MustCompile(`\b([45])\d\d [45]\.(\d{1,3})\.\d{1,3}\b`)
+
+// mailServerError is the error for a mail the mail server refused: a German explanation before the server's own
+// text, which stays for finding the cause (e.g. "454 4.7.1 Quotas exceeded"). The notification shows both.
+func mailServerError(message string) error {
+	original := strings.Join(strings.Fields(message), " ")
+	explanation := ""
+	m := smtpStatusRe.FindStringSubmatch(original)
+	switch {
+	case strings.Contains(strings.ToLower(original), "quota"):
+		explanation = "Der Mailserver hat sein Versandkontingent erreicht, die Mail wurde nicht verschickt. Bitte melde das dem Support."
+	case m == nil:
+		return errors.New(original)
+	case m[2] == "1":
+		explanation = "Der Mailserver hat die Empfänger-Adresse abgelehnt, die Mail wurde nicht verschickt. Bitte prüfe die E-Mail-Adresse."
+	case m[1] == "4":
+		explanation = "Der Mailserver hat die Mail vorübergehend abgelehnt, sie wurde nicht verschickt."
+	default:
+		explanation = "Der Mailserver hat die Mail abgelehnt, sie wurde nicht verschickt."
+	}
+	return fmt.Errorf("%s (%s)", explanation, original)
 }
 
 // MailLogMessage is the notification entry for a failed mail send. An unconfirmed send gets the
@@ -206,7 +232,7 @@ func sendHtmlInlineAttachment(sender, recipient, subject string, cc *string, htm
 		return fmt.Errorf("%w (%s)", ErrMailUnconfirmed, r.GetMessage())
 	}
 	if r.Status != 200 {
-		return errors.New(r.GetMessage())
+		return mailServerError(r.GetMessage())
 	}
 	return checkRejectedRecipients(r.GetRejectedRecipients())
 }
@@ -258,7 +284,7 @@ func SendMailWithAttachment(sender, recipient, subject string, cc *string, htmlB
 		return fmt.Errorf("%w (%s)", ErrMailUnconfirmed, r.GetMessage())
 	}
 	if r.Status != 200 {
-		return errors.New(r.GetMessage())
+		return mailServerError(r.GetMessage())
 	}
 	return checkRejectedRecipients(r.GetRejectedRecipients())
 }
