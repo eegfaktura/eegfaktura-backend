@@ -79,9 +79,18 @@ const MeterHiddenAtParticipantText = "Dieser Zählpunkt war bei diesem Mitglied 
 var ErrMeterActiveAtOtherParticipant = PartialWrap(1207)
 
 // MeterActiveAtOtherParticipantText is the German text of ErrMeterActiveAtOtherParticipant; %s is the metering point.
-const MeterActiveAtOtherParticipantText = "Der Zählpunkt %s ist schon bei einem anderen Mitglied dieser Gemeinschaft " +
-	"aktiv oder in Anmeldung. Verschiebe ihn dort zu diesem Mitglied oder melde ihn dort ab. Das Mitglied findest du " +
-	"über die Suche in der Mitgliederliste."
+const MeterActiveAtOtherParticipantText = "Der Zählpunkt %s ist schon einem anderen Mitglied dieser Gemeinschaft " +
+	"zugeordnet. Verschiebe ihn dort zu diesem Mitglied oder melde ihn dort ab. Das Mitglied findest du über die " +
+	"Suche in der Mitgliederliste."
+
+// An invalid e-mail address of a member (create or update); the text names the address (model.AddressError).
+var ErrInvalidParticipantEmail = PartialWrap(1110)
+
+// A new member with direct debit (CORE or B2B) needs an IBAN.
+var ErrDebitWithoutIban = PartialWrap(1112)
+
+// DebitWithoutIbanText is the German text of ErrDebitWithoutIban.
+const DebitWithoutIbanText = "Für die Einzugsart CORE oder B2B braucht das Mitglied eine IBAN."
 
 // The sheet named for the master data import is not in the uploaded workbook.
 var ErrImportSheetMissing = PartialWrap(1064)

@@ -23,26 +23,33 @@ this changelog highlights the changes relevant for overview and operations.
 ### Fixed
 - **Member without IBAN could not be created** (platform#248, A4): with „Kein SEPA“ (platform#143) web leaves the IBAN
   empty, but databases created before the migrations keep NOT NULL on `base.bankaccount.iban` (production), so
-  `POST /participant` and the Excel import failed with code 1104 (6 times in two weeks). A new bank account without IBAN
-  is now stored with an empty IBAN instead of NULL; clearing the IBAN in a partial update stores an empty one, too.
-  No schema change (decision 09.11.2026). billing prints and exports an empty IBAN like a missing one.
+  `POST /participant` without `iban` failed with code 1104 (6 times in two weeks). A new bank account without IBAN is now
+  stored with an empty IBAN instead of NULL — also the row a partial update of the bank data creates for a member
+  without one; clearing the IBAN in a partial update stores an empty one, too. No schema change (decision 09.11.2026).
+  billing prints and exports an empty IBAN like a missing one. A new member with direct debit (CORE, B2B) and without
+  IBAN, which NOT NULL refused by chance before, is refused with **code 1112** „Für die Einzugsart CORE oder B2B braucht
+  das Mitglied eine IBAN.“ (registration only; the Excel import already stored an empty IBAN and is unchanged).
 - **Clear messages for the community admin** (platform#248):
-  - **Invalid e-mail address** (A1): the text of the address check is German, „Die E-Mail-Adresse „…“ ist ungültig.“
-    instead of „invalid email (…)“ — in the API answer (code 2000 on member create/update, 1002 on the EEG), in the
-    notifications of the Excel import and of the mail sending.
-  - **Metering point active at another member** (A2, A3): new **code 1207** with „Der Zählpunkt … ist schon bei einem
-    anderen Mitglied dieser Gemeinschaft aktiv oder in Anmeldung. Verschiebe ihn dort zu diesem Mitglied oder melde
-    ihn dort ab. …“ — `POST /participant` answers 400 / 1207 instead of the generic 1104, `PUT
-    /meteringpoint/{pid}/create` 409 / 1207 instead of 400 / 1111 with the database text; the Excel import names the
-    case in its notification. Logged as a warning.
+  - **Invalid e-mail address** (A1): new **code 1110** instead of 2000 on member create and update (also the partial
+    update of `contact.email`), with the German text „Die E-Mail-Adresse „…“ ist ungültig.“ instead of „invalid email
+    (…)“. The text is German also on the EEG (code 1002) and in the notifications of the Excel import and the mail
+    sending.
+  - **Metering point at another member** (A2, A3): new **code 1207** with „Der Zählpunkt … ist schon einem anderen
+    Mitglied dieser Gemeinschaft zugeordnet. Verschiebe ihn dort zu diesem Mitglied oder melde ihn dort ab. …“ —
+    `POST /participant` answers 400 / 1207 instead of the generic 1104, `PUT /meteringpoint/{pid}/create` 409 / 1207
+    instead of 400 / 1111 with the database text; the Excel import names the case in its notification. The status
+    codes follow the existing endpoints (registration errors are 400). Only `PUT …/create` logs the case as a warning.
   - **Mail refused by the mail server** (A5): the notification „Mailversand fehlgeschlagen“ puts a German explanation
     before the server's own text, which stays for finding the cause, e.g. „Der Mailserver hat sein
     Versandkontingent erreicht, die Mail wurde nicht verschickt. Bitte melde das dem Support. (…: 454 4.7.1 Quotas
-    exceeded)“; also for a refused address (5.1.x), a temporary (4xx) and a permanent (5xx) refusal.
+    exceeded)“; also for a refused recipient address (x.1.1–x.1.6), a recipient mailbox that does not take the mail
+    (x.2.x, e.g. full), a temporary (4xx) and a permanent (5xx) refusal. The log gets the explanation and the status
+    code only, without the server text, which can name the recipient address.
   - **Import sheet missing** (A6): `POST /eeg/import/masterdata` with a sheet name that is not in the file answers
     **code 1064** with „Das Blatt „…“ gibt es in der Datei nicht. Trage unter „Sheet-Name“ den Namen des Blatts mit
     den Stammdaten ein.“ instead of 1052 „Bad Process“.
-  Contract: codes 1207 and 1064 are new; the callers are web (eegfaktura-web, shows these texts) and API clients.
+  Contract: codes 1110, 1112, 1207 and 1064 are new, an invalid e-mail no longer answers 2000; the callers are web
+  (eegfaktura-web, shows these texts) and API clients.
 - **Adding a metering point the member already has** (platform#247): `PUT /meteringpoint/{pid}/create` for a metering
   point that is stored at this member (e.g. inactive after a revoke) answered 400 / code 1111 „Bad Process“ with the
   raw key violation, which web showed as „E_1111_Bad Process“ (10 times from 07.11. to 09.11. in prod). Now it answers

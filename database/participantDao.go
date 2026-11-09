@@ -352,7 +352,7 @@ func updateParticipant(ctx context.Context, tx *sqlx.Tx, tenant, user string, pa
 	}
 
 	if err := enforceContactEmail(participant); err != nil {
-		return model.ErrParseJson(err)
+		return model.ErrInvalidParticipantEmail(err)
 	}
 
 	updateValues := struct {
@@ -449,6 +449,19 @@ func execOrInsertChild(ctx context.Context, tx *sqlx.Tx, updateSql, table string
 	return err
 }
 
+// enforceDebitIban: a new member with direct debit (CORE, B2B) needs an IBAN. Before the empty IBAN of
+// bankAccountRecord, NOT NULL in production refused such a member by chance; web checks it in the form. Updates and
+// the Excel import are not checked: web switches the debit type before the IBAN is entered (partial update).
+func enforceDebitIban(participant *model.EegParticipant) error {
+	switch participant.BankAccount.SepaDirectDebit.String {
+	case "CORE", "B2B":
+		if strings.TrimSpace(participant.BankAccount.Iban.String) == "" {
+			return model.ErrDebitWithoutIban(errors.New(model.DebitWithoutIbanText))
+		}
+	}
+	return nil
+}
+
 // bankAccountRecord is the row of a new bank account. A member without IBAN ("Kein SEPA", platform#143) gets an empty
 // IBAN instead of NULL: databases created before the migrations keep NOT NULL on base.bankaccount.iban (decision
 // 2026-11-09, no schema change).
@@ -464,10 +477,13 @@ func registerParticipant(ctx context.Context, tx *sqlx.Tx, tenant, username stri
 	participant.Status = model.PENDING
 	participant.Id = uuid.NewUUID()
 	participant.CreatedBy = username
-	// invalid input like the member update (updateParticipant): ErrParseJson keeps the reason for the
+	// invalid input like the member update (updateParticipant): the code keeps the reason for the
 	// client; the Excel import (importParticipant) logs the bare error as before
 	if err := enforceContactEmail(participant); err != nil {
-		return model.ErrParseJson(err)
+		return model.ErrInvalidParticipantEmail(err)
+	}
+	if err := enforceDebitIban(participant); err != nil {
+		return err
 	}
 	return saveParticipant(ctx, tx, tenant, username, participant, ImportMeteringPoints)
 }
@@ -631,8 +647,8 @@ func updateParticipantPartial(ctx context.Context, db *sqlx.DB, participantId, n
 		if s, ok := value.(string); ok {
 			normalized, err := model.ValidateEmailList(s)
 			if err != nil {
-				// the caller gets the reason (code 2000), as the full update does
-				return model.ErrParseJson(err)
+				// the caller gets the reason (code 1110), as the full update does
+				return model.ErrInvalidParticipantEmail(err)
 			}
 			if normalized == "" {
 				value = nil
@@ -770,6 +786,10 @@ func insertParticipantPartial(ctx context.Context, db *sqlx.DB, participantId, n
 			insertValues, err := buildRecordMap(&result, fields)
 			if err != nil {
 				return err
+			}
+			// a member without bank account row: the new row needs an IBAN, empty as in bankAccountRecord
+			if insertValues["iban"] == nil {
+				insertValues["iban"] = ""
 			}
 			stmt = pgDialect.Insert("base.bankaccount").Rows(insertValues)
 		default:
