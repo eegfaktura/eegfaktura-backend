@@ -38,7 +38,7 @@ func TestRegisterParticipant_failureHidesDatabaseText(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-// An invalid e-mail is invalid input: code 2000 with the reason, as on the member update.
+// An invalid e-mail answers code 1110 with the reason, as on the member update.
 func TestRegisterParticipant_invalidEmailKeepsTheReason(t *testing.T) {
 	db, mock, err := dbmock.New()
 	require.NoError(t, err)
@@ -57,7 +57,7 @@ func TestRegisterParticipant_invalidEmailKeepsTheReason(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 	assert.Equal(t, http.StatusBadRequest, w.Code)
-	assert.Equal(t, model.ErrParseJson(nil).Code, body.Error.Code)
+	assert.Equal(t, model.ErrInvalidParticipantEmail(nil).Code, body.Error.Code)
 	assert.Equal(t, model.UserText(verr), body.Error.Message)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
