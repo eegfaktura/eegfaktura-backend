@@ -74,6 +74,22 @@ const MeterExistsAtParticipantText = "Dieser Zählpunkt ist bei diesem Mitglied 
 const MeterHiddenAtParticipantText = "Dieser Zählpunkt war bei diesem Mitglied schon einmal angelegt (verschoben oder " +
 	"archiviert) und kann hier nicht neu angelegt werden. Bitte wende dich an den Support."
 
+// The metering point is active (or being registered) at another member of the community: the partial unique index
+// idx_unique_meteringpoint_active allows one assigned row per metering point and tenant.
+var ErrMeterActiveAtOtherParticipant = PartialWrap(1207)
+
+// MeterActiveAtOtherParticipantText is the German text of ErrMeterActiveAtOtherParticipant; %s is the metering point.
+const MeterActiveAtOtherParticipantText = "Der Zählpunkt %s ist schon bei einem anderen Mitglied dieser Gemeinschaft " +
+	"aktiv oder in Anmeldung. Verschiebe ihn dort zu diesem Mitglied oder melde ihn dort ab. Das Mitglied findest du " +
+	"über die Suche in der Mitgliederliste."
+
+// The sheet named for the master data import is not in the uploaded workbook.
+var ErrImportSheetMissing = PartialWrap(1064)
+
+// ImportSheetMissingText is the German text of ErrImportSheetMissing; %s is the sheet name.
+const ImportSheetMissingText = "Das Blatt „%s“ gibt es in der Datei nicht. Trage unter „Sheet-Name“ den Namen des " +
+	"Blatts mit den Stammdaten ein."
+
 var ErrEdaCommunication = PartialWrap(5000)
 var ErrRequestEnergyData = PartialWrap(5100)
 var ErrRevokeMeter = PartialWrap(5010)

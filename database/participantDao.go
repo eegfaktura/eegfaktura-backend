@@ -596,6 +596,11 @@ func saveParticipant(ctx context.Context, tx *sqlx.Tx, tenant, username string, 
 
 	err = registerMeteringPointsFunc(ctx, tx, tenant, username, participantId, participant.MeteringPoint)
 	if err != nil {
+		// a metering point active at another member keeps its code and text for the user (VfeegError has no Unwrap)
+		var ve *model.VfeegError
+		if errors.As(err, &ve) && ve.Code == model.ErrMeterActiveAtOtherParticipant(nil).Code {
+			return err
+		}
 		return model.ErrRegisterParticipant(err)
 	}
 	return nil

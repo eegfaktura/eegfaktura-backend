@@ -93,8 +93,9 @@ func (h *ParticipantHandler) updateParticipant() middleware.JWTHandlerFunc {
 }
 
 // participantWriteError answers a failed member update without database or rollback
-// text: "not found" (unknown or foreign id) and invalid input keep their code and
-// message, anything else gets a generic message. The full error is logged.
+// text: "not found" (unknown or foreign id), invalid input and a metering point active at
+// another member keep their code and message, anything else gets a generic message. The
+// full error is logged.
 func participantWriteError(err error) *model.VfeegError {
 	return participantError(err, model.ErrUpdateParticipant(errors.New("participant could not be updated")))
 }
@@ -107,7 +108,8 @@ func participantRegisterError(err error) *model.VfeegError {
 func participantError(err error, generic *model.VfeegError) *model.VfeegError {
 	var ve *model.VfeegError
 	if errors.As(err, &ve) {
-		if ve.Code == model.ErrFindParticipant(nil).Code || ve.Code == model.ErrParseJson(nil).Code {
+		if ve.Code == model.ErrFindParticipant(nil).Code || ve.Code == model.ErrParseJson(nil).Code ||
+			ve.Code == model.ErrMeterActiveAtOtherParticipant(nil).Code {
 			return ve
 		}
 	}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -324,6 +325,10 @@ func saveMeteringPoint(ctx context.Context, tx *sqlx.Tx, tenant string, metering
 	}
 	_, err = tx.Exec(statement)
 	if err != nil {
+		if e := activeAtOtherParticipantErr(err, meterIds); e != nil {
+			log.WithContext(ctx).WithError(err).Warn("metering point active at another member")
+			return e
+		}
 		log.WithContext(ctx).WithError(err).Error("SQL statement failed")
 		return model.ErrSaveMeteringPoint(err)
 	}
@@ -393,6 +398,25 @@ func isMeterKeyViolation(err error) bool {
 	}
 	var pqErr *pq.Error
 	return errors.As(err, &pqErr) && pqErr.Code == "23505" && strings.EqualFold(pqErr.Constraint, "meteringpointpk")
+}
+
+// activeKeyValueRe reads the metering point from the detail of the violated index:
+// "Key (metering_point_id, tenant, flag)=(AT..., TE..., 1) already exists."
+var activeKeyValueRe = regexp.MustCompile(`\)=\(([^,]+),`)
+
+// activeAtOtherParticipantErr: the insert hit idx_unique_meteringpoint_active, so the metering point is assigned to
+// another member of the tenant (this member's own row is found before, platform#247). nil for any other error.
+func activeAtOtherParticipantErr(err error, meterIds []string) error {
+	var pqErr *pq.Error
+	if !errors.As(err, &pqErr) || pqErr.Code != "23505" ||
+		!strings.EqualFold(pqErr.Constraint, "idx_unique_meteringpoint_active") || len(meterIds) == 0 {
+		return nil
+	}
+	meter := meterIds[0]
+	if m := activeKeyValueRe.FindStringSubmatch(pqErr.Detail); m != nil {
+		meter = m[1]
+	}
+	return model.ErrMeterActiveAtOtherParticipant(fmt.Errorf(model.MeterActiveAtOtherParticipantText, meter))
 }
 
 func registerMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, participantId string, point *model.MeteringPoint) error {
