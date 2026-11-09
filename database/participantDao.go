@@ -422,7 +422,7 @@ func updateParticipant(ctx context.Context, tx *sqlx.Tx, tenant, user string, pa
 			"participant_id": participant.Id.String(),
 		}).
 		ToSQL()
-	err = execOrInsertChild(ctx, tx, sql, "base.bankaccount", toRecord(participant.BankAccount, extra))
+	err = execOrInsertChild(ctx, tx, sql, "base.bankaccount", bankAccountRecord(participant.BankAccount, extra))
 	if err != nil {
 		return err
 	}
@@ -447,6 +447,17 @@ func execOrInsertChild(ctx context.Context, tx *sqlx.Tx, updateSql, table string
 	}
 	_, err = tx.ExecContext(ctx, sql)
 	return err
+}
+
+// bankAccountRecord is the row of a new bank account. A member without IBAN ("Kein SEPA", platform#143) gets an empty
+// IBAN instead of NULL: databases created before the migrations keep NOT NULL on base.bankaccount.iban (decision
+// 2026-11-09, no schema change).
+func bankAccountRecord(b model.BankInfo, extra map[string]interface{}) goqu.Record {
+	rec := toRecord(b, extra)
+	if rec["iban"] == nil {
+		rec["iban"] = ""
+	}
+	return rec
 }
 
 func registerParticipant(ctx context.Context, tx *sqlx.Tx, tenant, username string, participant *model.EegParticipant) error {
@@ -574,7 +585,7 @@ func saveParticipant(ctx context.Context, tx *sqlx.Tx, tenant, username string, 
 		return model.ErrRegisterParticipant(err)
 	}
 
-	sql, _, _ = pgDialect.Insert("base.bankaccount").Rows(toRecord(participant.BankAccount, extra)).ToSQL()
+	sql, _, _ = pgDialect.Insert("base.bankaccount").Rows(bankAccountRecord(participant.BankAccount, extra)).ToSQL()
 	_, err = tx.Exec(sql)
 	if err != nil {
 		return model.ErrRegisterParticipant(err)
@@ -629,6 +640,11 @@ func updateParticipantPartial(ctx context.Context, db *sqlx.DB, participantId, n
 				value = normalized
 			}
 		}
+	}
+
+	// clearing the IBAN stores an empty one, as for a new bank account (bankAccountRecord)
+	if name == "accountInfo.iban" && value == nil {
+		value = ""
 	}
 
 	fields := map[string]interface{}{}
