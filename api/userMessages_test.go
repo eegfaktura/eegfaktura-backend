@@ -88,10 +88,11 @@ func TestRegisterParticipant_withoutIbanStoresEmptyIban(t *testing.T) {
 	assert.Equal(t, "", *bankName, "the space of the former required field is removed")
 }
 
-// A4 (review): direct debit without IBAN is refused with code 1112 instead of being stored with an empty IBAN.
+// A4 (review): direct debit without IBAN is refused with code 1112 instead of being stored with an empty IBAN; the
+// debit type is read like web reads it (trimmed, any case).
 func TestRegisterParticipant_debitWithoutIban(t *testing.T) {
 	deleteMembersNamed(t, "MeldungDebit")
-	w := registerForTest(t, umMember("MeldungDebit", `{"owner":"Uma","sepaDirectDebit":"CORE"}`)+`}`)
+	w := registerForTest(t, umMember("MeldungDebit", `{"owner":"Uma","sepaDirectDebit":" core"}`)+`}`)
 
 	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
 	e := errorBody(t, w)

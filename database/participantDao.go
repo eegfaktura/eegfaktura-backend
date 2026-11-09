@@ -454,7 +454,7 @@ func execOrInsertChild(ctx context.Context, tx *sqlx.Tx, updateSql, table string
 // bankAccountRecord, NOT NULL in production refused such a member by chance; web checks it in the form. Updates and
 // the Excel import are not checked: web switches the debit type before the IBAN is entered (partial update).
 func enforceDebitIban(participant *model.EegParticipant) error {
-	switch participant.BankAccount.SepaDirectDebit.String {
+	switch strings.ToUpper(strings.TrimSpace(participant.BankAccount.SepaDirectDebit.String)) {
 	case "CORE", "B2B":
 		if strings.TrimSpace(participant.BankAccount.Iban.String) == "" {
 			return model.ErrDebitWithoutIban(errors.New(model.DebitWithoutIbanText))
