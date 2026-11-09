@@ -9,6 +9,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/doug-martin/goqu/v9"
 	"github.com/jjeffery/civil"
+	"github.com/lib/pq"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -325,6 +326,8 @@ func Test_RegisterMeteringPoint(t *testing.T) {
 			mock.ExpectQuery(`SELECT "tenant" FROM "base"."participant"`).
 				WillReturnRows(sqlmock.NewRows([]string{"tenant"}).AddRow(tt.args.tenant))
 			mock.ExpectBegin()
+			// platform#247: is the meter already at this member?
+			mock.ExpectQuery(`SELECT "flag" FROM "base"."meteringpoint"`).WillReturnRows(sqlmock.NewRows([]string{"flag"}))
 			expectGridOperatorLookup(mock)
 			mock.ExpectExec("INSERT (.+) \"base\".\"meteringpoint\"").WillReturnResult(sqlmock.NewResult(1, 1))
 			//mock.Mock.ExpectExec("INSERT INTO \"base\".\"participant_meter_state\" (.+)").WillReturnResult(sqlmock.NewResult(1, 1))
@@ -334,6 +337,59 @@ func Test_RegisterMeteringPoint(t *testing.T) {
 			assert.NoError(t, mDB.RegisterMeteringPoint(context.Background(), tt.args.tenant, "userId", tt.args.participantId, tt.args.point))
 		})
 	}
+}
+
+// platform#247: a metering point that is already at the member is not inserted a second time; the caller gets
+// ErrMeterExistsAtParticipant instead of the key violation. An assigned row (shown in the member's list, e.g.
+// inactive) points to "Zählpunkt aktivieren"; a moved or archived row (hidden) to the support.
+func Test_RegisterMeteringPoint_existingAtParticipant(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		flag model.ProcessFlag
+		text string
+	}{
+		{"assigned", model.F_ASSIGNED, model.MeterExistsAtParticipantText},
+		{"moved", model.F_MOVED, model.MeterHiddenAtParticipantText},
+		{"archived", model.F_DELETED, model.MeterHiddenAtParticipantText},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			mDB, mock := newMockDatabase(t)
+			mock.ExpectQuery(`SELECT "tenant" FROM "base"."participant"`).
+				WillReturnRows(sqlmock.NewRows([]string{"tenant"}).AddRow("DR"))
+			mock.ExpectBegin()
+			mock.ExpectQuery(`SELECT "flag" FROM "base"."meteringpoint"`).WillReturnRows(sqlmock.NewRows([]string{"flag"}).AddRow(int(tt.flag)))
+			mock.ExpectRollback()
+
+			err := mDB.RegisterMeteringPoint(context.Background(), "DR", "userId", "12",
+				&model.MeteringPoint{MeteringPoint: "AT0030000000000000000000000000001"})
+			var ve *model.VfeegError
+			require.True(t, errors.As(err, &ve), "got %v", err)
+			assert.Equal(t, model.ErrMeterExistsAtParticipant(nil).Code, ve.Code)
+			assert.Equal(t, tt.text, model.UserText(err))
+			assert.NoError(t, mock.ExpectationsWereMet(), "no insert after the check")
+		})
+	}
+}
+
+// platform#247: two requests at the same time both pass the check; the second insert hits the primary key and is
+// answered like the check (review of backend#157: VfeegError has no Unwrap, so this needs its own unwrapping).
+func Test_RegisterMeteringPoint_concurrentKeyViolation(t *testing.T) {
+	mDB, mock := newMockDatabase(t)
+	mock.ExpectQuery(`SELECT "tenant" FROM "base"."participant"`).
+		WillReturnRows(sqlmock.NewRows([]string{"tenant"}).AddRow("DR"))
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT "flag" FROM "base"."meteringpoint"`).WillReturnRows(sqlmock.NewRows([]string{"flag"}))
+	expectGridOperatorLookup(mock)
+	mock.ExpectExec("INSERT (.+) \"base\".\"meteringpoint\"").
+		WillReturnError(&pq.Error{Code: "23505", Constraint: "meteringpointpk", Message: "duplicate key value"})
+	mock.ExpectRollback()
+
+	err := mDB.RegisterMeteringPoint(context.Background(), "DR", "userId", "12",
+		&model.MeteringPoint{MeteringPoint: "AT0030000000000000000000000000001"})
+	var ve *model.VfeegError
+	require.True(t, errors.As(err, &ve), "got %v", err)
+	assert.Equal(t, model.ErrMeterExistsAtParticipant(nil).Code, ve.Code)
+	assert.Equal(t, model.MeterExistsAtParticipantText, model.UserText(err))
 }
 
 func Test_MeteringPointRevoke(t *testing.T) {
