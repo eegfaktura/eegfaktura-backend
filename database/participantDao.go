@@ -354,6 +354,7 @@ func updateParticipant(ctx context.Context, tx *sqlx.Tx, tenant, user string, pa
 	if err := enforceContactEmail(participant); err != nil {
 		return model.ErrInvalidParticipantEmail(err)
 	}
+	trimBankName(&participant.BankAccount)
 
 	updateValues := struct {
 		model.EegParticipantBase
@@ -460,6 +461,14 @@ func enforceDebitIban(participant *model.EegParticipant) error {
 		}
 	}
 	return nil
+}
+
+// trimBankName removes the spaces around the bank name: the form required it, so a space was entered in its place,
+// which the invoice prints as "Bankverbindung:   | …" (platform#249).
+func trimBankName(b *model.BankInfo) {
+	if b.BankName.Valid {
+		b.BankName.String = strings.TrimSpace(b.BankName.String)
+	}
 }
 
 // bankAccountRecord is the row of a new bank account. A member without IBAN ("Kein SEPA", platform#143) gets an empty
@@ -571,6 +580,7 @@ func saveParticipant(ctx context.Context, tx *sqlx.Tx, tenant, username string, 
 		return err
 	}
 	enforceAddressTypes(participant)
+	trimBankName(&participant.BankAccount)
 
 	// "Mitglied seit" aus Import/Registrierung übernehmen; nur ohne Wert auf heute setzen.
 	if !participant.ParticipantSince.Valid {
@@ -661,6 +671,9 @@ func updateParticipantPartial(ctx context.Context, db *sqlx.DB, participantId, n
 	// clearing the IBAN stores an empty one, as for a new bank account (bankAccountRecord)
 	if name == "accountInfo.iban" && value == nil {
 		value = ""
+	}
+	if s, ok := value.(string); ok && name == "accountInfo.bankName" {
+		value = strings.TrimSpace(s)
 	}
 
 	fields := map[string]interface{}{}

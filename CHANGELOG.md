@@ -29,6 +29,9 @@ this changelog highlights the changes relevant for overview and operations.
   billing prints and exports an empty IBAN like a missing one. A new member with direct debit (CORE, B2B) and without
   IBAN, which NOT NULL refused by chance before, is refused with **code 1112** „Für die Einzugsart CORE oder B2B braucht
   das Mitglied eine IBAN.“ (registration only; the Excel import already stored an empty IBAN and is unchanged).
+- **Bank name without spaces** (platform#249): the bank name („Bankverbindung“, printed on the invoice) is saved without
+  spaces around it — a single space, entered because the form required the field, made the invoice read
+  „Bankverbindung:   | …“. Stored values stay until the member is saved again.
 - **Clear messages for the community admin** (platform#248):
   - **Invalid e-mail address** (A1): new **code 1110** instead of 2000 on member create and update (also the partial
     update of `contact.email`), with the German text „Die E-Mail-Adresse „…“ ist ungültig.“ instead of „invalid email

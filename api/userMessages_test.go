@@ -75,15 +75,17 @@ func storedBank(t *testing.T, lastname string) (iban, bankName *string) {
 }
 
 // A4: a member without direct debit and without IBAN ("Kein SEPA", platform#143) is stored with an empty IBAN, not
-// NULL: production keeps NOT NULL on base.bankaccount.iban.
+// NULL: production keeps NOT NULL on base.bankaccount.iban. The bank name is stored without spaces (platform#249).
 func TestRegisterParticipant_withoutIbanStoresEmptyIban(t *testing.T) {
 	deleteMembersNamed(t, "MeldungA4")
-	w := registerForTest(t, umMember("MeldungA4", umNoDebit)+`}`)
+	w := registerForTest(t, umMember("MeldungA4", `{"owner":"Uma","sepaDirectDebit":"NONE","bankName":" "}`)+`}`)
 	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
 
-	iban, _ := storedBank(t, "MeldungA4")
+	iban, bankName := storedBank(t, "MeldungA4")
 	require.NotNil(t, iban, "IBAN is NULL")
 	assert.Equal(t, "", *iban)
+	require.NotNil(t, bankName)
+	assert.Equal(t, "", *bankName, "the space of the former required field is removed")
 }
 
 // A4 (review): direct debit without IBAN is refused with code 1112 instead of being stored with an empty IBAN.
