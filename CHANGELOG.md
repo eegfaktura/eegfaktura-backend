@@ -20,6 +20,14 @@ this changelog highlights the changes relevant for overview and operations.
   scan, Snyk Code; the weekly schedules still run). Tag pushes still build. A release promotes
   the image of the last commit before the release PR; it has the same content.
 
+### Fixed
+- **Adding a metering point the member already has** (platform#247): `PUT /meteringpoint/{pid}/create` for a metering
+  point that is stored at this member (e.g. inactive after a revoke) answered 400 / code 1111 „Bad Process“ with the
+  raw key violation, which web showed as „E_1111_Bad Process“ (10 times from 07.11. to 09.11. in prod). Now it answers
+  **409 / code 1206** with the German text „Dieser Zählpunkt ist bei diesem Mitglied schon vorhanden. Einen inaktiven
+  Zählpunkt meldest du unter Prozesse → Zählpunkt aktivieren wieder an.“ and writes and sends nothing. Other save
+  errors keep 400 / 1111. Contract: new status and code for this case (caller: eegfaktura-web).
+
 ## [1.17.0] – 2026-11-07
 
 ### Security

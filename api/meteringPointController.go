@@ -90,6 +90,12 @@ func (h *MeteringHandler) createMeteringPoint() middleware.JWTHandlerFunc {
 
 		err = h.db.RegisterMeteringPoint(r.Context(), tenant, claims.Username, participantId, &m)
 		if err != nil {
+			// already at this member (platform#247): 409 with the code and a German text instead of 1111
+			var ve *model.VfeegError
+			if errors.As(err, &ve) && ve.Code == model.ErrMeterExistsAtParticipant(nil).Code {
+				respondWith(r.Context(), w, http.StatusConflict, tenant, err)
+				return
+			}
 			log.WithContext(r.Context()).WithField("tenant", tenant).WithError(err).Error("failed to register metering point.")
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1111, err.Error()))
 			return

@@ -60,6 +60,14 @@ var ErrUnknownActivationMode = PartialWrap(1204)
 // support it (decision 2026-10-30). Rejected before anything is written or sent.
 var ErrOfflineRegistrationUnsupported = PartialWrap(1205)
 
+// The metering point is already stored at this member (e.g. inactive after a revoke): it is registered again
+// through the process "Zählpunkt aktivieren", not added a second time (platform#247). Answered with 409.
+var ErrMeterExistsAtParticipant = PartialWrap(1206)
+
+// MeterExistsAtParticipantText is the German text of ErrMeterExistsAtParticipant for the user.
+const MeterExistsAtParticipantText = "Dieser Zählpunkt ist bei diesem Mitglied schon vorhanden. Einen inaktiven Zählpunkt " +
+	"meldest du unter Prozesse → Zählpunkt aktivieren wieder an."
+
 var ErrEdaCommunication = PartialWrap(5000)
 var ErrRequestEnergyData = PartialWrap(5100)
 var ErrRevokeMeter = PartialWrap(5010)
