@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.18.0] – 2026-11-10
+
 ### Changed
 - **Master data export ordered by member number** (08.11.2026): the sheet „Mitglieder“ of `GET/POST
   /eeg/export/masterdata` lists the members by member number — numbers numerically („2“ before „10“), then numbers
