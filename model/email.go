@@ -71,7 +71,7 @@ func ValidateEmailList(email string) (string, error) {
 	}
 	for _, p := range strings.Split(normalized, ";") {
 		if !emailPartRe.MatchString(p) {
-			return "", &AddressError{Safe: ErrInvalidEmail, Detail: fmt.Sprintf("invalid email (%s)", p)}
+			return "", &AddressError{Safe: ErrInvalidEmail, Detail: fmt.Sprintf("Die E-Mail-Adresse „%s“ ist ungültig.", p)}
 		}
 	}
 	return normalized, nil

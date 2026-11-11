@@ -8,18 +8,6 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
-### Changed
-- **Master data export ordered by member number** (08.11.2026): the sheet „Mitglieder“ of `GET/POST
-  /eeg/export/masterdata` lists the members by member number — numbers numerically („2“ before „10“), then numbers
-  with other characters alphabetically, members without a number last; a member's rows stay together. Before, the
-  order of the participant query. Columns and values are unchanged.
-
-### Changed
-- **CI: no image build for a commit that only changes `CHANGELOG.md`** (platform#239): pushes and pull requests whose
-  only change is the CHANGELOG, such as the release PR, skip the image build and the checks (PR checks, security
-  scan, Snyk Code; the weekly schedules still run). Tag pushes still build. A release promotes
-  the image of the last commit before the release PR; it has the same content.
-
 ### Contract
 - **`revokemeters` reads `reason`, not `to`, and has three new 400 answers.** The only caller is eegfaktura-web
   (`eeg.service.ts`), whose body already uses the key `reason` (its value was never filled, fixed in
@@ -54,6 +42,62 @@ this changelog highlights the changes relevant for overview and operations.
   on its protocol topic, and the backend stores that echo in the EDA process history (`db.SaveHistory`), so the reason
   text now lands in the stored history; eda-xp also keeps it in its conversation store. Before, both held no reason
   because none was ever sent. The web asks not to enter personal data in the field.
+
+## [1.18.0] – 2026-11-10
+
+### Changed
+- **Master data export ordered by member number** (08.11.2026): the sheet „Mitglieder“ of `GET/POST
+  /eeg/export/masterdata` lists the members by member number — numbers numerically („2“ before „10“), then numbers
+  with other characters alphabetically, members without a number last; a member's rows stay together. Before, the
+  order of the participant query. Columns and values are unchanged.
+
+### Changed
+- **CI: no image build for a commit that only changes `CHANGELOG.md`** (platform#239): pushes and pull requests whose
+  only change is the CHANGELOG, such as the release PR, skip the image build and the checks (PR checks, security
+  scan, Snyk Code; the weekly schedules still run). Tag pushes still build. A release promotes
+  the image of the last commit before the release PR; it has the same content.
+
+### Fixed
+- **Member without IBAN could not be created** (platform#248, A4): with „Kein SEPA“ (platform#143) web leaves the IBAN
+  empty, but databases created before the migrations keep NOT NULL on `base.bankaccount.iban` (production), so
+  `POST /participant` without `iban` failed with code 1104 (6 times in two weeks). A new bank account without IBAN is now
+  stored with an empty IBAN instead of NULL — also the row a partial update of the bank data creates for a member
+  without one; clearing the IBAN in a partial update stores an empty one, too. No schema change (decision 09.11.2026).
+  billing prints and exports an empty IBAN like a missing one. A new member with direct debit (CORE, B2B) and without
+  IBAN, which NOT NULL refused by chance before, is refused with **code 1112** „Für die Einzugsart CORE oder B2B braucht
+  das Mitglied eine IBAN.“ (registration only; the Excel import already stored an empty IBAN and is unchanged).
+- **Bank name without spaces** (platform#249): the bank name („Bankverbindung“, printed on the invoice) is saved without
+  spaces around it — a single space, entered because the form required the field, made the invoice read
+  „Bankverbindung:   | …“. Stored values stay until the member is saved again.
+- **Clear messages for the community admin** (platform#248):
+  - **Invalid e-mail address** (A1): new **code 1110** instead of 2000 on member create and update (also the partial
+    update of `contact.email`), with the German text „Die E-Mail-Adresse „…“ ist ungültig.“ instead of „invalid email
+    (…)“. The text is German also on the EEG (code 1002) and in the notifications of the Excel import and the mail
+    sending.
+  - **Metering point at another member** (A2, A3): new **code 1207** with „Der Zählpunkt … ist schon einem anderen
+    Mitglied dieser Gemeinschaft zugeordnet. Verschiebe ihn dort zu diesem Mitglied oder melde ihn dort ab. …“ —
+    `POST /participant` answers 400 / 1207 instead of the generic 1104, `PUT /meteringpoint/{pid}/create` 409 / 1207
+    instead of 400 / 1111 with the database text; the Excel import names the case in its notification. The status
+    codes follow the existing endpoints (registration errors are 400). Only `PUT …/create` logs the case as a warning.
+  - **Mail refused by the mail server** (A5): the notification „Mailversand fehlgeschlagen“ puts a German explanation
+    before the server's own text, which stays for finding the cause, e.g. „Der Mailserver hat sein
+    Versandkontingent erreicht, die Mail wurde nicht verschickt. Bitte melde das dem Support. (…: 454 4.7.1 Quotas
+    exceeded)“; also for a refused recipient address (x.1.1–x.1.6), a recipient mailbox that does not take the mail
+    (x.2.x, e.g. full), a temporary (4xx) and a permanent (5xx) refusal. The log gets the explanation and the status
+    code only, without the server text, which can name the recipient address.
+  - **Import sheet missing** (A6): `POST /eeg/import/masterdata` with a sheet name that is not in the file answers
+    **code 1064** with „Das Blatt „…“ gibt es in der Datei nicht. Trage unter „Sheet-Name“ den Namen des Blatts mit
+    den Stammdaten ein.“ instead of 1052 „Bad Process“.
+  Contract: codes 1110, 1112, 1207 and 1064 are new, an invalid e-mail no longer answers 2000; the callers are web
+  (eegfaktura-web, shows these texts) and API clients.
+- **Adding a metering point the member already has** (platform#247): `PUT /meteringpoint/{pid}/create` for a metering
+  point that is stored at this member (e.g. inactive after a revoke) answered 400 / code 1111 „Bad Process“ with the
+  raw key violation, which web showed as „E_1111_Bad Process“ (10 times from 07.11. to 09.11. in prod). Now it answers
+  **409 / code 1206** with the German text „Dieser Zählpunkt ist bei diesem Mitglied schon vorhanden. Einen inaktiven
+  Zählpunkt meldest du unter Prozesse → Zählpunkt aktivieren wieder an.“ and writes and sends nothing. A moved or
+  archived row of the member (hidden from its list) gets a text that points to the support instead. Two requests at
+  the same time get the same answer; the case is logged as a warning. Other save errors keep 400 / 1111. Contract:
+  new status and code for this case (caller: eegfaktura-web).
 
 ## [1.17.0] – 2026-11-07
 

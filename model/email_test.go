@@ -20,7 +20,7 @@ func TestValidateEmailList_AddressStaysOutOfTheLog(t *testing.T) {
 		if strings.Contains(e.Error(), "kaputt@adresse") {
 			t.Errorf("%s: Error() names the address: %s", name, e.Error())
 		}
-		if got := UserText(e); got != "invalid email (kaputt@adresse)" {
+		if got := UserText(e); got != "Die E-Mail-Adresse „kaputt@adresse“ ist ungültig." {
 			t.Errorf("%s: UserText = %q", name, got)
 		}
 	}

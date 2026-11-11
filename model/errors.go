@@ -60,6 +60,45 @@ var ErrUnknownActivationMode = PartialWrap(1204)
 // support it (decision 2026-10-30). Rejected before anything is written or sent.
 var ErrOfflineRegistrationUnsupported = PartialWrap(1205)
 
+// The metering point is already stored at this member (e.g. inactive after a revoke): it is registered again
+// through the process "Zählpunkt aktivieren", not added a second time (platform#247). Answered with 409.
+var ErrMeterExistsAtParticipant = PartialWrap(1206)
+
+// MeterExistsAtParticipantText is the German text of ErrMeterExistsAtParticipant for the user: the meter is
+// assigned to the member (shown in its list).
+const MeterExistsAtParticipantText = "Dieser Zählpunkt ist bei diesem Mitglied schon vorhanden. Einen inaktiven Zählpunkt " +
+	"meldest du unter Prozesse → Zählpunkt aktivieren wieder an."
+
+// MeterHiddenAtParticipantText: the member still has a moved or archived row of the meter, hidden from its list,
+// which the process cannot reach either.
+const MeterHiddenAtParticipantText = "Dieser Zählpunkt war bei diesem Mitglied schon einmal angelegt (verschoben oder " +
+	"archiviert) und kann hier nicht neu angelegt werden. Bitte wende dich an den Support."
+
+// The metering point is active (or being registered) at another member of the community: the partial unique index
+// idx_unique_meteringpoint_active allows one assigned row per metering point and tenant.
+var ErrMeterActiveAtOtherParticipant = PartialWrap(1207)
+
+// MeterActiveAtOtherParticipantText is the German text of ErrMeterActiveAtOtherParticipant; %s is the metering point.
+const MeterActiveAtOtherParticipantText = "Der Zählpunkt %s ist schon einem anderen Mitglied dieser Gemeinschaft " +
+	"zugeordnet. Verschiebe ihn dort zu diesem Mitglied oder melde ihn dort ab. Das Mitglied findest du über die " +
+	"Suche in der Mitgliederliste."
+
+// An invalid e-mail address of a member (create or update); the text names the address (model.AddressError).
+var ErrInvalidParticipantEmail = PartialWrap(1110)
+
+// A new member with direct debit (CORE or B2B) needs an IBAN.
+var ErrDebitWithoutIban = PartialWrap(1112)
+
+// DebitWithoutIbanText is the German text of ErrDebitWithoutIban.
+const DebitWithoutIbanText = "Für die Einzugsart CORE oder B2B braucht das Mitglied eine IBAN."
+
+// The sheet named for the master data import is not in the uploaded workbook.
+var ErrImportSheetMissing = PartialWrap(1064)
+
+// ImportSheetMissingText is the German text of ErrImportSheetMissing; %s is the sheet name.
+const ImportSheetMissingText = "Das Blatt „%s“ gibt es in der Datei nicht. Trage unter „Sheet-Name“ den Namen des " +
+	"Blatts mit den Stammdaten ein."
+
 var ErrEdaCommunication = PartialWrap(5000)
 var ErrRequestEnergyData = PartialWrap(5100)
 var ErrRevokeMeter = PartialWrap(5010)

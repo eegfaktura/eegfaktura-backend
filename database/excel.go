@@ -3,6 +3,7 @@ package database
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -79,6 +80,10 @@ func (db *sqlDatabase) ImportMasterdataFromExcel(ctx context.Context, r io.Reade
 	rows, err := f.Rows(sheet)
 	if err != nil {
 		log.WithContext(ctx).Error(err)
+		var missing excelize.ErrSheetNotExist
+		if errors.As(err, &missing) {
+			return model.ErrImportSheetMissing(fmt.Errorf(model.ImportSheetMissingText, missing.SheetName))
+		}
 		return err
 	}
 	defer rows.Close()

@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
+	"strings"
 	"time"
 
 	"at.ourproject/vfeeg-backend/model"
@@ -14,6 +16,7 @@ import (
 	"github.com/doug-martin/goqu/v9/exp"
 	"github.com/jjeffery/civil"
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/guregu/null.v4"
 )
@@ -322,6 +325,10 @@ func saveMeteringPoint(ctx context.Context, tx *sqlx.Tx, tenant string, metering
 	}
 	_, err = tx.Exec(statement)
 	if err != nil {
+		if e := activeAtOtherParticipantErr(err, meterIds); e != nil {
+			log.WithContext(ctx).WithError(err).Warn("metering point active at another member")
+			return e
+		}
 		log.WithContext(ctx).WithError(err).Error("SQL statement failed")
 		return model.ErrSaveMeteringPoint(err)
 	}
@@ -357,6 +364,61 @@ func calcActivePtr(status *model.StatusType) *model.ProcessStatus {
 	return &state
 }
 
+// existingMeterAtParticipant: the metering point's row at this member of the tenant, in any state (the primary key
+// is metering point + tenant + member), as ErrMeterExistsAtParticipant; nil when there is none (platform#247). A row
+// that is not assigned (moved or archived) is hidden from the member's list, so its text does not point to the process.
+func existingMeterAtParticipant(tx *sqlx.Tx, tenant, participantId, meterId string) error {
+	stmt, args, err := pgDialect.From(TABLE_METERINGPOINT).Prepared(true).Select("flag").
+		Where(goqu.Ex{"metering_point_id": meterId, "tenant": tenant, "participant_id": participantId}).Limit(1).ToSQL()
+	if err != nil {
+		return model.ErrSaveMeteringPoint(err)
+	}
+	var flag model.ProcessFlag
+	switch err := tx.Get(&flag, stmt, args...); {
+	case errors.Is(err, sql.ErrNoRows):
+		return nil
+	case err != nil:
+		return model.ErrSaveMeteringPoint(err)
+	case flag != model.F_ASSIGNED:
+		return model.ErrMeterExistsAtParticipant(errors.New(model.MeterHiddenAtParticipantText))
+	}
+	return meterExistsErr()
+}
+
+func meterExistsErr() error {
+	return model.ErrMeterExistsAtParticipant(errors.New(model.MeterExistsAtParticipantText))
+}
+
+// isMeterKeyViolation: the insert hit the primary key of base.meteringpoint (a second request at the same time
+// passed the check before the first committed). VfeegError has no Unwrap, so the wrapped error is looked at directly.
+func isMeterKeyViolation(err error) bool {
+	var ve *model.VfeegError
+	if errors.As(err, &ve) {
+		err = ve.Err
+	}
+	var pqErr *pq.Error
+	return errors.As(err, &pqErr) && pqErr.Code == "23505" && strings.EqualFold(pqErr.Constraint, "meteringpointpk")
+}
+
+// activeKeyValueRe reads the metering point from the detail of the violated index:
+// "Key (metering_point_id, tenant, flag)=(AT..., TE..., 1) already exists."
+var activeKeyValueRe = regexp.MustCompile(`\)=\(([^,]+),`)
+
+// activeAtOtherParticipantErr: the insert hit idx_unique_meteringpoint_active, so the metering point is assigned to
+// another member of the tenant (this member's own row is found before, platform#247). nil for any other error.
+func activeAtOtherParticipantErr(err error, meterIds []string) error {
+	var pqErr *pq.Error
+	if !errors.As(err, &pqErr) || pqErr.Code != "23505" ||
+		!strings.EqualFold(pqErr.Constraint, "idx_unique_meteringpoint_active") || len(meterIds) == 0 {
+		return nil
+	}
+	meter := meterIds[0]
+	if m := activeKeyValueRe.FindStringSubmatch(pqErr.Detail); m != nil {
+		meter = m[1]
+	}
+	return model.ErrMeterActiveAtOtherParticipant(fmt.Errorf(model.MeterActiveAtOtherParticipantText, meter))
+}
+
 func registerMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, participantId string, point *model.MeteringPoint) error {
 	// Assert the participant belongs to the caller's tenant before inserting the
 	// metering point — the row was previously written before the participant was
@@ -368,12 +430,20 @@ func registerMeteringPoint(ctx context.Context, db *sqlx.DB, tenant, username, p
 
 	// without the cancel of the request: a client that goes away does not roll back the save (as before inTx)
 	err := inTx(context.WithoutCancel(ctx), db, func(tx *sqlx.Tx) error {
+		// the same member cannot get the meter a second time (platform#247)
+		if err := existingMeterAtParticipant(tx, tenant, participantId, point.MeteringPoint); err != nil {
+			return err
+		}
 		if err := applyGridOperator(ctx, tx, tenant, []*model.MeteringPoint{point}); err != nil {
 			return err
 		}
 		meteringEntries, partFactEntries := createMeteringEntries(tenant, username, participantId, []*model.MeteringPoint{point}, &point.ProcessState)
 		return saveMeteringPoint(ctx, tx, tenant, meteringEntries, partFactEntries)
 	})
+	// two requests at the same time: the second one hits the key instead of the check above
+	if isMeterKeyViolation(err) {
+		err = meterExistsErr()
+	}
 	// the new row stores no TechCode/FuelCode (only the metering point list sets them): the caller gets none back,
 	// not what the client sent (eegfaktura-dev#56 #14, register)
 	point.TechCode, point.FuelCode = null.String{}, null.String{}

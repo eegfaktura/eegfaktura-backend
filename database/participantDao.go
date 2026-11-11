@@ -352,8 +352,9 @@ func updateParticipant(ctx context.Context, tx *sqlx.Tx, tenant, user string, pa
 	}
 
 	if err := enforceContactEmail(participant); err != nil {
-		return model.ErrParseJson(err)
+		return model.ErrInvalidParticipantEmail(err)
 	}
+	trimBankName(&participant.BankAccount)
 
 	updateValues := struct {
 		model.EegParticipantBase
@@ -422,7 +423,7 @@ func updateParticipant(ctx context.Context, tx *sqlx.Tx, tenant, user string, pa
 			"participant_id": participant.Id.String(),
 		}).
 		ToSQL()
-	err = execOrInsertChild(ctx, tx, sql, "base.bankaccount", toRecord(participant.BankAccount, extra))
+	err = execOrInsertChild(ctx, tx, sql, "base.bankaccount", bankAccountRecord(participant.BankAccount, extra))
 	if err != nil {
 		return err
 	}
@@ -449,14 +450,49 @@ func execOrInsertChild(ctx context.Context, tx *sqlx.Tx, updateSql, table string
 	return err
 }
 
+// enforceDebitIban: a new member with direct debit (CORE, B2B) needs an IBAN. Before the empty IBAN of
+// bankAccountRecord, NOT NULL in production refused such a member by chance; web checks it in the form. Updates and
+// the Excel import are not checked: web switches the debit type before the IBAN is entered (partial update).
+func enforceDebitIban(participant *model.EegParticipant) error {
+	switch strings.ToUpper(strings.TrimSpace(participant.BankAccount.SepaDirectDebit.String)) {
+	case "CORE", "B2B":
+		if strings.TrimSpace(participant.BankAccount.Iban.String) == "" {
+			return model.ErrDebitWithoutIban(errors.New(model.DebitWithoutIbanText))
+		}
+	}
+	return nil
+}
+
+// trimBankName removes the spaces around the bank name: the form required it, so a space was entered in its place,
+// which the invoice prints as "Bankverbindung:   | …" (platform#249).
+func trimBankName(b *model.BankInfo) {
+	if b.BankName.Valid {
+		b.BankName.String = strings.TrimSpace(b.BankName.String)
+	}
+}
+
+// bankAccountRecord is the row of a new bank account. A member without IBAN ("Kein SEPA", platform#143) gets an empty
+// IBAN instead of NULL: databases created before the migrations keep NOT NULL on base.bankaccount.iban (decision
+// 2026-11-09, no schema change).
+func bankAccountRecord(b model.BankInfo, extra map[string]interface{}) goqu.Record {
+	rec := toRecord(b, extra)
+	if rec["iban"] == nil {
+		rec["iban"] = ""
+	}
+	return rec
+}
+
 func registerParticipant(ctx context.Context, tx *sqlx.Tx, tenant, username string, participant *model.EegParticipant) error {
 	participant.Status = model.PENDING
 	participant.Id = uuid.NewUUID()
 	participant.CreatedBy = username
-	// invalid input like the member update (updateParticipant): ErrParseJson keeps the reason for the
+	// invalid input like the member update (updateParticipant): the code keeps the reason for the
 	// client; the Excel import (importParticipant) logs the bare error as before
 	if err := enforceContactEmail(participant); err != nil {
-		return model.ErrParseJson(err)
+		return model.ErrInvalidParticipantEmail(err)
+	}
+	if err := enforceDebitIban(participant); err != nil {
+		return err
 	}
 	return saveParticipant(ctx, tx, tenant, username, participant, ImportMeteringPoints)
 }
@@ -544,6 +580,7 @@ func saveParticipant(ctx context.Context, tx *sqlx.Tx, tenant, username string, 
 		return err
 	}
 	enforceAddressTypes(participant)
+	trimBankName(&participant.BankAccount)
 
 	// "Mitglied seit" aus Import/Registrierung übernehmen; nur ohne Wert auf heute setzen.
 	if !participant.ParticipantSince.Valid {
@@ -574,7 +611,7 @@ func saveParticipant(ctx context.Context, tx *sqlx.Tx, tenant, username string, 
 		return model.ErrRegisterParticipant(err)
 	}
 
-	sql, _, _ = pgDialect.Insert("base.bankaccount").Rows(toRecord(participant.BankAccount, extra)).ToSQL()
+	sql, _, _ = pgDialect.Insert("base.bankaccount").Rows(bankAccountRecord(participant.BankAccount, extra)).ToSQL()
 	_, err = tx.Exec(sql)
 	if err != nil {
 		return model.ErrRegisterParticipant(err)
@@ -596,6 +633,11 @@ func saveParticipant(ctx context.Context, tx *sqlx.Tx, tenant, username string, 
 
 	err = registerMeteringPointsFunc(ctx, tx, tenant, username, participantId, participant.MeteringPoint)
 	if err != nil {
+		// a metering point active at another member keeps its code and text for the user (VfeegError has no Unwrap)
+		var ve *model.VfeegError
+		if errors.As(err, &ve) && ve.Code == model.ErrMeterActiveAtOtherParticipant(nil).Code {
+			return err
+		}
 		return model.ErrRegisterParticipant(err)
 	}
 	return nil
@@ -615,8 +657,8 @@ func updateParticipantPartial(ctx context.Context, db *sqlx.DB, participantId, n
 		if s, ok := value.(string); ok {
 			normalized, err := model.ValidateEmailList(s)
 			if err != nil {
-				// the caller gets the reason (code 2000), as the full update does
-				return model.ErrParseJson(err)
+				// the caller gets the reason (code 1110), as the full update does
+				return model.ErrInvalidParticipantEmail(err)
 			}
 			if normalized == "" {
 				value = nil
@@ -624,6 +666,14 @@ func updateParticipantPartial(ctx context.Context, db *sqlx.DB, participantId, n
 				value = normalized
 			}
 		}
+	}
+
+	// clearing the IBAN stores an empty one, as for a new bank account (bankAccountRecord)
+	if name == "accountInfo.iban" && value == nil {
+		value = ""
+	}
+	if s, ok := value.(string); ok && name == "accountInfo.bankName" {
+		value = strings.TrimSpace(s)
 	}
 
 	fields := map[string]interface{}{}
@@ -749,6 +799,10 @@ func insertParticipantPartial(ctx context.Context, db *sqlx.DB, participantId, n
 			insertValues, err := buildRecordMap(&result, fields)
 			if err != nil {
 				return err
+			}
+			// a member without bank account row: the new row needs an IBAN, empty as in bankAccountRecord
+			if insertValues["iban"] == nil {
+				insertValues["iban"] = ""
 			}
 			stmt = pgDialect.Insert("base.bankaccount").Rows(insertValues)
 		default:

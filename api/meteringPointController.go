@@ -93,6 +93,17 @@ func (h *MeteringHandler) createMeteringPoint() middleware.JWTHandlerFunc {
 
 		err = h.db.RegisterMeteringPoint(r.Context(), tenant, claims.Username, participantId, &m)
 		if err != nil {
+			// already at this member (platform#247) or active at another member: 409 with the code and a German
+			// text instead of 1111; a user error, so a warning in the log, not an error
+			var ve *model.VfeegError
+			if errors.As(err, &ve) && (ve.Code == model.ErrMeterExistsAtParticipant(nil).Code ||
+				ve.Code == model.ErrMeterActiveAtOtherParticipant(nil).Code) {
+				log.WithContext(r.Context()).WithField("tenant", tenant).WithField("code", ve.Code).
+					Warn("metering point already at this or another member")
+				text := model.UserText(ve)
+				respondWithHttpError(w, http.StatusConflict, &HttpError{Error: text, Code: ve.Code, Message: text})
+				return
+			}
 			log.WithContext(r.Context()).WithField("tenant", tenant).WithError(err).Error("failed to register metering point.")
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1111, err.Error()))
 			return

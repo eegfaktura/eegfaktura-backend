@@ -107,7 +107,10 @@ func participantRegisterError(err error) *model.VfeegError {
 func participantError(err error, generic *model.VfeegError) *model.VfeegError {
 	var ve *model.VfeegError
 	if errors.As(err, &ve) {
-		if ve.Code == model.ErrFindParticipant(nil).Code || ve.Code == model.ErrParseJson(nil).Code {
+		// invalid input with a text for the user; 1207 and 1112 come from the registration only
+		switch ve.Code {
+		case model.ErrFindParticipant(nil).Code, model.ErrParseJson(nil).Code, model.ErrInvalidParticipantEmail(nil).Code,
+			model.ErrMeterActiveAtOtherParticipant(nil).Code, model.ErrDebitWithoutIban(nil).Code:
 			return ve
 		}
 	}

@@ -107,7 +107,7 @@ func TestUpdateParticipantUnknownAndForeignIdAnswerAlike(t *testing.T) {
 	}
 }
 
-// A partial update with an invalid e-mail answers code 2000 with the reason, as the full
+// A partial update with an invalid e-mail answers code 1110 with the reason, as the full
 // update does, instead of the generic 1102.
 func TestUpdateParticipantPartialInvalidEmailNamesTheReason(t *testing.T) {
 	const (
@@ -131,7 +131,6 @@ func TestUpdateParticipantPartialInvalidEmailNamesTheReason(t *testing.T) {
 		} `json:"error"`
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body), w.Body.String())
-	assert.Equal(t, 2000, body.Error.Code)
-	assert.Contains(t, body.Error.Message, "invalid email")
-	assert.Contains(t, body.Error.Message, "no-address", "the person correcting it sees the value")
+	assert.Equal(t, 1110, body.Error.Code)
+	assert.Equal(t, "Die E-Mail-Adresse „no-address“ ist ungültig.", body.Error.Message, "the person correcting it sees the value")
 }

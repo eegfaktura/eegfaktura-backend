@@ -220,6 +220,12 @@ func (h *EegHandler) uploadMasterData() middleware.JWTHandlerFunc {
 		log.WithContext(r.Context()).Infof("--- Upload File: sheet %s\n", sheet)
 
 		if err = h.db.ImportMasterdataFromExcel(r.Context(), file, handler.Filename, sheet, tenant); err != nil {
+			// a wrong sheet name: the German text for the user instead of "Bad Process"
+			var ve *model.VfeegError
+			if errors.As(err, &ve) && ve.Code == model.ErrImportSheetMissing(nil).Code {
+				respondWith(r.Context(), w, http.StatusBadRequest, tenant, ve)
+				return
+			}
 			log.WithContext(r.Context()).WithField("tenant", tenant).Error(err)
 			respondWithHttpError(w, http.StatusBadRequest, BadProcessError(1052, err.Error()))
 		} else {
