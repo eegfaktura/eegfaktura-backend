@@ -26,7 +26,7 @@ RUN go build -o /usr/local/bin/vfeeg-backend -ldflags="-s -w" server.go
 # Go-Toolchain, git, ssh, curl. Das Binary ist dynamisch gegen glibc gelinkt (cgo an), daher kein
 # scratch/static. Gebraucht werden nur CA-Zertifikate (ausgehendes HTTPS, SMTP mit TLS) und Zonendaten
 # (TZ, time.Local). Datierter Tag = unveraenderlich; veroeffentlicht 2026-10-28.
-FROM debian:trixie-20261027-slim
+FROM debian:trixie-20261104-slim
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates tzdata \
