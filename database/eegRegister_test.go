@@ -126,3 +126,25 @@ func TestInsertEegRefusesAnUnknownArea(t *testing.T) {
 	require.NoError(t, testDB.DbInstance.Get(&n, `SELECT count(*) FROM base.eeg WHERE tenant = 'TE000046'`))
 	assert.Zero(t, n, "nothing written")
 }
+
+// A community registered without a description (the admin portal allows it) must load again: an empty description was
+// stored as NULL and GET /api/eeg then failed with "converting NULL to string is unsupported".
+func TestInsertEegWithoutDescriptionLoads(t *testing.T) {
+	db, err := GetDB(context.Background())
+	require.NoError(t, err)
+	ctx := context.Background()
+	cleanup := func() {
+		_, err := testDB.DbInstance.Exec(`DELETE FROM base.eeg WHERE tenant = 'TE000043'`)
+		require.NoError(t, err)
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+
+	eeg := registerEegFixture("TE000043", "TE000043", "Ohne Beschreibung")
+	eeg.Description = ""
+	require.NoError(t, db.InsertEeg(ctx, "TE000043", eeg))
+
+	stored, err := db.GetEegById(ctx, "TE000043")
+	require.NoError(t, err)
+	assert.Equal(t, "", stored.Description)
+}

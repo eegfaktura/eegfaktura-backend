@@ -12,7 +12,7 @@ import (
 type Eeg struct {
 	Id                 string             `json:"id" db:"tenant" goqu:"skipupdate"`
 	Name               string             `json:"name,omitempty" goqu:"omitempty"`
-	Description        string             `json:"description" goqu:"omitempty"`
+	Description        string             `json:"description"` /* no omitempty: '' instead of NULL, which a string cannot scan */
 	BusinessNr         null.String        `json:"businessNr,omitempty" db:"businessNr" goqu:"omitempty"`
 	Area               AreaType           `json:"area" goqu:"omitempty"` /* LOCAL | REGIONAL | BEG | GEA | P2P | EVA */
 	Legal              string             `json:"legal,omitempty" goqu:"omitempty"`
