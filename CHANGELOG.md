@@ -13,7 +13,7 @@ this changelog highlights the changes relevant for overview and operations.
   (`eeg.service.ts`), whose body already uses the key `reason` (its value was never filled, fixed in
   eegfaktura/eegfaktura-web#245); `to` is no longer read. New error codes (body `{"error":{"code","error","message"}}`):
   **5011** the reason is longer than 50 characters; **5012** a metering point does not belong to the member `{pid}` or
-  has no grid operator; **5013** a metering point has no active entry of the member; **5014** the consent end (`from`)
+  has no grid operator, or no metering point is selected; **5013** a metering point has no active entry of the member; **5014** the consent end (`from`)
   is missing. In every case nothing is sent; the `message` is the German text for the user.
   The web shows them readable (eegfaktura/eegfaktura-web#245). Downstream eda-xp writes the reason to CMRevoke as
   ReasonKey 0 + Reason (eegfaktura/eegfaktura-eda-xp#59).
@@ -32,10 +32,10 @@ this changelog highlights the changes relevant for overview and operations.
   metering points before it went out and the answer was 500).
 - **A revoke without consent end is refused** (pre-existing, found in the review of eegfaktura/eegfaktura-backend#127).
   `revokemeters` without `from` (or with 0 or less) used to send CMRevoke with ConsentEnd 01.01.1970; it now answers
-  400, code 5014 „Das Ende der Datenfreigabe fehlt.“.
+  400, code 5014 „Das Ende der Datenfreigabe fehlt.“. The web always sends `from`.
 - **A revoke without any metering point answers 400** (pre-existing, found in the review of
   eegfaktura/eegfaktura-backend#127): it answered 500, code 3100 „no Meter selected“, and logged an error; now 400,
-  code 5012 „Es ist kein Zählpunkt ausgewählt.“. The web always sends at least one. The web always sends `from`.
+  code 5012 „Es ist kein Zählpunkt ausgewählt.“. The web always sends at least one.
 - **The optional reason of a revoke (`POST /meteringpoint/{pid}/revokemeters`) reaches eda-xp** (revoke reason,
   2026-10-30). The handler read it from the JSON key `to`, which no caller sends, so the reason was always empty. It
   now reads `reason` (the key eegfaktura-web sends) and cleans it like a mail subject: control characters (also line
