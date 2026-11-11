@@ -22,7 +22,7 @@ func TestRevokeLogsIdsOnly(t *testing.T) {
 
 	const pid = "ea1142dc-03da-11ee-b82b-5a985b4b0306"
 	req, _ := http.NewRequest("POST", "/meteringpoint/"+pid+"/revokemeters",
-		strings.NewReader(`{"meteringPoints":[{"meter":"AT0030000000000000000000099999998","direction":"CONSUMPTION"}],"from":1700000000000,"to":"Familie Obermueller zieht aus"}`))
+		strings.NewReader(`{"meteringPoints":[{"meter":"AT0030000000000000000000099999998","direction":"CONSUMPTION"}],"from":1700000000000,"reason":"Familie Obermueller zieht aus"}`))
 	req = mux.SetURLVars(req, map[string]string{"pid": pid})
 	w := httptest.NewRecorder()
 

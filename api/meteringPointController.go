@@ -6,9 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"at.ourproject/vfeeg-backend/database"
@@ -648,12 +651,22 @@ func (h *MeteringHandler) requestRevokeMeteringPoint() middleware.JWTHandlerFunc
 				ConsentId string              `json:"consentId"`
 			} `json:"meteringPoints"`
 			From   int64  `json:"from"`
-			Reason string `json:"to"`
+			Reason string `json:"reason"`
 		}{}
 		err := json.NewDecoder(r.Body).Decode(&request)
 		if err != nil {
 			log.WithContext(r.Context()).WithField("tenant", tenant).WithError(err).Error("failed to revoke metering point.")
 			respondWith(r.Context(), w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
+			return
+		}
+		reason, rerr := revokeReason(request.Reason)
+		if rerr != nil {
+			rejectRevoke(r.Context(), w, tenant, rerr)
+			return
+		}
+		// without "from" the consent end was 01.01.1970 (time.UnixMilli(0)) and went out like that
+		if request.From <= 0 {
+			rejectRevoke(r.Context(), w, tenant, model.ErrRevokeConsentEnd(errors.New("Das Ende der Datenfreigabe fehlt.")))
 			return
 		}
 
@@ -671,10 +684,6 @@ func (h *MeteringHandler) requestRevokeMeteringPoint() middleware.JWTHandlerFunc
 		}
 
 		fromDate := util.TruncateToStartOfDay(time.UnixMilli(request.From)).UnixMilli()
-		var reason *string
-		if len(strings.TrimSpace(request.Reason)) > 0 {
-			reason = &request.Reason
-		}
 
 		var meters []string
 		for _, m := range request.MeteringPoints {
@@ -682,20 +691,55 @@ func (h *MeteringHandler) requestRevokeMeteringPoint() middleware.JWTHandlerFunc
 		}
 
 		if meters == nil {
-			log.WithContext(r.Context()).WithField("tenant", tenant).Error("failed to revoke metering point. Err: No Meter selected")
-			respondWith(r.Context(), w, http.StatusInternalServerError, tenant, model.Wrap(errors.New("no Meter selected"), 3100))
+			rejectRevoke(r.Context(), w, tenant, model.ErrRevokeRequest(errors.New("Es ist kein Zählpunkt ausgewählt.")))
 			return
 		}
 
 		log.WithContext(r.Context()).WithField("tenant", tenant).Infof("revoke Metering %v (%s)", meters, time.UnixMilli(fromDate).String())
+		// every metering point must belong to the member of the path; an unknown one gets the same answer as one of
+		// another member (before, any metering point of the community was revoked under any member)
+		owned, err := h.db.FindAllMeteringByTenant(r.Context(), tenant, participantId, meters)
+		if err != nil {
+			respondWith(r.Context(), w, http.StatusInternalServerError, tenant, err)
+			return
+		}
+		for _, m := range meters {
+			if !slices.ContainsFunc(owned, func(o *model.MeteringPoint) bool { return o.MeteringPoint == m }) {
+				rejectRevoke(r.Context(), w, tenant, model.ErrRevokeRequest(errors.New("Mindestens ein Zählpunkt gehört nicht zu diesem Mitglied.")))
+				return
+			}
+		}
+
 		if eeg.Online {
 			errorList := []string{}
-			meters, err := h.db.FindActiveMeteringByIds(r.Context(), tenant, meters)
+			active, err := h.db.FindActiveMeteringByIds(r.Context(), tenant, meters)
 			if err != nil {
 				respondWith(r.Context(), w, http.StatusInternalServerError, tenant, err)
 				return
 			}
-			for _, m := range meters {
+			// only the member's own active entries are sent: after an owner change the active entry is the other
+			// member's consent. If any requested metering point has none, nothing is sent and the request is refused,
+			// so the user is not told that a revoke went out when it did not.
+			var own []*model.MeteringPoint
+			for _, m := range active {
+				if strings.EqualFold(m.ParticipantId, participantId) {
+					own = append(own, m)
+				}
+			}
+			for _, id := range meters {
+				if !slices.ContainsFunc(own, func(o *model.MeteringPoint) bool { return o.MeteringPoint == id }) {
+					rejectRevoke(r.Context(), w, tenant, model.ErrRevokeNotActive(errors.New("Mindestens ein Zählpunkt hat keine aktive Datenfreigabe dieses Mitglieds.")))
+					return
+				}
+			}
+			// every receiver is known before the first send, so a missing grid operator cannot leave a partial revoke
+			for _, m := range own {
+				if _, err := mqttclient.ReceiverFor(eeg, m); err != nil {
+					rejectRevoke(r.Context(), w, tenant, model.ErrRevokeRequest(fmt.Errorf("Für den Zählpunkt %s ist kein Netzbetreiber hinterlegt.", m.MeteringPoint)))
+					return
+				}
+			}
+			for _, m := range own {
 				if err = mqttclient.RevokeMeteringPoint(eeg, m, fromDate, reason); err != nil {
 					log.WithContext(r.Context()).WithField("tenant", tenant).Errorf("request revoke Metering %s (%d)", m.MeteringPoint, fromDate)
 					errorList = append(errorList, fmt.Sprintf("%s: %s", m.MeteringPoint, err.Error()))
@@ -709,6 +753,45 @@ func (h *MeteringHandler) requestRevokeMeteringPoint() middleware.JWTHandlerFunc
 		}
 		respondWithJSON(w, http.StatusCreated, participant)
 	}
+}
+
+// maxRevokeReason is the length of ProcessDirectory/Reason in the CMRevoke schema (eda-xp CMRevoke_01p10.xsd).
+const maxRevokeReason = 50
+
+// revokeReason cleans the optional reason of a revoke like a mail subject (mailtemplate.SanitizeSubject): control
+// characters (also line breaks and tabs) become a space, format characters and characters XML 1.0 does not allow are
+// dropped, runs of white space become one space, the ends are trimmed (as eda-xp's RevokeReason). Empty
+// means none. A longer reason is refused rather than cut, so the grid operator never gets a text the user did not write.
+func revokeReason(raw string) (*string, *model.VfeegError) {
+	reason := strings.Join(strings.Fields(strings.Map(func(r rune) rune {
+		switch {
+		case unicode.IsControl(r):
+			return ' '
+		case unicode.Is(unicode.Cf, r) || !xmlChar(r):
+			return -1 // format characters (U+200B, U+FEFF, U+202E …) and what XML 1.0 does not allow are dropped
+		}
+		return r
+	}, raw)), " ")
+	if reason == "" {
+		return nil, nil
+	}
+	if utf8.RuneCountInString(reason) > maxRevokeReason {
+		return nil, model.ErrRevokeReason(fmt.Errorf("Die Begründung ist zu lang (höchstens %d Zeichen).", maxRevokeReason))
+	}
+	return &reason, nil
+}
+
+// xmlChar reports whether XML 1.0 allows the character (Char production); eda-xp drops the same ones.
+func xmlChar(r rune) bool {
+	return r == 0x9 || r == 0xA || r == 0xD || (r >= 0x20 && r <= 0xD7FF) || (r >= 0xE000 && r <= 0xFFFD) ||
+		(r >= 0x10000 && r <= 0x10FFFF)
+}
+
+// rejectRevoke answers a revoke request with invalid input: 400, logged once at warn (the input itself is not logged).
+func rejectRevoke(ctx context.Context, w http.ResponseWriter, tenant string, e *model.VfeegError) {
+	log.WithContext(ctx).WithField("tenant", tenant).WithField("code", e.Code).Warn("revoke refused: " + e.Error())
+	text := model.UserText(e)
+	respondWithHttpError(w, http.StatusBadRequest, &HttpError{Error: text, Code: e.Code, Message: text})
 }
 
 func (h *MeteringHandler) removeMeteringPoint() middleware.JWTHandlerFunc {
