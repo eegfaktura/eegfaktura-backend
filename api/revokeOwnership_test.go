@@ -73,8 +73,8 @@ func TestRevokeRefusesMeterOfAnotherMember(t *testing.T) {
 	}
 }
 
-const notActiveBody = `{"error":{"code":5013,"error":"Keiner der Zählpunkte hat eine aktive Datenfreigabe dieses Mitglieds.",
-	"message":"Keiner der Zählpunkte hat eine aktive Datenfreigabe dieses Mitglieds."}}`
+const notActiveBody = `{"error":{"code":5013,"error":"Mindestens ein Zählpunkt hat keine aktive Datenfreigabe dieses Mitglieds.",
+	"message":"Mindestens ein Zählpunkt hat keine aktive Datenfreigabe dieses Mitglieds."}}`
 
 // After an owner change the old member's entry is its own, but the active entry is the new member's: the old member
 // cannot revoke the new member's consent. Nothing is sent, and the answer says so instead of a success.
@@ -108,5 +108,28 @@ func TestRevokePartlyActiveIsRefusedWhole(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	assert.JSONEq(t, notActiveBody, w.Body.String())
+	assert.Empty(t, sent)
+}
+
+// Without a grid operator for one of the metering points nothing is sent, so no revoke goes out for the others while
+// the answer reports a failure.
+func TestRevokeWithoutGridOperatorSendsNothing(t *testing.T) {
+	const zp = "AT0030000000000000000000000953107"
+	ownerChange(t, zp, "2025-01-01", "2025-06-15", "2025-06-16", 0)
+	member := "c1050001-0000-0000-0000-" + zp[len(zp)-12:]
+	var code string
+	require.NoError(t, testDB.DbInstance.Get(&code, `SELECT coalesce(gridoperator_code, '') FROM base.eeg WHERE tenant = 'TE001006'`))
+	t.Cleanup(func() {
+		_, err := testDB.DbInstance.Exec(`UPDATE base.eeg SET gridoperator_code = $1 WHERE tenant = 'TE001006'`, code)
+		assert.NoError(t, err)
+	})
+	_, err := testDB.DbInstance.Exec(`UPDATE base.eeg SET gridoperator_code = '' WHERE tenant = 'TE001006'`)
+	require.NoError(t, err)
+
+	w, sent := revoke(t, member, revokeRequest(zp, ""))
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.JSONEq(t, `{"error":{"code":5012,"error":"Für den Zählpunkt `+zp+` ist kein Netzbetreiber hinterlegt.",
+		"message":"Für den Zählpunkt `+zp+` ist kein Netzbetreiber hinterlegt."}}`, w.Body.String())
 	assert.Empty(t, sent)
 }

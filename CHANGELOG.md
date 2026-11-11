@@ -9,11 +9,12 @@ this changelog highlights the changes relevant for overview and operations.
 ## [Unreleased]
 
 ### Contract
-- **`revokemeters` reads `reason`, not `to`, and has three new 400 answers.** The only caller is eegfaktura-web
+- **`revokemeters` reads `reason`, not `to`, and has four new 400 answers.** The only caller is eegfaktura-web
   (`eeg.service.ts`), whose body already uses the key `reason` (its value was never filled, fixed in
   eegfaktura/eegfaktura-web#245); `to` is no longer read. New error codes (body `{"error":{"code","error","message"}}`):
-  **5011** the reason is longer than 50 characters; **5012** the consent end (`from`) is missing, or a metering point
-  does not belong to the member `{pid}`; **5013** a metering point has no active entry of the member (nothing is sent).
+  **5011** the reason is longer than 50 characters; **5012** a metering point does not belong to the member `{pid}` or
+  has no grid operator; **5013** a metering point has no active entry of the member; **5014** the consent end (`from`)
+  is missing. In every case nothing is sent; the `message` is the German text for the user.
   The web shows them readable (eegfaktura/eegfaktura-web#245). Downstream eda-xp writes the reason to CMRevoke as
   ReasonKey 0 + Reason (eegfaktura/eegfaktura-eda-xp#59).
 
@@ -24,12 +25,14 @@ this changelog highlights the changes relevant for overview and operations.
   otherwise 400, code 5012 „Mindestens ein Zählpunkt gehört nicht zu diesem Mitglied.“ — the same answer for an
   unknown number. After an owner change the old member's entry still belongs to the old member, but the active entry
   is the new member's: such a request no longer revokes the new member's consent. If any requested metering point has
-  no active entry of the member, the whole request is refused with 400, code 5013 „Keiner der Zählpunkte hat eine
+  no active entry of the member, the whole request is refused with 400, code 5013 „Mindestens ein Zählpunkt hat keine
   aktive Datenfreigabe dieses Mitglieds.“ and nothing is sent — no partial revoke and no success the user would
-  misread.
+  misread. The grid operator of every metering point is checked before the first send, too: without one the request
+  is refused with 400, code 5012 „Für den Zählpunkt … ist kein Netzbetreiber hinterlegt.“ (before, the revokes for the
+  metering points before it went out and the answer was 500).
 - **A revoke without consent end is refused** (pre-existing, found in the review of eegfaktura/eegfaktura-backend#127).
   `revokemeters` without `from` (or with 0 or less) used to send CMRevoke with ConsentEnd 01.01.1970; it now answers
-  400, code 5012 „Das Ende der Datenfreigabe fehlt.“. The web always sends `from`.
+  400, code 5014 „Das Ende der Datenfreigabe fehlt.“. The web always sends `from`.
 - **The optional reason of a revoke (`POST /meteringpoint/{pid}/revokemeters`) reaches eda-xp** (revoke reason,
   2026-10-30). The handler read it from the JSON key `to`, which no caller sends, so the reason was always empty. It
   now reads `reason` (the key eegfaktura-web sends) and cleans it like a mail subject: control characters (also line

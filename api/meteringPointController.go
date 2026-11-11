@@ -666,7 +666,7 @@ func (h *MeteringHandler) requestRevokeMeteringPoint() middleware.JWTHandlerFunc
 		}
 		// without "from" the consent end was 01.01.1970 (time.UnixMilli(0)) and went out like that
 		if request.From <= 0 {
-			rejectRevoke(r.Context(), w, tenant, model.ErrRevokeRequest(errors.New("Das Ende der Datenfreigabe fehlt.")))
+			rejectRevoke(r.Context(), w, tenant, model.ErrRevokeConsentEnd(errors.New("Das Ende der Datenfreigabe fehlt.")))
 			return
 		}
 
@@ -713,8 +713,7 @@ func (h *MeteringHandler) requestRevokeMeteringPoint() middleware.JWTHandlerFunc
 
 		if eeg.Online {
 			errorList := []string{}
-			requested := meters
-			meters, err := h.db.FindActiveMeteringByIds(r.Context(), tenant, meters)
+			active, err := h.db.FindActiveMeteringByIds(r.Context(), tenant, meters)
 			if err != nil {
 				respondWith(r.Context(), w, http.StatusInternalServerError, tenant, err)
 				return
@@ -723,14 +722,21 @@ func (h *MeteringHandler) requestRevokeMeteringPoint() middleware.JWTHandlerFunc
 			// member's consent. If any requested metering point has none, nothing is sent and the request is refused,
 			// so the user is not told that a revoke went out when it did not.
 			var own []*model.MeteringPoint
-			for _, m := range meters {
+			for _, m := range active {
 				if strings.EqualFold(m.ParticipantId, participantId) {
 					own = append(own, m)
 				}
 			}
-			for _, id := range requested {
+			for _, id := range meters {
 				if !slices.ContainsFunc(own, func(o *model.MeteringPoint) bool { return o.MeteringPoint == id }) {
-					rejectRevoke(r.Context(), w, tenant, model.ErrRevokeNotActive(errors.New("Keiner der Zählpunkte hat eine aktive Datenfreigabe dieses Mitglieds.")))
+					rejectRevoke(r.Context(), w, tenant, model.ErrRevokeNotActive(errors.New("Mindestens ein Zählpunkt hat keine aktive Datenfreigabe dieses Mitglieds.")))
+					return
+				}
+			}
+			// every receiver is known before the first send, so a missing grid operator cannot leave a partial revoke
+			for _, m := range own {
+				if _, err := mqttclient.ReceiverFor(eeg, m); err != nil {
+					rejectRevoke(r.Context(), w, tenant, model.ErrRevokeRequest(fmt.Errorf("Für den Zählpunkt %s ist kein Netzbetreiber hinterlegt.", m.MeteringPoint)))
 					return
 				}
 			}
@@ -785,7 +791,8 @@ func xmlChar(r rune) bool {
 // rejectRevoke answers a revoke request with invalid input: 400, logged once at warn (the input itself is not logged).
 func rejectRevoke(ctx context.Context, w http.ResponseWriter, tenant string, e *model.VfeegError) {
 	log.WithContext(ctx).WithField("tenant", tenant).WithField("code", e.Code).Warn("revoke refused: " + e.Error())
-	respondWithHttpError(w, http.StatusBadRequest, &HttpError{Error: e.Error(), Code: e.Code, Message: e.Error()})
+	text := model.UserText(e)
+	respondWithHttpError(w, http.StatusBadRequest, &HttpError{Error: text, Code: e.Code, Message: text})
 }
 
 func (h *MeteringHandler) removeMeteringPoint() middleware.JWTHandlerFunc {

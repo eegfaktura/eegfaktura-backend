@@ -87,7 +87,7 @@ func TestRevokeRefusesMissingConsentEnd(t *testing.T) {
 		w := revokeWithoutDB(t, map[string]interface{}{"from": from})
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
-		assert.JSONEq(t, `{"error":{"code":5012,"error":"Das Ende der Datenfreigabe fehlt.",
+		assert.JSONEq(t, `{"error":{"code":5014,"error":"Das Ende der Datenfreigabe fehlt.",
 			"message":"Das Ende der Datenfreigabe fehlt."}}`, w.Body.String())
 	}
 }
