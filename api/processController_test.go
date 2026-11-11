@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"at.ourproject/vfeeg-backend/database"
+	"at.ourproject/vfeeg-backend/database/dbmock"
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/require"
 )
@@ -36,7 +36,7 @@ func TestFetchProcessHistory_pageSize(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.ps, func(t *testing.T) {
-			db, mock, err := database.InitMockDatabase()
+			db, mock, err := dbmock.New()
 			require.NoError(t, err)
 			if tt.status == http.StatusOK {
 				mock.ExpectQuery(`SELECT (.+) FROM "base"."processhistory"`).

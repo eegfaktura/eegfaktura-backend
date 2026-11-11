@@ -3,6 +3,7 @@ package model
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 
 	"github.com/jjeffery/civil"
@@ -54,6 +55,32 @@ func (i *IntOrString) UnmarshalJSON(data []byte) error {
 	return fmt.Errorf("IntOrString: invalid data %s", string(data))
 }
 
+// FloatOrString is IntOrString for an amount with decimals (261026-mm1).
+type FloatOrString float64
+
+func (f *FloatOrString) UnmarshalJSON(data []byte) error {
+	var floatVal float64
+	if err := json.Unmarshal(data, &floatVal); err == nil {
+		*f = FloatOrString(floatVal)
+		return nil
+	}
+
+	var strVal string
+	if err := json.Unmarshal(data, &strVal); err == nil {
+		floatVal, err := strconv.ParseFloat(strVal, 64)
+		if err != nil {
+			return err
+		}
+		if math.IsNaN(floatVal) || math.IsInf(floatVal, 0) {
+			return fmt.Errorf("FloatOrString: invalid amount %s", strVal)
+		}
+		*f = FloatOrString(floatVal)
+		return nil
+	}
+
+	return fmt.Errorf("FloatOrString: invalid data %s", string(data))
+}
+
 type Tariff struct {
 	Id                   uuid.UUID       `json:"id" goqu:"defaultifempty"`
 	Version              int             `json:"version" db:"version"`
@@ -66,7 +93,7 @@ type Tariff struct {
 	AccountNetAmount     IntOrString     `json:"accountNetAmount" db:"accountNetAmount"`
 	AccountGrossAmount   IntOrString     `json:"accountGrossAmount"  db:"accountGrossAmount"`
 	ParticipantFee       float32         `json:"participantFee" db:"participantFee"`
-	BaseFee              IntOrString     `json:"baseFee" db:"baseFee"`
+	BaseFee              FloatOrString   `json:"baseFee" db:"baseFee"`
 	BusinessNr           null.Int        `json:"businessNr,string" db:"businessNr"`
 	CentPerKWh           float32         `json:"centPerKWh" db:"centPerKWh"`
 	FreeKWh              null.Int        `json:"freeKWh,omitempty,omitzero" db:"freeKWh"`
@@ -91,6 +118,42 @@ type Tariff struct {
 	TimeTariff2From       null.String `json:"timeTariff2From,omitempty" db:"timeTariff2From"`
 	TimeTariff2To         null.String `json:"timeTariff2To,omitempty" db:"timeTariff2To"`
 	TimeTariff2CentPerKWh null.Float  `json:"timeTariff2CentPerKWh,omitempty" db:"timeTariff2CentPerKWh"`
+
+	// Beitrittsgebuehr (konzept-beitrittsgebuehr.md): einmalig je Mitglied, nur am
+	// EEG-Tarif, mit eigener USt-Einstellung. Die Spalte ist numeric(10,2), der Betrag
+	// bleibt dort exakt; ValidateJoiningFee laesst hoechstens 2 Nachkommastellen zu.
+	JoiningFee             float64     `json:"joiningFee" db:"joiningFee"`
+	JoiningFeeUseVat       bool        `json:"joiningFeeUseVat" db:"joiningFeeUseVat"`
+	JoiningFeeVatInPercent IntOrString `json:"joiningFeeVatInPercent" db:"joiningFeeVatInPercent"`
+}
+
+// maxJoiningFee is the largest amount the column "joiningFee" numeric(10,2) holds; above it the INSERT would fail
+// with a database error instead of a message.
+const maxJoiningFee = 99999999.99
+
+// ValidateJoiningFee enforces the joining fee rules server-side (konzept-beitrittsgebuehr.md,
+// Tech Design B): only EEG tariffs carry a fee (other types must send 0/false), the amount
+// is >= 0 with at most 2 decimals and fits numeric(10,2), the VAT rate lies in 0..100.
+func (t *Tariff) ValidateJoiningFee() error {
+	if t.Type != EEG {
+		if t.JoiningFee != 0 || t.JoiningFeeUseVat || t.JoiningFeeVatInPercent != 0 {
+			return fmt.Errorf("Beitrittsgebühr ist nur für Mitgliedsbeitrags-Tarife zulässig")
+		}
+		return nil
+	}
+	if t.JoiningFee < 0 {
+		return fmt.Errorf("Beitrittsgebühr darf nicht negativ sein")
+	}
+	if t.JoiningFee > maxJoiningFee {
+		return fmt.Errorf("Beitrittsgebühr darf höchstens 99.999.999,99 € betragen")
+	}
+	if cents := t.JoiningFee * 100; math.Abs(cents-math.Round(cents)) > 1e-6 {
+		return fmt.Errorf("Beitrittsgebühr: höchstens 2 Nachkommastellen")
+	}
+	if t.JoiningFeeVatInPercent < 0 || t.JoiningFeeVatInPercent > 100 {
+		return fmt.Errorf("USt-Satz der Beitrittsgebühr muss zwischen 0 und 100 liegen")
+	}
+	return nil
 }
 
 // parseTimeTariffTime parses "HH:MM", enforcing the 15-min raster
@@ -185,4 +248,28 @@ func (t *Tariff) ValidateTimeTariff() error {
 }
 
 type TariffHistory struct {
+}
+
+// JoiningFeeState is one entry of billing's joiningFeeState list (GET
+// /api/billingDocuments/tenant/{tenantId}/joiningFeeState). eegfaktura-web passes the list
+// unchanged as the body of POST /eeg/export/masterdata; it only fills the export column
+// "Beitrittsgebühr Status" (konzept-beitrittsgebuehr.md, Tech Design A and Erweiterung 27.10.2026).
+type JoiningFeeState struct {
+	ParticipantId  string                  `json:"participantId"`
+	EnergyBilled   bool                    `json:"energyBilled"`
+	JoiningFee     *JoiningFeeDocument     `json:"joiningFee"`
+	Requested      bool                    `json:"requested"`
+	PaidExternally *JoiningFeePaidExternal `json:"paidExternally"`
+}
+
+// JoiningFeeDocument is the final billing document that carries a member's joining fee.
+type JoiningFeeDocument struct {
+	DocumentNumber string `json:"documentNumber"`
+	DocumentDate   string `json:"documentDate"` // YYYY-MM-DD
+}
+
+// JoiningFeePaidExternal is a payment of the fee outside eegfaktura, recorded in billing.
+type JoiningFeePaidExternal struct {
+	PaidOn string `json:"paidOn"` // YYYY-MM-DD
+	Note   string `json:"note"`
 }

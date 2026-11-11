@@ -3,11 +3,13 @@ package database
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -77,7 +79,11 @@ func (db *sqlDatabase) ImportMasterdataFromExcel(ctx context.Context, r io.Reade
 
 	rows, err := f.Rows(sheet)
 	if err != nil {
-		log.Error(err)
+		log.WithContext(ctx).Error(err)
+		var missing excelize.ErrSheetNotExist
+		if errors.As(err, &missing) {
+			return model.ErrImportSheetMissing(fmt.Errorf(model.ImportSheetMissingText, missing.SheetName))
+		}
 		return err
 	}
 	defer rows.Close()
@@ -101,9 +107,8 @@ func (db *sqlDatabase) ImportMasterdataFromExcel(ctx context.Context, r io.Reade
 	}
 
 	importLog := &model.Log{Operation: "Excel Master Data Import", Messages: []*model.LogMessage{}}
-	participants := transformExcelData(rows, gridOperatorName, eeg.Online, eeg.CommunityId, importLog)
-	log.Debugf("Rows: %+v", rows)
-	log.Debugf("LEN _ Import participants: %v", len(participants))
+	participants := transformExcelData(ctx, rows, gridOperatorName, eeg.Online, eeg.CommunityId, importLog)
+	log.WithContext(ctx).Debugf("LEN _ Import participants: %v", len(participants))
 
 	db.reportDuplicateParticipantNumbers(ctx, strings.ToUpper(tenant), participants, importLog)
 
@@ -116,7 +121,7 @@ func (db *sqlDatabase) ImportMasterdataFromExcel(ctx context.Context, r io.Reade
 				fmt.Sprintf("%s %s", p.FirstName, p.LastName),
 				err,
 			))
-			log.Errorf("Error Import Participant from Excel: %s", err.Error())
+			log.WithContext(ctx).Errorf("Error Import Participant from Excel: %s", err.Error())
 			continue
 		}
 		// only a member the import created gets an id; for an existing one it only adds metering points
@@ -132,7 +137,7 @@ func (db *sqlDatabase) ImportMasterdataFromExcel(ctx context.Context, r io.Reade
 		err = db.SaveNotificationFromMap(CreateNotificationMessageFromLog(importLog), tenant,
 			model.N_TYPE_NOTIFICATION, model.N_PROCESS_IMPORT_EXCEL, "ADMIN")
 		if err != nil {
-			log.Error(err)
+			log.WithContext(ctx).Error(err)
 		}
 	}
 
@@ -181,12 +186,12 @@ func (db *sqlDatabase) reportDuplicateParticipantNumbers(ctx context.Context, te
 			goqu.C("participantNumber").IsNotNull(),
 			goqu.C("participantNumber").Neq("")).ToSQL()
 	if err != nil {
-		log.WithError(err).Warn("duplicate participant number check skipped")
+		log.WithContext(ctx).WithError(err).Warn("duplicate participant number check skipped")
 		return
 	}
 	var existing []existingParticipant
 	if err := db.db.SelectContext(ctx, &existing, stmt); err != nil {
-		log.WithError(err).Warn("duplicate participant number check skipped")
+		log.WithContext(ctx).WithError(err).Warn("duplicate participant number check skipped")
 		return
 	}
 	for _, e := range existing {
@@ -210,11 +215,14 @@ func CreateNotificationMessageFromLog(logMsg *model.Log) map[string]interface{} 
 	}
 }
 
-func ExportMasterdataToExcel(participants []*model.EegParticipant, eeg *model.Eeg, tariffMap map[string]string) (*bytes.Buffer, error) {
+// ExportMasterdataToExcel writes the master data workbook. joiningFees maps an EEG tariff id to its joining fee
+// (> 0 only); feeStates is the optional list web fetched from billing (nil: column "Status" stays empty).
+func ExportMasterdataToExcel(ctx context.Context, participants []*model.EegParticipant, eeg *model.Eeg, tariffMap map[string]string,
+	joiningFees map[string]float64, feeStates []model.JoiningFeeState) (*bytes.Buffer, error) {
 	f := excelize.NewFile()
 	defer func() {
 		if err := f.Close(); err != nil {
-			log.WithField("tenant", eeg.Id).WithError(err).Error("Error while closing file")
+			log.WithContext(ctx).WithField("tenant", eeg.Id).WithError(err).Error("Error while closing file")
 		}
 	}()
 
@@ -222,13 +230,42 @@ func ExportMasterdataToExcel(participants []*model.EegParticipant, eeg *model.Ee
 	if err != nil {
 		return nil, err
 	}
-	err = generateParticipantMastersheet(f, participants, tariffMap)
+	err = generateParticipantMastersheet(ctx, f, byMemberNumber(participants), tariffMap, joiningFees, feeStates)
 	if err != nil {
 		return nil, err
 	}
 
 	_ = f.DeleteSheet("Sheet1")
 	return f.WriteToBuffer()
+}
+
+// byMemberNumber orders the members of the export by member number (08.11.2026): numbers numerically ("2" before
+// "10"), then numbers with other characters alphabetically, members without a number last; equal numbers keep their
+// order. A copy: the caller's slice stays as it is.
+func byMemberNumber(participants []*model.EegParticipant) []*model.EegParticipant {
+	sorted := append([]*model.EegParticipant(nil), participants...)
+	rank := func(p *model.EegParticipant) (int, int64, string) {
+		nr := strings.TrimSpace(p.ParticipantNumber.String)
+		if nr == "" {
+			return 2, 0, ""
+		}
+		if n, err := strconv.ParseInt(nr, 10, 64); err == nil {
+			return 0, n, nr
+		}
+		return 1, 0, strings.ToLower(nr)
+	}
+	sort.SliceStable(sorted, func(i, j int) bool {
+		gi, ni, si := rank(sorted[i])
+		gj, nj, sj := rank(sorted[j])
+		if gi != gj {
+			return gi < gj
+		}
+		if ni != nj {
+			return ni < nj
+		}
+		return si < sj
+	})
+	return sorted
 }
 
 func generateEegMastersheet(f *excelize.File, eeg *model.Eeg) error {
@@ -343,7 +380,46 @@ var memberActivityLabel = map[model.MemberActivityType]string{
 	model.MemberInactive: "inaktiv",
 }
 
-func generateParticipantMastersheet(f *excelize.File, participants []*model.EegParticipant, tariffMap map[string]string) error {
+// germanDate shows "YYYY-MM-DD" as "TT.MM.JJJJ"; any other text as sent.
+func germanDate(s string) string {
+	if t, err := time.Parse("2006-01-02", s); err == nil {
+		return t.Format("02.01.2006")
+	}
+	return s
+}
+
+// joiningFeeStatus is the text of the column "Beitrittsgebühr Status" (konzept-beitrittsgebuehr.md, Erweiterung
+// 27.10.2026, same texts and order as the member details in eegfaktura-web): a final document with the fee, then a
+// payment outside eegfaktura, then the tariff (no fee: nothing will be charged, also not a request), then a request,
+// then whether the member was billed with energy. Without a fee the cell stays empty (web: „kein Tarif mit
+// Beitrittsgebühr“), so a community without joining fees gets no column full of hints. s is the member's entry of
+// billing's list (nil: no entry, i.e. no final document yet), fee the joining fee of the member's EEG tariff.
+func joiningFeeStatus(s *model.JoiningFeeState, fee float64) string {
+	if s == nil {
+		s = &model.JoiningFeeState{}
+	}
+	switch {
+	case s.JoiningFee != nil:
+		return fmt.Sprintf("verrechnet mit %s vom %s", s.JoiningFee.DocumentNumber, germanDate(s.JoiningFee.DocumentDate))
+	case s.PaidExternally != nil:
+		text := "außerhalb bezahlt am " + germanDate(s.PaidExternally.PaidOn)
+		if s.PaidExternally.Note != "" {
+			text += " (" + s.PaidExternally.Note + ")"
+		}
+		return text
+	case fee <= 0:
+		return ""
+	case s.Requested:
+		return "zur Verrechnung im nächsten Abrechnungslauf vorgemerkt"
+	case !s.EnergyBilled:
+		return "offen – wird mit der ersten Energieabrechnung verrechnet"
+	default:
+		return "nicht verrechnet – Mitglied wurde schon abgerechnet"
+	}
+}
+
+func generateParticipantMastersheet(ctx context.Context, f *excelize.File, participants []*model.EegParticipant, tariffMap map[string]string,
+	joiningFees map[string]float64, feeStates []model.JoiningFeeState) error {
 
 	getTariffName := func(id string) string {
 		name, ok := tariffMap[id]
@@ -351,6 +427,25 @@ func generateParticipantMastersheet(f *excelize.File, participants []*model.EegP
 			return ""
 		}
 		return name
+	}
+
+	// Only the tenant's own members are looked up below, so entries for other participant ids are ignored.
+	feeState := map[string]*model.JoiningFeeState{}
+	for i := range feeStates {
+		feeState[strings.ToLower(feeStates[i].ParticipantId)] = &feeStates[i]
+	}
+	getJoiningFee := func(tariffId string) interface{} {
+		if fee, ok := joiningFees[tariffId]; ok && fee > 0 {
+			return fee
+		}
+		return ""
+	}
+	// without a list from billing (older web, billing not reachable) the column stays empty
+	getJoiningFeeStatus := func(c *model.EegParticipant) string {
+		if feeStates == nil {
+			return ""
+		}
+		return joiningFeeStatus(feeState[strings.ToLower(c.Id.String())], joiningFees[c.TariffId.String])
 	}
 
 	getNullDate := func(d civil.NullDate) string {
@@ -370,6 +465,7 @@ func generateParticipantMastersheet(f *excelize.File, participants []*model.EegP
 		Font:   &excelize.Font{Size: 10.0},
 		NumFmt: 14,
 	})
+	styleIdAmount, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Size: 10.0}, NumFmt: 2})
 
 	sheet := "Mitglieder"
 	_, err = f.NewSheet(sheet)
@@ -394,11 +490,15 @@ func generateParticipantMastersheet(f *excelize.File, participants []*model.EegP
 	colNr, _ = excelize.ColumnNameToNumber("R")
 	err = sw.SetColWidth(colNr, colNr+1, 20.0)
 	colNr, _ = excelize.ColumnNameToNumber("Y")
-	err = sw.SetColWidth(colNr, colNr+1, 32.0)
-	err = sw.SetColWidth(colNr+3, colNr+3, 8.0)
-	err = sw.SetColWidth(colNr+4, colNr+4, 20.0)
-	err = sw.SetColWidth(colNr+6, colNr+6, 18.0)
-	colNr, _ = excelize.ColumnNameToNumber("AI")
+	err = sw.SetColWidth(colNr, colNr, 32.0)
+	err = sw.SetColWidth(colNr+1, colNr+1, 14.0) // Beitrittsgebühr (€)
+	err = sw.SetColWidth(colNr+2, colNr+2, 45.0) // Beitrittsgebühr Status
+	colNr, _ = excelize.ColumnNameToNumber("AB")
+	err = sw.SetColWidth(colNr, colNr, 32.0)
+	err = sw.SetColWidth(colNr+2, colNr+2, 8.0)
+	err = sw.SetColWidth(colNr+3, colNr+3, 20.0)
+	err = sw.SetColWidth(colNr+5, colNr+5, 18.0)
+	colNr, _ = excelize.ColumnNameToNumber("AK")
 	err = sw.SetColWidth(colNr, colNr+1, 20.0)
 	err = sw.SetColWidth(colNr+3, colNr+4, 12.0)
 	err = sw.SetColWidth(colNr+5, colNr+5, 30.0)
@@ -413,7 +513,6 @@ func generateParticipantMastersheet(f *excelize.File, participants []*model.EegP
 		excelize.Cell{Value: "Mitglied seit."},
 		excelize.Cell{Value: "E-Mail"},
 		excelize.Cell{Value: "Telefonnummer"},
-		excelize.Cell{Value: "SteuerNr."},
 		excelize.Cell{Value: "Ust."},
 		excelize.Cell{Value: "IBAN."},
 		excelize.Cell{Value: "Kontoinhaber"},
@@ -430,6 +529,8 @@ func generateParticipantMastersheet(f *excelize.File, participants []*model.EegP
 		excelize.Cell{Value: "teilnahme als"},
 		excelize.Cell{Value: "Status"},
 		excelize.Cell{Value: "Mitgliedstarif"},
+		excelize.Cell{Value: "Beitrittsgebühr (€)"},
+		excelize.Cell{Value: "Beitrittsgebühr Status"},
 		excelize.Cell{Value: "Zählpunkt"},
 		excelize.Cell{Value: "ZP-Status"},
 		excelize.Cell{Value: "ZpNr."},
@@ -451,6 +552,7 @@ func generateParticipantMastersheet(f *excelize.File, participants []*model.EegP
 	for _, c := range participants {
 		// platform#165: the member status from its metering points, the stored one stays ACTIVE after leaving
 		status := memberActivityLabel[model.MemberActivity(c.MeteringPoint)]
+		feeStatus := getJoiningFeeStatus(c)
 		for _, m := range c.MeteringPoint {
 			line = line + 1
 			err = sw.SetRow(fmt.Sprintf("A%d", line),
@@ -478,7 +580,6 @@ func generateParticipantMastersheet(f *excelize.File, participants []*model.EegP
 					excelize.Cell{Value: getNullDate(c.ParticipantSince), StyleID: styleIdDate},
 					excelize.Cell{Value: c.Contact.Email.String},
 					excelize.Cell{Value: c.Contact.Phone.String},
-					excelize.Cell{Value: c.TaxNumber.String},
 					excelize.Cell{Value: c.VatNumber.String},
 					excelize.Cell{Value: c.BankAccount.Iban.String},
 					excelize.Cell{Value: c.BankAccount.Owner.String},
@@ -501,6 +602,8 @@ func generateParticipantMastersheet(f *excelize.File, participants []*model.EegP
 					}()},
 					excelize.Cell{Value: status},
 					excelize.Cell{Value: getTariffName(c.TariffId.String), StyleID: styleDateId},
+					excelize.Cell{Value: getJoiningFee(c.TariffId.String), StyleID: styleIdAmount},
+					excelize.Cell{Value: feeStatus},
 					excelize.Cell{Value: m.MeteringPoint},
 					excelize.Cell{Value: m.ProcessState},
 					excelize.Cell{Value: m.EquipmentNumber.String},
@@ -521,20 +624,20 @@ func generateParticipantMastersheet(f *excelize.File, participants []*model.EegP
 		}
 	}
 
-	setAutoFilter(f, sheet, len(header), line)
+	setAutoFilter(ctx, f, sheet, len(header), line)
 	err = sw.Flush()
 	return err
 }
 
 // setAutoFilter sets the filter over every header column and all rows (both exports had a fixed A1:AH10: the
 // master data columns from AI on and the rows after 10 had no filter). A failure only costs the filter buttons.
-func setAutoFilter(f *excelize.File, sheet string, columns, lastRow int) {
+func setAutoFilter(ctx context.Context, f *excelize.File, sheet string, columns, lastRow int) {
 	lastCell, err := excelize.CoordinatesToCellName(columns, lastRow)
 	if err == nil {
 		err = f.AutoFilter(sheet, "A1:"+lastCell, nil)
 	}
 	if err != nil {
-		log.WithError(err).Warnf("excel export: no auto filter on sheet %s", sheet)
+		log.WithContext(ctx).WithError(err).Warnf("excel export: no auto filter on sheet %s", sheet)
 	}
 }
 
@@ -666,7 +769,7 @@ func importEmail(raw, firstname, lastname string, importLog *model.Log) null.Str
 	return null.StringFrom(normalized)
 }
 
-func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) string, online bool, communityId string, importLog *model.Log) []*model.EegParticipant {
+func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorName func(id string) string, online bool, communityId string, importLog *model.Log) []*model.EegParticipant {
 	colMap := map[string]int{}
 	participants := []*model.EegParticipant{}
 	defaultPartFact := "100"
@@ -795,7 +898,7 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 								"E_COMMUNITY_1000",
 								msg,
 							))
-							log.Warnf("Import rows skipped: community id %q does not match target %q", rowCommunityId, communityId)
+							log.WithContext(ctx).Warnf("Import rows skipped: community id does not match target %q", communityId)
 						}
 						continue
 					}
@@ -814,7 +917,7 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 								"E_PARTICIPANT_1001",
 								fmt.Sprintf("Row skipped: 'Name 1' is missing and 'Name 2' (%s) cannot be split into last and first name", excelName1),
 							))
-							log.Warnf("Import row skipped: cannot extract name from %q", excelName1)
+							log.WithContext(ctx).Warn("Import row skipped: cannot extract name")
 							continue
 						}
 					} else {
@@ -839,7 +942,7 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 							"E_COUNTERPOINT_1001",
 							fmt.Sprintf("Row skipped: unknown 'Energierichtung' %q (expected CONSUMPTION or GENERATION)", directionVal),
 						))
-						log.Warnf("Import row skipped: unknown energy direction %q", directionVal)
+						log.WithContext(ctx).Warn("Import row skipped: unknown energy direction")
 						continue
 					}
 
@@ -906,7 +1009,6 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 									Status:            getParticipantStatus(cpStatus),
 									ParticipantSince:  participantSince,
 									MeteringPoint:     []*model.MeteringPoint{},
-									TaxNumber:         null.StringFrom(getColumValue(cols, colMap, "SteuerNr", "taxNumber", nil)),
 									VatNumber:         null.StringFrom(getColumValue(cols, colMap, "UmsatzsteuerNr", "vatNumber", nil)),
 									Version:           0,
 								},
@@ -974,7 +1076,7 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 								"E_COUNTERPOINT_1000",
 								"Does not fulfill requirements! Len not equal 33. -> Not Included",
 							))
-							log.Warnf("Metering Point -%s- does not fulfill requirements! Len not equal 33. -> Not Included", meteringPointId)
+							log.WithContext(ctx).Warnf("Metering Point -%s- does not fulfill requirements! Len not equal 33. -> Not Included", meteringPointId)
 						}
 					} else {
 						importLog.Messages = append(importLog.Messages,
@@ -983,7 +1085,7 @@ func transformExcelData(rows *excelize.Rows, gridOperatorName func(id string) st
 								fmt.Sprintf("%s %s", firstname, lastname),
 								"E_PARTICIPANT_1000",
 								fmt.Sprintf("Does not fulfill requirements! Participant has wrong status: %s", cpStatus)))
-						log.Warnf("Participant -%s %s- does not fulfill requirements! Participant has wrong status: %s", firstname, lastname, cpStatus)
+						log.WithContext(ctx).Warn("Import row skipped: participant has wrong status")
 					}
 				}
 			}
@@ -1044,15 +1146,15 @@ func importGridOperator(meteringPointId, given string, gridOperatorName func(id 
 	return null.StringFrom(r.Id), null.NewString(name, name != "")
 }
 
-func ExportZPListToExcel(ebmsMsg *model.EbmsMessage) (*bytes.Buffer, error) {
+func ExportZPListToExcel(ctx context.Context, ebmsMsg *model.EbmsMessage) (*bytes.Buffer, error) {
 	f := excelize.NewFile()
 	defer func() {
 		if err := f.Close(); err != nil {
-			log.WithError(err).Error("Error closing file")
+			log.WithContext(ctx).WithError(err).Error("Error closing file")
 		}
 	}()
 
-	err := generateZPListMastersheet(f, ebmsMsg)
+	err := generateZPListMastersheet(ctx, f, ebmsMsg)
 	if err != nil {
 		return nil, err
 	}
@@ -1061,7 +1163,7 @@ func ExportZPListToExcel(ebmsMsg *model.EbmsMessage) (*bytes.Buffer, error) {
 	return f.WriteToBuffer()
 }
 
-func generateZPListMastersheet(f *excelize.File, ebmsMsg *model.EbmsMessage) error {
+func generateZPListMastersheet(ctx context.Context, f *excelize.File, ebmsMsg *model.EbmsMessage) error {
 	styleId, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Size: 10.0}})
 	//styleDateId, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Size: 10.0}, NumFmt: 14})
 	styleIdHeader, err := f.NewStyle(&excelize.Style{
@@ -1122,7 +1224,7 @@ func generateZPListMastersheet(f *excelize.File, ebmsMsg *model.EbmsMessage) err
 			}, excelize.RowOpts{StyleID: styleId})
 	}
 
-	setAutoFilter(f, sheet, len(zpHeader), line)
+	setAutoFilter(ctx, f, sheet, len(zpHeader), line)
 	err = sw.Flush()
 	return err
 }

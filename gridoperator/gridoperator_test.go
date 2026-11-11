@@ -3,7 +3,7 @@ package gridoperator
 import (
 	"testing"
 
-	"github.com/spf13/viper"
+	"at.ourproject/vfeeg-backend/config/configtest"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -48,7 +48,6 @@ func TestFromMeteringPoint(t *testing.T) {
 }
 
 func TestAliasFromConfig(t *testing.T) {
-	viper.Set(ConfigKey, map[string]interface{}{"at008200": "AT008000", "AT008230": "at008000"})
-	defer viper.Set(ConfigKey, nil)
+	configtest.Set(t, ConfigKey, map[string]interface{}{"at008200": "AT008000", "AT008230": "at008000"})
 	assert.Equal(t, map[string]string{"AT008200": "AT008000", "AT008230": "AT008000"}, Alias())
 }

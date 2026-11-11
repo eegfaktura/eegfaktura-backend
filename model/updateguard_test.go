@@ -87,7 +87,8 @@ func TestSkipUpdateJSONKeys_Eeg(t *testing.T) {
 			t.Errorf("skipupdate key %q missing from %v", want, keys)
 		}
 	}
-	// updatable fields must NOT appear
+	// updatable fields must NOT appear; settlementInterval is not skipupdate either, the generic EEG update drops it
+	// by name (database.eegProtectedUpdateFields) and ChangeSettlementInterval sets it
 	for _, no := range []string{"name", "description", "settlementInterval"} {
 		if set[no] {
 			t.Errorf("field %q must not be in skipupdate set", no)
@@ -106,7 +107,7 @@ func TestResolveFlatUpdateColumn_Eeg(t *testing.T) {
 		{"businessNr", true, "businessNr"},
 		{"gridOperator", true, "gridoperator_code"},
 		{"operatorName", true, "gridoperator_name"},
-		{"settlementInterval", true, "settlementInterval"},
+		{"settlementInterval", true, "settlementInterval"}, // a column, dropped by updateEegPartial before this lookup
 		{"taxNumber", true, "taxNumber"},
 		{"vatNumber", true, "vatNumber"},
 		{"contactPerson", true, "contactPerson"},

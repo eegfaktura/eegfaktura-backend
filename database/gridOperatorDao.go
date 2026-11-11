@@ -44,7 +44,7 @@ func applyGridOperator(ctx context.Context, q sqlx.QueryerContext, tenant string
 			continue
 		}
 		if r.Aliased {
-			log.WithField("tenant", tenant).Infof("Grid operator of %s: %s -> %s (alias)", p.MeteringPoint, r.Prefix, r.Id)
+			log.WithContext(ctx).WithField("tenant", tenant).Infof("Grid operator of %s: %s -> %s (alias)", p.MeteringPoint, r.Prefix, r.Id)
 		}
 		name := gridOperatorName(r.Id, names, eegCode, eegName)
 		p.GridOperatorId = null.StringFrom(r.Id)
@@ -102,4 +102,12 @@ func queryEegGridOperator(ctx context.Context, q sqlx.QueryerContext, tenant str
 		return "", "", nil
 	}
 	return code, name, err
+}
+
+// MeteringPointGridOperators returns the grid operators of the tenant's metering points, upper case, each once.
+func (db *sqlDatabase) MeteringPointGridOperators(ctx context.Context, tenant string) ([]string, error) {
+	operators := []string{}
+	err := db.db.SelectContext(ctx, &operators, `SELECT DISTINCT upper(trim(grid_operator_id)) FROM base.meteringpoint
+		WHERE tenant = $1 AND trim(COALESCE(grid_operator_id, '')) <> ''`, tenant)
+	return operators, err
 }

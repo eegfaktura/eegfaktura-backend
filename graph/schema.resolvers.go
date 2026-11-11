@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"at.ourproject/vfeeg-backend/database"
@@ -27,24 +28,37 @@ func (r *mutationResolver) UpdateEegModel(ctx context.Context, tenant string, ee
 
 	// The tenant must come from the verified request context (GQLProtect checked
 	// the header against the token), never from the caller-supplied argument.
+	arg := tenant
 	tenant = middleware.ForContextTenant(ctx)
 	if tenant == "" {
 		return nil, errors.New("no tenant in context")
 	}
 
-	eeg, err := db.GetEegById(ctx, tenant)
-	if err != nil {
+	// Like POST /eeg (Protect) only for the EEG admin group (261105-mm2, admin check); nothing is written otherwise.
+	if !middleware.IsGQLAdmin(ctx) {
+		return nil, refuseUpdateEegModel(ctx, "updateEegModel requires the EEG admin group")
+	}
+	// A tenant argument other than the header (case-insensitive) is an error, nothing is written (eegfaktura-dev#54
+	// #6): before, it was ignored and the write went to the community of the header.
+	if !strings.EqualFold(arg, tenant) || (eegModel != nil && eegModel.Tenant != nil && !strings.EqualFold(*eegModel.Tenant, tenant)) {
+		return nil, refuseUpdateEegModel(ctx, "updateEegModel: the tenant argument differs from the tenant header")
+	}
+
+	// Stored through the guarded path of POST /eeg (261105-mm2: before, nothing was stored). settlementInterval is
+	// dropped there: it changes only through POST /eeg/settlementinterval with its rule (konzept-abrechnungsintervall.md).
+	fields := map[string]interface{}{}
+	if eegModel != nil {
+		if eegModel.SettlementInterval != nil {
+			fields["settlementInterval"] = *eegModel.SettlementInterval
+		}
+		if eegModel.SepaActiv != nil {
+			fields["sepa"] = *eegModel.SepaActiv
+		}
+	}
+	if err = db.UpdateEegPartial(ctx, tenant, fields); err != nil {
 		return nil, err
 	}
-
-	if eegModel.SettlementInterval != nil {
-		eeg.SettlementInterval = *eegModel.SettlementInterval
-	}
-	if eegModel.SepaActiv != nil {
-		eeg.AccountInfo.Sepa = *eegModel.SepaActiv
-	}
-
-	return eeg, nil
+	return db.GetEegById(ctx, tenant)
 }
 
 // MasterDataUpload is the resolver for the masterDataUpload field.
