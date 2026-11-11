@@ -92,4 +92,17 @@ func TestRevokeRefusesMissingConsentEnd(t *testing.T) {
 	}
 }
 
+// An empty selection is an input error (400), not a server error (pre-existing: it answered 500, code 3100).
+func TestRevokeRefusesEmptySelection(t *testing.T) {
+	const zp = "AT0030000000000000000000000953108"
+	ownerChange(t, zp, "2025-01-01", "2025-06-15", "2025-06-16", 0)
+
+	w, sent := revoke(t, "c1050001-0000-0000-0000-"+zp[len(zp)-12:], `{"meteringPoints":[],"from":1793574000000}`)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.JSONEq(t, `{"error":{"code":5012,"error":"Es ist kein Zählpunkt ausgewählt.",
+		"message":"Es ist kein Zählpunkt ausgewählt."}}`, w.Body.String())
+	assert.Empty(t, sent)
+}
+
 func revokeReasonOf(s string) *string { return &s }

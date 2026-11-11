@@ -691,8 +691,7 @@ func (h *MeteringHandler) requestRevokeMeteringPoint() middleware.JWTHandlerFunc
 		}
 
 		if meters == nil {
-			log.WithContext(r.Context()).WithField("tenant", tenant).Error("failed to revoke metering point. Err: No Meter selected")
-			respondWith(r.Context(), w, http.StatusInternalServerError, tenant, model.Wrap(errors.New("no Meter selected"), 3100))
+			rejectRevoke(r.Context(), w, tenant, model.ErrRevokeRequest(errors.New("Es ist kein Zählpunkt ausgewählt.")))
 			return
 		}
 
