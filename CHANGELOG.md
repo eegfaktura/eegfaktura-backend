@@ -15,6 +15,47 @@ this changelog highlights the changes relevant for overview and operations.
   modules it requires: golang.org/x/net 0.62.0, x/crypto 0.58.0, x/sync 0.24.0, x/sys 0.49.0, x/text 0.43.0,
   x/tools 0.51.0, richardlehane/mscfb 1.0.9, xuri/efp (2026-09-24), all published at least 7 days ago.
 
+### Contract
+- **`revokemeters` reads `reason`, not `to`, and has four new 400 answers.** The only caller is eegfaktura-web
+  (`eeg.service.ts`), whose body already uses the key `reason` (its value was never filled, fixed in
+  eegfaktura/eegfaktura-web#245); `to` is no longer read. New error codes (body `{"error":{"code","error","message"}}`):
+  **5011** the reason is longer than 50 characters; **5012** a metering point does not belong to the member `{pid}` or
+  has no grid operator, or no metering point is selected; **5013** a metering point has no active entry of the member; **5014** the consent end (`from`)
+  is missing. In every case nothing is sent; the `message` is the German text for the user.
+  The web shows them readable (eegfaktura/eegfaktura-web#245). Downstream eda-xp writes the reason to CMRevoke as
+  ReasonKey 0 + Reason (eegfaktura/eegfaktura-eda-xp#59).
+
+### Fixed
+- **A revoke only reaches metering points of the member in the path** (pre-existing, found in the review of
+  eegfaktura/eegfaktura-backend#127). `POST /meteringpoint/{pid}/revokemeters` revoked any active metering point of
+  the community named in the body, whichever member it belonged to. Now every metering point must belong to `{pid}`,
+  otherwise 400, code 5012 „Mindestens ein Zählpunkt gehört nicht zu diesem Mitglied.“ — the same answer for an
+  unknown number. After an owner change the old member's entry still belongs to the old member, but the active entry
+  is the new member's: such a request no longer revokes the new member's consent. If any requested metering point has
+  no active entry of the member, the whole request is refused with 400, code 5013 „Mindestens ein Zählpunkt hat keine
+  aktive Datenfreigabe dieses Mitglieds.“ and nothing is sent — no partial revoke and no success the user would
+  misread. The grid operator of every metering point is checked before the first send, too: without one the request
+  is refused with 400, code 5012 „Für den Zählpunkt … ist kein Netzbetreiber hinterlegt.“ (before, the revokes for the
+  metering points before it went out and the answer was 500).
+- **A revoke without consent end is refused** (pre-existing, found in the review of eegfaktura/eegfaktura-backend#127).
+  `revokemeters` without `from` (or with 0 or less) used to send CMRevoke with ConsentEnd 01.01.1970; it now answers
+  400, code 5014 „Das Ende der Datenfreigabe fehlt.“. The web always sends `from`.
+- **A revoke without any metering point answers 400** (pre-existing, found in the review of
+  eegfaktura/eegfaktura-backend#127): it answered 500, code 3100 „no Meter selected“, and logged an error; now 400,
+  code 5012 „Es ist kein Zählpunkt ausgewählt.“. The web always sends at least one.
+- **The optional reason of a revoke (`POST /meteringpoint/{pid}/revokemeters`) reaches eda-xp** (revoke reason,
+  2026-10-30). The handler read it from the JSON key `to`, which no caller sends, so the reason was always empty. It
+  now reads `reason` (the key eegfaktura-web sends) and cleans it like a mail subject: control characters (also line
+  breaks and tabs) become a space, format characters (U+200B, U+FEFF, U+202E …) and characters XML 1.0 does not allow
+  (U+FFFE, U+FFFF) are dropped, runs of white space become one space, the ends are trimmed — the same cleaning as
+  eda-xp; blank = no reason. More than 50 characters are refused with 400 and the new code 5011 („Die Begründung
+  ist zu lang (höchstens 50 Zeichen).“) instead of being cut — 50 is the length of `Reason` in CMRevoke. Logged once at warn, without the text. The reason goes out
+  as before in the existing MQTT field `reason` of `eda/request` (no new field).
+  **Where the reason is stored from now on (user decision 2026-10-30: allowed):** eda-xp echoes the sent request back
+  on its protocol topic, and the backend stores that echo in the EDA process history (`db.SaveHistory`), so the reason
+  text now lands in the stored history; eda-xp also keeps it in its conversation store. Before, both held no reason
+  because none was ever sent. The web asks not to enter personal data in the field.
+
 ## [1.18.0] – 2026-11-10
 
 ### Changed
