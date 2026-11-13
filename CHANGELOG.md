@@ -14,6 +14,13 @@ this changelog highlights the changes relevant for overview and operations.
   only after a 7-day cooldown. `golang` stays on 1.26 (1.27 is a minor for Dependabot). Security updates for the
   language ecosystems are unaffected.
 
+### Security
+- **excelize 2.11.1** (Dependabot alert 39, CVE-2026-107223, high): a crafted workbook with an unbounded `<col max>`
+  could hang the process or exhaust its memory when a column is touched; the master data import reads uploaded
+  workbooks. Was a pre-release commit of 2.11.1 (2026-10-03); 2.11.1 was released 2026-11-02. It raises the indirect
+  modules it requires: golang.org/x/net 0.62.0, x/crypto 0.58.0, x/sync 0.24.0, x/sys 0.49.0, x/text 0.43.0,
+  x/tools 0.51.0, richardlehane/mscfb 1.0.9, xuri/efp (2026-09-24), all published at least 7 days ago.
+
 ### Contract
 - **`revokemeters` reads `reason`, not `to`, and has four new 400 answers.** The only caller is eegfaktura-web
   (`eeg.service.ts`), whose body already uses the key `reason` (its value was never filled, fixed in
