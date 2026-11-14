@@ -8,6 +8,12 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Changed
+- Dependabot (Docker base images): no more major updates (legacy system, replaced by v3 in the medium term; majors
+  only for security reasons, decision 23.10.2026), patch and minor updates come in one weekly grouped PR, new versions
+  only after a 7-day cooldown. `golang` stays on 1.26 (1.27 is a minor for Dependabot). Security updates for the
+  language ecosystems are unaffected.
+
 ### Security
 - **excelize 2.11.1** (Dependabot alert 39, CVE-2026-107223, high): a crafted workbook with an unbounded `<col max>`
   could hang the process or exhaust its memory when a column is touched; the master data import reads uploaded
