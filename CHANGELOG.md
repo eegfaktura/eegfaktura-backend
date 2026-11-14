@@ -8,12 +8,7 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
-### Fixed
-- **A community registered without a description loads again** (pre-existing, found while bringing
-  eegfaktura/eegfaktura-docker-compose to the production images): the admin portal allows an empty description, which
-  was stored as NULL; `GET /api/eeg` then failed with 400 („converting NULL to string is unsupported“) and the web could
-  not open the community. An empty description is now stored as an empty text. Communities already stored with NULL
-  need `UPDATE base.eeg SET description = '' WHERE description IS NULL` (none expected in production; check first).
+## [1.19.0] – 2026-11-14
 
 ### Changed
 - Dependabot (Docker base images): no more major updates (legacy system, replaced by v3 in the medium term; majors
@@ -68,6 +63,11 @@ this changelog highlights the changes relevant for overview and operations.
   on its protocol topic, and the backend stores that echo in the EDA process history (`db.SaveHistory`), so the reason
   text now lands in the stored history; eda-xp also keeps it in its conversation store. Before, both held no reason
   because none was ever sent. The web asks not to enter personal data in the field.
+- **A community registered without a description loads again** (pre-existing, found while bringing
+  eegfaktura/eegfaktura-docker-compose to the production images): the admin portal allows an empty description, which
+  was stored as NULL; `GET /api/eeg` then failed with 400 („converting NULL to string is unsupported“) and the web could
+  not open the community. An empty description is now stored as an empty text. Communities already stored with NULL
+  need `UPDATE base.eeg SET description = '' WHERE description IS NULL` (none expected in production; check first).
 
 ## [1.18.0] – 2026-11-10
 
