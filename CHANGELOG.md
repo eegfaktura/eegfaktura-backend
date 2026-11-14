@@ -8,6 +8,13 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Fixed
+- **A community registered without a description loads again** (pre-existing, found while bringing
+  eegfaktura/eegfaktura-docker-compose to the production images): the admin portal allows an empty description, which
+  was stored as NULL; `GET /api/eeg` then failed with 400 („converting NULL to string is unsupported“) and the web could
+  not open the community. An empty description is now stored as an empty text. Communities already stored with NULL
+  need `UPDATE base.eeg SET description = '' WHERE description IS NULL` (none expected in production; check first).
+
 ### Changed
 - Dependabot (Docker base images): no more major updates (legacy system, replaced by v3 in the medium term; majors
   only for security reasons, decision 23.10.2026), patch and minor updates come in one weekly grouped PR, new versions
