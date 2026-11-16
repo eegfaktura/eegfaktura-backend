@@ -172,6 +172,9 @@ func TestValidateJoiningFeeText(t *testing.T) {
 		{"line break", Tariff{Type: EEG, JoiningFeeText: "Einmalige\nGebühr"}, "", true},
 		{"line separator U+2028", Tariff{Type: EEG, JoiningFeeText: "Einmalige Gebühr"}, "", true},
 		{"zero width space U+200B", Tariff{Type: EEG, JoiningFeeText: "Einmalige​Gebühr"}, "", true},
+		{"Windows-1252 punctuation", Tariff{Type: EEG, JoiningFeeText: "Einrichtung – „einmalig“ (50 €) & Co."}, "Einrichtung – „einmalig“ (50 €) & Co.", false},
+		{"not printable in the PDF: Polish letter", Tariff{Type: EEG, JoiningFeeText: "Wpisowe opłata"}, "", true},
+		{"not printable in the PDF: emoji", Tariff{Type: EEG, JoiningFeeText: "Eintritt ✓"}, "", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

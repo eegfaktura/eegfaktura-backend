@@ -13,7 +13,9 @@ this changelog highlights the changes relevant for overview and operations.
   (JSON and column `base.tariff."joiningFeeText"`, text, not null, default „Beitrittsgebühr“). Existing tariffs get
   „Beitrittsgebühr“, the text billing printed as a fixed text until now, so no invoice changes unless a community
   changes the text. The server trims the text, replaces an empty or missing one by „Beitrittsgebühr“ and refuses
-  more than 80 characters, control, format or line separator characters (400). An older web sends the tariff it
+  more than 80 characters, control, format or line separator characters, and characters outside Windows-1252 (400):
+  billing prints the PDF in Helvetica (WinAnsi), so emoji or e.g. Polish letters would not print. `golang.org/x/text`
+  (already in the module graph, v0.43.0) becomes a direct dependency for this check. An older web sends the tariff it
   loaded back unchanged and keeps the text; only a tab loaded before this migration sends none, and saving there
   sets the text to „Beitrittsgebühr“.
 
