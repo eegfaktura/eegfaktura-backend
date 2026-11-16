@@ -2,6 +2,7 @@ package model
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"gopkg.in/guregu/null.v4"
@@ -147,6 +148,37 @@ func TestValidateJoiningFee(t *testing.T) {
 			err := tt.tariff.ValidateJoiningFee()
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("ValidateJoiningFee() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// platform#260: the invoice line text is trimmed, an empty one becomes the default (a web from before the field does
+// not send it), for every tariff type; too long or with a line break is refused.
+func TestValidateJoiningFeeText(t *testing.T) {
+	tests := []struct {
+		name    string
+		tariff  Tariff
+		want    string
+		wantErr bool
+	}{
+		{"absent", Tariff{Type: EEG, JoiningFee: 30}, DefaultJoiningFeeText, false},
+		{"blank", Tariff{Type: EEG, JoiningFee: 30, JoiningFeeText: "  "}, DefaultJoiningFeeText, false},
+		{"own text, trimmed", Tariff{Type: EEG, JoiningFee: 30, JoiningFeeText: " Einmalige Einrichtungsgebühr "}, "Einmalige Einrichtungsgebühr", false},
+		{"own text without fee", Tariff{Type: EEG, JoiningFeeText: "Eintritt"}, "Eintritt", false},
+		{"other tariff type", Tariff{Type: VZP}, DefaultJoiningFeeText, false},
+		{"80 characters with umlauts", Tariff{Type: EEG, JoiningFeeText: strings.Repeat("ü", 80)}, strings.Repeat("ü", 80), false},
+		{"81 characters", Tariff{Type: EEG, JoiningFeeText: strings.Repeat("a", 81)}, "", true},
+		{"line break", Tariff{Type: EEG, JoiningFeeText: "Einmalige\nGebühr"}, "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.tariff.ValidateJoiningFee()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ValidateJoiningFee() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if err == nil && tt.tariff.JoiningFeeText != tt.want {
+				t.Fatalf("JoiningFeeText = %q, want %q", tt.tariff.JoiningFeeText, tt.want)
 			}
 		})
 	}
