@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.20.0] – 2026-11-16
+
 ### Added
 - **Joining fee: the text on the invoice can be set in the tariff** (platform#260). New tariff field `joiningFeeText`
   (JSON and column `base.tariff."joiningFeeText"`, text, not null, default „Beitrittsgebühr“). Existing tariffs get
