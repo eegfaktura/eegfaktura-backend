@@ -5,9 +5,13 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/jjeffery/civil"
 	"github.com/pborman/uuid"
+	"golang.org/x/text/encoding/charmap"
 	"gopkg.in/guregu/null.v4"
 )
 
@@ -125,7 +129,16 @@ type Tariff struct {
 	JoiningFee             float64     `json:"joiningFee" db:"joiningFee"`
 	JoiningFeeUseVat       bool        `json:"joiningFeeUseVat" db:"joiningFeeUseVat"`
 	JoiningFeeVatInPercent IntOrString `json:"joiningFeeVatInPercent" db:"joiningFeeVatInPercent"`
+	// Bezeichnung der Beitrittsgebuehr auf der Rechnung (platform#260); billing nimmt sie als Positionstext.
+	JoiningFeeText string `json:"joiningFeeText" db:"joiningFeeText"`
 }
+
+// DefaultJoiningFeeText is the invoice line text of the joining fee unless the community changes it; also the
+// column default of base.tariff."joiningFeeText" and what billing printed as a fixed text before platform#260.
+const DefaultJoiningFeeText = "Beitrittsgebühr"
+
+// maxJoiningFeeTextLen bounds the invoice line text (characters); the line of the document wraps, it does not cut.
+const maxJoiningFeeTextLen = 80
 
 // maxJoiningFee is the largest amount the column "joiningFee" numeric(10,2) holds; above it the INSERT would fail
 // with a database error instead of a message.
@@ -134,7 +147,27 @@ const maxJoiningFee = 99999999.99
 // ValidateJoiningFee enforces the joining fee rules server-side (konzept-beitrittsgebuehr.md,
 // Tech Design B): only EEG tariffs carry a fee (other types must send 0/false), the amount
 // is >= 0 with at most 2 decimals and fits numeric(10,2), the VAT rate lies in 0..100.
+// It also normalises the invoice line text (platform#260): trimmed, an empty text becomes DefaultJoiningFeeText
+// (a client without the field), for every tariff type; at most 80 characters, no control, format or line and
+// paragraph separator characters (they would break or hide the invoice line), and only characters of Windows-1252:
+// billing writes the PDF in Helvetica with the WinAnsi encoding, other characters (emoji, Polish letters …) would not
+// print. The tariff name in eegfaktura-web has the same reason for its pattern.
 func (t *Tariff) ValidateJoiningFee() error {
+	t.JoiningFeeText = strings.TrimSpace(t.JoiningFeeText)
+	if t.JoiningFeeText == "" {
+		t.JoiningFeeText = DefaultJoiningFeeText
+	}
+	if utf8.RuneCountInString(t.JoiningFeeText) > maxJoiningFeeTextLen {
+		return fmt.Errorf("Bezeichnung der Beitrittsgebühr: höchstens %d Zeichen", maxJoiningFeeTextLen)
+	}
+	if strings.ContainsFunc(t.JoiningFeeText, func(r rune) bool {
+		return unicode.In(r, unicode.Cc, unicode.Cf, unicode.Zl, unicode.Zp)
+	}) {
+		return fmt.Errorf("Bezeichnung der Beitrittsgebühr: keine Zeilenumbrüche oder Steuerzeichen")
+	}
+	if _, err := charmap.Windows1252.NewEncoder().String(t.JoiningFeeText); err != nil {
+		return fmt.Errorf("Bezeichnung der Beitrittsgebühr: ein Zeichen kann auf der Rechnung nicht gedruckt werden")
+	}
 	if t.Type != EEG {
 		if t.JoiningFee != 0 || t.JoiningFeeUseVat || t.JoiningFeeVatInPercent != 0 {
 			return fmt.Errorf("Beitrittsgebühr ist nur für Mitgliedsbeitrags-Tarife zulässig")
