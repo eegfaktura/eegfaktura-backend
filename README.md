@@ -158,7 +158,7 @@ follow the steps above):
 | `20261105120000` (table `settlement_interval_change`) | `SELECT to_regclass('base.settlement_interval_change');` | `version = 20261105110100`: the file runs again (`IF NOT EXISTS`) |
 | `20261106090000` (view `billing_masterdata`, column `eeg_area`) | the statement either ran or not | `version = 20261105120000`: the file runs again (`CREATE OR REPLACE VIEW`) |
 | `20261106100000` (columns `eeg.ec_zone_level`, `meteringpoint.tech_code`, `fuel_code`) | the file runs as one transaction: either all three columns are there or none (`SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'base' AND column_name IN ('ec_zone_level', 'tech_code', 'fuel_code');`) | `version = 20261106090000`: the file runs again (`IF NOT EXISTS`; the `UPDATE` fills only an empty `ec_zone_level`) |
-| `20261116090000` (column `tariff."joiningFeeText"`, views `activeTariff` and `billing_masterdata`) | the file runs as one transaction: the column and both views are changed or nothing is | `version = 20261106100000`: the file runs again (`IF NOT EXISTS`, `CREATE OR REPLACE VIEW`) |
+| `20261116090000` (column `tariff."joiningFeeText"`, views `activeTariff` and `billing_masterdata`) | the file runs as one transaction: the column and both views are changed or nothing is (`SELECT table_name FROM information_schema.columns WHERE table_schema = 'base' AND column_name IN ('joiningFeeText', 'tariff_joining_fee_text');` lists `tariff`, `activetariff` and `billing_masterdata`, or none) | `version = 20261106100000`: the file runs again (`IF NOT EXISTS`, `CREATE OR REPLACE VIEW`) |
 
 ### Rollback to an older image
 

@@ -68,6 +68,11 @@ func TestJoiningFeeTextTariffAndBillingView(t *testing.T) {
 	db, err := GetDB(context.Background())
 	require.NoError(t, err)
 	const tenant = "TE000052"
+	// own tenant: remove its rows afterwards, so the test also passes on a rerun against the same database
+	t.Cleanup(func() {
+		_, _ = testDB.DbInstance.Exec(`DELETE FROM base.participant WHERE tenant = $1`, tenant)
+		_, _ = testDB.DbInstance.Exec(`DELETE FROM base.tariff WHERE tenant = $1`, tenant)
+	})
 
 	// as the controller does: validate (which fills an empty text) before saving
 	tariff := model.Tariff{Type: model.EEG, Name: "Beitrag mit Einrichtungsgebühr", ParticipantFee: 2, JoiningFee: 30}

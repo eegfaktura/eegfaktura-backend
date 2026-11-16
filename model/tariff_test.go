@@ -170,6 +170,8 @@ func TestValidateJoiningFeeText(t *testing.T) {
 		{"80 characters with umlauts", Tariff{Type: EEG, JoiningFeeText: strings.Repeat("ü", 80)}, strings.Repeat("ü", 80), false},
 		{"81 characters", Tariff{Type: EEG, JoiningFeeText: strings.Repeat("a", 81)}, "", true},
 		{"line break", Tariff{Type: EEG, JoiningFeeText: "Einmalige\nGebühr"}, "", true},
+		{"line separator U+2028", Tariff{Type: EEG, JoiningFeeText: "Einmalige Gebühr"}, "", true},
+		{"zero width space U+200B", Tariff{Type: EEG, JoiningFeeText: "Einmalige​Gebühr"}, "", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

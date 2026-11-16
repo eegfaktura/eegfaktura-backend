@@ -147,8 +147,8 @@ const maxJoiningFee = 99999999.99
 // Tech Design B): only EEG tariffs carry a fee (other types must send 0/false), the amount
 // is >= 0 with at most 2 decimals and fits numeric(10,2), the VAT rate lies in 0..100.
 // It also normalises the invoice line text (platform#260): trimmed, an empty text becomes DefaultJoiningFeeText
-// (a web from before the field does not send it), for every tariff type; at most 80 characters, no control
-// characters.
+// (a client without the field), for every tariff type; at most 80 characters, no control, format or line and
+// paragraph separator characters (they would break or hide the invoice line).
 func (t *Tariff) ValidateJoiningFee() error {
 	t.JoiningFeeText = strings.TrimSpace(t.JoiningFeeText)
 	if t.JoiningFeeText == "" {
@@ -157,7 +157,9 @@ func (t *Tariff) ValidateJoiningFee() error {
 	if utf8.RuneCountInString(t.JoiningFeeText) > maxJoiningFeeTextLen {
 		return fmt.Errorf("Bezeichnung der Beitrittsgebühr: höchstens %d Zeichen", maxJoiningFeeTextLen)
 	}
-	if strings.ContainsFunc(t.JoiningFeeText, unicode.IsControl) {
+	if strings.ContainsFunc(t.JoiningFeeText, func(r rune) bool {
+		return unicode.In(r, unicode.Cc, unicode.Cf, unicode.Zl, unicode.Zp)
+	}) {
 		return fmt.Errorf("Bezeichnung der Beitrittsgebühr: keine Zeilenumbrüche oder Steuerzeichen")
 	}
 	if t.Type != EEG {

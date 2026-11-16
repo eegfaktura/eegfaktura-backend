@@ -12,9 +12,10 @@ this changelog highlights the changes relevant for overview and operations.
 - **Joining fee: the text on the invoice can be set in the tariff** (platform#260). New tariff field `joiningFeeText`
   (JSON and column `base.tariff."joiningFeeText"`, text, not null, default „Beitrittsgebühr“). Existing tariffs get
   „Beitrittsgebühr“, the text billing printed as a fixed text until now, so no invoice changes unless a community
-  changes the text. The server trims the text, replaces an empty one by „Beitrittsgebühr“ (a web from before the
-  field does not send it: saving a tariff with such a web sets a changed text back to the default) and refuses more
-  than 80 characters or control characters (400).
+  changes the text. The server trims the text, replaces an empty or missing one by „Beitrittsgebühr“ and refuses
+  more than 80 characters, control, format or line separator characters (400). An older web sends the tariff it
+  loaded back unchanged and keeps the text; only a tab loaded before this migration sends none, and saving there
+  sets the text to „Beitrittsgebühr“.
 
 ### Contract
 - **`base.billing_masterdata` gets the column `tariff_joining_fee_text`** (text, last column, 80 columns now); view
@@ -23,8 +24,9 @@ this changelog highlights the changes relevant for overview and operations.
   **deploy backend before billing.** Tariff JSON (`GET`/`POST …/tariff`, caller eegfaktura-web): new field
   `joiningFeeText`, always filled in answers.
 - Migration `20261116090000_joining_fee_text`: adds the column (constant default, no table rewrite) and replaces both views
-  (`CREATE OR REPLACE`, columns only appended). Down restores the views and keeps the column with its values.
-  Recovery and rollback rows are in the README.
+  (`CREATE OR REPLACE`, columns only appended). Down restores the views and keeps the column with its values;
+  but a tariff saved by the older image in between gets a new version with „Beitrittsgebühr“, so a changed text is
+  kept only for tariffs nobody edits during a rollback. Recovery and rollback rows are in the README.
 
 ## [1.19.0] – 2026-11-14
 
