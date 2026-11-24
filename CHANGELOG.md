@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.21.0] – 2026-11-24
+
 ### Added
 - **Bulk change of master data for the VFEEG support** (konzept-massenaenderungen.md, eegfaktura-admin page
   „Massenänderung“). One rule on one community: direct debit type, mandate reference (copy from the member number,
