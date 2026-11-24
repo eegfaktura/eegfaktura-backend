@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -116,7 +117,7 @@ func (r *BulkRule) Validate() error {
 	default:
 		return errBulkRule("Feld %q ist nicht änderbar", r.Field)
 	}
-	if !containsAction(actions, r.Action) {
+	if !slices.Contains(actions, r.Action) {
 		return errBulkRule("Aktion %q ist für %s nicht erlaubt", r.Action, r.Field)
 	}
 	for _, err := range []error{
@@ -191,15 +192,6 @@ func (r *BulkRule) normaliseValue(v string) (string, error) {
 		return id.String(), nil
 	}
 	return "", errBulkRule("Wert ist für %s nicht erlaubt", r.Field)
-}
-
-func containsAction(as []BulkAction, a BulkAction) bool {
-	for _, x := range as {
-		if x == a {
-			return true
-		}
-	}
-	return false
 }
 
 // BulkItemKey identifies a hit: member id, and for the metering point tariff the metering point.
