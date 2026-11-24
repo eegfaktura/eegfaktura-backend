@@ -79,3 +79,36 @@ func TestArchiveTariff_waitsForBulkChange(t *testing.T) {
 	require.NoError(t, testDB.DbInstance.Get(&status, `SELECT DISTINCT status FROM base.tariff WHERE tenant = $1 AND id = $2`, tenant, tariff.Id.String()))
 	assert.NotEqual(t, "ARCHIVED", status)
 }
+
+// The wait of archiveTariff is bounded: when a bulk change holds the lock longer, 4003 (409) and nothing archived.
+func TestArchiveTariff_lockTimeout(t *testing.T) {
+	ctx := context.Background()
+	db, err := GetTestDB(ctx, testDB)
+	require.NoError(t, err)
+	orig := archiveLockTimeout
+	archiveLockTimeout = "300ms"
+	t.Cleanup(func() { archiveLockTimeout = orig })
+
+	const tenant = "TE000420"
+	t.Cleanup(func() { _, _ = testDB.DbInstance.Exec(`DELETE FROM base.tariff WHERE tenant = $1`, tenant) })
+	tariff := model.Tariff{Name: "frei", Type: "EEG", BillingPeriod: "monthly"}
+	require.NoError(t, db.AddTariff(ctx, tenant, "test", &tariff))
+
+	bulk, err := testDB.DbInstance.Beginx()
+	require.NoError(t, err)
+	defer func() { _ = bulk.Rollback() }()
+	_, err = bulk.Exec(`SELECT pg_advisory_xact_lock($1, hashtext($2))`, bulkLockTenant, tenant)
+	require.NoError(t, err)
+
+	start := time.Now()
+	err = db.ArchiveTariff(ctx, tenant, tariff.Id.String())
+	var ve *model.VfeegError
+	require.True(t, errors.As(err, &ve), "want a VfeegError, got %v", err)
+	assert.Equal(t, 4003, ve.Code)
+	assert.Equal(t, "Gerade läuft eine Massenänderung, bitte später erneut versuchen.", model.UserText(err))
+	assert.Less(t, time.Since(start), 5*time.Second)
+
+	var status string
+	require.NoError(t, testDB.DbInstance.Get(&status, `SELECT DISTINCT status FROM base.tariff WHERE tenant = $1 AND id = $2`, tenant, tariff.Id.String()))
+	assert.NotEqual(t, "ARCHIVED", status)
+}

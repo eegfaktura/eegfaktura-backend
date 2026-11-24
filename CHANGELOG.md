@@ -24,12 +24,16 @@ this changelog highlights the changes relevant for overview and operations.
   `ProtectSuperuser`): `GET /bulkchange/communities` (`tenant`, `name`, `rcNumber` of all communities),
   `POST /bulkchange/preview` and `POST /bulkchange/apply` (community in the header `tenant`, rule in the body).
   Caller: eegfaktura-admin from the browser via `/api/bulkchange/…` on the admin host (ingress rule in gitops,
-  platform, docker-compose — separate PRs). JSON contract and new error codes 6100–6105 (400 rule/request, 400
-  duplicate hit, 400 preview outdated, 404 unknown community, 409 locked, 500 failed): fixtures and README in
+  platform, docker-compose — separate PRs). JSON contract and new error codes 6100–6106 (400 rule/request, 400
+  duplicate hit, 400 preview outdated, 404 unknown community, 409 locked, 500 failed, 403 apply with a token
+  without user name): fixtures and README in
   `api/testdata/bulkchange/`.
 - **Archiving a tariff (`DELETE /eeg/tariff/{id}`) waits for a running bulk change of the community**: it now runs in
   a transaction and first takes the tenant advisory lock of the bulk change (`pg_advisory_xact_lock`, two-key form);
-  a bulk change started while a tariff is archived gets 409. The answers of the route are unchanged.
+  a bulk change started while a tariff is archived gets 409. The wait is bounded (`lock_timeout` 130 s, just above
+  the 120 s limit of a bulk change): if it runs out, the route answers **409** with code **4003** and the text
+  „Gerade läuft eine Massenänderung, bitte später erneut versuchen.“ (new for EEG admins in web; before, every error
+  of the route was 400). Otherwise the answers are unchanged.
 
 ## [1.20.0] – 2026-11-16
 

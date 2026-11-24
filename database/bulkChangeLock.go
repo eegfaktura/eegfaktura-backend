@@ -7,6 +7,7 @@ import (
 
 	"at.ourproject/vfeeg-backend/model"
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 )
 
 // Advisory locks of the bulk change (konzept-massenaenderungen.md E3/E4), transaction-scoped, in the two-key form
@@ -20,11 +21,26 @@ const (
 	bulkLockCreditor = 0x42430002
 )
 
-// waitBulkTenantLock waits for the tenant lock (archiveTariff: an EEG admin gets no 409, it waits for a running
-// bulk change).
+// archiveLockTimeout bounds the wait of archiveTariff for the tenant lock: just above bulkApplyDeadline, so it
+// only runs out when a bulk change hangs. A variable for the tests.
+var archiveLockTimeout = "130s"
+
+// waitBulkTenantLock waits for the tenant lock (archiveTariff: an EEG admin gets no 409 while a bulk change runs,
+// it waits for it). SET LOCAL lock_timeout first: if the wait runs out, ErrTariffLocked (409); other failures
+// ErrUpdateTariff.
 func waitBulkTenantLock(ctx context.Context, tx *sqlx.Tx, tenant string) error {
+	if _, err := tx.ExecContext(ctx, `SELECT set_config('lock_timeout', $1, true)`, archiveLockTimeout); err != nil {
+		return model.ErrUpdateTariff(err)
+	}
 	_, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1, hashtext($2))`, bulkLockTenant, strings.ToUpper(tenant))
-	return err
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) && pqErr.Code == "55P03" { // lock_not_available
+		return model.ErrTariffLocked(errors.New("Gerade läuft eine Massenänderung, bitte später erneut versuchen."))
+	}
+	if err != nil {
+		return model.ErrUpdateTariff(err)
+	}
+	return nil
 }
 
 // tryBulkLocks takes the locks of a bulk change without waiting, in the fixed order tenant, then creditor id

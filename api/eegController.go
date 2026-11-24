@@ -159,7 +159,12 @@ func (h *EegHandler) archiveTariff() middleware.JWTHandlerFunc {
 		idStr := vars["id"]
 
 		if err := h.db.ArchiveTariff(r.Context(), tenant, idStr); err != nil {
-			respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
+			status := http.StatusBadRequest
+			var ve *model.VfeegError
+			if errors.As(err, &ve) && ve.Code == 4003 {
+				status = http.StatusConflict // a bulk change of the community runs
+			}
+			respondWith(r.Context(), w, status, tenant, err)
 			return
 		}
 		respondWithJSON(w, http.StatusAccepted, map[string]interface{}{"status": "ok"})

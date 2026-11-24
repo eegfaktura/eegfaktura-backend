@@ -127,12 +127,13 @@ func GetTariffNameMap(ctx context.Context, db *sqlx.DB, tenant string) (map[stri
 //
 // Before the UPDATE it waits for the tenant lock of the bulk change (konzept-massenaenderungen.md E4): a running
 // bulk change may be assigning this tariff, the UPDATE then sees its committed state (READ COMMITTED: a fresh
-// snapshot per statement). A bulk change started meanwhile gets 409. Single assignments in web do not take
+// snapshot per statement). A bulk change started meanwhile gets 409. The wait is bounded (archiveLockTimeout);
+// when it runs out, ErrTariffLocked (409). Single assignments in web do not take
 // the lock (#106).
 func archiveTariff(ctx context.Context, db *sqlx.DB, tenant string, id string) error {
 	return inTx(ctx, db, func(tx *sqlx.Tx) error {
 		if err := waitBulkTenantLock(ctx, tx, tenant); err != nil {
-			return model.ErrUpdateTariff(err)
+			return err
 		}
 		// todo: use goqu for sql statement creation
 		res, err := tx.ExecContext(ctx, `UPDATE base.tariff SET status = 'ARCHIVED', "lastModifiedDate" = 'now()'
