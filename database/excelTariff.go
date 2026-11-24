@@ -2,6 +2,7 @@ package database
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"at.ourproject/vfeeg-backend/model"
@@ -116,4 +117,21 @@ func (t *importTariffs) find(raw, column, identifier string, want model.TariffMo
 	importLog.Messages = append(importLog.Messages, model.NewLogMessage("WARNING", identifier, code,
 		fmt.Sprintf("column '%s': %s; imported without this tariff", column, reason)))
 	return nil
+}
+
+// joiningFeeMessage is the one import message about new members that got a member tariff with a joining fee (user
+// decision 24.11.2026): billing charges the fee with their first energy billing, also to members of a community that
+// moves to eegFaktura and paid it before. nil when there are none.
+func joiningFeeMessage(members int, tariffNames map[string]bool) *model.LogMessage {
+	if members == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(tariffNames))
+	for name := range tariffNames {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return model.NewLogMessage("WARNING", importMemberTariffColumn, "W_TARIFF_JOINING_FEE",
+		fmt.Sprintf("%d new member(s) got a member tariff with a joining fee (%s): it is charged with their first "+
+			"energy billing — record fees already paid as paid outside eegFaktura", members, strings.Join(names, ", ")))
 }

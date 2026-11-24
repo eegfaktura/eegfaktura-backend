@@ -153,6 +153,17 @@ func Test_transformExcelData_tariffs(t *testing.T) {
 	})
 }
 
+// One summary hint about new members with a joining fee in their member tariff.
+func Test_joiningFeeMessage(t *testing.T) {
+	assert.Nil(t, joiningFeeMessage(0, map[string]bool{}))
+	m := joiningFeeMessage(3, map[string]bool{"Mitglied": true, "Familie": true})
+	require.NotNil(t, m)
+	assert.Equal(t, "WARNING", m.Kind)
+	assert.Equal(t, "W_TARIFF_JOINING_FEE", m.MessageCode)
+	assert.Contains(t, m.Message, "3 new member(s)")
+	assert.Contains(t, m.Message, "(Familie, Mitglied)")
+}
+
 // Round trip: the tariff columns of the master data export, header and cell as written, are read by the import.
 func Test_transformExcelData_tariffsFromExport(t *testing.T) {
 	member := &model.EegParticipant{EegParticipantBase: model.EegParticipantBase{
@@ -199,10 +210,10 @@ func TestImportMasterdataFromExcel_tariffs(t *testing.T) {
 		"5e0c7a10-2222-4c55-9a51-7d3f2b6a0004", "5e0c7a10-2222-4c55-9a51-7d3f2b6a0005",
 		"5e0c7a10-2222-4c55-9a51-7d3f2b6a0006"
 	createImportTenant(t, tenant, communityId)
-	_, err := testDB.DbInstance.Exec(`INSERT INTO base.tariff (id, tenant, type, name, version, status) VALUES
-		($1, $7, 'EEG', 'Mitglied', 0, 'ACTIVE'), ($2, $7, 'EEG', 'Anders', 0, 'ACTIVE'),
-		($3, $7, 'VZP', 'Bezug', 0, 'ACTIVE'), ($4, $7, 'EZP', 'Einspeisung', 0, 'ACTIVE'),
-		($5, $7, 'VZP', 'Archiviert', 0, 'ARCHIVED'), ($6, $7, 'VZP', 'Alt', 0, 'INACTIVE'), ($6, $7, 'VZP', 'Neu', 1, 'ACTIVE')`,
+	_, err := testDB.DbInstance.Exec(`INSERT INTO base.tariff (id, tenant, type, name, version, status, "joiningFee") VALUES
+		($1, $7, 'EEG', 'Mitglied', 0, 'ACTIVE', 50), ($2, $7, 'EEG', 'Anders', 0, 'ACTIVE', 0),
+		($3, $7, 'VZP', 'Bezug', 0, 'ACTIVE', 0), ($4, $7, 'EZP', 'Einspeisung', 0, 'ACTIVE', 0),
+		($5, $7, 'VZP', 'Archiviert', 0, 'ARCHIVED', 0), ($6, $7, 'VZP', 'Alt', 0, 'INACTIVE', 0), ($6, $7, 'VZP', 'Neu', 1, 'ACTIVE', 0)`,
 		member, other, consume, produce, archived, renamed, tenant)
 	require.NoError(t, err)
 	// a tariff of another community is not found
@@ -267,6 +278,7 @@ func TestImportMasterdataFromExcel_tariffs(t *testing.T) {
 	assert.Equal(t, null.StringFrom(renamed), meterTariff("AT0099990000000000000000000269005"))
 	assert.False(t, meterTariff("AT0099990000000000000000000269007").Valid, "another community's tariff")
 	assert.Contains(t, lastHints(), "Cora Tarifimport W_TARIFF_TYPE")
+	assert.Contains(t, lastHints(), "Mitgliedstarif W_TARIFF_JOINING_FEE", "Anna got a member tariff with a joining fee")
 
 	var feeName string
 	require.NoError(t, testDB.DbInstance.Get(&feeName, `SELECT tariff_participant_fee_name FROM base.billing_masterdata

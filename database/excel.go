@@ -119,6 +119,7 @@ func (db *sqlDatabase) ImportMasterdataFromExcel(ctx context.Context, r io.Reade
 	db.reportDuplicateParticipantNumbers(ctx, strings.ToUpper(tenant), participants, importLog)
 
 	defaultDebit := 0
+	joiningFeeMembers, joiningFeeTariffs := 0, map[string]bool{}
 	for _, p := range participants {
 		name := fmt.Sprintf("%s %s", p.FirstName, p.LastName)
 		memberTariff, tariffHints := importTariffs.memberTariff(p, name)
@@ -140,11 +141,18 @@ func (db *sqlDatabase) ImportMasterdataFromExcel(ctx context.Context, r io.Reade
 			continue
 		}
 		importLog.Messages = append(importLog.Messages, tariffHints...)
+		if memberTariff != nil && memberTariff.JoiningFee > 0 {
+			joiningFeeMembers++
+			joiningFeeTariffs[memberTariff.Name] = true
+		}
 		if missesDebitType(p) {
 			defaultDebit++
 		}
 	}
 	if m := defaultDebitTypeMessage(defaultDebit); m != nil {
+		importLog.Messages = append(importLog.Messages, m)
+	}
+	if m := joiningFeeMessage(joiningFeeMembers, joiningFeeTariffs); m != nil {
 		importLog.Messages = append(importLog.Messages, m)
 	}
 

@@ -19,9 +19,10 @@ this changelog highlights the changes relevant for overview and operations.
   tariff is the first non-empty `Mitgliedstarif` cell of the member's rows; a different name on a later row is
   ignored with a hint (`W_TARIFF_CONFLICT`). An existing member (matched by name) keeps its member tariff, a filled
   `Mitgliedstarif` cell is then reported as ignored (`W_TARIFF_MEMBER_EXISTS`, the name is not looked up); its new
-  metering points get the metering point tariff. Note: billing charges the joining fee of a member tariff with the
+  metering points get the metering point tariff. Billing charges the joining fee of a member tariff with the
   member's first energy billing, so an imported member with such a tariff is charged the fee, also one who paid it
-  before the community moved, unless the fee is recorded as paid outside eegFaktura.
+  before the community moved, unless the fee is recorded as paid outside eegFaktura. The import message therefore
+  says once how many new members got a member tariff with a joining fee, and which tariffs (`W_TARIFF_JOINING_FEE`).
 
 ### Fixed
 - **Excel master data import: an empty `MandatRef` cell is stored as NULL** (W-261124-mm1, platform#268). An empty or
