@@ -94,6 +94,20 @@ func TestBulkChange_badRequests(t *testing.T) {
 	assert.Zero(t, n, "nothing written")
 }
 
+// Apply needs the user name of the token for lastModifiedBy/modifiedBy: without it 403, nothing written.
+func TestBulkChange_applyWithoutUserName(t *testing.T) {
+	bcSetup(t)
+	w := bcServe(t, http.MethodPost, "/bulkchange/apply", "superuser-no-name", bcTenant, bcFixture(t, "apply.request.json"))
+	require.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+	assert.Equal(t, 6106, bcCode(t, w.Body))
+	var ref *string
+	require.NoError(t, testDB.DbInstance.Get(&ref, `SELECT mandate_reference FROM base.bankaccount WHERE participant_id = $1`, bcId("01")))
+	assert.Nil(t, ref, "nothing written")
+
+	w = bcServe(t, http.MethodPost, "/bulkchange/preview", "superuser-no-name", bcTenant, bcFixture(t, "preview.request.json"))
+	assert.Equal(t, http.StatusOK, w.Code, "the preview writes nothing and needs no user name")
+}
+
 // The CSV is built in eegfaktura-admin from the preview: the backend has no such route.
 func TestBulkChange_noCsvRoute(t *testing.T) {
 	for _, path := range []string{"/bulkchange/csv", "/bulkchange/preview.csv", "/bulkchange/export"} {

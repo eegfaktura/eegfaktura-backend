@@ -71,6 +71,8 @@ func bcServe(t *testing.T, method, path, token, tenant, body string) *httptest.R
 		switch tok {
 		case "superuser":
 			return &middleware.PlatformClaims{Username: "support-user", RealmAccess: middleware.RealmRoles{Roles: []string{"superuser"}}}, nil
+		case "superuser-no-name":
+			return &middleware.PlatformClaims{Username: " ", RealmAccess: middleware.RealmRoles{Roles: []string{"superuser"}}}, nil
 		case "admin":
 			return &middleware.PlatformClaims{Username: "eeg-admin", Tenants: []string{bcTenant},
 				AccessGroups: middleware.AccessGroups{"/EEG_ADMIN"}}, nil

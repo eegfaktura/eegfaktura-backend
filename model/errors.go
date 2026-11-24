@@ -133,6 +133,8 @@ var ErrBulkStalePreview = PartialWrap(6102)
 var ErrBulkUnknownTenant = PartialWrap(6103)
 var ErrBulkLocked = PartialWrap(6104)
 var ErrBulkChange = PartialWrap(6105)
+// The token has no user name: apply would leave "last modified by" empty (403).
+var ErrBulkNoUser = PartialWrap(6106)
 
 var ErrGetUser = PartialWrap(9000)
 

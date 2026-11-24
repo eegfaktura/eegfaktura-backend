@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"at.ourproject/vfeeg-backend/database"
@@ -38,6 +39,8 @@ func bulkStatus(code int) int {
 		return http.StatusBadRequest
 	case 6103:
 		return http.StatusNotFound
+	case 6106:
+		return http.StatusForbidden
 	case 6104:
 		return http.StatusConflict
 	}
@@ -110,6 +113,13 @@ func (h *BulkChangeHandler) preview() middleware.JWTHandlerFunc {
 
 func (h *BulkChangeHandler) apply() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, claims *middleware.PlatformClaims, tenant string) {
+		// The token's user goes into lastModifiedBy/modifiedBy, the only trace of the run. Without it the token is
+		// not enough for a write: 403 (it is the token, not the request, that is incomplete).
+		if strings.TrimSpace(claims.Username) == "" {
+			respondBulkError(w, r, tenant, model.ErrBulkNoUser(errors.New("Im Anmelde-Token fehlt der Benutzername; "+
+				"die Massenänderung wird nicht ausgeführt.")))
+			return
+		}
 		eeg, err := h.db.BulkEeg(r.Context(), tenant)
 		if err != nil {
 			respondBulkError(w, r, tenant, err)
