@@ -123,6 +123,17 @@ var ErrGetTariff = PartialWrap(4000)
 var ErrUpdateTariff = PartialWrap(4001)
 var ErrTariffUtilized = PartialWrap(4002)
 
+// Bulk change of the support (konzept-massenaenderungen.md): rule outside the matrix or no hits (400), a hit twice
+// in the apply request (400), a hit that is not (or no longer) in the community (400 "preview outdated"), unknown
+// community (404), another bulk change or a tariff archive of the community or creditor id is running (409),
+// database failure (500).
+var ErrBulkRule = PartialWrap(6100)
+var ErrBulkDuplicateItem = PartialWrap(6101)
+var ErrBulkStalePreview = PartialWrap(6102)
+var ErrBulkUnknownTenant = PartialWrap(6103)
+var ErrBulkLocked = PartialWrap(6104)
+var ErrBulkChange = PartialWrap(6105)
+
 var ErrGetUser = PartialWrap(9000)
 
 type LogMessage struct {
