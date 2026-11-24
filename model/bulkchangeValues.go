@@ -119,6 +119,19 @@ func (e *bulkEvaluator) same(old, nv null.String) bool {
 	return e.norm(old.String) == e.norm(nv.String)
 }
 
+// SameValue compares an expected value of an apply request with the planned one, normalised like the rule
+// (trimmed, case-insensitive for direct debit type and reference, tariff id lower-cased, empty = null; E5).
+func (r *BulkRule) SameValue(a, b *string) bool {
+	e := &bulkEvaluator{rule: r}
+	norm := func(p *string) string {
+		if p == nil || strings.TrimSpace(*p) == "" {
+			return ""
+		}
+		return e.norm(*p)
+	}
+	return norm(a) == norm(b)
+}
+
 // row classifies one hit (Fachliche Logik 5, 7).
 func (e *bulkEvaluator) row(m *BulkMember, mt *BulkMeter) *BulkRow {
 	old := e.stored(m, mt)
