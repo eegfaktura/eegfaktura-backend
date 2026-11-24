@@ -34,6 +34,22 @@ func Test_transformExcelData_mandateReference(t *testing.T) {
 	assert.Equal(t, null.String{}, participants[0].BankAccount.MandateReference)
 }
 
+// A blank "UmsatzsteuerNr" is stored as NULL: billing would take " " as a VAT number (producer gets a reverse charge
+// or info document instead of a credit note); a value is taken without surrounding blanks.
+func Test_transformExcelData_vatNumber(t *testing.T) {
+	row := func(nr int, vat string) []interface{} {
+		return append(debitRow(nr, fmt.Sprintf("Ust%d", nr), "CORE"), vat)
+	}
+	f := buildImportSheetWithColumns(t, []interface{}{"Einzugsart", "UmsatzsteuerNr"}, [][]interface{}{
+		row(1, ""), row(2, "  "), row(3, " ATU12345678 "),
+	})
+	participants, _ := transformSheet(t, f, false)
+	require.Len(t, participants, 3)
+	assert.Equal(t, null.String{}, participants[0].VatNumber)
+	assert.Equal(t, null.String{}, participants[1].VatNumber)
+	assert.Equal(t, null.StringFrom("ATU12345678"), participants[2].VatNumber)
+}
+
 // End to end: a member imported with a blank "MandatRef" gets the member number as mandate reference in
 // base.billing_masterdata (the contract with billing), one with a value keeps it.
 func TestImportMasterdataFromExcel_mandateReferenceNull(t *testing.T) {

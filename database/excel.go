@@ -774,10 +774,11 @@ func importDebitType(raw, firstname, lastname string, importLog *model.Log) null
 	return null.String{}
 }
 
-// importMandateReference: an empty or blank cell (or no column "MandatRef") stores NULL, so that
-// base.billing_masterdata falls back to the member number; an empty text would be used as the mandate
-// reference (W-261124-mm1). A value is stored without surrounding blanks.
-func importMandateReference(raw string) null.String {
+// importOptionalText: an empty or blank cell (or no such column) stores NULL, a value without surrounding blanks.
+// For "MandatRef" base.billing_masterdata then falls back to the member number; an empty text would be used as the
+// mandate reference (W-261124-mm1). For "UmsatzsteuerNr" billing would take a blank as a VAT number and send a
+// producer a reverse charge or info document instead of a credit note.
+func importOptionalText(raw string) null.String {
 	if v := strings.TrimSpace(raw); v != "" {
 		return null.StringFrom(v)
 	}
@@ -1043,7 +1044,7 @@ func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorNa
 									Status:            getParticipantStatus(cpStatus),
 									ParticipantSince:  participantSince,
 									MeteringPoint:     []*model.MeteringPoint{},
-									VatNumber:         null.StringFrom(getColumValue(cols, colMap, "UmsatzsteuerNr", "vatNumber", nil)),
+									VatNumber:         importOptionalText(getColumValue(cols, colMap, "UmsatzsteuerNr", "vatNumber", nil)),
 									Version:           0,
 								},
 								ResidentAddress: model.Address{
@@ -1064,7 +1065,7 @@ func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorNa
 									Iban:             null.StringFrom(getColumValue(cols, colMap, "IBAN", "IBAN", nil)),
 									Owner:            null.StringFrom(getColumValue(cols, colMap, "Kontoinhaber", "Accountname", nil)),
 									BankName:         null.StringFrom(getColumValue(cols, colMap, "Bankname", "Bankname", nil)),
-									MandateReference: importMandateReference(getColumValue(cols, colMap, "MandatRef", "MandateRef", nil)),
+									MandateReference: importOptionalText(getColumValue(cols, colMap, "MandatRef", "MandateRef", nil)),
 									MandateDate:      getColumDate(cols, colMap, "MandatDat", "MandateDat", nil),
 									SepaDirectDebit:  importDebitType(getColumValue(cols, colMap, "Einzugsart", "DebitType", nil), firstname, lastname, importLog),
 								},

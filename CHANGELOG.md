@@ -29,6 +29,10 @@ this changelog highlights the changes relevant for overview and operations.
   blank cell (or no column `MandatRef`) was stored as an empty text, which `base.billing_masterdata` took as the
   mandate reference instead of falling back to the member number. A value is now stored without surrounding blanks.
   Members imported earlier keep their empty text.
+- **Excel master data import: a blank `UmsatzsteuerNr` cell is stored as NULL** (platform#268). A cell with only
+  blanks was stored as such; billing took it as a VAT number and sent a producer a reverse charge or info document
+  instead of a credit note. A value is now stored without surrounding blanks. Only future imports: stored values
+  stay as they are.
 
 ## [1.20.0] – 2026-11-16
 
