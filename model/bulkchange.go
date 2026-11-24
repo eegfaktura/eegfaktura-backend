@@ -31,6 +31,8 @@ const (
 	BulkSet   BulkAction = "SET"
 	BulkClear BulkAction = "CLEAR"
 	BulkCopy  BulkAction = "COPY"
+	// BulkFromFile: one value per member number from a file (Teil 2, bulkchangeFile.go).
+	BulkFromFile BulkAction = "FROM_FILE"
 )
 
 type BulkCondition string
@@ -56,6 +58,8 @@ type BulkRule struct {
 	Condition      BulkCondition `json:"condition"`
 	ConditionValue string        `json:"conditionValue,omitempty"`
 	Direction      string        `json:"direction,omitempty"`
+	// Values: FROM_FILE only, one value per member number.
+	Values []*BulkFileValue `json:"values,omitempty"`
 }
 
 // BulkPreviewRequest is the body of POST /bulkchange/preview.
@@ -118,10 +122,12 @@ func (r *BulkRule) Validate() error {
 	}
 	var actions []BulkAction
 	switch r.Field {
-	case BulkDebitType, BulkMandateDate, BulkParticipantTariff, BulkMeterTariff:
+	case BulkDebitType, BulkParticipantTariff, BulkMeterTariff:
 		actions = []BulkAction{BulkSet, BulkClear}
+	case BulkMandateDate:
+		actions = []BulkAction{BulkSet, BulkClear, BulkFromFile}
 	case BulkMandateReference:
-		actions = []BulkAction{BulkCopy, BulkClear}
+		actions = []BulkAction{BulkCopy, BulkClear, BulkFromFile}
 	default:
 		return errBulkRule("Feld %q ist nicht änderbar", r.Field)
 	}
@@ -137,6 +143,14 @@ func (r *BulkRule) Validate() error {
 		setOnly("conditionValue", r.ConditionValue, r.Condition == BulkEquals),
 	} {
 		if err != nil {
+			return err
+		}
+	}
+	if (len(r.Values) > 0) != (r.Action == BulkFromFile) {
+		return errBulkRule("values nur und immer bei %s", BulkFromFile)
+	}
+	if r.Action == BulkFromFile {
+		if err := r.validateValues(); err != nil {
 			return err
 		}
 	}

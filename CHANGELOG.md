@@ -8,6 +8,26 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Added
+- **Bulk change: value from file** (konzept-massenaenderungen.md, Teil 2). New action `FROM_FILE` for
+  `MANDATE_REFERENCE` and `MANDATE_DATE`: the rule carries `values` (`participantNumber`, `value`; at most 5,000), one
+  value per member — for references or mandate dates that differ per member (e.g. a fixed text plus a four-digit
+  number). A member is matched by its number, trimmed and case-insensitive, otherwise exactly (`0007` is not `7`).
+  Members without a value stay unchanged (class `UNCHANGED_NOT_IN_FILE`, counter `unchangedNotInFile`); new errors
+  F7 (the number belongs to several members of the community) and F8 (the number has different values in the
+  file); `notFound` lists the numbers of the file without a member. Reference and date are checked as before (F1,
+  F2, F3). admin reads the file in the browser and sends only number and value.
+
+### Contract
+- `/bulkchange/preview` and `/apply` accept the action `FROM_FILE` with `values`; the answer has
+  `counts.unchangedNotInFile`, `notFound`, class `UNCHANGED_NOT_IN_FILE`, errors and skip reasons F7/F8 (all only
+  for `FROM_FILE`, omitted otherwise — the answers of the other rules are unchanged). Fixtures
+  `api/testdata/bulkchange/*.file.*.json`. Caller: eegfaktura-admin (page „Massenänderung“, needs this backend
+  first: an older one answers 400 to `FROM_FILE`).
+
+### Changed
+- **Bulk change body limit 1 MiB → 2 MiB** (5,000 file values plus 5,000 hits; error 6107 names the new limit).
+
 ## [1.21.0] – 2026-11-24
 
 ### Added

@@ -21,6 +21,8 @@ type bulkEvaluator struct {
 	refCounts map[string]int
 	// foreign: normalised effective references of the direct debit members of the other communities (Foreign).
 	foreign map[string]bool
+	// file: FROM_FILE only, the values by member number.
+	file *bulkFile
 }
 
 func newBulkEvaluator(rule *BulkRule, s *BulkSnapshot, today string) *bulkEvaluator {
@@ -29,6 +31,9 @@ func newBulkEvaluator(rule *BulkRule, s *BulkSnapshot, today string) *bulkEvalua
 		if k := bulkNormRef(f.Ref.String); k != "" && isDirectDebit(f.DebitType) {
 			e.foreign[k] = true
 		}
+	}
+	if rule.Action == BulkFromFile {
+		e.file = newBulkFile(rule.Values, s.Members, func(a, b string) bool { return e.norm(a) == e.norm(b) })
 	}
 	if rule.Action == BulkSet && (rule.Field == BulkParticipantTariff || rule.Field == BulkMeterTariff) {
 		want := string(EEG)
@@ -93,6 +98,9 @@ func (e *bulkEvaluator) conditionMet(old null.String) bool {
 func (e *bulkEvaluator) newValue(m *BulkMember) (null.String, string) {
 	r := e.rule
 	switch {
+	case r.Action == BulkFromFile:
+		v, _ := e.file.lookup(m) // row handles the members whose file value does not apply
+		return e.fileValue(v)
 	case r.Action == BulkCopy:
 		if bulkIsEmpty(m.Number) {
 			return null.String{}, "F5"
@@ -149,6 +157,17 @@ func (e *bulkEvaluator) row(m *BulkMember, mt *BulkMeter) *BulkRow {
 		r.MeteringPointId = mt.MeteringPointId
 	}
 	setNew := func(v null.String) { r.NewValue, r.NewText = v.Ptr(), e.text(v) }
+	if e.file != nil {
+		if _, state := e.file.lookup(m); state != "" {
+			setNew(old)
+			if state == bulkNotInFile {
+				r.Class = BulkClassUnchangedNotInFile
+			} else {
+				r.Class, r.Error = BulkClassError, state
+			}
+			return r
+		}
+	}
 	nv, code := e.newValue(m)
 	setNew(nv)
 	switch {

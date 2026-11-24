@@ -15,6 +15,8 @@ const (
 	BulkClassUnchangedCondition = "UNCHANGED_CONDITION"
 	BulkClassUnchangedTarget    = "UNCHANGED_TARGET"
 	BulkClassError              = "ERROR"
+	// BulkClassUnchangedNotInFile: FROM_FILE, the member has no value in the file.
+	BulkClassUnchangedNotInFile = "UNCHANGED_NOT_IN_FILE"
 	// BulkClassSkipped: apply only, a hit that would change but is not in the request or no longer matches its
 	// expected values; it is not written and not counted.
 	BulkClassSkipped = "SKIPPED"
@@ -120,6 +122,8 @@ type BulkCounts struct {
 	UnchangedCondition int `json:"unchangedCondition"`
 	UnchangedTarget    int `json:"unchangedTarget"`
 	Errors             int `json:"errors"`
+	// UnchangedNotInFile: FROM_FILE only (omitted otherwise).
+	UnchangedNotInFile int `json:"unchangedNotInFile,omitempty"`
 }
 
 // BulkPlan is the answer of the preview and the base of apply.
@@ -127,6 +131,8 @@ type BulkPlan struct {
 	Counts   BulkCounts `json:"counts"`
 	RunHints []string   `json:"runHints"`
 	Rows     []*BulkRow `json:"rows"`
+	// NotFound: FROM_FILE only, the member numbers of the file without a member in the community (omitted otherwise).
+	NotFound []string `json:"notFound,omitempty"`
 }
 
 // BulkSkip is a requested hit apply did not write.
@@ -177,6 +183,9 @@ func PlanBulkChange(rule *BulkRule, s *BulkSnapshot, today string, keep func(*Bu
 	}
 	ev.uniqueness(rows)
 	plan := &BulkPlan{RunHints: ev.runHints(), Rows: rows}
+	if ev.file != nil {
+		plan.NotFound = ev.file.notFound()
+	}
 	for _, r := range rows {
 		if r.Class == BulkClassChanged {
 			r.Hints = ev.hints(r)
@@ -194,6 +203,8 @@ func PlanBulkChange(rule *BulkRule, s *BulkSnapshot, today string, keep func(*Bu
 			plan.Counts.UnchangedCondition++
 		case BulkClassUnchangedTarget:
 			plan.Counts.UnchangedTarget++
+		case BulkClassUnchangedNotInFile:
+			plan.Counts.UnchangedNotInFile++
 		case BulkClassError:
 			plan.Counts.Errors++
 		}
