@@ -23,7 +23,7 @@ var tariffKind = map[model.TariffModelType]string{
 }
 
 // importTariffs holds the community's active tariffs (view base.activetariff: latest version, not archived) by name,
-// lower case and without surrounding blanks, and the "Mitgliedstarif" cell of each member's first row.
+// lower case and without surrounding blanks, and the "Mitgliedstarif" cell of each member (noteMember).
 type importTariffs struct {
 	byName      map[string][]model.Tariff
 	memberCells map[*model.EegParticipant]string
@@ -38,10 +38,20 @@ func newImportTariffs(tariffs []model.Tariff) *importTariffs {
 	return t
 }
 
-// noteMember keeps the member tariff cell of a member's first row. It is looked up when the member is imported, as
-// only then it is known whether the member exists already (memberTariff, existingMemberHint).
-func (t *importTariffs) noteMember(p *model.EegParticipant, raw string) {
-	t.memberCells[p] = strings.TrimSpace(raw)
+// noteMember keeps the first non-empty member tariff cell of a member's rows; a different name on a later row
+// (trimmed, case-insensitive) is reported and ignored. The cell is looked up when the member is imported, as only
+// then it is known whether the member exists already (memberTariff, existingMemberHint).
+func (t *importTariffs) noteMember(p *model.EegParticipant, raw, identifier string, importLog *model.Log) {
+	cell, first := strings.TrimSpace(raw), t.memberCells[p]
+	switch {
+	case cell == "":
+	case first == "":
+		t.memberCells[p] = cell
+	case !strings.EqualFold(first, cell):
+		importLog.Messages = append(importLog.Messages, model.NewLogMessage("WARNING", identifier, "W_TARIFF_CONFLICT",
+			fmt.Sprintf("column '%s': different member tariffs on several rows (%q, %q); the first one counts",
+				importMemberTariffColumn, first, cell)))
+	}
 }
 
 // memberTariff is the member tariff (type EEG) noted for p, nil without one. The hints are returned, not logged: the

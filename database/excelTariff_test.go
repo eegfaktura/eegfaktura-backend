@@ -120,19 +120,36 @@ func Test_transformExcelData_tariffs(t *testing.T) {
 		}
 	})
 
-	t.Run("a member on several rows: the member tariff of the first row, a tariff per metering point", func(t *testing.T) {
+	t.Run("a member on several rows: the first non-empty member tariff, a tariff per metering point", func(t *testing.T) {
 		row := func(nr int, memberTariff, meterTariff string) []interface{} {
 			r := tariffRow(nr, "Same", "CONSUMPTION", memberTariff, meterTariff)
 			r[13] = "001"
 			return r
 		}
-		ps, importLog := transformTariffRows(t, row(1, "Standard", "Standard"), row(2, "Unbekannt", ""))
-		assert.Empty(t, importLog.Messages, "later rows of a member are not read for the member tariff")
+		ps, importLog := transformTariffRows(t, row(1, "", "Standard"), row(2, "Standard", ""), row(3, " standard ", ""))
+		assert.Empty(t, importLog.Messages, "the same name in another spelling is no conflict")
 		require.Len(t, ps, 1)
 		assert.Equal(t, null.StringFrom(tariffMember), ps[0].TariffId)
-		require.Len(t, ps[0].MeteringPoint, 2)
+		require.Len(t, ps[0].MeteringPoint, 3)
 		assert.Equal(t, null.StringFrom(tariffConsume), ps[0].MeteringPoint[0].TariffId)
 		assert.False(t, ps[0].MeteringPoint[1].TariffId.Valid)
+	})
+
+	t.Run("a member on several rows with different member tariffs: the first counts, with a hint", func(t *testing.T) {
+		row := func(nr int, memberTariff string) []interface{} {
+			r := tariffRow(nr, "Same", "CONSUMPTION", memberTariff, "")
+			r[13] = "001"
+			return r
+		}
+		ps, importLog := transformTariffRows(t, row(1, "Standard"), row(2, "Premium"))
+		require.Len(t, ps, 1)
+		assert.Equal(t, null.StringFrom(tariffMember), ps[0].TariffId)
+		require.Len(t, importLog.Messages, 1, "the second name is not looked up")
+		m := importLog.Messages[0]
+		assert.Equal(t, "WARNING", m.Kind)
+		assert.Equal(t, "Same Tarif", m.Identifier)
+		assert.Equal(t, "W_TARIFF_CONFLICT", m.MessageCode)
+		assert.Contains(t, m.Message, importMemberTariffColumn)
 	})
 }
 

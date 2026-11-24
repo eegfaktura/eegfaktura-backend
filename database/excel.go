@@ -1065,10 +1065,11 @@ func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorNa
 									Phone: null.StringFrom(getColumValue(cols, colMap, "TelefonNr", "phonenr", nil)),
 								},
 							}
-							// the member tariff from the member's first row, like the other member data
-							tariffs.noteMember(participant, getColumValue(cols, colMap, importMemberTariffColumn, importMemberTariffColumn, nil))
 							participants = append(participants, participant)
 						}
+						// the first non-empty member tariff of the member's rows, like the direct debit type
+						tariffs.noteMember(participant, getColumValue(cols, colMap, importMemberTariffColumn, importMemberTariffColumn, nil),
+							fmt.Sprintf("%s %s", firstname, lastname), importLog)
 						meteringPointId := strings.Trim(getColumValue(cols, colMap, "Zählpunkt", "MeteringPoint Id", nil), " ")
 						if len(meteringPointId) == 33 {
 							gridOperatorId, gridOperatorNameValue := importGridOperator(meteringPointId, givenGridOperator, gridOperatorName, importLog)
