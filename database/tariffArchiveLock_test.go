@@ -85,9 +85,6 @@ func TestArchiveTariff_lockTimeout(t *testing.T) {
 	ctx := context.Background()
 	db, err := GetTestDB(ctx, testDB)
 	require.NoError(t, err)
-	orig := archiveLockTimeout
-	archiveLockTimeout = "300ms"
-	t.Cleanup(func() { archiveLockTimeout = orig })
 
 	const tenant = "TE000420"
 	t.Cleanup(func() { _, _ = testDB.DbInstance.Exec(`DELETE FROM base.tariff WHERE tenant = $1`, tenant) })
@@ -101,7 +98,7 @@ func TestArchiveTariff_lockTimeout(t *testing.T) {
 	require.NoError(t, err)
 
 	start := time.Now()
-	err = db.ArchiveTariff(ctx, tenant, tariff.Id.String())
+	err = archiveTariff(ctx, testDB.DbInstance, tenant, tariff.Id.String(), "300ms")
 	var ve *model.VfeegError
 	require.True(t, errors.As(err, &ve), "want a VfeegError, got %v", err)
 	assert.Equal(t, 4003, ve.Code)

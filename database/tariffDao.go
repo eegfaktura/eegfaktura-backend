@@ -37,7 +37,7 @@ func (db *sqlDatabase) AddTariff(ctx context.Context, tenant, user string, tarif
 }
 
 func (db *sqlDatabase) ArchiveTariff(ctx context.Context, tenant string, id string) error {
-	return archiveTariff(ctx, db.db, tenant, id)
+	return archiveTariff(ctx, db.db, tenant, id, archiveLockTimeout)
 }
 
 func (db *sqlDatabase) GetTariffHistory(ctx context.Context, tenant, id string) ([]model.Tariff, error) {
@@ -127,16 +127,16 @@ func GetTariffNameMap(ctx context.Context, db *sqlx.DB, tenant string) (map[stri
 //
 // Before the UPDATE it waits for the tenant lock of the bulk change (konzept-massenaenderungen.md E4): a running
 // bulk change may be assigning this tariff, the UPDATE then sees its committed state (READ COMMITTED: a fresh
-// snapshot per statement). A bulk change started meanwhile gets 409. The wait is bounded (archiveLockTimeout);
+// snapshot per statement). A bulk change started meanwhile gets 409. The wait is bounded (lockTimeout, archiveLockTimeout in service);
 // when it runs out, ErrTariffLocked (409). Single assignments in web do not take
 // the lock (#106).
 //
 // Like AddTariff without the cancel of the request: a client that goes away while archiveTariff waits does not
 // abort it (the wait stays bounded by the lock timeout), so the answer the client may still get is the result.
-func archiveTariff(ctx context.Context, db *sqlx.DB, tenant string, id string) error {
+func archiveTariff(ctx context.Context, db *sqlx.DB, tenant, id, lockTimeout string) error {
 	ctx = context.WithoutCancel(ctx)
 	return inTx(ctx, db, func(tx *sqlx.Tx) error {
-		if err := waitBulkTenantLock(ctx, tx, tenant); err != nil {
+		if err := waitBulkTenantLock(ctx, tx, tenant, lockTimeout); err != nil {
 			return err
 		}
 		// todo: use goqu for sql statement creation

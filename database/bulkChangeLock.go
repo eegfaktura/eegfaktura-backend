@@ -25,14 +25,14 @@ const (
 var ErrBulkChangeRunning = errors.New("Bulk change is running")
 
 // archiveLockTimeout bounds the wait of archiveTariff for the tenant lock: just above bulkApplyDeadline, so it
-// only runs out when a bulk change hangs. A variable for the tests.
-var archiveLockTimeout = "130s"
+// only runs out when a bulk change hangs.
+const archiveLockTimeout = "130s"
 
 // waitBulkTenantLock waits for the tenant lock (archiveTariff: an EEG admin gets no 409 while a bulk change runs,
 // it waits for it). SET LOCAL lock_timeout first: if the wait runs out, ErrTariffLocked (409); other failures
 // ErrUpdateTariff.
-func waitBulkTenantLock(ctx context.Context, tx *sqlx.Tx, tenant string) error {
-	if _, err := tx.ExecContext(ctx, `SELECT set_config('lock_timeout', $1, true)`, archiveLockTimeout); err != nil {
+func waitBulkTenantLock(ctx context.Context, tx *sqlx.Tx, tenant, lockTimeout string) error {
+	if _, err := tx.ExecContext(ctx, `SELECT set_config('lock_timeout', $1, true)`, lockTimeout); err != nil {
 		return model.ErrUpdateTariff(err)
 	}
 	_, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1, hashtext($2))`, bulkLockTenant, strings.ToUpper(tenant))
