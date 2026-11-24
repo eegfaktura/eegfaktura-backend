@@ -81,8 +81,8 @@ func decodeBulk(w http.ResponseWriter, r *http.Request, dst interface{}) error {
 	err := dec.Decode(dst)
 	var tooLarge *http.MaxBytesError
 	if errors.As(err, &tooLarge) {
-		return model.ErrBulkTooLarge(errors.New("Die Anfrage ist zu groß (höchstens 2 MiB, etwa 10.000 Treffer). " +
-			"Bitte die Regel mit einer Bedingung enger fassen und in mehreren Läufen ändern."))
+		return model.ErrBulkTooLarge(errors.New("Die Anfrage ist zu groß (höchstens 2 MiB, etwa 13.000 Treffer). " +
+			"Bitte die Regel mit einer Bedingung enger fassen oder die Datei aufteilen und in mehreren Läufen ändern."))
 	}
 	if err != nil || dec.More() {
 		return model.ErrBulkRule(errors.New("Anfrage ungültig"))

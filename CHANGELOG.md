@@ -15,15 +15,25 @@ this changelog highlights the changes relevant for overview and operations.
   number). A member is matched by its number, trimmed and case-insensitive, otherwise exactly (`0007` is not `7`).
   Members without a value stay unchanged (class `UNCHANGED_NOT_IN_FILE`, counter `unchangedNotInFile`); new errors
   F7 (the number belongs to several members of the community) and F8 (the number has different values in the
-  file); `notFound` lists the numbers of the file without a member. Reference and date are checked as before (F1,
-  F2, F3). admin reads the file in the browser and sends only number and value.
+  file), counted like F5 only when the condition holds; `notFound` lists the numbers of the file without a member.
+  Reference and date are checked as before (F1, F2, F3; a date before 1900 is F3). admin reads the file (a fixed
+  template) in the browser and sends only number and value.
+- **Bulk change: blanks inside a mandate reference are allowed** (decision 24.11.2026: a community's bank takes
+  them; the web form accepts them already). Not at the start or end, still 1–35 characters of the SEPA set. New
+  hint H10 marks a hit whose written or effective reference has a blank: not every bank takes it.
 
 ### Contract
 - `/bulkchange/preview` and `/apply` accept the action `FROM_FILE` with `values`; the answer has
   `counts.unchangedNotInFile`, `notFound`, class `UNCHANGED_NOT_IN_FILE`, errors and skip reasons F7/F8 (all only
-  for `FROM_FILE`, omitted otherwise — the answers of the other rules are unchanged). Fixtures
+  for `FROM_FILE`; the two fields are omitted when 0 or empty — the answers of the other rules are unchanged); hint
+  H10. Fixtures
   `api/testdata/bulkchange/*.file.*.json`. Caller: eegfaktura-admin (page „Massenänderung“, needs this backend
   first: an older one answers 400 to `FROM_FILE`).
+
+### Fixed
+- **Bulk change: two hits of one run with the same new mandate reference are F2 whatever their direct debit type**
+  (konzept-massenaenderungen.md, Fachliche Logik 6). Before, only direct debit members counted: a run that sets the
+  references before switching „Kein SEPA“ to CORE could write duplicates, which the later run only showed as H4.
 
 ### Changed
 - **Bulk change body limit 1 MiB → 2 MiB** (5,000 file values plus 5,000 hits; error 6107 names the new limit).

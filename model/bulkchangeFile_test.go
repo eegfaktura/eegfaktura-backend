@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -33,10 +34,6 @@ func TestBulkRuleValidate_fromFile(t *testing.T) {
 	for i := 0; i <= BulkMaxFileValues; i++ {
 		tooMany.Values = append(tooMany.Values, &BulkFileValue{ParticipantNumber: fmt.Sprint(i), Value: "R"})
 	}
-	long := make([]byte, 101)
-	for i := range long {
-		long[i] = 'x'
-	}
 	for name, r := range map[string]BulkRule{
 		"debit type":           fileRule(BulkDebitType, "7", "CORE"),
 		"tariff":               fileRule(BulkParticipantTariff, "7", "x"),
@@ -44,13 +41,13 @@ func TestBulkRuleValidate_fromFile(t *testing.T) {
 		"values with COPY":     {Field: BulkMandateReference, Action: BulkCopy, Source: BulkSourceParticipantNumber, Condition: BulkAll, Values: []*BulkFileValue{{ParticipantNumber: "1", Value: "R"}}},
 		"empty value":          fileRule(BulkMandateReference, "7", " "),
 		"empty number":         fileRule(BulkMandateReference, "", "R"),
-		"value too long":       fileRule(BulkMandateReference, "7", string(long)),
+		"value too long":       fileRule(BulkMandateReference, "7", strings.Repeat("x", 101)),
 		"more than the max":    tooMany,
 		"nil entry":            {Field: BulkMandateReference, Action: BulkFromFile, Condition: BulkAll, Values: []*BulkFileValue{nil}},
 		"value with FROM_FILE": {Field: BulkMandateDate, Action: BulkFromFile, Value: "2024-01-01", Condition: BulkAll, Values: []*BulkFileValue{{ParticipantNumber: "1", Value: "2024-01-01"}}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			assert.Error(t, r.Validate())
+			assert.Equal(t, 6100, bulkCode(t, r.Validate()))
 		})
 	}
 }
@@ -114,17 +111,26 @@ func TestPlanBulk_fromFile_referenceChecks(t *testing.T) {
 		bulkMember("4", debit("NONE"), ref(nil)),
 	)
 	s.Foreign = []*BulkForeignRef{foreignRef("taken-elsewhere", "CORE")}
+	s.Members = append(s.Members, bulkMember("5", debit("NONE"), ref(nil)), bulkMember("6", debit("NONE"), ref(nil)),
+		bulkMember("7", ref(nil)))
 	p := bulkPlan(t, fileRule(BulkMandateReference,
-		"1", "STERN-EEG eGen MIT0001", // blanks: F1
+		"1", "STERN-EEG eGen MIT0001", // blanks inside: allowed, hint H10
 		"2", "SAME", "3", "same", // two hits with the same new value: F2 for both
-		"4", "TAKEN-ELSEWHERE"), s) // NONE member: not counted for uniqueness
+		"4", "TAKEN-ELSEWHERE", // NONE member: the other community counts only direct debit members
+		"5", "TWICE", "6", "twice", // NONE members of the same run: F2 too (reference before debit type)
+		"7", "MIT_0007"), s) // "_" is not in the SEPA set: F1
 
 	r1 := bulkRowOf(t, p, "p-1")
-	assert.Equal(t, "F1", r1.Error)
-	assert.Equal(t, "STERN-EEG eGen MIT0001", *r1.NewValue, "the invalid value is shown")
+	assert.Equal(t, BulkClassChanged, r1.Class)
+	assert.Equal(t, []string{"H6", "H10"}, r1.Hints)
 	assert.Equal(t, "F2", bulkRowOf(t, p, "p-2").Error)
 	assert.Equal(t, "F2", bulkRowOf(t, p, "p-3").Error)
 	assert.Equal(t, BulkClassChanged, bulkRowOf(t, p, "p-4").Class)
+	assert.Equal(t, "F2", bulkRowOf(t, p, "p-5").Error)
+	assert.Equal(t, "F2", bulkRowOf(t, p, "p-6").Error)
+	r7 := bulkRowOf(t, p, "p-7")
+	assert.Equal(t, "F1", r7.Error)
+	assert.Equal(t, "MIT_0007", *r7.NewValue, "the invalid value is shown")
 }
 
 func TestPlanBulk_fromFile_conditionAndTarget(t *testing.T) {
@@ -142,19 +148,36 @@ func TestPlanBulk_fromFile_conditionAndTarget(t *testing.T) {
 }
 
 func TestPlanBulk_fromFile_mandateDate(t *testing.T) {
-	s := bulkSnap(bulkMember("1"), bulkMember("2"), bulkMember("3"), bulkMember("4"))
+	s := bulkSnap(bulkMember("1"), bulkMember("2"), bulkMember("3"), bulkMember("4"), bulkMember("5"))
 	p := bulkPlan(t, fileRule(BulkMandateDate,
-		"1", "2024-01-01", "2", "31.2.2024", "3", "2024-02-31", "4", "2026-11-25"), s)
+		"1", "2024-01-01", "2", "31.2.2024", "3", "2024-02-31", "4", "2026-11-25", "5", "0000-01-01"), s)
 
 	r1 := bulkRowOf(t, p, "p-1")
 	assert.Equal(t, BulkClassChanged, r1.Class)
 	assert.Equal(t, "01.01.2024", r1.NewText)
-	for _, id := range []string{"p-2", "p-3", "p-4"} {
+	for _, id := range []string{"p-2", "p-3", "p-4", "p-5"} {
 		r := bulkRowOf(t, p, id)
 		assert.Equal(t, BulkClassError, r.Class, id)
 		assert.Equal(t, "F3", r.Error, id)
 	}
 	assert.Equal(t, "31.2.2024", *bulkRowOf(t, p, "p-2").NewValue, "an unreadable cell is shown as sent")
+}
+
+// F7/F8 count like F5 only when the condition holds: a member the condition leaves out stays "condition not met".
+func TestPlanBulk_fromFile_errorsAfterCondition(t *testing.T) {
+	s := bulkSnap(
+		bulkMember("1"), // reference "M-1": not empty
+		bulkMember("2", ref(nil)),
+		bulkMember("3a", number("3")), bulkMember("3b", number("3"), ref(nil)),
+	)
+	rule := fileRule(BulkMandateReference, "1", "A", "1", "B", "2", "C", "2", "D", "3", "E")
+	rule.Condition = BulkEmpty
+	p := bulkPlan(t, rule, s)
+	assert.Equal(t, BulkClassUnchangedCondition, bulkRowOf(t, p, "p-1").Class, "F8, but the condition leaves it out")
+	assert.Equal(t, "F8", bulkRowOf(t, p, "p-2").Error)
+	assert.Equal(t, BulkClassUnchangedCondition, bulkRowOf(t, p, "p-3a").Class, "F7, but the condition leaves it out")
+	assert.Equal(t, "F7", bulkRowOf(t, p, "p-3b").Error)
+	assert.Equal(t, BulkCounts{UnchangedCondition: 2, Errors: 2}, p.Counts)
 }
 
 // Apply plans again and writes only the requested hits whose values still match (as for the other actions).

@@ -29,7 +29,7 @@ Notes for the reader of the contract:
 
 - The tenant goes in the header `tenant`, never in the body. Only the realm role `superuser` passes.
 - Codes, not texts, are the contract for hits: classes `CHANGED`, `UNCHANGED_CONDITION`, `UNCHANGED_TARGET`,
-  `UNCHANGED_NOT_IN_FILE` (`FROM_FILE` only), `ERROR`; errors `F1`–`F8` (F7/F8 `FROM_FILE` only); hints `H1`–`H9`; run hints `L1`–`L3`; skip reasons `CHANGED_SINCE_PREVIEW` and
+  `UNCHANGED_NOT_IN_FILE` (`FROM_FILE` only), `ERROR`; errors `F1`–`F8` (F7/F8 `FROM_FILE` only); hints `H1`–`H10`; run hints `L1`–`L3`; skip reasons `CHANGED_SINCE_PREVIEW` and
   `F1`–`F8`. `oldText`/`newText` are plain German texts of the values (e.g. „Kein SEPA“, tariff name).
 - `oldValue`/`newValue` are the stored values (`null` = NULL). admin sends them back unchanged as
   `expectedOld`/`expectedNew`.
@@ -41,4 +41,4 @@ Notes for the reader of the contract:
 - `FROM_FILE` (fields `MANDATE_REFERENCE`, `MANDATE_DATE`): `values` is a list of `{participantNumber, value}`, at
   most 5,000, number and value not empty and at most 100 characters (else 6100). A member is matched by its number,
   trimmed and case-insensitive, otherwise exactly. `counts.unchangedNotInFile` and `notFound` (numbers of the file
-  without a member, as written in the file) appear only for `FROM_FILE`. Apply sends the rule with its values again.
+  without a member, as written in the file) appear only for `FROM_FILE`, and only when not 0 or empty. Apply sends the rule with its values again.

@@ -98,7 +98,9 @@ func TestBulkRuleValidate_refused(t *testing.T) {
 func TestValidMandateReference(t *testing.T) {
 	for ref, want := range map[string]bool{
 		"4711": true, "EEG-001/A": true, "Lastschrift-135": true, "a+?/-:().,'b": true, strings.Repeat("1", 35): true,
-		"": false, "EEG 001": false, "M_12": false, "Mü-1": false, strings.Repeat("1", 36): false, " 4711": false,
+		"EEG 001": true, "STERN-EEG eGen MIT0007": true, "A" + strings.Repeat(" ", 33) + "B": true,
+		"": false, "M_12": false, "Mü-1": false, strings.Repeat("1", 36): false, " 4711": false, "4711 ": false, " ": false,
+		"A" + strings.Repeat(" ", 34) + "B": false,
 	} {
 		assert.Equal(t, want, ValidMandateReference(ref), ref)
 	}

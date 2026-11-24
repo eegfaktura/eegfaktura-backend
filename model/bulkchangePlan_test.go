@@ -106,7 +106,8 @@ func TestPlanBulk_F1_invalidReference(t *testing.T) {
 	assert.Equal(t, BulkClassChanged, bulkRowOf(t, bulkPlan(t, exact, bulkSnap(bulkMember("135"))), "p-135").Class)
 
 	p = bulkPlan(t, copyRef, bulkSnap(bulkMember("EEG 001"), bulkMember("Mü-1")))
-	assert.Equal(t, "F1", bulkRowOf(t, p, "p-EEG 001").Error)
+	assert.Equal(t, BulkClassChanged, bulkRowOf(t, p, "p-EEG 001").Class, "a blank inside is allowed (decision 24.11.)")
+	assert.Contains(t, bulkRowOf(t, p, "p-EEG 001").Hints, "H10")
 	assert.Equal(t, "F1", bulkRowOf(t, p, "p-Mü-1").Error)
 
 	clear := BulkRule{Field: BulkMandateReference, Action: BulkClear, Condition: BulkAll}

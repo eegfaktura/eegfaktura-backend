@@ -7,7 +7,7 @@ import (
 	"gopkg.in/guregu/null.v4"
 )
 
-// Values of the bulk change: stored value, condition, new value and row-level errors F1 and F3–F6, plain texts.
+// Values of the bulk change: stored value, condition, new value and row-level errors F1 and F3–F8, plain texts.
 // Comparison rule (Fachliche Logik 4): trimmed, case-insensitive; NULL, "" and blanks are empty. The effective
 // value follows base.billing_masterdata: the fallback (member number, member since) only for NULL.
 
@@ -94,13 +94,12 @@ func (e *bulkEvaluator) conditionMet(old null.String) bool {
 	return true
 }
 
-// newValue is the target value and a row-level error (F1, F3, F4, F5).
+// newValue is the target value and a row-level error (F1, F3, F4, F5; FROM_FILE also F7, F8).
 func (e *bulkEvaluator) newValue(m *BulkMember) (null.String, string) {
 	r := e.rule
 	switch {
 	case r.Action == BulkFromFile:
-		v, _ := e.file.lookup(m) // row handles the members whose file value does not apply
-		return e.fileValue(v)
+		return e.fileValue(m)
 	case r.Action == BulkCopy:
 		if bulkIsEmpty(m.Number) {
 			return null.String{}, "F5"
@@ -157,27 +156,24 @@ func (e *bulkEvaluator) row(m *BulkMember, mt *BulkMeter) *BulkRow {
 		r.MeteringPointId = mt.MeteringPointId
 	}
 	setNew := func(v null.String) { r.NewValue, r.NewText = v.Ptr(), e.text(v) }
-	if e.file != nil {
-		if _, state := e.file.lookup(m); state != "" {
-			setNew(old)
-			if state == bulkNotInFile {
-				r.Class = BulkClassUnchangedNotInFile
-			} else {
-				r.Class, r.Error = BulkClassError, state
-			}
-			return r
-		}
+	if e.file != nil && !e.file.inFile(m) {
+		// "alle" of a file rule means the members with a row in the file
+		setNew(old)
+		r.Class = BulkClassUnchangedNotInFile
+		return r
 	}
 	nv, code := e.newValue(m)
 	setNew(nv)
+	// F5 (empty source), F7/F8 (file value does not apply): there is no new value to compare with the stored one
+	noValue := code == "F5" || code == "F7" || code == "F8"
 	switch {
-	case code != "F5" && e.same(old, nv):
+	case !noValue && e.same(old, nv):
 		// before the condition: "CORE where NONE" counts a CORE member as "has the target already"
 		r.Class = BulkClassUnchangedTarget
 	case !e.conditionMet(old):
 		setNew(old)
 		r.Class = BulkClassUnchangedCondition
-	case code == "F5":
+	case noValue:
 		setNew(old) // the target stays
 		r.Class, r.Error = BulkClassError, code
 	case e.bankField() && !m.BankId.Valid:

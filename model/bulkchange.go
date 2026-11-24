@@ -96,9 +96,11 @@ type BulkCommunity struct {
 	RcNumber string `json:"rcNumber" db:"rcNumber"`
 }
 
-// sepaMandateIdRe is the SEPA mandate id (MndtId) rule of web (src/util/MandateReference.util.ts): 1–35 characters
-// of the restricted set, no blanks.
-var sepaMandateIdRe = regexp.MustCompile(`^[A-Za-z0-9+?/\-:().,']{1,35}$`)
+// sepaMandateIdRe is the SEPA mandate id (MndtId): 1–35 characters of the restricted SEPA set. A blank is part of
+// that set and allowed inside, not at the start or end (decision 24.11.2026: a community's bank takes references
+// with blanks; the web form accepts them too). The preview marks a reference with a blank (H10), since not every
+// bank takes it. web suggests the member number only without blanks (src/util/MandateReference.util.ts).
+var sepaMandateIdRe = regexp.MustCompile(`^[A-Za-z0-9+?/\-:().,']([A-Za-z0-9+?/\-:().,' ]{0,33}[A-Za-z0-9+?/\-:().,'])?$`)
 
 // ValidMandateReference reports whether ref is a valid SEPA mandate id.
 func ValidMandateReference(ref string) bool {
