@@ -77,6 +77,14 @@ type BulkApplyRequest struct {
 	Items []*BulkApplyItem `json:"items"`
 }
 
+// BulkTariffOption is one entry of GET /bulkchange/tariffs: an active tariff of a type the rules can set.
+type BulkTariffOption struct {
+	Id         string  `json:"id" db:"id"`
+	Name       string  `json:"name" db:"name"`
+	Type       string  `json:"type" db:"type"`
+	JoiningFee float64 `json:"joiningFee" db:"joining_fee"`
+}
+
 // BulkCommunity is one entry of GET /bulkchange/communities.
 type BulkCommunity struct {
 	Tenant   string `json:"tenant" db:"tenant"`

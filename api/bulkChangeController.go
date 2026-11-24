@@ -28,6 +28,7 @@ func InitBulkChangeRouter(r *mux.Router, db database.Database) *mux.Router {
 	h := &BulkChangeHandler{db: db}
 	s := r.PathPrefix("/bulkchange").Subrouter()
 	s.HandleFunc("/communities", middleware.ProtectSuperuser(h.communities())).Methods("GET")
+	s.HandleFunc("/tariffs", middleware.ProtectSuperuser(h.tariffs())).Methods("GET")
 	s.HandleFunc("/preview", middleware.ProtectSuperuser(h.preview())).Methods("POST")
 	s.HandleFunc("/apply", middleware.ProtectSuperuser(h.apply())).Methods("POST")
 	return r
@@ -89,6 +90,23 @@ func decodeBulk(w http.ResponseWriter, r *http.Request, dst interface{}) error {
 func (h *BulkChangeHandler) communities() middleware.JWTHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, _ *middleware.PlatformClaims, tenant string) {
 		list, err := h.db.BulkCommunities(r.Context())
+		if err != nil {
+			respondBulkError(w, r, tenant, err)
+			return
+		}
+		respondWithJSON(w, http.StatusOK, list)
+	}
+}
+
+// tariffs: the tariffs admin offers for the tariff rules of the community in the header.
+func (h *BulkChangeHandler) tariffs() middleware.JWTHandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request, _ *middleware.PlatformClaims, tenant string) {
+		eeg, err := h.db.BulkEeg(r.Context(), tenant)
+		if err != nil {
+			respondBulkError(w, r, tenant, err)
+			return
+		}
+		list, err := h.db.BulkTariffs(r.Context(), eeg)
 		if err != nil {
 			respondBulkError(w, r, tenant, err)
 			return

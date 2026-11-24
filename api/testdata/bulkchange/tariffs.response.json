@@ -1,0 +1,5 @@
+[
+  {"id": "d4419000-0000-4000-8000-000000000001", "name": "Mitgliedsbeitrag", "type": "EEG", "joiningFee": 50},
+  {"id": "d4419000-0000-4000-8000-000000000003", "name": "Einspeisung", "type": "EZP", "joiningFee": 0},
+  {"id": "d4419000-0000-4000-8000-000000000002", "name": "Bezug", "type": "VZP", "joiningFee": 0}
+]

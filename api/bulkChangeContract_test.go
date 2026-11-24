@@ -42,6 +42,7 @@ func bcSetup(t *testing.T, tenants ...string) {
 	tenants = append(tenants, bcTenant)
 	clean := func() {
 		bcExec(t, `DELETE FROM base.participant WHERE tenant = ANY($1)`, pq.Array(tenants))
+		bcExec(t, `DELETE FROM base.tariff WHERE tenant = ANY($1)`, pq.Array(tenants))
 		bcExec(t, `DELETE FROM base.eeg WHERE tenant = ANY($1)`, pq.Array(tenants))
 	}
 	clean()
@@ -113,6 +114,35 @@ func TestBulkChangeContract_communities(t *testing.T) {
 	for _, c := range got {
 		assert.Len(t, c, 3, "tenant, name and rcNumber only: %v", c)
 	}
+}
+
+// Active tariffs of the types the rules can set, latest version, sorted by type and name; nothing of other
+// communities, no archived or AKONTO tariff.
+func TestBulkChangeContract_tariffs(t *testing.T) {
+	bcSetup(t, "TE000442")
+	tariff := func(n, tenant, typ, name string, version int, status string, fee float64) {
+		bcExec(t, `INSERT INTO base.tariff (id, tenant, type, name, version, status, "joiningFee") VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+			"d4419000-0000-4000-8000-0000000000"+n, tenant, typ, name, version, status, fee)
+	}
+	tariff("01", bcTenant, "EEG", "Alter Name", 1, "INACTIVE", 0)
+	tariff("01", bcTenant, "EEG", "Mitgliedsbeitrag", 2, "ACTIVE", 50)
+	tariff("02", bcTenant, "VZP", "Bezug", 1, "ACTIVE", 0)
+	tariff("03", bcTenant, "EZP", "Einspeisung", 1, "ACTIVE", 0)
+	tariff("04", bcTenant, "AKONTO", "Akonto", 1, "ACTIVE", 0)
+	tariff("05", bcTenant, "EEG", "Archiviert", 1, "ARCHIVED", 0)
+	tariff("06", "TE000442", "EEG", "Fremd", 1, "ACTIVE", 0)
+
+	w := bcServe(t, http.MethodGet, "/bulkchange/tariffs", "superuser", strings.ToLower(bcTenant), "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.JSONEq(t, bcFixture(t, "tariffs.response.json"), w.Body.String())
+
+	bcExec(t, `INSERT INTO base.eeg (tenant, name, "rcNumber", area, gridoperator_code, gridoperator_name, "communityId",
+		street, "streetNumber", city, zip, email) VALUES ('TE000442', 'Ohne', 'RC100442', 'LOCAL', 'AT009999', 'Op',
+		'AT00999900000TC100442000000000001', 'Weg', '1', 'Linz', '4020', 'x@example.org')`)
+	bcExec(t, `DELETE FROM base.tariff WHERE tenant = 'TE000442'`)
+	w = bcServe(t, http.MethodGet, "/bulkchange/tariffs", "superuser", "TE000442", "")
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.JSONEq(t, `[]`, w.Body.String(), "no tariffs: an empty list")
 }
 
 func TestBulkChangeContract_previewAndApply(t *testing.T) {

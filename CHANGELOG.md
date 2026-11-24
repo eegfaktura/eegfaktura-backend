@@ -36,6 +36,8 @@ this changelog highlights the changes relevant for overview and operations.
 ### Contract
 - **New REST routes, realm role `superuser` only** (no admin access group; first routes of this kind, new wrapper
   `ProtectSuperuser`): `GET /bulkchange/communities` (`tenant`, `name`, `rcNumber` of all communities),
+  `GET /bulkchange/tariffs` (active tariffs of the community in the header `tenant`, types EEG/VZP/EZP: `id`,
+  `name`, `type`, `joiningFee`),
   `POST /bulkchange/preview` and `POST /bulkchange/apply` (community in the header `tenant`, rule in the body).
   Caller: eegfaktura-admin from the browser via `/api/bulkchange/…` on the admin host (ingress rule in gitops,
   platform, docker-compose — separate PRs). JSON contract and new error codes 6100–6107 (400 rule/request, 400

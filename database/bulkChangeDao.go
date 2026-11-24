@@ -19,6 +19,8 @@ import (
 
 type BulkChangeRepository interface {
 	BulkCommunities(ctx context.Context) ([]model.BulkCommunity, error)
+	// BulkTariffs lists the active tariffs of the community the rules can set (types EEG, VZP, EZP).
+	BulkTariffs(ctx context.Context, eeg *model.BulkEeg) ([]model.BulkTariffOption, error)
 	// BulkEeg finds the community of the tenant (case-insensitive); ErrBulkUnknownTenant if there is none.
 	BulkEeg(ctx context.Context, tenant string) (*model.BulkEeg, error)
 	BulkPreview(ctx context.Context, eeg *model.BulkEeg, rule *model.BulkRule) (*model.BulkPlan, error)
@@ -38,6 +40,18 @@ const (
 func (db *sqlDatabase) BulkCommunities(ctx context.Context) ([]model.BulkCommunity, error) {
 	list := []model.BulkCommunity{}
 	if err := db.db.SelectContext(ctx, &list, `SELECT tenant, name, "rcNumber" FROM base.eeg ORDER BY lower(name), tenant`); err != nil {
+		return nil, model.ErrBulkChange(err)
+	}
+	return list, nil
+}
+
+// BulkTariffs: active as in the view activetariff (latest version, not ARCHIVED); AKONTO and other types no
+// rule can set are left out.
+func (db *sqlDatabase) BulkTariffs(ctx context.Context, eeg *model.BulkEeg) ([]model.BulkTariffOption, error) {
+	list := []model.BulkTariffOption{}
+	err := db.db.SelectContext(ctx, &list, `SELECT id::text AS id, name, type, "joiningFee"::float8 AS joining_fee
+		FROM base.activetariff WHERE tenant = $1 AND type IN ('EEG', 'VZP', 'EZP') ORDER BY type, name, id`, eeg.Tenant)
+	if err != nil {
 		return nil, model.ErrBulkChange(err)
 	}
 	return list, nil
