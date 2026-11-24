@@ -42,11 +42,12 @@ const (
 		t."joiningFeeVatInPercent"::float8 AS joining_fee_vat
 		FROM (SELECT DISTINCT ON (id) * FROM base.tariff WHERE tenant = $1 ORDER BY id, version DESC) t
 		LEFT JOIN base.activetariff a ON a.id = t.id AND a.version = t.version`
-	bulkForeignRefsSQL = `SELECT DISTINCT upper(btrim(COALESCE(b.mandate_reference, p."participantNumber", '')))
+	// raw values: the planner normalises them like the own members (one rule, in Go)
+	bulkForeignRefsSQL = `SELECT COALESCE(b.mandate_reference, p."participantNumber") AS ref, b.sepa_direct_debit
 		FROM base.eeg e
 		JOIN base.participant p ON p.tenant = e.tenant
 		JOIN base.bankaccount b ON b.participant_id = p.id
-		WHERE ` + creditorNormSQL + ` = $1 AND e.tenant <> $2 AND upper(btrim(b.sepa_direct_debit)) IN ('CORE', 'B2B')`
+		WHERE ` + creditorNormSQL + ` = $1 AND e.tenant <> $2`
 )
 
 // loadBulkEeg finds the community case-insensitively (an exact match first); ErrBulkUnknownTenant if none.
@@ -68,7 +69,7 @@ func loadBulkEeg(ctx context.Context, q sqlx.QueryerContext, tenant string) (*mo
 // member with two), the current meters of the direction, the tariffs of the community and, for rules on the
 // direct debit type or the mandate reference, the references used under the same creditor id elsewhere.
 func loadBulkSnapshot(ctx context.Context, q sqlx.QueryerContext, eeg *model.BulkEeg, rule *model.BulkRule) (*model.BulkSnapshot, error) {
-	s := &model.BulkSnapshot{Eeg: eeg, Tariffs: map[string]*model.BulkTariff{}, ForeignRefs: map[string]bool{}}
+	s := &model.BulkSnapshot{Eeg: eeg, Tariffs: map[string]*model.BulkTariff{}}
 	err := sqlx.SelectContext(ctx, q, &s.Members, bulkMembersSQL, eeg.Tenant)
 	if err != nil {
 		return nil, model.ErrBulkChange(err)
@@ -88,16 +89,8 @@ func loadBulkSnapshot(ctx context.Context, q sqlx.QueryerContext, eeg *model.Bul
 		s.Tariffs[t.Id] = t
 	}
 	if (rule.Field == model.BulkDebitType || rule.Field == model.BulkMandateReference) && eeg.CreditorNorm != "" {
-		var refs []string
-		err = sqlx.SelectContext(ctx, q, &refs, bulkForeignRefsSQL,
-			eeg.CreditorNorm, eeg.Tenant)
-		if err != nil {
+		if err = sqlx.SelectContext(ctx, q, &s.Foreign, bulkForeignRefsSQL, eeg.CreditorNorm, eeg.Tenant); err != nil {
 			return nil, model.ErrBulkChange(err)
-		}
-		for _, r := range refs {
-			if r != "" {
-				s.ForeignRefs[r] = true
-			}
 		}
 	}
 	return s, nil

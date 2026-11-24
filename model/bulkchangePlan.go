@@ -73,6 +73,13 @@ type BulkTariff struct {
 	JoiningFeeVat    float64    `db:"joining_fee_vat"`
 }
 
+// BulkForeignRef is a member of another community under the same creditor id: its effective mandate reference
+// (as in base.billing_masterdata) and its direct debit type, both as stored.
+type BulkForeignRef struct {
+	Ref       null.String `db:"ref"`
+	DebitType null.String `db:"sepa_direct_debit"`
+}
+
 // BulkSnapshot is what the planner sees of the community.
 type BulkSnapshot struct {
 	Eeg     *BulkEeg
@@ -81,9 +88,9 @@ type BulkSnapshot struct {
 	Meters []*BulkMeter
 	// Tariffs by lower-case id.
 	Tariffs map[string]*BulkTariff
-	// ForeignRefs: normalised effective mandate references of direct debit members of the other communities with
-	// the same normalised creditor id (DEBIT_TYPE and MANDATE_REFERENCE only).
-	ForeignRefs map[string]bool
+	// Foreign: the members of the other communities with the same normalised creditor id, raw (DEBIT_TYPE and
+	// MANDATE_REFERENCE only); the planner normalises them with the same rule as the own members.
+	Foreign []*BulkForeignRef
 }
 
 // BulkRow is one hit of the plan.

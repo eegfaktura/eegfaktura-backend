@@ -29,9 +29,14 @@ func ref(v *string) func(*BulkMember) {
 	return func(m *BulkMember) { m.MandateRef = null.StringFromPtr(v) }
 }
 
+// foreignRef is a member of another community under the creditor id, raw as stored.
+func foreignRef(ref, debitType string) *BulkForeignRef {
+	return &BulkForeignRef{Ref: null.StringFrom(ref), DebitType: null.StringFrom(debitType)}
+}
+
 func bulkSnap(members ...*BulkMember) *BulkSnapshot {
 	return &BulkSnapshot{Eeg: &BulkEeg{Tenant: "TE000001", Name: "EEG", RcNumber: "RC000001", CreditorNorm: "AT12ZZZ0001",
-		HasIban: true, HasBic: true}, Members: members, Tariffs: map[string]*BulkTariff{}, ForeignRefs: map[string]bool{}}
+		HasIban: true, HasBic: true}, Members: members, Tariffs: map[string]*BulkTariff{}}
 }
 
 func bulkPlan(t *testing.T, rule BulkRule, s *BulkSnapshot) *BulkPlan {
@@ -121,8 +126,13 @@ func TestPlanBulk_F2_duplicateReference(t *testing.T) {
 	})
 	t.Run("reference of another community with the same creditor id", func(t *testing.T) {
 		s := bulkSnap(bulkMember("1"))
-		s.ForeignRefs["1"] = true
+		s.Foreign = append(s.Foreign, foreignRef(" 1 ", " core"))
 		assert.Equal(t, "F2", bulkRowOf(t, bulkPlan(t, copyRef, s), "p-1").Error)
+	})
+	t.Run("a member of another community without direct debit does not count", func(t *testing.T) {
+		s := bulkSnap(bulkMember("1"))
+		s.Foreign = append(s.Foreign, foreignRef("1", "NONE"), foreignRef("1", ""))
+		assert.Equal(t, BulkClassChanged, bulkRowOf(t, bulkPlan(t, copyRef, s), "p-1").Class)
 	})
 	t.Run("two hits of the run with the same new value are both errors", func(t *testing.T) {
 		p := bulkPlan(t, copyRef, bulkSnap(bulkMember("7"), bulkMember(" 7 ", func(m *BulkMember) { m.Id = "p-7b" })))
@@ -132,7 +142,7 @@ func TestPlanBulk_F2_duplicateReference(t *testing.T) {
 	})
 	t.Run("members without direct debit do not count", func(t *testing.T) {
 		s := bulkSnap(bulkMember("1", debit("NONE")), bulkMember("2", debit("NONE"), ref(str("1"))))
-		s.ForeignRefs["1"] = true
+		s.Foreign = append(s.Foreign, foreignRef(" 1 ", " core"))
 		p := bulkPlan(t, copyRef, s)
 		assert.Equal(t, BulkClassChanged, bulkRowOf(t, p, "p-1").Class)
 	})
@@ -141,7 +151,7 @@ func TestPlanBulk_F2_duplicateReference(t *testing.T) {
 		a := bulkMember("1", ref(str("M-1")))
 		c := bulkMember("M-1", func(m *BulkMember) { m.Id = "p-c"; m.MandateRef = null.StringFrom("OLD-C") })
 		s := bulkSnap(a, c)
-		s.ForeignRefs["1"] = true
+		s.Foreign = append(s.Foreign, foreignRef(" 1 ", " core"))
 		p := bulkPlan(t, copyRef, s)
 		assert.Equal(t, "F2", bulkRowOf(t, p, "p-1").Error, "foreign")
 		assert.Equal(t, "F2", bulkRowOf(t, p, "p-c").Error, "collides with A's kept M-1")

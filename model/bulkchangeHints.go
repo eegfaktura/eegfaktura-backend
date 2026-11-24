@@ -52,7 +52,7 @@ func (e *bulkEvaluator) refCountsAfter(rows []*BulkRow) map[string]int {
 }
 
 func (e *bulkEvaluator) taken(k string, counts map[string]int) bool {
-	return counts[k] > 1 || e.s.ForeignRefs[k]
+	return counts[k] > 1 || e.foreign[k]
 }
 
 // uniqueness marks a changing mandate reference that would be used twice under the creditor id as F2 — both hits

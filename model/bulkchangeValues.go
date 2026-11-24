@@ -19,10 +19,17 @@ type bulkEvaluator struct {
 	tariffError string
 	// refCounts: DEBIT_TYPE only, the normalised effective references of direct debit members after the run.
 	refCounts map[string]int
+	// foreign: normalised effective references of the direct debit members of the other communities (Foreign).
+	foreign map[string]bool
 }
 
 func newBulkEvaluator(rule *BulkRule, s *BulkSnapshot, today string) *bulkEvaluator {
-	e := &bulkEvaluator{rule: rule, s: s, today: today}
+	e := &bulkEvaluator{rule: rule, s: s, today: today, foreign: map[string]bool{}}
+	for _, f := range s.Foreign {
+		if k := bulkNormRef(f.Ref.String); k != "" && isDirectDebit(f.DebitType) {
+			e.foreign[k] = true
+		}
+	}
 	if rule.Action == BulkSet && (rule.Field == BulkParticipantTariff || rule.Field == BulkMeterTariff) {
 		want := string(EEG)
 		if rule.Field == BulkMeterTariff {
