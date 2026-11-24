@@ -54,15 +54,17 @@ func respondBulkError(w http.ResponseWriter, r *http.Request, tenant string, err
 		ve = model.ErrBulkChange(err)
 	}
 	status := bulkStatus(ve.Code)
-	if status == http.StatusInternalServerError {
-		log.WithContext(r.Context()).WithField("tenant", tenant).WithError(err).Error("bulk change failed")
-		text := "Die Massenänderung ist fehlgeschlagen; es wurde nichts geändert."
-		if errors.Is(ve.Err, database.ErrBulkOutcomeUnknown) {
-			text = "Das Ergebnis der Massenänderung ist unklar. Bitte die Vorschau neu laden und prüfen."
-		}
-		ve = model.ErrBulkChange(errors.New(text))
+	if status != http.StatusInternalServerError {
+		respondWith(r.Context(), w, status, tenant, ve)
+		return
 	}
-	respondWith(r.Context(), w, status, tenant, ve)
+	// logged once with the real error; the client gets a neutral text (respondWith would log a second time)
+	log.WithContext(r.Context()).WithField("tenant", tenant).WithField("code", ve.Code).WithError(err).Error("bulk change failed")
+	text := "Die Massenänderung ist fehlgeschlagen; es wurde nichts geändert."
+	if errors.Is(ve.Err, database.ErrBulkOutcomeUnknown) {
+		text = "Das Ergebnis der Massenänderung ist unklar. Bitte die Vorschau neu laden und prüfen."
+	}
+	respondWithHttpError(w, status, &HttpError{Code: ve.Code, Error: text, Message: text})
 }
 
 // decodeBulk reads the body strictly: limited size, no unknown keys, one JSON value.

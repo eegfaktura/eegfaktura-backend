@@ -14,6 +14,8 @@ import (
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
+	"github.com/sirupsen/logrus"
+	logrustest "github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -129,6 +131,9 @@ func (b bulkApplyFails) BulkApply(context.Context, *model.BulkEeg, string, *mode
 
 // R1-2: a database failure answers 500 with a neutral text; after a failed COMMIT it does not claim "nothing changed".
 func TestBulkChange_serverErrorTexts(t *testing.T) {
+	prev := logrus.StandardLogger().ReplaceHooks(make(logrus.LevelHooks))
+	t.Cleanup(func() { logrus.StandardLogger().ReplaceHooks(prev) })
+	hook := logrustest.NewLocal(logrus.StandardLogger())
 	for _, c := range []struct {
 		err  error
 		want string
@@ -136,6 +141,7 @@ func TestBulkChange_serverErrorTexts(t *testing.T) {
 		{model.ErrBulkChange(errors.New("pq: connection reset")), "es wurde nichts geändert"},
 		{model.ErrBulkChange(fmt.Errorf("%w: %v", database.ErrBulkOutcomeUnknown, "pq: commit")), "Ergebnis der Massenänderung ist unklar"},
 	} {
+		hook.Reset()
 		h := &BulkChangeHandler{db: bulkApplyFails{err: c.err}}
 		req := httptest.NewRequest(http.MethodPost, "/bulkchange/apply", strings.NewReader(bcFixture(t, "apply.request.json")))
 		w := httptest.NewRecorder()
@@ -143,6 +149,14 @@ func TestBulkChange_serverErrorTexts(t *testing.T) {
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 		assert.Contains(t, w.Body.String(), c.want)
 		assert.NotContains(t, w.Body.String(), "pq:", "no database detail")
+		errorLines := 0
+		for _, e := range hook.AllEntries() {
+			if e.Level == logrus.ErrorLevel {
+				errorLines++
+				assert.ErrorIs(t, e.Data[logrus.ErrorKey].(error), c.err, "the real error is logged")
+			}
+		}
+		assert.Equal(t, 1, errorLines, "one error line (Q3)")
 	}
 }
 
