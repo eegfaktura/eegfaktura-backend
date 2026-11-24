@@ -130,7 +130,11 @@ func GetTariffNameMap(ctx context.Context, db *sqlx.DB, tenant string) (map[stri
 // snapshot per statement). A bulk change started meanwhile gets 409. The wait is bounded (archiveLockTimeout);
 // when it runs out, ErrTariffLocked (409). Single assignments in web do not take
 // the lock (#106).
+//
+// Like AddTariff without the cancel of the request: a client that goes away while archiveTariff waits does not
+// abort it (the wait stays bounded by the lock timeout), so the answer the client may still get is the result.
 func archiveTariff(ctx context.Context, db *sqlx.DB, tenant string, id string) error {
+	ctx = context.WithoutCancel(ctx)
 	return inTx(ctx, db, func(tx *sqlx.Tx) error {
 		if err := waitBulkTenantLock(ctx, tx, tenant); err != nil {
 			return err

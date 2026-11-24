@@ -112,3 +112,36 @@ func TestArchiveTariff_lockTimeout(t *testing.T) {
 	require.NoError(t, testDB.DbInstance.Get(&status, `SELECT DISTINCT status FROM base.tariff WHERE tenant = $1 AND id = $2`, tenant, tariff.Id.String()))
 	assert.NotEqual(t, "ARCHIVED", status)
 }
+
+// R1-1: a request that goes away while archiveTariff waits for a bulk change does not abort it: the tariff is
+// archived once the bulk change ends.
+func TestArchiveTariff_cancelledRequestStillArchives(t *testing.T) {
+	db, err := GetTestDB(context.Background(), testDB)
+	require.NoError(t, err)
+	const tenant = "TE000421"
+	t.Cleanup(func() { _, _ = testDB.DbInstance.Exec(`DELETE FROM base.tariff WHERE tenant = $1`, tenant) })
+	tariff := model.Tariff{Name: "frei", Type: "EEG", BillingPeriod: "monthly"}
+	require.NoError(t, db.AddTariff(context.Background(), tenant, "test", &tariff))
+
+	bulk, err := testDB.DbInstance.Beginx()
+	require.NoError(t, err)
+	defer func() { _ = bulk.Rollback() }()
+	_, err = bulk.Exec(`SELECT pg_advisory_xact_lock($1, hashtext($2))`, bulkLockTenant, tenant)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- db.ArchiveTariff(ctx, tenant, tariff.Id.String()) }()
+	waitForAdvisoryWaiter(t, bulkLockTenant)
+	cancel() // the client goes away
+	require.NoError(t, bulk.Commit())
+	select {
+	case err = <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("archiveTariff did not finish")
+	}
+	require.NoError(t, err)
+	var status string
+	require.NoError(t, testDB.DbInstance.Get(&status, `SELECT DISTINCT status FROM base.tariff WHERE tenant = $1 AND id = $2`, tenant, tariff.Id.String()))
+	assert.Equal(t, "ARCHIVED", status)
+}
