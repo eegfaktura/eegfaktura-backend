@@ -178,11 +178,11 @@ func TestImportMasterdataFromExcel_tariffs(t *testing.T) {
 		member, other, consume, produce, archived, renamed, tenant)
 	require.NoError(t, err)
 	// a tariff of another community is not found
-	const foreignTenant, foreign = "TE000270", "5e0c7a10-2222-4c55-9a51-7d3f2b6a0007"
+	const foreign = "5e0c7a10-2222-4c55-9a51-7d3f2b6a0007"
+	createImportTenant(t, "TE000270", "AT00999900000TC000270000000000001")
 	_, err = testDB.DbInstance.Exec(`INSERT INTO base.tariff (id, tenant, type, name, version, status)
-		VALUES ($1, $2, 'VZP', 'Fremd', 0, 'ACTIVE') ON CONFLICT DO NOTHING`, foreign, foreignTenant)
+		VALUES ($1, 'TE000270', 'VZP', 'Fremd', 0, 'ACTIVE')`, foreign)
 	require.NoError(t, err)
-	t.Cleanup(func() { _, _ = testDB.DbInstance.Exec(`DELETE FROM base.tariff WHERE tenant = $1`, foreignTenant) })
 	db, err := GetDB(context.Background())
 	require.NoError(t, err)
 
