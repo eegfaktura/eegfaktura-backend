@@ -27,9 +27,6 @@ type BulkChangeRepository interface {
 	BulkApply(ctx context.Context, eeg *model.BulkEeg, user string, req *model.BulkApplyRequest) (*model.BulkApplyResult, error)
 }
 
-// ErrBulkOutcomeUnknown marks a failure of the COMMIT of apply: the client cannot be told "nothing changed".
-var ErrBulkOutcomeUnknown = errors.New("bulk change commit failed")
-
 const (
 	// bulkStatementTimeout bounds every statement of preview and apply (SET LOCAL via set_config),
 	// bulkApplyDeadline the whole transaction; both stay below the ingress timeout of 175 s.
@@ -121,8 +118,8 @@ func (db *sqlDatabase) BulkApply(ctx context.Context, eeg *model.BulkEeg, user s
 	})
 	var ve *model.VfeegError
 	if err != nil && !errors.As(err, &ve) {
-		// only the COMMIT returns a plain error (inTx): whether it took effect is not certain
-		return nil, model.ErrBulkChange(fmt.Errorf("%w: %v", ErrBulkOutcomeUnknown, err))
+		// only the COMMIT returns a plain error (inTx): whether it took effect is not certain (6108, not 6105)
+		return nil, model.ErrBulkOutcomeUnknown(fmt.Errorf("bulk change commit failed: %w", err))
 	}
 	if err != nil {
 		return nil, err

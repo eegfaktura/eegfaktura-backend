@@ -45,6 +45,8 @@ func bulkStatus(code int) int {
 		return http.StatusForbidden
 	case 6107:
 		return http.StatusRequestEntityTooLarge
+	case 6108:
+		return http.StatusInternalServerError
 	case 6104:
 		return http.StatusConflict
 	}
@@ -65,7 +67,7 @@ func respondBulkError(w http.ResponseWriter, r *http.Request, tenant string, err
 	// logged once with the real error; the client gets a neutral text (respondWith would log a second time)
 	log.WithContext(r.Context()).WithField("tenant", tenant).WithField("code", ve.Code).WithError(err).Error("bulk change failed")
 	text := "Die Massenänderung ist fehlgeschlagen; es wurde nichts geändert."
-	if errors.Is(ve.Err, database.ErrBulkOutcomeUnknown) {
+	if ve.Code == 6108 {
 		text = "Das Ergebnis der Massenänderung ist unklar. Bitte die Vorschau neu laden und prüfen."
 	}
 	respondWithHttpError(w, status, &HttpError{Code: ve.Code, Error: text, Message: text})

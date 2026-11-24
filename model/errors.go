@@ -143,6 +143,10 @@ var ErrBulkNoUser = PartialWrap(6106)
 // The request body is larger than the limit of the bulk change routes (413).
 var ErrBulkTooLarge = PartialWrap(6107)
 
+// The COMMIT of a bulk apply failed: whether the change took effect is not known (500). 6105 means "nothing
+// changed".
+var ErrBulkOutcomeUnknown = PartialWrap(6108)
+
 var ErrGetUser = PartialWrap(9000)
 
 type LogMessage struct {

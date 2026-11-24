@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -138,10 +137,11 @@ func TestBulkChange_serverErrorTexts(t *testing.T) {
 	hook := logrustest.NewLocal(logrus.StandardLogger())
 	for _, c := range []struct {
 		err  error
+		code int
 		want string
 	}{
-		{model.ErrBulkChange(errors.New("pq: connection reset")), "es wurde nichts geändert"},
-		{model.ErrBulkChange(fmt.Errorf("%w: %v", database.ErrBulkOutcomeUnknown, "pq: commit")), "Ergebnis der Massenänderung ist unklar"},
+		{model.ErrBulkChange(errors.New("pq: connection reset")), 6105, "es wurde nichts geändert"},
+		{model.ErrBulkOutcomeUnknown(errors.New("pq: commit")), 6108, "Ergebnis der Massenänderung ist unklar"},
 	} {
 		hook.Reset()
 		h := &BulkChangeHandler{db: bulkApplyFails{err: c.err}}
@@ -150,6 +150,7 @@ func TestBulkChange_serverErrorTexts(t *testing.T) {
 		h.apply()(w, req, &middleware.PlatformClaims{Username: "support-user"}, bcTenant)
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 		assert.Contains(t, w.Body.String(), c.want)
+		assert.Equal(t, c.code, bcCode(t, w.Body))
 		assert.NotContains(t, w.Body.String(), "pq:", "no database detail")
 		errorLines := 0
 		for _, e := range hook.AllEntries() {

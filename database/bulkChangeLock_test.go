@@ -161,7 +161,7 @@ func TestBulkChange_applyLocksOnlyRequestedRows(t *testing.T) {
 	assert.Equal(t, "NONE", *f.debitOf(bxId("02")))
 }
 
-// R1-2: a failing COMMIT is reported as ErrBulkOutcomeUnknown (the client must not read "nothing changed").
+// R1-2: a failing COMMIT is reported as ErrBulkOutcomeUnknown, code 6108 (the client must not read "nothing changed").
 func TestBulkChange_commitFailureOutcomeUnknown(t *testing.T) {
 	f := newBulkFx(t, bxA)
 	f.eeg(bxA, nil)
@@ -180,7 +180,6 @@ func TestBulkChange_commitFailureOutcomeUnknown(t *testing.T) {
 	_, err := f.apply(bxA, bxDebitWhereNone, itemsOf(f.preview(bxA, bxDebitWhereNone)))
 	var ve *model.VfeegError
 	require.True(t, errors.As(err, &ve), "want a VfeegError, got %v", err)
-	assert.Equal(t, 6105, ve.Code)
-	assert.ErrorIs(t, ve.Err, ErrBulkOutcomeUnknown)
+	assert.Equal(t, 6108, ve.Code)
 	assert.Equal(t, "NONE", *f.debitOf(bxId("01")), "this commit failure rolled back")
 }

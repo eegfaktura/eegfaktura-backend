@@ -40,10 +40,10 @@ this changelog highlights the changes relevant for overview and operations.
   `name`, `type`, `joiningFee`),
   `POST /bulkchange/preview` and `POST /bulkchange/apply` (community in the header `tenant`, rule in the body).
   Caller: eegfaktura-admin from the browser via `/api/bulkchange/…` on the admin host (ingress rule in gitops,
-  platform, docker-compose — separate PRs). JSON contract and new error codes 6100–6107 (400 rule/request, 400
-  duplicate hit, 400 preview outdated, 404 unknown community, 409 locked, 500 failed, 403 apply with a token
-  without user name, 413 body over 1 MiB — about 6,500 hits of a member rule, 4,800 of the metering point
-  tariff): fixtures and README in `api/testdata/bulkchange/`.
+  platform, docker-compose — separate PRs). JSON contract and new error codes 6100–6108 (400 rule/request, 400
+  duplicate hit, 400 preview outdated, 404 unknown community, 409 locked, 500 failed with nothing changed, 403 apply
+  with a token without user name, 413 body over 1 MiB — about 6,500 hits of a member rule, 4,800 of the metering
+  point tariff —, 500 commit failed with outcome unknown): fixtures and README in `api/testdata/bulkchange/`.
 - **Archiving a tariff (`DELETE /eeg/tariff/{id}`) waits for a running bulk change of the community**: it now runs in
   a transaction and first takes the tenant advisory lock of the bulk change (`pg_advisory_xact_lock`, two-key form);
   a bulk change started while a tariff is archived gets 409. The wait is bounded (`lock_timeout` 130 s, just above
