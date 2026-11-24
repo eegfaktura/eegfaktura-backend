@@ -48,6 +48,29 @@ func buildImportSheetWithColumns(t *testing.T, extra []interface{}, rows [][]int
 	return f
 }
 
+// createImportTenant adds a community of its own for an import test (the fixture tenants carry count assertions);
+// its members, tariffs and the community are removed before and after the test.
+func createImportTenant(t *testing.T, tenant, communityId string) {
+	t.Helper()
+	cleanup := func() {
+		for _, stmt := range []string{`DELETE FROM base.metering_partition_factor WHERE tenant = $1`,
+			`DELETE FROM base.tariff WHERE tenant = $1`} {
+			_, err := testDB.DbInstance.Exec(stmt, tenant)
+			require.NoError(t, err)
+		}
+		removeTestTenant(t, tenant)
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+	_, err := testDB.DbInstance.Exec(`INSERT INTO base.eeg
+		(tenant, name, description, "rcNumber", area, gridoperator_code, gridoperator_name, "communityId",
+		 street, "streetNumber", city, zip, email)
+		VALUES ($1, $2, 'Import-Testgemeinschaft', $3, 'LOCAL', 'AT009999', 'Test Operator', $4,
+		 'Solarweg', '1', 'Linz', '4020', 'import-test@example.org')
+		`, tenant, tenant, tenant, communityId)
+	require.NoError(t, err)
+}
+
 func transformSheet(t *testing.T, f *excelize.File, online bool) ([]*model.EegParticipant, *model.Log) {
 	t.Helper()
 	rows, err := f.Rows("EEG Stammdaten")
