@@ -25,8 +25,8 @@ type BulkChangeRepository interface {
 }
 
 const (
-	// bulkStatementTimeout bounds every statement of apply (SET LOCAL via set_config), bulkApplyDeadline the whole
-	// transaction; both stay below the ingress timeout of 175 s.
+	// bulkStatementTimeout bounds every statement of preview and apply (SET LOCAL via set_config),
+	// bulkApplyDeadline the whole transaction; both stay below the ingress timeout of 175 s.
 	bulkStatementTimeout = "30s"
 	bulkApplyDeadline    = 120 * time.Second
 )
@@ -43,13 +43,19 @@ func (db *sqlDatabase) BulkEeg(ctx context.Context, tenant string) (*model.BulkE
 	return loadBulkEeg(ctx, db.db, tenant)
 }
 
-// BulkPreview plans without locks and writes nothing; one read-only snapshot, so the counts fit together.
+// BulkPreview plans without locks and writes nothing; one read-only snapshot, so the counts fit together. Same
+// statement timeout and deadline as apply.
 func (db *sqlDatabase) BulkPreview(ctx context.Context, eeg *model.BulkEeg, rule *model.BulkRule) (*model.BulkPlan, error) {
+	ctx, cancel := context.WithTimeout(ctx, bulkApplyDeadline)
+	defer cancel()
 	tx, err := db.db.BeginTxx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	if err != nil {
 		return nil, model.ErrOpenTx(err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := setBulkStatementTimeout(ctx, tx); err != nil {
+		return nil, err
+	}
 	s, err := loadBulkSnapshot(ctx, tx, eeg, rule)
 	if err != nil {
 		return nil, err
@@ -67,8 +73,8 @@ func (db *sqlDatabase) BulkApply(ctx context.Context, eeg *model.BulkEeg, user s
 	rule := req.Rule
 	var result *model.BulkApplyResult
 	err := inTx(ctx, db.db, func(tx *sqlx.Tx) error {
-		if _, err := tx.ExecContext(ctx, `SELECT set_config('statement_timeout', $1, true)`, bulkStatementTimeout); err != nil {
-			return model.ErrBulkChange(err)
+		if err := setBulkStatementTimeout(ctx, tx); err != nil {
+			return err
 		}
 		withCreditor := rule.Field == model.BulkDebitType || rule.Field == model.BulkMandateReference
 		if err := tryBulkLocks(ctx, tx, eeg.Tenant, eeg.CreditorNorm, withCreditor); err != nil {
@@ -99,6 +105,14 @@ func (db *sqlDatabase) BulkApply(ctx context.Context, eeg *model.BulkEeg, user s
 		return nil, err
 	}
 	return result, nil
+}
+
+// setBulkStatementTimeout is SET LOCAL statement_timeout with a bound value (set_config, local to the transaction).
+func setBulkStatementTimeout(ctx context.Context, tx *sqlx.Tx) error {
+	if _, err := tx.ExecContext(ctx, `SELECT set_config('statement_timeout', $1, true)`, bulkStatementTimeout); err != nil {
+		return model.ErrBulkChange(err)
+	}
+	return nil
 }
 
 // bulkResult splits the requested hits into written and skipped (with reason) and keeps the hints of the plan.
