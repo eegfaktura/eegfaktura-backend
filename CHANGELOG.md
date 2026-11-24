@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.22.0] – 2026-11-24
+
 ### Added
 - **Bulk change: value from file** (konzept-massenaenderungen.md, Teil 2). New action `FROM_FILE` for
   `MANDATE_REFERENCE` and `MANDATE_DATE`: the rule carries `values` (`participantNumber`, `value`; at most 5,000), one
