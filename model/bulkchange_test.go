@@ -74,6 +74,8 @@ func TestBulkRuleValidate_refused(t *testing.T) {
 		"suffix on debit":            with(ok(BulkDebitType, BulkClear), func(r *BulkRule) { r.Suffix = "-X" }),
 		"source on clear":            with(ok(BulkMandateReference, BulkClear), func(r *BulkRule) { r.Source = BulkSourceParticipantNumber }),
 		"date not iso":               with(ok(BulkMandateDate, BulkSet), func(r *BulkRule) { r.Value = "01.01.2026" }),
+		"date year 0":                with(ok(BulkMandateDate, BulkSet), func(r *BulkRule) { r.Value = "0000-01-01" }),
+		"date before 1900":           with(ok(BulkMandateDate, BulkSet), func(r *BulkRule) { r.Value = "1899-12-31" }),
 		"tariff not uuid":            with(ok(BulkParticipantTariff, BulkSet), func(r *BulkRule) { r.Value = "Tarif A" }),
 		"meter without direction":    ok(BulkMeterTariff, BulkClear),
 		"meter unknown direction":    with(ok(BulkMeterTariff, BulkClear), func(r *BulkRule) { r.Direction = "UNKNOWN" }),

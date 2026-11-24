@@ -207,6 +207,9 @@ func (r *BulkRule) normaliseValue(v string) (string, error) {
 		if _, err := time.Parse(time.DateOnly, t); err != nil {
 			return "", errBulkRule("Datum muss JJJJ-MM-TT sein")
 		}
+		if t < bulkMinDate {
+			return "", errBulkRule("Datum vor 1900")
+		}
 		return t, nil
 	case BulkParticipantTariff, BulkMeterTariff:
 		id := uuid.Parse(strings.TrimSpace(v))

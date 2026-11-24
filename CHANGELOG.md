@@ -31,6 +31,8 @@ this changelog highlights the changes relevant for overview and operations.
   first: an older one answers 400 to `FROM_FILE`).
 
 ### Fixed
+- **Bulk change: a fixed mandate date before 1900 is refused** (400, pre-existing since 1.21.0, review of #169): a
+  direct API call with `0000-01-01` passed the preview and failed on apply in Postgres (no year 0) with 6105.
 - **Bulk change: two hits of one run with the same new mandate reference are F2 whatever their direct debit type**
   (konzept-massenaenderungen.md, Fachliche Logik 6). Before, only direct debit members counted: a run that sets the
   references before switching „Kein SEPA“ to CORE could write duplicates, which the later run only showed as H4.
