@@ -751,6 +751,16 @@ func importDebitType(raw, firstname, lastname string, importLog *model.Log) null
 	return null.String{}
 }
 
+// importMandateReference: an empty or blank cell (or no column "MandatRef") stores NULL, so that
+// base.billing_masterdata falls back to the member number; an empty text would be used as the mandate
+// reference (W-261124-mm1). A value is stored without surrounding blanks.
+func importMandateReference(raw string) null.String {
+	if v := strings.TrimSpace(raw); v != "" {
+		return null.StringFrom(v)
+	}
+	return null.String{}
+}
+
 // importEmail normalizes an imported e-mail (trim per ';'-part) and
 // validates it against the shared address rule. Invalid addresses are
 // not taken over silently: the member is imported without e-mail and
@@ -1030,7 +1040,7 @@ func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorNa
 									Iban:             null.StringFrom(getColumValue(cols, colMap, "IBAN", "IBAN", nil)),
 									Owner:            null.StringFrom(getColumValue(cols, colMap, "Kontoinhaber", "Accountname", nil)),
 									BankName:         null.StringFrom(getColumValue(cols, colMap, "Bankname", "Bankname", nil)),
-									MandateReference: null.StringFrom(getColumValue(cols, colMap, "MandatRef", "MandateRef", nil)),
+									MandateReference: importMandateReference(getColumValue(cols, colMap, "MandatRef", "MandateRef", nil)),
 									MandateDate:      getColumDate(cols, colMap, "MandatDat", "MandateDat", nil),
 									SepaDirectDebit:  importDebitType(getColumValue(cols, colMap, "Einzugsart", "DebitType", nil), firstname, lastname, importLog),
 								},

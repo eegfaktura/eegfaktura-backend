@@ -8,6 +8,12 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Fixed
+- **Excel master data import: an empty `MandatRef` cell is stored as NULL** (W-261124-mm1, platform#268). An empty or
+  blank cell (or no column `MandatRef`) was stored as an empty text, which `base.billing_masterdata` took as the
+  mandate reference instead of falling back to the member number. A value is now stored without surrounding blanks.
+  Members imported earlier keep their empty text.
+
 ## [1.20.0] – 2026-11-16
 
 ### Added
