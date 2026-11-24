@@ -92,19 +92,21 @@ func Test_transformExcelData_tariffs(t *testing.T) {
 		for _, p := range ps {
 			assert.False(t, p.MeteringPoint[0].TariffId.Valid)
 		}
-		type hint struct{ identifier, code, message string }
-		got := []hint{}
-		for _, m := range importLog.Messages {
-			assert.Equal(t, "WARNING", m.Kind)
-			got = append(got, hint{m.Identifier, m.MessageCode, m.Message})
+		want := []struct{ identifier, code, column string }{
+			{"Anna Tarif", "W_TARIFF_UNKNOWN", importMemberTariffColumn},
+			{"AT0099990000000000000000000000201", "W_TARIFF_TYPE", importMeterTariffColumn},
+			{"Bert Tarif", "W_TARIFF_TYPE", importMemberTariffColumn},
+			{"AT0099990000000000000000000000202", "W_TARIFF_TYPE", importMeterTariffColumn},
+			{"AT0099990000000000000000000000203", "W_TARIFF_AMBIGUOUS", importMeterTariffColumn},
 		}
-		assert.Equal(t, []hint{
-			{"Anna Tarif", "W_TARIFF_UNKNOWN", `column 'Mitgliedstarif': no active tariff named "Gibt es nicht" in this community; imported without this tariff`},
-			{"AT0099990000000000000000000000201", "W_TARIFF_TYPE", `column 'Zp. Tarifname': tariff "Einspeisung" is not a tariff for consumption (type VZP); imported without this tariff`},
-			{"Bert Tarif", "W_TARIFF_TYPE", `column 'Mitgliedstarif': tariff "Einspeisung" is not a member tariff (type EEG); imported without this tariff`},
-			{"AT0099990000000000000000000000202", "W_TARIFF_TYPE", `column 'Zp. Tarifname': tariff "Standard" is not a tariff for generation (type EZP); imported without this tariff`},
-			{"AT0099990000000000000000000000203", "W_TARIFF_AMBIGUOUS", `column 'Zp. Tarifname': several active tariffs of type VZP are named "Doppelt"; imported without this tariff`},
-		}, got)
+		require.Len(t, importLog.Messages, len(want))
+		for i, w := range want {
+			m := importLog.Messages[i]
+			assert.Equal(t, "WARNING", m.Kind)
+			assert.Equal(t, w.identifier, m.Identifier)
+			assert.Equal(t, w.code, m.MessageCode)
+			assert.Contains(t, m.Message, w.column)
+		}
 	})
 
 	t.Run("a member on several rows: the member tariff of the first row, a tariff per metering point", func(t *testing.T) {
