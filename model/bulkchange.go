@@ -31,6 +31,8 @@ const (
 	BulkSet   BulkAction = "SET"
 	BulkClear BulkAction = "CLEAR"
 	BulkCopy  BulkAction = "COPY"
+	// BulkFromFile: one value per member number from a file (Teil 2, bulkchangeFile.go).
+	BulkFromFile BulkAction = "FROM_FILE"
 )
 
 type BulkCondition string
@@ -56,6 +58,8 @@ type BulkRule struct {
 	Condition      BulkCondition `json:"condition"`
 	ConditionValue string        `json:"conditionValue,omitempty"`
 	Direction      string        `json:"direction,omitempty"`
+	// Values: FROM_FILE only, one value per member number.
+	Values []*BulkFileValue `json:"values,omitempty"`
 }
 
 // BulkPreviewRequest is the body of POST /bulkchange/preview.
@@ -92,9 +96,11 @@ type BulkCommunity struct {
 	RcNumber string `json:"rcNumber" db:"rcNumber"`
 }
 
-// sepaMandateIdRe is the SEPA mandate id (MndtId) rule of web (src/util/MandateReference.util.ts): 1–35 characters
-// of the restricted set, no blanks.
-var sepaMandateIdRe = regexp.MustCompile(`^[A-Za-z0-9+?/\-:().,']{1,35}$`)
+// sepaMandateIdRe is the SEPA mandate id (MndtId): 1–35 characters of the restricted SEPA set. A blank is part of
+// that set and allowed inside, not at the start or end (decision 24.11.2026: a community's bank takes references
+// with blanks; the web form accepts them too). The preview marks a reference with a blank (H10), since not every
+// bank takes it. web suggests the member number only without blanks (src/util/MandateReference.util.ts).
+var sepaMandateIdRe = regexp.MustCompile(`^[A-Za-z0-9+?/\-:().,']([A-Za-z0-9+?/\-:().,' ]{0,33}[A-Za-z0-9+?/\-:().,'])?$`)
 
 // ValidMandateReference reports whether ref is a valid SEPA mandate id.
 func ValidMandateReference(ref string) bool {
@@ -118,10 +124,12 @@ func (r *BulkRule) Validate() error {
 	}
 	var actions []BulkAction
 	switch r.Field {
-	case BulkDebitType, BulkMandateDate, BulkParticipantTariff, BulkMeterTariff:
+	case BulkDebitType, BulkParticipantTariff, BulkMeterTariff:
 		actions = []BulkAction{BulkSet, BulkClear}
+	case BulkMandateDate:
+		actions = []BulkAction{BulkSet, BulkClear, BulkFromFile}
 	case BulkMandateReference:
-		actions = []BulkAction{BulkCopy, BulkClear}
+		actions = []BulkAction{BulkCopy, BulkClear, BulkFromFile}
 	default:
 		return errBulkRule("Feld %q ist nicht änderbar", r.Field)
 	}
@@ -137,6 +145,14 @@ func (r *BulkRule) Validate() error {
 		setOnly("conditionValue", r.ConditionValue, r.Condition == BulkEquals),
 	} {
 		if err != nil {
+			return err
+		}
+	}
+	if (len(r.Values) > 0) != (r.Action == BulkFromFile) {
+		return errBulkRule("values nur und immer bei %s", BulkFromFile)
+	}
+	if r.Action == BulkFromFile {
+		if err := r.validateValues(); err != nil {
 			return err
 		}
 	}
@@ -190,6 +206,9 @@ func (r *BulkRule) normaliseValue(v string) (string, error) {
 		t := strings.TrimSpace(v)
 		if _, err := time.Parse(time.DateOnly, t); err != nil {
 			return "", errBulkRule("Datum muss JJJJ-MM-TT sein")
+		}
+		if t < bulkMinDate {
+			return "", errBulkRule("Datum vor 1900")
 		}
 		return t, nil
 	case BulkParticipantTariff, BulkMeterTariff:

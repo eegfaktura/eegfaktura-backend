@@ -1,0 +1,14 @@
+{
+  "rule": {
+    "field": "MANDATE_REFERENCE",
+    "action": "FROM_FILE",
+    "condition": "ALL",
+    "values": [
+      {"participantNumber": "1", "value": "STERN-MIT0001"},
+      {"participantNumber": "2", "value": "Lastschrift-2"},
+      {"participantNumber": "3", "value": "A-3"},
+      {"participantNumber": "3", "value": "B-3"},
+      {"participantNumber": "0009", "value": "STERN-MIT0009"}
+    ]
+  }
+}

@@ -8,7 +8,40 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Added
+- **Bulk change: value from file** (konzept-massenaenderungen.md, Teil 2). New action `FROM_FILE` for
+  `MANDATE_REFERENCE` and `MANDATE_DATE`: the rule carries `values` (`participantNumber`, `value`; at most 5,000), one
+  value per member — for references or mandate dates that differ per member (e.g. a fixed text plus a four-digit
+  number). A member is matched by its number, trimmed and case-insensitive, otherwise exactly (`0007` is not `7`).
+  Members without a value stay unchanged (class `UNCHANGED_NOT_IN_FILE`, counter `unchangedNotInFile`); new errors
+  F7 (the number belongs to several members of the community) and F8 (the number has different values in the
+  file), counted like F5 only when the condition holds; `notFound` lists the numbers of the file without a member.
+  Reference and date are checked as before (F1, F2, F3; a date before 1900 is F3). admin reads the file (a fixed
+  template) in the browser and sends only number and value.
+- **Bulk change: blanks inside a mandate reference are allowed** (decision 24.11.2026: a community's bank takes
+  them; the web form accepts them already). Not at the start or end, still 1–35 characters of the SEPA set. New
+  hint H10 marks a hit whose written or effective reference has a blank: not every bank takes it.
+
+### Contract
+- `/bulkchange/preview` and `/apply` accept the action `FROM_FILE` with `values`; the answer has
+  `counts.unchangedNotInFile`, `notFound`, class `UNCHANGED_NOT_IN_FILE`, errors and skip reasons F7/F8 (all only
+  for `FROM_FILE`; the two fields are omitted when 0 or empty); hint H10. For the other mandate reference rules F1
+  now allows blanks inside (a copy „EEG 001“ was F1, now changed with H10; a direct debit run on „M 1“ gave H4, now
+  H10), and F2 also covers two hits of a run without direct debit. Fixtures
+  `api/testdata/bulkchange/*.file.*.json`. Caller: eegfaktura-admin (page „Massenänderung“, needs this backend
+  first: an older one answers 400 to `FROM_FILE`).
+
+### Fixed
+- **Bulk change: a fixed mandate date before 1900 is refused** (400, pre-existing since 1.21.0, review of #169): a
+  direct API call with `0000-01-01` passed the preview and failed on apply in Postgres (no year 0) with 6105.
+- **Bulk change: two hits of one run with the same new mandate reference are F2 whatever their direct debit type**
+  (konzept-massenaenderungen.md, Fachliche Logik 6). Before, only direct debit members counted: a run that sets the
+  references before switching „Kein SEPA“ to CORE could give two members the same new reference, which the later run
+  only showed as H4. (A new reference equal to the stored one of an unchanged member without direct debit is still
+  only checked once that member gets direct debit.)
+
 ### Changed
+- **Bulk change body limit 1 MiB → 2 MiB** (5,000 file values plus 5,000 hits; error 6107 names the new limit).
 - **Import template `tests/261124-vorlage-import-stammdaten.xlsx`** replaces `260716-vorlage-import-stammdaten.xlsx`
   (platform#268): the same columns plus `Einzugsart`, `MandatRef`, `MandatDat`, `Mitgliedstarif` and `Zp. Tarifname`,
   each with a hint in row 5; sample row with `CORE` and a mandate date. The user guide links this file. The import
