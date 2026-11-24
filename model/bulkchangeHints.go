@@ -7,7 +7,7 @@ import (
 	"gopkg.in/guregu/null.v4"
 )
 
-// Uniqueness of the mandate reference (Fachliche Logik 6, F2/H4) and the hints H1–H9, L1–L3 (Fachliche Logik 8).
+// Uniqueness of the mandate reference (Fachliche Logik 6, F2/H4) and the hints H1–H10, L1–L3 (Fachliche Logik 8).
 
 func isDirectDebit(v null.String) bool {
 	t := bulkNormRef(v.String)
@@ -56,8 +56,10 @@ func (e *bulkEvaluator) taken(k string, counts map[string]int) bool {
 }
 
 // uniqueness marks a changing mandate reference that would be used twice under the creditor id as F2 — both hits
-// when two hits of the run get the same value. A hit marked F2 keeps its old value, which may collide with another
-// hit: repeated until nothing changes. For DEBIT_TYPE it only keeps the counts for H4.
+// when two hits of the run get the same value, whatever their direct debit type (Fachliche Logik 6: a run that sets
+// the references before the direct debit type must not leave duplicates behind). A hit marked F2 keeps its old
+// value, which may collide with another hit: repeated until nothing changes. For DEBIT_TYPE it only keeps the counts
+// for H4.
 func (e *bulkEvaluator) uniqueness(rows []*BulkRow) {
 	switch e.rule.Field {
 	case BulkDebitType:
@@ -66,11 +68,18 @@ func (e *bulkEvaluator) uniqueness(rows []*BulkRow) {
 		for marked := true; marked; {
 			marked = false
 			counts := e.refCountsAfter(rows)
+			inRun := map[string]int{} // new values of the hits that change
 			for _, r := range rows {
-				if r.Class != BulkClassChanged || !isDirectDebit(r.member.DebitType) {
+				if r.Class == BulkClassChanged {
+					inRun[bulkNormRef(e.postRef(r))]++
+				}
+			}
+			for _, r := range rows {
+				if r.Class != BulkClassChanged {
 					continue
 				}
-				if k := bulkNormRef(e.postRef(r)); k != "" && e.taken(k, counts) {
+				k := bulkNormRef(e.postRef(r))
+				if k != "" && (inRun[k] > 1 || isDirectDebit(r.member.DebitType) && e.taken(k, counts)) {
 					r.Class, r.Error, marked = BulkClassError, "F2", true
 				}
 			}
@@ -101,6 +110,8 @@ func (e *bulkEvaluator) hints(r *BulkRow) []string {
 			add(bulkNormRef(e.postDebit(r).String) == "B2B" && strings.EqualFold(strings.TrimSpace(m.BusinessRole), "EEG_PRIVATE"), "H5")
 		}
 		add(f == BulkMandateReference && debit && bulkNormRef(effectiveRef(m.MandateRef, m.Number)) != bulkNormRef(ref), "H6")
+		// a blank in the reference the run writes or makes effective: allowed, but not every bank takes it
+		add(strings.Contains(ref, " ") && (f == BulkMandateReference || f == BulkDebitType && debit), "H10")
 	case BulkParticipantTariff:
 		if t := e.s.Tariffs[e.rule.Value]; e.rule.Action == BulkSet && t != nil {
 			add(t.JoiningFee > 0, "H7")

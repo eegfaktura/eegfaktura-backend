@@ -74,6 +74,8 @@ func TestBulkRuleValidate_refused(t *testing.T) {
 		"suffix on debit":            with(ok(BulkDebitType, BulkClear), func(r *BulkRule) { r.Suffix = "-X" }),
 		"source on clear":            with(ok(BulkMandateReference, BulkClear), func(r *BulkRule) { r.Source = BulkSourceParticipantNumber }),
 		"date not iso":               with(ok(BulkMandateDate, BulkSet), func(r *BulkRule) { r.Value = "01.01.2026" }),
+		"date year 0":                with(ok(BulkMandateDate, BulkSet), func(r *BulkRule) { r.Value = "0000-01-01" }),
+		"date before 1900":           with(ok(BulkMandateDate, BulkSet), func(r *BulkRule) { r.Value = "1899-12-31" }),
 		"tariff not uuid":            with(ok(BulkParticipantTariff, BulkSet), func(r *BulkRule) { r.Value = "Tarif A" }),
 		"meter without direction":    ok(BulkMeterTariff, BulkClear),
 		"meter unknown direction":    with(ok(BulkMeterTariff, BulkClear), func(r *BulkRule) { r.Direction = "UNKNOWN" }),
@@ -98,7 +100,9 @@ func TestBulkRuleValidate_refused(t *testing.T) {
 func TestValidMandateReference(t *testing.T) {
 	for ref, want := range map[string]bool{
 		"4711": true, "EEG-001/A": true, "Lastschrift-135": true, "a+?/-:().,'b": true, strings.Repeat("1", 35): true,
-		"": false, "EEG 001": false, "M_12": false, "Mü-1": false, strings.Repeat("1", 36): false, " 4711": false,
+		"EEG 001": true, "STERN-EEG eGen MIT0007": true, "A" + strings.Repeat(" ", 33) + "B": true,
+		"": false, "M_12": false, "Mü-1": false, strings.Repeat("1", 36): false, " 4711": false, "4711 ": false, " ": false,
+		"A" + strings.Repeat(" ", 34) + "B": false,
 	} {
 		assert.Equal(t, want, ValidMandateReference(ref), ref)
 	}

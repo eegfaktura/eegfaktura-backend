@@ -174,6 +174,23 @@ func TestBulkChangeContract_previewAndApply(t *testing.T) {
 	assert.Equal(t, "support-user", by, "the user of the token")
 }
 
+// Value from file (Teil 2): member 1 gets the file value, 2 has it already, 3 has two different values in the file
+// (F8), 4 has no member number (not in the file); "0009" matches no member.
+func TestBulkChangeContract_fromFile(t *testing.T) {
+	bcSetup(t)
+	w := bcServe(t, http.MethodPost, "/bulkchange/preview", "superuser", bcTenant, bcFixture(t, "preview.file.request.json"))
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.JSONEq(t, bcFixture(t, "preview.file.response.json"), w.Body.String())
+
+	w = bcServe(t, http.MethodPost, "/bulkchange/apply", "superuser", bcTenant, bcFixture(t, "apply.file.request.json"))
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.JSONEq(t, bcFixture(t, "apply.file.response.json"), w.Body.String())
+
+	var ref string
+	require.NoError(t, testDB.DbInstance.Get(&ref, `SELECT mandate_reference FROM base.bankaccount WHERE participant_id = $1`, bcId("01")))
+	assert.Equal(t, "STERN-MIT0001", ref)
+}
+
 func TestBulkChangeContract_errorBody(t *testing.T) {
 	bcSetup(t)
 	tx, err := testDB.DbInstance.Beginx()

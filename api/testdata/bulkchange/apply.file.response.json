@@ -1,0 +1,10 @@
+{
+  "changed": 1,
+  "skipped": [],
+  "runHints": ["L3"],
+  "rows": [
+    {"participantId": "d4410000-0000-4000-8000-000000000001", "participantNumber": "1", "name": "Anna Muster",
+     "oldValue": null, "newValue": "STERN-MIT0001", "oldText": "leer (Mitgliedsnummer gilt)", "newText": "STERN-MIT0001",
+     "class": "CHANGED", "hints": ["H6"]}
+  ]
+}
