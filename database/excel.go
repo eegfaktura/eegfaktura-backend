@@ -533,7 +533,7 @@ func generateParticipantMastersheet(ctx context.Context, f *excelize.File, parti
 		excelize.Cell{Value: "EEG-Role"},
 		excelize.Cell{Value: "teilnahme als"},
 		excelize.Cell{Value: "Status"},
-		excelize.Cell{Value: "Mitgliedstarif"},
+		excelize.Cell{Value: importMemberTariffColumn},
 		excelize.Cell{Value: "Beitrittsgebühr (€)"},
 		excelize.Cell{Value: "Beitrittsgebühr Status"},
 		excelize.Cell{Value: "Zählpunkt"},
@@ -550,7 +550,7 @@ func generateParticipantMastersheet(ctx context.Context, f *excelize.File, parti
 		excelize.Cell{Value: "HausNr."},
 		excelize.Cell{Value: "aktiviert"},
 		excelize.Cell{Value: "deaktiviert"},
-		excelize.Cell{Value: "Zp. Tarifname"},
+		excelize.Cell{Value: importMeterTariffColumn},
 		excelize.Cell{Value: "Umspannwerk"},
 	}
 	err = sw.SetRow(fmt.Sprintf("A%d", line), header, excelize.RowOpts{StyleID: styleIdHeader, Height: 0.42 * 72})

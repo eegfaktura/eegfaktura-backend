@@ -8,7 +8,8 @@ import (
 	"gopkg.in/guregu/null.v4"
 )
 
-// Tariff columns of the master data import (platform#268), named as in the master data export.
+// Tariff columns of the master data export, read by the master data import (platform#268). They have no English
+// alternative: the import passes the same name twice to getColumValue (an empty one would match an empty header cell).
 const (
 	importMemberTariffColumn = "Mitgliedstarif"
 	importMeterTariffColumn  = "Zp. Tarifname"
