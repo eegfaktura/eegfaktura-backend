@@ -23,41 +23,69 @@ var tariffKind = map[model.TariffModelType]string{
 }
 
 // importTariffs holds the community's active tariffs (view base.activetariff: latest version, not archived) by name,
-// lower case and without surrounding blanks.
-type importTariffs map[string][]model.Tariff
-
-func newImportTariffs(tariffs []model.Tariff) importTariffs {
-	byName := importTariffs{}
-	for _, t := range tariffs {
-		key := strings.ToLower(strings.TrimSpace(t.Name))
-		byName[key] = append(byName[key], t)
-	}
-	return byName
+// lower case and without surrounding blanks, and the "Mitgliedstarif" cell of each member's first row.
+type importTariffs struct {
+	byName      map[string][]model.Tariff
+	memberCells map[*model.EegParticipant]string
 }
 
-// member is the member tariff (type EEG) named in the column "Mitgliedstarif".
-func (t importTariffs) member(raw, identifier string, importLog *model.Log) null.String {
-	return t.find(raw, importMemberTariffColumn, identifier, model.EEG, importLog)
+func newImportTariffs(tariffs []model.Tariff) *importTariffs {
+	t := &importTariffs{byName: map[string][]model.Tariff{}, memberCells: map[*model.EegParticipant]string{}}
+	for _, tariff := range tariffs {
+		key := strings.ToLower(strings.TrimSpace(tariff.Name))
+		t.byName[key] = append(t.byName[key], tariff)
+	}
+	return t
+}
+
+// noteMember keeps the member tariff cell of a member's first row. It is looked up when the member is imported, as
+// only then it is known whether the member exists already (memberTariff, existingMemberHint).
+func (t *importTariffs) noteMember(p *model.EegParticipant, raw string) {
+	t.memberCells[p] = strings.TrimSpace(raw)
+}
+
+// memberTariff is the member tariff (type EEG) noted for p, nil without one. The hints are returned, not logged: the
+// caller reports them only for a member the import creates.
+func (t *importTariffs) memberTariff(p *model.EegParticipant, identifier string) (*model.Tariff, []*model.LogMessage) {
+	hints := &model.Log{Messages: []*model.LogMessage{}}
+	tariff := t.find(t.memberCells[p], importMemberTariffColumn, identifier, model.EEG, hints)
+	return tariff, hints.Messages
+}
+
+// existingMemberHint: the import found the member by name and only adds its metering points, so a member tariff cell
+// is ignored; the hint says so (nil for an empty cell).
+func (t *importTariffs) existingMemberHint(p *model.EegParticipant, identifier string) *model.LogMessage {
+	cell := t.memberCells[p]
+	if cell == "" {
+		return nil
+	}
+	return model.NewLogMessage("WARNING", identifier, "W_TARIFF_MEMBER_EXISTS",
+		fmt.Sprintf("column '%s': the member exists already, its member tariff is not changed (%q ignored)",
+			importMemberTariffColumn, cell))
 }
 
 // meter is the metering point tariff named in the column "Zp. Tarifname": type VZP for a consumption, EZP for a
 // generation metering point.
-func (t importTariffs) meter(raw, meteringPointId string, direction model.DirectionType, importLog *model.Log) null.String {
+func (t *importTariffs) meter(raw, meteringPointId string, direction model.DirectionType, importLog *model.Log) null.String {
+	want := model.VZP
 	if direction == model.GENERATOR {
-		return t.find(raw, importMeterTariffColumn, meteringPointId, model.EZP, importLog)
+		want = model.EZP
 	}
-	return t.find(raw, importMeterTariffColumn, meteringPointId, model.VZP, importLog)
+	if tariff := t.find(raw, importMeterTariffColumn, meteringPointId, want, importLog); tariff != nil {
+		return null.StringFrom(tariff.Id.String())
+	}
+	return null.String{}
 }
 
-// find returns the id of the one active tariff with this name (case-insensitive, trimmed) and type. An empty cell
-// means no tariff. An unknown name, a tariff of another type or several tariffs of this name and type are reported
-// as a hint: the member or metering point is imported without this tariff.
-func (t importTariffs) find(raw, column, identifier string, want model.TariffModelType, importLog *model.Log) null.String {
+// find returns the one active tariff with this name (case-insensitive, trimmed) and type. An empty cell means no
+// tariff. An unknown name, a tariff of another type or several tariffs of this name and type are reported as a hint:
+// the member or metering point is imported without this tariff.
+func (t *importTariffs) find(raw, column, identifier string, want model.TariffModelType, importLog *model.Log) *model.Tariff {
 	name := strings.TrimSpace(raw)
 	if name == "" {
-		return null.String{}
+		return nil
 	}
-	named := t[strings.ToLower(name)]
+	named := t.byName[strings.ToLower(name)]
 	var suitable []model.Tariff
 	for _, tariff := range named {
 		if tariff.Type == want {
@@ -65,7 +93,7 @@ func (t importTariffs) find(raw, column, identifier string, want model.TariffMod
 		}
 	}
 	if len(suitable) == 1 {
-		return null.StringFrom(suitable[0].Id.String())
+		return &suitable[0]
 	}
 
 	code, reason := "W_TARIFF_UNKNOWN", fmt.Sprintf("no active tariff named %q in this community", name)
@@ -77,5 +105,5 @@ func (t importTariffs) find(raw, column, identifier string, want model.TariffMod
 	}
 	importLog.Messages = append(importLog.Messages, model.NewLogMessage("WARNING", identifier, code,
 		fmt.Sprintf("column '%s': %s; imported without this tariff", column, reason)))
-	return null.String{}
+	return nil
 }

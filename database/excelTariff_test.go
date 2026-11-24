@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"at.ourproject/vfeeg-backend/model"
@@ -22,7 +23,7 @@ const (
 )
 
 // the active tariffs of the transform tests; "Standard" exists as member and consumption tariff, "Doppelt" twice
-func testImportTariffs() importTariffs {
+func testImportTariffs() *importTariffs {
 	tariff := func(id string, typ model.TariffModelType, name string) model.Tariff {
 		return model.Tariff{Id: uuid.Parse(id), Type: typ, Name: name}
 	}
@@ -55,8 +56,18 @@ func transformSheetWithTariffs(t *testing.T, f *excelize.File) ([]*model.EegPart
 	require.NoError(t, err)
 	defer sheetRows.Close()
 	importLog := &model.Log{Messages: []*model.LogMessage{}}
-	return transformExcelData(context.Background(), sheetRows, func(id string) string { return id }, false, testCommunityId,
-		testImportTariffs(), importLog), importLog
+	tariffs := testImportTariffs()
+	ps := transformExcelData(context.Background(), sheetRows, func(id string) string { return id }, false, testCommunityId,
+		tariffs, importLog)
+	// the member tariffs as the import resolves them for a member it creates
+	for _, p := range ps {
+		tariff, hints := tariffs.memberTariff(p, p.FirstName+" "+p.LastName)
+		if tariff != nil {
+			p.TariffId = null.StringFrom(tariff.Id.String())
+		}
+		importLog.Messages = append(importLog.Messages, hints...)
+	}
+	return ps, importLog
 }
 
 func Test_transformExcelData_tariffs(t *testing.T) {
@@ -93,11 +104,11 @@ func Test_transformExcelData_tariffs(t *testing.T) {
 			assert.False(t, p.MeteringPoint[0].TariffId.Valid)
 		}
 		want := []struct{ identifier, code, column string }{
-			{"Anna Tarif", "W_TARIFF_UNKNOWN", importMemberTariffColumn},
 			{"AT0099990000000000000000000000201", "W_TARIFF_TYPE", importMeterTariffColumn},
-			{"Bert Tarif", "W_TARIFF_TYPE", importMemberTariffColumn},
 			{"AT0099990000000000000000000000202", "W_TARIFF_TYPE", importMeterTariffColumn},
 			{"AT0099990000000000000000000000203", "W_TARIFF_AMBIGUOUS", importMeterTariffColumn},
+			{"Anna Tarif", "W_TARIFF_UNKNOWN", importMemberTariffColumn},
+			{"Bert Tarif", "W_TARIFF_TYPE", importMemberTariffColumn},
 		}
 		require.Len(t, importLog.Messages, len(want))
 		for i, w := range want {
@@ -202,6 +213,19 @@ func TestImportMasterdataFromExcel_tariffs(t *testing.T) {
 			WHERE tenant = $1 AND firstname = $2 AND lastname = 'Tarifimport'`, tenant, name))
 		return id
 	}
+	// the hints of the last import as "identifier code"
+	lastHints := func() []string {
+		var notification string
+		require.NoError(t, testDB.DbInstance.Get(&notification, `SELECT notification FROM base.notification
+			WHERE tenant = $1 ORDER BY id DESC LIMIT 1`, tenant))
+		var n struct{ Messages []model.LogMessage }
+		require.NoError(t, json.Unmarshal([]byte(notification), &n))
+		hints := []string{}
+		for _, m := range n.Messages {
+			hints = append(hints, m.Identifier+" "+m.MessageCode)
+		}
+		return hints
+	}
 	meterTariff := func(zp string) null.String {
 		var id null.String
 		require.NoError(t, testDB.DbInstance.Get(&id, `SELECT tariff_id FROM base.meteringpoint
@@ -225,6 +249,7 @@ func TestImportMasterdataFromExcel_tariffs(t *testing.T) {
 	assert.False(t, meterTariff("AT0099990000000000000000000269004").Valid, "an older version's name")
 	assert.Equal(t, null.StringFrom(renamed), meterTariff("AT0099990000000000000000000269005"))
 	assert.False(t, meterTariff("AT0099990000000000000000000269007").Valid, "another community's tariff")
+	assert.Contains(t, lastHints(), "Cora Tarifimport W_TARIFF_TYPE")
 
 	var feeName string
 	require.NoError(t, testDB.DbInstance.Get(&feeName, `SELECT tariff_participant_fee_name FROM base.billing_masterdata
@@ -232,8 +257,12 @@ func TestImportMasterdataFromExcel_tariffs(t *testing.T) {
 		"AT0099990000000000000000000269001"))
 	assert.Equal(t, "Mitglied", feeName, "billing sees the member tariff")
 
-	// re-import: Anna exists, gets the new metering point with its tariff and keeps her member tariff
-	importRows(row("Anna", "AT0099990000000000000000000269006", "CONSUMPTION", "Anders", "Bezug"))
+	// re-import: Anna exists, gets the new metering point with its tariff and keeps her member tariff; the ignored
+	// member tariff cell of an existing member is reported as such, an unknown name in it is not looked up
+	importRows(row("Anna", "AT0099990000000000000000000269006", "CONSUMPTION", "Anders", "Bezug"),
+		row("Bert", "AT0099990000000000000000000269008", "GENERATION", "Unbekannt", ""))
 	assert.Equal(t, null.StringFrom(member), memberTariff("Anna"))
 	assert.Equal(t, null.StringFrom(consume), meterTariff("AT0099990000000000000000000269006"))
+	assert.False(t, memberTariff("Bert").Valid)
+	assert.ElementsMatch(t, []string{"Anna Tarifimport W_TARIFF_MEMBER_EXISTS", "Bert Tarifimport W_TARIFF_MEMBER_EXISTS"}, lastHints())
 }

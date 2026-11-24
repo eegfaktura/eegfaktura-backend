@@ -112,25 +112,35 @@ func (db *sqlDatabase) ImportMasterdataFromExcel(ctx context.Context, r io.Reade
 	}
 
 	importLog := &model.Log{Operation: "Excel Master Data Import", Messages: []*model.LogMessage{}}
-	participants := transformExcelData(ctx, rows, gridOperatorName, eeg.Online, eeg.CommunityId, newImportTariffs(tariffs), importLog)
+	importTariffs := newImportTariffs(tariffs)
+	participants := transformExcelData(ctx, rows, gridOperatorName, eeg.Online, eeg.CommunityId, importTariffs, importLog)
 	log.WithContext(ctx).Debugf("LEN _ Import participants: %v", len(participants))
 
 	db.reportDuplicateParticipantNumbers(ctx, strings.ToUpper(tenant), participants, importLog)
 
 	defaultDebit := 0
 	for _, p := range participants {
+		name := fmt.Sprintf("%s %s", p.FirstName, p.LastName)
+		memberTariff, tariffHints := importTariffs.memberTariff(p, name)
+		if memberTariff != nil {
+			p.TariffId = null.StringFrom(memberTariff.Id.String())
+		}
 		// Jeder Teilnehmer läuft in seiner eigenen Transaktion — ein Fehler wird
 		// protokolliert, die restlichen Zeilen werden trotzdem importiert.
 		if err := db.ImportParticipant(ctx, strings.ToUpper(tenant), "excel", p); err != nil {
-			importLog.Messages = append(importLog.Messages, model.NewLogMessageFromVfeegError(
-				fmt.Sprintf("%s %s", p.FirstName, p.LastName),
-				err,
-			))
+			importLog.Messages = append(importLog.Messages, model.NewLogMessageFromVfeegError(name, err))
 			log.WithContext(ctx).Errorf("Error Import Participant from Excel: %s", err.Error())
 			continue
 		}
 		// only a member the import created gets an id; for an existing one it only adds metering points
-		if len(p.Id) > 0 && missesDebitType(p) {
+		if len(p.Id) == 0 {
+			if m := importTariffs.existingMemberHint(p, name); m != nil {
+				importLog.Messages = append(importLog.Messages, m)
+			}
+			continue
+		}
+		importLog.Messages = append(importLog.Messages, tariffHints...)
+		if missesDebitType(p) {
 			defaultDebit++
 		}
 	}
@@ -785,7 +795,7 @@ func importEmail(raw, firstname, lastname string, importLog *model.Log) null.Str
 }
 
 func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorName func(id string) string, online bool, communityId string,
-	tariffs importTariffs, importLog *model.Log) []*model.EegParticipant {
+	tariffs *importTariffs, importLog *model.Log) []*model.EegParticipant {
 	colMap := map[string]int{}
 	participants := []*model.EegParticipant{}
 	defaultPartFact := "100"
@@ -1014,9 +1024,6 @@ func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorNa
 										p.BankAccount.SepaDirectDebit.String, debit.String)))
 							}
 						} else {
-							// the member tariff from the member's first row, like the other member data
-							memberTariff := tariffs.member(getColumValue(cols, colMap, importMemberTariffColumn, importMemberTariffColumn, nil),
-								fmt.Sprintf("%s %s", firstname, lastname), importLog)
 							participant = &model.EegParticipant{
 								EegParticipantBase: model.EegParticipantBase{
 									ParticipantNumber: null.StringFrom(participantNumber),
@@ -1029,7 +1036,6 @@ func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorNa
 									ParticipantSince:  participantSince,
 									MeteringPoint:     []*model.MeteringPoint{},
 									VatNumber:         null.StringFrom(getColumValue(cols, colMap, "UmsatzsteuerNr", "vatNumber", nil)),
-									TariffId:          memberTariff,
 									Version:           0,
 								},
 								ResidentAddress: model.Address{
@@ -1059,6 +1065,8 @@ func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorNa
 									Phone: null.StringFrom(getColumValue(cols, colMap, "TelefonNr", "phonenr", nil)),
 								},
 							}
+							// the member tariff from the member's first row, like the other member data
+							tariffs.noteMember(participant, getColumValue(cols, colMap, importMemberTariffColumn, importMemberTariffColumn, nil))
 							participants = append(participants, participant)
 						}
 						meteringPointId := strings.Trim(getColumValue(cols, colMap, "Zählpunkt", "MeteringPoint Id", nil), " ")
