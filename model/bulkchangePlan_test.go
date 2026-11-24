@@ -255,6 +255,14 @@ func TestPlanBulk_emptyStringVersusNull(t *testing.T) {
 	assert.Equal(t, BulkCounts{Changed: 2, WithHint: 1, UnchangedCondition: 1}, p.Counts, "\" \" → 1 changes the effective reference (H6)")
 }
 
+// No hit: the lists are empty, not nil (JSON "rows": [], admin reads them as lists).
+func TestPlanBulk_noHitsGivesEmptyLists(t *testing.T) {
+	p := bulkPlan(t, BulkRule{Field: BulkMeterTariff, Action: BulkClear, Condition: BulkAll, Direction: "CONSUMPTION"}, bulkSnap())
+	require.NotNil(t, p.Rows)
+	assert.Empty(t, p.Rows)
+	assert.Equal(t, []string{"L3"}, p.RunHints)
+}
+
 // Only current meters of the rule's direction are hits.
 func TestPlanBulk_meterDirection(t *testing.T) {
 	s := bulkSnap(bulkMember("1"))

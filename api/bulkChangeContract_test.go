@@ -145,6 +145,17 @@ func TestBulkChangeContract_tariffs(t *testing.T) {
 	assert.JSONEq(t, `[]`, w.Body.String(), "no tariffs: an empty list")
 }
 
+// A rule without hits answers empty lists, never null (the admin page reads them as lists).
+func TestBulkChangeContract_previewEmpty(t *testing.T) {
+	bcSetup(t)
+	body := `{"rule": {"field": "METER_TARIFF", "action": "CLEAR", "condition": "ALL", "direction": "GENERATION"}}`
+	w := bcServe(t, http.MethodPost, "/bulkchange/preview", "superuser", bcTenant, body)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), `"rows":[]`)
+	assert.NotContains(t, w.Body.String(), "null")
+	assert.JSONEq(t, bcFixture(t, "preview.empty.response.json"), w.Body.String())
+}
+
 func TestBulkChangeContract_previewAndApply(t *testing.T) {
 	bcSetup(t)
 	// the tenant in another case reaches the same community

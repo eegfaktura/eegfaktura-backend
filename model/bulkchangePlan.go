@@ -152,7 +152,7 @@ func (r *BulkRow) Key() string { return BulkItemKey(r.ParticipantId, r.MeteringP
 // before uniqueness and hints are computed, so the plan describes exactly what apply writes.
 func PlanBulkChange(rule *BulkRule, s *BulkSnapshot, today string, keep func(*BulkRow) bool) *BulkPlan {
 	ev := newBulkEvaluator(rule, s, today)
-	var rows []*BulkRow
+	rows := []*BulkRow{} // never null in JSON: admin reads "rows" as a list
 	if rule.Field == BulkMeterTariff {
 		members := make(map[string]*BulkMember, len(s.Members))
 		for _, m := range s.Members {

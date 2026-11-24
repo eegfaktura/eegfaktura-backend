@@ -9,6 +9,7 @@ JSON contract of the routes `/bulkchange/*` between eegfaktura-backend and eegfa
 | `tariffs.response.json` | `GET /bulkchange/tariffs` | active tariffs of the community the rules can set (`id`, `name`, `type` EEG/VZP/EZP, `joiningFee`), sorted by type and name |
 | `preview.request.json` | `POST /bulkchange/preview` | body: the rule |
 | `preview.response.json` | `POST /bulkchange/preview` | counters, run hints, every hit with class, hints, error |
+| `preview.empty.response.json` | `POST /bulkchange/preview` | a rule without hits: counters 0, `rows` an empty list (never `null`) |
 | `apply.request.json` | `POST /bulkchange/apply` | body: the rule and the changed hits with expected values |
 | `apply.response.json` | `POST /bulkchange/apply` | written hits with hints, skipped hits with reason |
 | `error.response.json` | all | error body (here 409: another run or a tariff archive holds the lock) |
