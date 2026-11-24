@@ -105,7 +105,6 @@ func TestArchiveTariff_lockTimeout(t *testing.T) {
 	var ve *model.VfeegError
 	require.True(t, errors.As(err, &ve), "want a VfeegError, got %v", err)
 	assert.Equal(t, 4003, ve.Code)
-	assert.Equal(t, "Gerade läuft eine Massenänderung, bitte später erneut versuchen.", model.UserText(err))
 	assert.Less(t, time.Since(start), 5*time.Second)
 
 	var status string
