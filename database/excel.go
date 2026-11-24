@@ -106,30 +106,53 @@ func (db *sqlDatabase) ImportMasterdataFromExcel(ctx context.Context, r io.Reade
 		return err
 	}
 
+	tariffs, err := db.GetTariff(ctx, strings.ToUpper(tenant))
+	if err != nil {
+		return err
+	}
+
 	importLog := &model.Log{Operation: "Excel Master Data Import", Messages: []*model.LogMessage{}}
-	participants := transformExcelData(ctx, rows, gridOperatorName, eeg.Online, eeg.CommunityId, importLog)
+	importTariffs := newImportTariffs(tariffs)
+	participants := transformExcelData(ctx, rows, gridOperatorName, eeg.Online, eeg.CommunityId, importTariffs, importLog)
 	log.WithContext(ctx).Debugf("LEN _ Import participants: %v", len(participants))
 
 	db.reportDuplicateParticipantNumbers(ctx, strings.ToUpper(tenant), participants, importLog)
 
 	defaultDebit := 0
+	joiningFeeMembers, joiningFeeTariffs := 0, map[string]bool{}
 	for _, p := range participants {
+		name := fmt.Sprintf("%s %s", p.FirstName, p.LastName)
+		memberTariff, tariffHints := importTariffs.memberTariff(p, name)
+		if memberTariff != nil {
+			p.TariffId = null.StringFrom(memberTariff.Id.String())
+		}
 		// Jeder Teilnehmer läuft in seiner eigenen Transaktion — ein Fehler wird
 		// protokolliert, die restlichen Zeilen werden trotzdem importiert.
 		if err := db.ImportParticipant(ctx, strings.ToUpper(tenant), "excel", p); err != nil {
-			importLog.Messages = append(importLog.Messages, model.NewLogMessageFromVfeegError(
-				fmt.Sprintf("%s %s", p.FirstName, p.LastName),
-				err,
-			))
+			importLog.Messages = append(importLog.Messages, model.NewLogMessageFromVfeegError(name, err))
 			log.WithContext(ctx).Errorf("Error Import Participant from Excel: %s", err.Error())
 			continue
 		}
 		// only a member the import created gets an id; for an existing one it only adds metering points
-		if len(p.Id) > 0 && missesDebitType(p) {
+		if len(p.Id) == 0 {
+			if m := importTariffs.existingMemberHint(p, name); m != nil {
+				importLog.Messages = append(importLog.Messages, m)
+			}
+			continue
+		}
+		importLog.Messages = append(importLog.Messages, tariffHints...)
+		if memberTariff != nil && memberTariff.JoiningFee > 0 {
+			joiningFeeMembers++
+			joiningFeeTariffs[memberTariff.Name] = true
+		}
+		if missesDebitType(p) {
 			defaultDebit++
 		}
 	}
 	if m := defaultDebitTypeMessage(defaultDebit); m != nil {
+		importLog.Messages = append(importLog.Messages, m)
+	}
+	if m := joiningFeeMessage(joiningFeeMembers, joiningFeeTariffs); m != nil {
 		importLog.Messages = append(importLog.Messages, m)
 	}
 
@@ -528,7 +551,7 @@ func generateParticipantMastersheet(ctx context.Context, f *excelize.File, parti
 		excelize.Cell{Value: "EEG-Role"},
 		excelize.Cell{Value: "teilnahme als"},
 		excelize.Cell{Value: "Status"},
-		excelize.Cell{Value: "Mitgliedstarif"},
+		excelize.Cell{Value: importMemberTariffColumn},
 		excelize.Cell{Value: "Beitrittsgebühr (€)"},
 		excelize.Cell{Value: "Beitrittsgebühr Status"},
 		excelize.Cell{Value: "Zählpunkt"},
@@ -545,7 +568,7 @@ func generateParticipantMastersheet(ctx context.Context, f *excelize.File, parti
 		excelize.Cell{Value: "HausNr."},
 		excelize.Cell{Value: "aktiviert"},
 		excelize.Cell{Value: "deaktiviert"},
-		excelize.Cell{Value: "Zp. Tarifname"},
+		excelize.Cell{Value: importMeterTariffColumn},
 		excelize.Cell{Value: "Umspannwerk"},
 	}
 	err = sw.SetRow(fmt.Sprintf("A%d", line), header, excelize.RowOpts{StyleID: styleIdHeader, Height: 0.42 * 72})
@@ -751,6 +774,17 @@ func importDebitType(raw, firstname, lastname string, importLog *model.Log) null
 	return null.String{}
 }
 
+// importOptionalText: an empty or blank cell (or no such column) stores NULL, a value without surrounding blanks.
+// For "MandatRef" base.billing_masterdata then falls back to the member number; an empty text would be used as the
+// mandate reference (W-261124-mm1). For "UmsatzsteuerNr" billing would take a blank as a VAT number and send a
+// producer a reverse charge or info document instead of a credit note.
+func importOptionalText(raw string) null.String {
+	if v := strings.TrimSpace(raw); v != "" {
+		return null.StringFrom(v)
+	}
+	return null.String{}
+}
+
 // importEmail normalizes an imported e-mail (trim per ';'-part) and
 // validates it against the shared address rule. Invalid addresses are
 // not taken over silently: the member is imported without e-mail and
@@ -769,7 +803,8 @@ func importEmail(raw, firstname, lastname string, importLog *model.Log) null.Str
 	return null.StringFrom(normalized)
 }
 
-func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorName func(id string) string, online bool, communityId string, importLog *model.Log) []*model.EegParticipant {
+func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorName func(id string) string, online bool, communityId string,
+	tariffs *importTariffs, importLog *model.Log) []*model.EegParticipant {
 	colMap := map[string]int{}
 	participants := []*model.EegParticipant{}
 	defaultPartFact := "100"
@@ -1009,7 +1044,7 @@ func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorNa
 									Status:            getParticipantStatus(cpStatus),
 									ParticipantSince:  participantSince,
 									MeteringPoint:     []*model.MeteringPoint{},
-									VatNumber:         null.StringFrom(getColumValue(cols, colMap, "UmsatzsteuerNr", "vatNumber", nil)),
+									VatNumber:         importOptionalText(getColumValue(cols, colMap, "UmsatzsteuerNr", "vatNumber", nil)),
 									Version:           0,
 								},
 								ResidentAddress: model.Address{
@@ -1030,7 +1065,7 @@ func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorNa
 									Iban:             null.StringFrom(getColumValue(cols, colMap, "IBAN", "IBAN", nil)),
 									Owner:            null.StringFrom(getColumValue(cols, colMap, "Kontoinhaber", "Accountname", nil)),
 									BankName:         null.StringFrom(getColumValue(cols, colMap, "Bankname", "Bankname", nil)),
-									MandateReference: null.StringFrom(getColumValue(cols, colMap, "MandatRef", "MandateRef", nil)),
+									MandateReference: importOptionalText(getColumValue(cols, colMap, "MandatRef", "MandateRef", nil)),
 									MandateDate:      getColumDate(cols, colMap, "MandatDat", "MandateDat", nil),
 									SepaDirectDebit:  importDebitType(getColumValue(cols, colMap, "Einzugsart", "DebitType", nil), firstname, lastname, importLog),
 								},
@@ -1041,6 +1076,9 @@ func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorNa
 							}
 							participants = append(participants, participant)
 						}
+						// the first non-empty member tariff of the member's rows, like the direct debit type
+						tariffs.noteMember(participant, getColumValue(cols, colMap, importMemberTariffColumn, importMemberTariffColumn, nil),
+							fmt.Sprintf("%s %s", firstname, lastname), importLog)
 						meteringPointId := strings.Trim(getColumValue(cols, colMap, "Zählpunkt", "MeteringPoint Id", nil), " ")
 						if len(meteringPointId) == 33 {
 							gridOperatorId, gridOperatorNameValue := importGridOperator(meteringPointId, givenGridOperator, gridOperatorName, importLog)
@@ -1052,7 +1090,7 @@ func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorNa
 								Direction:        role,
 								Status:           getMeteringPointStatus(cpStatus),
 								ProcessState:     getMeteringPointProcessState(cpStatus),
-								TariffId:         null.String{},
+								TariffId:         tariffs.meter(getColumValue(cols, colMap, importMeterTariffColumn, importMeterTariffColumn, nil), meteringPointId, role, importLog),
 								EquipmentNumber:  equipmentNumber(cols, colMap),
 								EquipmentName:    equipmentName(cols, colMap),
 								RegisteredSince:  registeredSince,
