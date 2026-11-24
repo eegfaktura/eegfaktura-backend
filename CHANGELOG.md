@@ -27,8 +27,9 @@ this changelog highlights the changes relevant for overview and operations.
 ### Fixed
 - **Excel master data import: an empty `MandatRef` cell is stored as NULL** (W-261124-mm1, platform#268). An empty or
   blank cell (or no column `MandatRef`) was stored as an empty text, which `base.billing_masterdata` took as the
-  mandate reference instead of falling back to the member number. The member number is used as mandate reference
-  only if it is a valid SEPA mandate id. A value is now stored without surrounding blanks.
+  mandate reference instead of falling back to the member number. Billing then always uses the member number as
+  mandate reference; the bank accepts it only if it is a valid SEPA mandate id (1–35 characters, no blanks or
+  umlauts) — otherwise fill `MandatRef`. A value is now stored without surrounding blanks.
   Members imported earlier keep their empty text.
 - **Excel master data import: a blank `UmsatzsteuerNr` cell is stored as NULL** (platform#268). A cell with only
   blanks was stored as such; billing took it as a VAT number and sent a producer a reverse charge or info document
