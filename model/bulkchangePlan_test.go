@@ -112,6 +112,13 @@ func TestPlanBulk_F1_invalidReference(t *testing.T) {
 	clear := BulkRule{Field: BulkMandateReference, Action: BulkClear, Condition: BulkAll}
 	p = bulkPlan(t, clear, bulkSnap(bulkMember("M_12")))
 	assert.Equal(t, "F1", bulkRowOf(t, p, "p-M_12").Error, "clearing makes the invalid member number effective")
+
+	// R2-4: the member number as billing takes it (raw): blanks around it are invalid, not trimmed away
+	p = bulkPlan(t, copyRef, bulkSnap(bulkMember(" 135")))
+	assert.Equal(t, "F1", bulkRowOf(t, p, "p- 135").Error)
+	assert.Equal(t, " 135", *bulkRowOf(t, p, "p- 135").NewValue)
+	p = bulkPlan(t, clear, bulkSnap(bulkMember("135 ")))
+	assert.Equal(t, "F1", bulkRowOf(t, p, "p-135 ").Error)
 }
 
 func TestPlanBulk_F2_duplicateReference(t *testing.T) {
@@ -135,8 +142,8 @@ func TestPlanBulk_F2_duplicateReference(t *testing.T) {
 		assert.Equal(t, BulkClassChanged, bulkRowOf(t, bulkPlan(t, copyRef, s), "p-1").Class)
 	})
 	t.Run("two hits of the run with the same new value are both errors", func(t *testing.T) {
-		p := bulkPlan(t, copyRef, bulkSnap(bulkMember("7"), bulkMember(" 7 ", func(m *BulkMember) { m.Id = "p-7b" })))
-		assert.Equal(t, "F2", bulkRowOf(t, p, "p-7").Error)
+		p := bulkPlan(t, copyRef, bulkSnap(bulkMember("7a"), bulkMember("7A", func(m *BulkMember) { m.Id = "p-7b" })))
+		assert.Equal(t, "F2", bulkRowOf(t, p, "p-7a").Error)
 		assert.Equal(t, "F2", bulkRowOf(t, p, "p-7b").Error)
 		assert.Equal(t, 2, p.Counts.Errors)
 	})

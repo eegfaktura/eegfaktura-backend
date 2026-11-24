@@ -97,7 +97,7 @@ func (e *bulkEvaluator) hints(r *BulkRow) []string {
 		if f == BulkDebitType {
 			k := bulkNormRef(ref)
 			add(debit && !isDirectDebit(m.DebitType) && k != "" &&
-				(!ValidMandateReference(strings.TrimSpace(ref)) || e.taken(k, e.refCounts)), "H4")
+				(!ValidMandateReference(ref) || e.taken(k, e.refCounts)), "H4")
 			add(bulkNormRef(e.postDebit(r).String) == "B2B" && strings.EqualFold(strings.TrimSpace(m.BusinessRole), "EEG_PRIVATE"), "H5")
 		}
 		add(f == BulkMandateReference && debit && bulkNormRef(effectiveRef(m.MandateRef, m.Number)) != bulkNormRef(ref), "H6")

@@ -97,14 +97,15 @@ func (e *bulkEvaluator) newValue(m *BulkMember) (null.String, string) {
 		if bulkIsEmpty(m.Number) {
 			return null.String{}, "F5"
 		}
-		v := r.Prefix + strings.TrimSpace(m.Number.String) + r.Suffix
+		// the member number as stored, like COALESCE(mandate_reference, "participantNumber") in billing_masterdata
+		v := r.Prefix + m.Number.String + r.Suffix
 		if !ValidMandateReference(v) {
 			return null.StringFrom(v), "F1"
 		}
 		return null.StringFrom(v), ""
 	case r.Action == BulkClear:
 		// the member number becomes the effective reference
-		if r.Field == BulkMandateReference && !bulkIsEmpty(m.Number) && !ValidMandateReference(strings.TrimSpace(m.Number.String)) {
+		if r.Field == BulkMandateReference && !bulkIsEmpty(m.Number) && !ValidMandateReference(m.Number.String) {
 			return null.String{}, "F1"
 		}
 		return null.String{}, ""
