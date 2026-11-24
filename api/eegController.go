@@ -158,7 +158,7 @@ func (h *EegHandler) archiveTariff() middleware.JWTHandlerFunc {
 		vars := mux.Vars(r)
 		idStr := vars["id"]
 
-		if err := h.db.ArchiveTariff(tenant, idStr); err != nil {
+		if err := h.db.ArchiveTariff(r.Context(), tenant, idStr); err != nil {
 			respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
 			return
 		}

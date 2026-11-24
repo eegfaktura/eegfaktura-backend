@@ -20,7 +20,7 @@ type TariffRepository interface {
 	GetTariff(ctx context.Context, tenant string) ([]model.Tariff, error)
 	GetTariffNameMap(ctx context.Context, tenant string) (map[string]string, error)
 	AddTariff(ctx context.Context, tenant, user string, tariff *model.Tariff) error
-	ArchiveTariff(tenant string, id string) error
+	ArchiveTariff(ctx context.Context, tenant string, id string) error
 	GetTariffHistory(ctx context.Context, tenant, id string) ([]model.Tariff, error)
 }
 
@@ -36,8 +36,8 @@ func (db *sqlDatabase) AddTariff(ctx context.Context, tenant, user string, tarif
 	return AddTariff(ctx, db.db, tenant, user, tariff)
 }
 
-func (db *sqlDatabase) ArchiveTariff(tenant string, id string) error {
-	return archiveTariff(db.db, tenant, id)
+func (db *sqlDatabase) ArchiveTariff(ctx context.Context, tenant string, id string) error {
+	return archiveTariff(ctx, db.db, tenant, id)
 }
 
 func (db *sqlDatabase) GetTariffHistory(ctx context.Context, tenant, id string) ([]model.Tariff, error) {
@@ -124,32 +124,42 @@ func GetTariffNameMap(ctx context.Context, db *sqlx.DB, tenant string) (map[stri
 // not prevented, and the paths that assign a tariff to a member or metering point do not check its status
 // (known gap). 0 updated rows are told apart by a follow-up read: the tariff exists → in use, otherwise
 // ErrUpdateTariff "unknown tariff".
-func archiveTariff(db *sqlx.DB, tenant string, id string) error {
-	// todo: use goqu for sql statement creation
-	res, err := db.Exec(`UPDATE base.tariff SET status = 'ARCHIVED', "lastModifiedDate" = 'now()'
-		WHERE tenant = $1 AND id = $2
-		AND NOT EXISTS (SELECT 1 FROM base.participant WHERE tenant = $1 AND "tariffId" = $2)
-		AND NOT EXISTS (SELECT 1 FROM base.meteringpoint WHERE tenant = $1 AND tariff_id = $2 AND flag = $3)`,
-		tenant, id, model.F_ASSIGNED)
-	if err != nil {
-		return model.ErrUpdateTariff(err)
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return model.ErrUpdateTariff(err)
-	}
-	if n > 0 {
-		return nil
-	}
+//
+// Before the UPDATE it waits for the tenant lock of the bulk change (konzept-massenaenderungen.md E4): a running
+// bulk change may be assigning this tariff, the UPDATE then sees its committed state (READ COMMITTED: a fresh
+// snapshot per statement). A bulk change started meanwhile gets 409. Single assignments in web do not take
+// the lock (#106).
+func archiveTariff(ctx context.Context, db *sqlx.DB, tenant string, id string) error {
+	return inTx(ctx, db, func(tx *sqlx.Tx) error {
+		if err := waitBulkTenantLock(ctx, tx, tenant); err != nil {
+			return model.ErrUpdateTariff(err)
+		}
+		// todo: use goqu for sql statement creation
+		res, err := tx.ExecContext(ctx, `UPDATE base.tariff SET status = 'ARCHIVED', "lastModifiedDate" = 'now()'
+			WHERE tenant = $1 AND id = $2
+			AND NOT EXISTS (SELECT 1 FROM base.participant WHERE tenant = $1 AND "tariffId" = $2)
+			AND NOT EXISTS (SELECT 1 FROM base.meteringpoint WHERE tenant = $1 AND tariff_id = $2 AND flag = $3)`,
+			tenant, id, model.F_ASSIGNED)
+		if err != nil {
+			return model.ErrUpdateTariff(err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return model.ErrUpdateTariff(err)
+		}
+		if n > 0 {
+			return nil
+		}
 
-	var exists bool
-	if err = db.Get(&exists, `SELECT EXISTS (SELECT 1 FROM base.tariff WHERE tenant = $1 AND id = $2)`, tenant, id); err != nil {
-		return model.ErrGetTariff(err)
-	}
-	if exists {
-		return model.ErrTariffUtilized(ErrTariffUtilized)
-	}
-	return model.ErrUpdateTariff(errors.New("unknown tariff"))
+		var exists bool
+		if err = tx.GetContext(ctx, &exists, `SELECT EXISTS (SELECT 1 FROM base.tariff WHERE tenant = $1 AND id = $2)`, tenant, id); err != nil {
+			return model.ErrGetTariff(err)
+		}
+		if exists {
+			return model.ErrTariffUtilized(ErrTariffUtilized)
+		}
+		return model.ErrUpdateTariff(errors.New("unknown tariff"))
+	})
 }
 
 func AddTariff(ctx context.Context, db *sqlx.DB, tenant, user string, tariff *model.Tariff) error {
