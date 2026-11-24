@@ -25,8 +25,9 @@ this changelog highlights the changes relevant for overview and operations.
 ### Contract
 - `/bulkchange/preview` and `/apply` accept the action `FROM_FILE` with `values`; the answer has
   `counts.unchangedNotInFile`, `notFound`, class `UNCHANGED_NOT_IN_FILE`, errors and skip reasons F7/F8 (all only
-  for `FROM_FILE`; the two fields are omitted when 0 or empty — the answers of the other rules are unchanged); hint
-  H10. Fixtures
+  for `FROM_FILE`; the two fields are omitted when 0 or empty); hint H10. For the other mandate reference rules F1
+  now allows blanks inside (a copy „EEG 001“ was F1, now changed with H10; a direct debit run on „M 1“ gave H4, now
+  H10), and F2 also covers two hits of a run without direct debit. Fixtures
   `api/testdata/bulkchange/*.file.*.json`. Caller: eegfaktura-admin (page „Massenänderung“, needs this backend
   first: an older one answers 400 to `FROM_FILE`).
 
@@ -35,7 +36,9 @@ this changelog highlights the changes relevant for overview and operations.
   direct API call with `0000-01-01` passed the preview and failed on apply in Postgres (no year 0) with 6105.
 - **Bulk change: two hits of one run with the same new mandate reference are F2 whatever their direct debit type**
   (konzept-massenaenderungen.md, Fachliche Logik 6). Before, only direct debit members counted: a run that sets the
-  references before switching „Kein SEPA“ to CORE could write duplicates, which the later run only showed as H4.
+  references before switching „Kein SEPA“ to CORE could give two members the same new reference, which the later run
+  only showed as H4. (A new reference equal to the stored one of an unchanged member without direct debit is still
+  only checked once that member gets direct debit.)
 
 ### Changed
 - **Bulk change body limit 1 MiB → 2 MiB** (5,000 file values plus 5,000 hits; error 6107 names the new limit).

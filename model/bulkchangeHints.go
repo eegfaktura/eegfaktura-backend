@@ -7,7 +7,7 @@ import (
 	"gopkg.in/guregu/null.v4"
 )
 
-// Uniqueness of the mandate reference (Fachliche Logik 6, F2/H4) and the hints H1–H9, L1–L3 (Fachliche Logik 8).
+// Uniqueness of the mandate reference (Fachliche Logik 6, F2/H4) and the hints H1–H10, L1–L3 (Fachliche Logik 8).
 
 func isDirectDebit(v null.String) bool {
 	t := bulkNormRef(v.String)

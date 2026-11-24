@@ -163,7 +163,7 @@ func TestBulkChange_serverErrorTexts(t *testing.T) {
 	}
 }
 
-// R1-4: a body over 1 MiB is 413 with its own code and text, not "request invalid".
+// R1-4: a body over the limit (2 MiB) is 413 with its own code and text, not "request invalid".
 func TestBulkChange_bodyTooLarge(t *testing.T) {
 	bcSetup(t)
 	body := `{"rule": {"field": "DEBIT_TYPE", "value": "` + strings.Repeat("x", bulkBodyLimit) + `"}}`
