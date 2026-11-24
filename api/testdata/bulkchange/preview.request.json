@@ -1,0 +1,9 @@
+{
+  "rule": {
+    "field": "MANDATE_REFERENCE",
+    "action": "COPY",
+    "source": "PARTICIPANT_NUMBER",
+    "prefix": "Lastschrift-",
+    "condition": "EMPTY"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "rule": {
+    "field": "MANDATE_REFERENCE",
+    "action": "COPY",
+    "source": "PARTICIPANT_NUMBER",
+    "prefix": "Lastschrift-",
+    "condition": "EMPTY"
+  },
+  "items": [
+    {"participantId": "d4410000-0000-4000-8000-000000000001", "expectedOld": null, "expectedNew": "Lastschrift-1"},
+    {"participantId": "d4410000-0000-4000-8000-000000000003", "expectedOld": "X-3", "expectedNew": "Lastschrift-3"}
+  ]
+}
