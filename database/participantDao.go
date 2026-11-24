@@ -516,7 +516,23 @@ func importParticipant(ctx context.Context, tx *sqlx.Tx, tenant, username string
 	}
 
 	participant.Id = uuid.NewUUID()
-	return saveParticipant(ctx, tx, tenant, username, participant, ImportMeteringPoints)
+	if err := saveParticipant(ctx, tx, tenant, username, participant, ImportMeteringPoints); err != nil {
+		return err
+	}
+	// the member tariff of the import (platform#268); the insert skips "tariffId". An existing member (above) keeps
+	// its tariff.
+	if participant.TariffId.Valid {
+		stmt, _, err := pgDialect.Update(TABLE_PARTICIPANT).
+			Set(goqu.Record{"tariffId": participant.TariffId.String}).
+			Where(goqu.Ex{"id": participant.Id.String(), "tenant": tenant}).ToSQL()
+		if err != nil {
+			return model.ErrRegisterParticipant(err)
+		}
+		if _, err = tx.ExecContext(ctx, stmt); err != nil {
+			return model.ErrRegisterParticipant(err)
+		}
+	}
+	return nil
 }
 
 func confirmParticipant(ctx context.Context, db *sqlx.DB, username, participantId string) error {

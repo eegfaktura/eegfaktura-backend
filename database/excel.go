@@ -106,8 +106,13 @@ func (db *sqlDatabase) ImportMasterdataFromExcel(ctx context.Context, r io.Reade
 		return err
 	}
 
+	tariffs, err := db.GetTariff(ctx, strings.ToUpper(tenant))
+	if err != nil {
+		return err
+	}
+
 	importLog := &model.Log{Operation: "Excel Master Data Import", Messages: []*model.LogMessage{}}
-	participants := transformExcelData(ctx, rows, gridOperatorName, eeg.Online, eeg.CommunityId, importLog)
+	participants := transformExcelData(ctx, rows, gridOperatorName, eeg.Online, eeg.CommunityId, newImportTariffs(tariffs), importLog)
 	log.WithContext(ctx).Debugf("LEN _ Import participants: %v", len(participants))
 
 	db.reportDuplicateParticipantNumbers(ctx, strings.ToUpper(tenant), participants, importLog)
@@ -779,7 +784,8 @@ func importEmail(raw, firstname, lastname string, importLog *model.Log) null.Str
 	return null.StringFrom(normalized)
 }
 
-func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorName func(id string) string, online bool, communityId string, importLog *model.Log) []*model.EegParticipant {
+func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorName func(id string) string, online bool, communityId string,
+	tariffs importTariffs, importLog *model.Log) []*model.EegParticipant {
 	colMap := map[string]int{}
 	participants := []*model.EegParticipant{}
 	defaultPartFact := "100"
@@ -1008,6 +1014,9 @@ func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorNa
 										p.BankAccount.SepaDirectDebit.String, debit.String)))
 							}
 						} else {
+							// the member tariff from the member's first row, like the other member data
+							memberTariff := tariffs.member(getColumValue(cols, colMap, importMemberTariffColumn, importMemberTariffColumn, nil),
+								fmt.Sprintf("%s %s", firstname, lastname), importLog)
 							participant = &model.EegParticipant{
 								EegParticipantBase: model.EegParticipantBase{
 									ParticipantNumber: null.StringFrom(participantNumber),
@@ -1020,6 +1029,7 @@ func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorNa
 									ParticipantSince:  participantSince,
 									MeteringPoint:     []*model.MeteringPoint{},
 									VatNumber:         null.StringFrom(getColumValue(cols, colMap, "UmsatzsteuerNr", "vatNumber", nil)),
+									TariffId:          memberTariff,
 									Version:           0,
 								},
 								ResidentAddress: model.Address{
@@ -1062,7 +1072,7 @@ func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorNa
 								Direction:        role,
 								Status:           getMeteringPointStatus(cpStatus),
 								ProcessState:     getMeteringPointProcessState(cpStatus),
-								TariffId:         null.String{},
+								TariffId:         tariffs.meter(getColumValue(cols, colMap, importMeterTariffColumn, importMeterTariffColumn, nil), meteringPointId, role, importLog),
 								EquipmentNumber:  equipmentNumber(cols, colMap),
 								EquipmentName:    equipmentName(cols, colMap),
 								RegisteredSince:  registeredSince,

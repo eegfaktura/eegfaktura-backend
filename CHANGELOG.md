@@ -8,6 +8,19 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Added
+- **Excel master data import: member and metering point tariffs** (platform#268). New optional columns named as in
+  the master data export: `Mitgliedstarif` (member tariff) and `Zp. Tarifname` (metering point tariff). The name is
+  looked up among the community's active tariffs (latest version, not archived), case-insensitive and without
+  surrounding blanks; the type must fit: `EEG` for the member, `VZP` for a consumption and `EZP` for a generation
+  metering point. An empty cell or a missing column imports no tariff, as before. An unknown name, a tariff of
+  another type or several active tariffs of that name and type import the member or metering point without this
+  tariff, with a hint in the import message (`W_TARIFF_UNKNOWN`, `W_TARIFF_TYPE`, `W_TARIFF_AMBIGUOUS`). The member
+  tariff is read from the member's first row. An existing member (matched by name) keeps its member tariff; its new
+  metering points get the metering point tariff. Note: billing charges the joining fee of a member tariff with the
+  member's first energy billing, so an imported member with such a tariff is charged the fee, also one who paid it
+  before the community moved, unless the fee is recorded as paid outside eegFaktura.
+
 ### Fixed
 - **Excel master data import: an empty `MandatRef` cell is stored as NULL** (W-261124-mm1, platform#268). An empty or
   blank cell (or no column `MandatRef`) was stored as an empty text, which `base.billing_masterdata` took as the
