@@ -8,6 +8,13 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Changed
+- **Import template `tests/261124-vorlage-import-stammdaten.xlsx`** replaces `260716-vorlage-import-stammdaten.xlsx`
+  (platform#268): the same columns plus `Einzugsart`, `MandatRef`, `MandatDat`, `Mitgliedstarif` and `Zp. Tarifname`,
+  each with a hint in row 5; sample row with `CORE` and a mandate date. The user guide links this file. The import
+  itself is unchanged (columns are matched by header name, older templates keep working);
+  `Test_transformExcelData_shippedTemplate` reads the new file and also checks the mandate columns.
+
 ## [1.21.0] – 2026-11-24
 
 ### Added

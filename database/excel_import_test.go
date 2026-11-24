@@ -382,16 +382,16 @@ func Test_transformExcelData_statusAndDirection(t *testing.T) {
 	assert.Equal(t, "AT0099990000000000000000000000723", importLog.Messages[0].Identifier)
 }
 
-// The shipped import template (tests/260716-vorlage-import-stammdaten.xlsx,
-// the cleaned successor of "250310" — decorative columns removed; also offered
-// as download in the docs) must stay compatible with the importer: its sample
-// row imports with all mapped fields.
+// The shipped import template (tests/261124-vorlage-import-stammdaten.xlsx: the
+// 260716 template plus the columns Einzugsart, MandatRef, MandatDat, Mitgliedstarif
+// and Zp. Tarifname; offered as download in the user guide and the docs) must stay
+// compatible with the importer: its sample row imports with all mapped fields.
 func Test_transformExcelData_shippedTemplate(t *testing.T) {
-	reader, err := os.Open("../tests/260716-vorlage-import-stammdaten.xlsx")
+	reader, err := os.Open("../tests/261124-vorlage-import-stammdaten.xlsx")
 	require.NoError(t, err)
 	defer reader.Close()
 
-	f, cleanup, err := openReader(reader, "260716-vorlage-import-stammdaten.xlsx")
+	f, cleanup, err := openReader(reader, "261124-vorlage-import-stammdaten.xlsx")
 	require.NoError(t, err)
 	defer cleanup()
 
@@ -406,6 +406,11 @@ func Test_transformExcelData_shippedTemplate(t *testing.T) {
 	assert.Equal(t, "Mayer", p.FirstName)
 	assert.Equal(t, "Hubert", p.LastName)
 	assert.Equal(t, civil.DateFor(2024, time.January, 1), p.ParticipantSince.Date)
+	// mandate columns of the template (since 261124): Einzugsart CORE, MandatDat set, MandatRef empty -> NULL
+	assert.Equal(t, "CORE", p.BankAccount.SepaDirectDebit.String)
+	assert.True(t, p.BankAccount.MandateDate.Valid)
+	assert.Equal(t, civil.DateFor(2024, time.January, 1), p.BankAccount.MandateDate.Date)
+	assert.False(t, p.BankAccount.MandateReference.Valid)
 	require.Len(t, p.MeteringPoint, 1)
 	m := p.MeteringPoint[0]
 	assert.Equal(t, model.CONSUMPTION, m.Direction)
