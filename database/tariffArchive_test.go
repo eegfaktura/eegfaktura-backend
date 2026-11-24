@@ -34,7 +34,7 @@ func TestArchiveTariff_inUse(t *testing.T) {
 		return s
 	}
 	assertInUse := func(t *testing.T, id string) {
-		err := db.ArchiveTariff(tenant, id)
+		err := db.ArchiveTariff(ctx, tenant, id)
 		var ve *model.VfeegError
 		require.True(t, errors.As(err, &ve), "want a VfeegError, got %v", err)
 		assert.Equal(t, 4002, ve.Code)
@@ -81,12 +81,12 @@ func TestArchiveTariff_inUse(t *testing.T) {
 		exec(t, `INSERT INTO base.meteringpoint (metering_point_id, participant_id, tenant, status, tariff_id, flag)
 			VALUES ('AT0030000000000000000000000417020', $1, $2, 'ACTIVE', $3, 0),
 			       ('AT0030000000000000000000000417022', $1, $2, 'INACTIVE', $3, 2)`, partId, tenant, tariff)
-		require.NoError(t, db.ArchiveTariff(tenant, tariff))
+		require.NoError(t, db.ArchiveTariff(ctx, tenant, tariff))
 		assert.Equal(t, "ARCHIVED", status(t, tariff))
 	})
 
 	t.Run("unused tariff is archived", func(t *testing.T) {
-		require.NoError(t, db.ArchiveTariff(tenant, unused))
+		require.NoError(t, db.ArchiveTariff(ctx, tenant, unused))
 		assert.Equal(t, "ARCHIVED", status(t, unused))
 	})
 
@@ -97,12 +97,12 @@ func TestArchiveTariff_inUse(t *testing.T) {
 		t.Cleanup(func() {
 			_, _ = testDB.DbInstance.Exec(`DELETE FROM base.participant WHERE tenant = 'TE000418'`)
 		})
-		require.NoError(t, db.ArchiveTariff(tenant, other))
+		require.NoError(t, db.ArchiveTariff(ctx, tenant, other))
 		assert.Equal(t, "ARCHIVED", status(t, other))
 	})
 
 	t.Run("unknown tariff is not found", func(t *testing.T) {
-		assertUnknown(t, db.ArchiveTariff(tenant, "a4170000-0000-0000-0000-0000000000ff"))
+		assertUnknown(t, db.ArchiveTariff(ctx, tenant, "a4170000-0000-0000-0000-0000000000ff"))
 	})
 
 	t.Run("tariff of another tenant is not found and stays", func(t *testing.T) {
@@ -111,7 +111,7 @@ func TestArchiveTariff_inUse(t *testing.T) {
 		t.Cleanup(func() {
 			_, _ = testDB.DbInstance.Exec(`DELETE FROM base.tariff WHERE tenant = 'TE000418'`)
 		})
-		assertUnknown(t, db.ArchiveTariff(tenant, foreign.Id.String()))
+		assertUnknown(t, db.ArchiveTariff(ctx, tenant, foreign.Id.String()))
 		var s string
 		require.NoError(t, testDB.DbInstance.Get(&s, `SELECT DISTINCT COALESCE(status, '') FROM base.tariff WHERE tenant = 'TE000418' AND id = $1`, foreign.Id.String()))
 		assert.NotEqual(t, "ARCHIVED", s)

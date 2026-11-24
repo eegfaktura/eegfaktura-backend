@@ -9,6 +9,15 @@ this changelog highlights the changes relevant for overview and operations.
 ## [Unreleased]
 
 ### Added
+- **Bulk change of master data for the VFEEG support** (konzept-massenaenderungen.md, eegfaktura-admin page
+  „Massenänderung“). One rule on one community: direct debit type, mandate reference (copy from the member number,
+  optionally with fixed text before/after, or clear), mandate date, member tariff, metering point tariff (per
+  direction). Mandatory preview with old → new value per hit, errors F1–F6 (hit not changed) and hints H1–H9,
+  L1–L3; apply in one transaction, only the previewed hits whose old and new value still match. A mandate reference
+  must be unique among the direct debit members of all communities with the same creditor id (compared without
+  blanks and case). Members get `lastModifiedBy`/`lastModifiedDate`, metering points `modifiedBy`/`modifiedAt` from
+  the token's user. No migration, no new table, no EDA message, no mail; `base.billing_masterdata` and gRPC are
+  unchanged.
 - **Excel master data import: member and metering point tariffs** (platform#268). New optional columns named as in
   the master data export: `Mitgliedstarif` (member tariff) and `Zp. Tarifname` (metering point tariff). The name is
   looked up among the community's active tariffs (latest version, not archived), case-insensitive and without
@@ -23,6 +32,25 @@ this changelog highlights the changes relevant for overview and operations.
   member's first energy billing, so an imported member with such a tariff is charged the fee, also one who paid it
   before the community moved, unless the fee is recorded as paid outside eegFaktura. The import message therefore
   says once how many new members got a member tariff with a joining fee, and which tariffs (`W_TARIFF_JOINING_FEE`).
+
+### Contract
+- **New REST routes, realm role `superuser` only** (no admin access group; first routes of this kind, new wrapper
+  `ProtectSuperuser`): `GET /bulkchange/communities` (`tenant`, `name`, `rcNumber` of all communities),
+  `GET /bulkchange/tariffs` (active tariffs of the community in the header `tenant`, types EEG/VZP/EZP: `id`,
+  `name`, `type`, `joiningFee`),
+  `POST /bulkchange/preview` and `POST /bulkchange/apply` (community in the header `tenant`, rule in the body).
+  Caller: eegfaktura-admin from the browser via `/api/bulkchange/…` on the admin host (ingress rule in gitops,
+  platform, docker-compose — separate PRs). JSON contract and new error codes 6100–6108 (400 rule/request, 400
+  duplicate hit, 400 preview outdated, 404 unknown community, 409 locked, 500 failed with nothing changed, 403 apply
+  with a token without user name, 413 body over 1 MiB — about 6,500 hits of a member rule, 4,800 of the metering
+  point tariff —, 500 commit failed with outcome unknown): fixtures and README in `api/testdata/bulkchange/`.
+- **Archiving a tariff (`DELETE /eeg/tariff/{id}`) waits for a running bulk change of the community**: it now runs in
+  a transaction and first takes the tenant advisory lock of the bulk change (`pg_advisory_xact_lock`, two-key form);
+  a bulk change started while a tariff is archived gets 409. The wait is bounded (`lock_timeout` 130 s, just above
+  the 120 s limit of a bulk change): if it runs out, the route answers **409** with code **4003** and the error text
+  `Bulk change is running` (like 4002 `Tariff is currently used`: web shows the German text of its key
+  `E_4003_Bulk change is running`; new for EEG admins, before every error of the route was 400). A client that goes
+  away while the archive waits does not abort it. Otherwise the answers are unchanged.
 
 ### Fixed
 - **Excel master data import: an empty `MandatRef` cell is stored as NULL** (W-261124-mm1, platform#268). An empty or

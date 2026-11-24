@@ -1,0 +1,18 @@
+{
+  "counts": {"changed": 1, "withHint": 1, "unchangedCondition": 1, "unchangedTarget": 1, "errors": 1},
+  "runHints": ["L3"],
+  "rows": [
+    {"participantId": "d4410000-0000-4000-8000-000000000001", "participantNumber": "1", "name": "Anna Muster",
+     "oldValue": null, "newValue": "Lastschrift-1", "oldText": "leer (Mitgliedsnummer gilt)", "newText": "Lastschrift-1",
+     "class": "CHANGED", "hints": ["H6"]},
+    {"participantId": "d4410000-0000-4000-8000-000000000002", "participantNumber": "2", "name": "Anna Muster",
+     "oldValue": "Lastschrift-2", "newValue": "Lastschrift-2", "oldText": "Lastschrift-2", "newText": "Lastschrift-2",
+     "class": "UNCHANGED_TARGET", "hints": []},
+    {"participantId": "d4410000-0000-4000-8000-000000000003", "participantNumber": "3", "name": "Anna Muster",
+     "oldValue": "X-3", "newValue": "X-3", "oldText": "X-3", "newText": "X-3",
+     "class": "UNCHANGED_CONDITION", "hints": []},
+    {"participantId": "d4410000-0000-4000-8000-000000000004", "participantNumber": "", "name": "Anna Muster",
+     "oldValue": null, "newValue": null, "oldText": "leer (Mitgliedsnummer gilt)", "newText": "leer (Mitgliedsnummer gilt)",
+     "class": "ERROR", "hints": [], "error": "F5"}
+  ]
+}

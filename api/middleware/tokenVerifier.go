@@ -199,6 +199,28 @@ func Protect(handler JWTHandlerFunc) http.HandlerFunc {
 	return verifyRequest(handler)
 }
 
+// ProtectSuperuser lets only tokens with the realm role superuser through (bulk change of the support,
+// konzept-massenaenderungen.md D). It checks the token like Protect (retrieveClaims: missing token 403, invalid
+// token 401) but not the admin access group: a superuser skips the tenant check, so the group would open every
+// Protect route of every tenant to the token. Without the role 403. The tenant from the header goes to the
+// handler upper-cased; the handler checks that the community exists.
+func ProtectSuperuser(handler JWTHandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tenant, claims, err := retrieveClaims(r)
+		if err != nil {
+			w.WriteHeader(err.(*VerifyError).StatusCode)
+			return
+		}
+		if !IsSuperuser(claims.RealmAccess.Roles) {
+			logrus.WithContext(r.Context()).Warn("unauthorized access - request has no superuser role")
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		logging.SetTenant(r.Context(), tenant)
+		handler(w, r, claims, strings.ToUpper(tenant))
+	}
+}
+
 func ProtectApi(handler JWTHandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		username, password, err := ParseBasicCredentialsFromHeader(r)

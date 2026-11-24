@@ -37,6 +37,7 @@ type Database interface {
 	MqttRepository
 	EnergyRequestRepository
 	MailTemplateRepository
+	BulkChangeRepository
 }
 
 type MqttRepository interface {
