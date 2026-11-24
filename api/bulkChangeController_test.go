@@ -1,11 +1,17 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"at.ourproject/vfeeg-backend/api/middleware"
+	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
 	"github.com/stretchr/testify/assert"
@@ -106,6 +112,38 @@ func TestBulkChange_applyWithoutUserName(t *testing.T) {
 
 	w = bcServe(t, http.MethodPost, "/bulkchange/preview", "superuser-no-name", bcTenant, bcFixture(t, "preview.request.json"))
 	assert.Equal(t, http.StatusOK, w.Code, "the preview writes nothing and needs no user name")
+}
+
+type bulkApplyFails struct {
+	database.Database
+	err error
+}
+
+func (b bulkApplyFails) BulkEeg(context.Context, string) (*model.BulkEeg, error) {
+	return &model.BulkEeg{Tenant: bcTenant}, nil
+}
+
+func (b bulkApplyFails) BulkApply(context.Context, *model.BulkEeg, string, *model.BulkApplyRequest) (*model.BulkApplyResult, error) {
+	return nil, b.err
+}
+
+// R1-2: a database failure answers 500 with a neutral text; after a failed COMMIT it does not claim "nothing changed".
+func TestBulkChange_serverErrorTexts(t *testing.T) {
+	for _, c := range []struct {
+		err  error
+		want string
+	}{
+		{model.ErrBulkChange(errors.New("pq: connection reset")), "es wurde nichts geändert"},
+		{model.ErrBulkChange(fmt.Errorf("%w: %v", database.ErrBulkOutcomeUnknown, "pq: commit")), "Ergebnis der Massenänderung ist unklar"},
+	} {
+		h := &BulkChangeHandler{db: bulkApplyFails{err: c.err}}
+		req := httptest.NewRequest(http.MethodPost, "/bulkchange/apply", strings.NewReader(bcFixture(t, "apply.request.json")))
+		w := httptest.NewRecorder()
+		h.apply()(w, req, &middleware.PlatformClaims{Username: "support-user"}, bcTenant)
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+		assert.Contains(t, w.Body.String(), c.want)
+		assert.NotContains(t, w.Body.String(), "pq:", "no database detail")
+	}
 }
 
 // The CSV is built in eegfaktura-admin from the preview: the backend has no such route.

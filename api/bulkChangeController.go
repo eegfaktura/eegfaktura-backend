@@ -56,7 +56,11 @@ func respondBulkError(w http.ResponseWriter, r *http.Request, tenant string, err
 	status := bulkStatus(ve.Code)
 	if status == http.StatusInternalServerError {
 		log.WithContext(r.Context()).WithField("tenant", tenant).WithError(err).Error("bulk change failed")
-		ve = model.ErrBulkChange(errors.New("Die Massenänderung ist fehlgeschlagen; es wurde nichts geändert."))
+		text := "Die Massenänderung ist fehlgeschlagen; es wurde nichts geändert."
+		if errors.Is(ve.Err, database.ErrBulkOutcomeUnknown) {
+			text = "Das Ergebnis der Massenänderung ist unklar. Bitte die Vorschau neu laden und prüfen."
+		}
+		ve = model.ErrBulkChange(errors.New(text))
 	}
 	respondWith(r.Context(), w, status, tenant, ve)
 }

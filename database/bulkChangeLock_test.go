@@ -160,3 +160,27 @@ func TestBulkChange_applyLocksOnlyRequestedRows(t *testing.T) {
 	assert.Equal(t, "CORE", *f.debitOf(bxId("01")))
 	assert.Equal(t, "NONE", *f.debitOf(bxId("02")))
 }
+
+// R1-2: a failing COMMIT is reported as ErrBulkOutcomeUnknown (the client must not read "nothing changed").
+func TestBulkChange_commitFailureOutcomeUnknown(t *testing.T) {
+	f := newBulkFx(t, bxA)
+	f.eeg(bxA, nil)
+	f.member(bulkFxMember{id: bxId("01"), tenant: bxA, number: "1", debit: sp("NONE")})
+	// a deferred constraint trigger fails only at COMMIT
+	f.exec(`CREATE OR REPLACE FUNCTION base.bulk_test_commit_fail() RETURNS trigger AS $$
+		BEGIN IF NEW.participant_id = '` + bxId("01") + `' THEN RAISE EXCEPTION 'bulk test commit failure'; END IF; RETURN NEW; END
+		$$ LANGUAGE plpgsql`)
+	f.exec(`CREATE CONSTRAINT TRIGGER bulk_test_commit_fail AFTER UPDATE ON base.bankaccount DEFERRABLE INITIALLY DEFERRED
+		FOR EACH ROW EXECUTE FUNCTION base.bulk_test_commit_fail()`)
+	t.Cleanup(func() {
+		_, _ = testDB.DbInstance.Exec(`DROP TRIGGER IF EXISTS bulk_test_commit_fail ON base.bankaccount`)
+		_, _ = testDB.DbInstance.Exec(`DROP FUNCTION IF EXISTS base.bulk_test_commit_fail()`)
+	})
+
+	_, err := f.apply(bxA, bxDebitWhereNone, itemsOf(f.preview(bxA, bxDebitWhereNone)))
+	var ve *model.VfeegError
+	require.True(t, errors.As(err, &ve), "want a VfeegError, got %v", err)
+	assert.Equal(t, 6105, ve.Code)
+	assert.ErrorIs(t, ve.Err, ErrBulkOutcomeUnknown)
+	assert.Equal(t, "NONE", *f.debitOf(bxId("01")), "this commit failure rolled back")
+}
