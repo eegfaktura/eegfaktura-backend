@@ -17,6 +17,38 @@ import (
 // key and the set of communities alike.
 const creditorNormSQL = `upper(regexp_replace(COALESCE(e.creditor_id, ''), '\s', '', 'g'))`
 
+// The reads of the snapshot (also explained by the load check, bulkChangeLoadCheck_test.go).
+const (
+	bulkMembersSQL = `SELECT p.id::text AS id, p."participantNumber" AS participant_number,
+		to_char(p."participantSince", 'YYYY-MM-DD') AS participant_since, p.firstname, p.lastname,
+		p."businessRole" AS business_role, p."tariffId"::text AS tariff_id, b.id::text AS bank_id,
+		COALESCE(btrim(b.iban), '') <> '' AS has_iban, b.mandate_reference,
+		to_char(b.mandate_date, 'YYYY-MM-DD') AS mandate_date, b.sepa_direct_debit
+		FROM base.participant p
+		LEFT JOIN (SELECT DISTINCT ON (ba.participant_id) ba.* FROM base.bankaccount ba
+		           JOIN base.participant pp ON pp.id = ba.participant_id AND pp.tenant = $1
+		           ORDER BY ba.participant_id, ba.id) b ON b.participant_id = p.id
+		WHERE p.tenant = $1
+		ORDER BY p."participantNumber", p.id`
+	bulkMetersSQL = `SELECT m.participant_id::text AS participant_id, m.metering_point_id,
+		m.direction, m.tariff_id::text AS tariff_id
+		FROM base.meteringpoint m JOIN base.participant p ON p.id = m.participant_id
+		WHERE m.tenant = $1 AND m.flag = $2 AND m.direction = $3
+		ORDER BY p."participantNumber", m.metering_point_id, m.participant_id`
+	bulkTariffsSQL = `SELECT t.id::text AS id, t.name, t.type, a.id IS NOT NULL AS active,
+		COALESCE(t."useVat", false) AS use_vat, t."vatInPercent"::float8 AS vat,
+		t."useMeteringPointFee" AS use_meter_fee, t."meteringPointVat"::float8 AS meter_vat,
+		t."joiningFee"::float8 AS joining_fee, t."joiningFeeUseVat" AS joining_fee_use_vat,
+		t."joiningFeeVatInPercent"::float8 AS joining_fee_vat
+		FROM (SELECT DISTINCT ON (id) * FROM base.tariff WHERE tenant = $1 ORDER BY id, version DESC) t
+		LEFT JOIN base.activetariff a ON a.id = t.id AND a.version = t.version`
+	bulkForeignRefsSQL = `SELECT DISTINCT upper(btrim(COALESCE(b.mandate_reference, p."participantNumber", '')))
+		FROM base.eeg e
+		JOIN base.participant p ON p.tenant = e.tenant
+		JOIN base.bankaccount b ON b.participant_id = p.id
+		WHERE ` + creditorNormSQL + ` = $1 AND e.tenant <> $2 AND upper(btrim(b.sepa_direct_debit)) IN ('CORE', 'B2B')`
+)
+
 // loadBulkEeg finds the community case-insensitively (an exact match first); ErrBulkUnknownTenant if none.
 func loadBulkEeg(ctx context.Context, q sqlx.QueryerContext, tenant string) (*model.BulkEeg, error) {
 	var eeg model.BulkEeg
@@ -37,38 +69,18 @@ func loadBulkEeg(ctx context.Context, q sqlx.QueryerContext, tenant string) (*mo
 // direct debit type or the mandate reference, the references used under the same creditor id elsewhere.
 func loadBulkSnapshot(ctx context.Context, q sqlx.QueryerContext, eeg *model.BulkEeg, rule *model.BulkRule) (*model.BulkSnapshot, error) {
 	s := &model.BulkSnapshot{Eeg: eeg, Tariffs: map[string]*model.BulkTariff{}, ForeignRefs: map[string]bool{}}
-	err := sqlx.SelectContext(ctx, q, &s.Members, `SELECT p.id::text AS id, p."participantNumber" AS participant_number,
-			to_char(p."participantSince", 'YYYY-MM-DD') AS participant_since, p.firstname, p.lastname,
-			p."businessRole" AS business_role, p."tariffId"::text AS tariff_id, b.id::text AS bank_id,
-			COALESCE(btrim(b.iban), '') <> '' AS has_iban, b.mandate_reference,
-			to_char(b.mandate_date, 'YYYY-MM-DD') AS mandate_date, b.sepa_direct_debit
-		FROM base.participant p
-		LEFT JOIN (SELECT DISTINCT ON (ba.participant_id) ba.* FROM base.bankaccount ba
-		           JOIN base.participant pp ON pp.id = ba.participant_id AND pp.tenant = $1
-		           ORDER BY ba.participant_id, ba.id) b ON b.participant_id = p.id
-		WHERE p.tenant = $1
-		ORDER BY p."participantNumber", p.id`, eeg.Tenant)
+	err := sqlx.SelectContext(ctx, q, &s.Members, bulkMembersSQL, eeg.Tenant)
 	if err != nil {
 		return nil, model.ErrBulkChange(err)
 	}
 	if rule.Field == model.BulkMeterTariff {
-		err = sqlx.SelectContext(ctx, q, &s.Meters, `SELECT m.participant_id::text AS participant_id, m.metering_point_id,
-				m.direction, m.tariff_id::text AS tariff_id
-			FROM base.meteringpoint m JOIN base.participant p ON p.id = m.participant_id
-			WHERE m.tenant = $1 AND m.flag = $2 AND m.direction = $3
-			ORDER BY p."participantNumber", m.metering_point_id, m.participant_id`, eeg.Tenant, model.F_ASSIGNED, rule.Direction)
+		err = sqlx.SelectContext(ctx, q, &s.Meters, bulkMetersSQL, eeg.Tenant, model.F_ASSIGNED, rule.Direction)
 		if err != nil {
 			return nil, model.ErrBulkChange(err)
 		}
 	}
 	var tariffs []*model.BulkTariff
-	err = sqlx.SelectContext(ctx, q, &tariffs, `SELECT t.id::text AS id, t.name, t.type, a.id IS NOT NULL AS active,
-			COALESCE(t."useVat", false) AS use_vat, t."vatInPercent"::float8 AS vat,
-			t."useMeteringPointFee" AS use_meter_fee, t."meteringPointVat"::float8 AS meter_vat,
-			t."joiningFee"::float8 AS joining_fee, t."joiningFeeUseVat" AS joining_fee_use_vat,
-			t."joiningFeeVatInPercent"::float8 AS joining_fee_vat
-		FROM (SELECT DISTINCT ON (id) * FROM base.tariff WHERE tenant = $1 ORDER BY id, version DESC) t
-		LEFT JOIN base.activetariff a ON a.id = t.id AND a.version = t.version`, eeg.Tenant)
+	err = sqlx.SelectContext(ctx, q, &tariffs, bulkTariffsSQL, eeg.Tenant)
 	if err != nil {
 		return nil, model.ErrBulkChange(err)
 	}
@@ -77,11 +89,7 @@ func loadBulkSnapshot(ctx context.Context, q sqlx.QueryerContext, eeg *model.Bul
 	}
 	if (rule.Field == model.BulkDebitType || rule.Field == model.BulkMandateReference) && eeg.CreditorNorm != "" {
 		var refs []string
-		err = sqlx.SelectContext(ctx, q, &refs, `SELECT DISTINCT upper(btrim(COALESCE(b.mandate_reference, p."participantNumber", '')))
-			FROM base.eeg e
-			JOIN base.participant p ON p.tenant = e.tenant
-			JOIN base.bankaccount b ON b.participant_id = p.id
-			WHERE `+creditorNormSQL+` = $1 AND e.tenant <> $2 AND upper(btrim(b.sepa_direct_debit)) IN ('CORE', 'B2B')`,
+		err = sqlx.SelectContext(ctx, q, &refs, bulkForeignRefsSQL,
 			eeg.CreditorNorm, eeg.Tenant)
 		if err != nil {
 			return nil, model.ErrBulkChange(err)
