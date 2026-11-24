@@ -29,4 +29,5 @@ Notes for the reader of the contract:
   `expectedOld`/`expectedNew`.
 - Error codes (body `{"error": {code, error, message}}`): 6100 rule or request invalid (400), 6101 a hit twice
   (400), 6102 a hit not (or no longer) in the community — "preview outdated" (400), 6103 unknown community (404),
-  6104 locked (409), 6105 failed, nothing changed (500), 6106 apply with a token without user name (403). Missing token 403, invalid token 401, no superuser 403.
+  6104 locked (409), 6105 failed, nothing changed (500), 6106 apply with a token without user name (403), 6107 body over 1 MiB (413; about 6,500 hits of a
+  member rule with 35-character values, about 4,800 of the metering point tariff). Missing token 403, invalid token 401, no superuser 403.

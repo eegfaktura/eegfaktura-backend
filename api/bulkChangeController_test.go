@@ -82,7 +82,6 @@ func TestBulkChange_badRequests(t *testing.T) {
 		"no rule":                    {"preview", `{}`, 6100},
 		"not json":                   {"preview", `rule`, 6100},
 		"two json values":            {"preview", `{"rule": ` + rule + `} {}`, 6100},
-		"body over 1 MB":             {"preview", `{"rule": {"field": "DEBIT_TYPE", "value": "` + strings.Repeat("x", 1<<20) + `"}}`, 6100},
 		"apply without items":        {"apply", apply(), 6100},
 		"apply null item":            {"apply", apply("null"), 6100},
 		"apply duplicate id":         {"apply", apply(item(bcId("01")), item(strings.ToUpper(bcId("01")))), 6101},
@@ -157,6 +156,17 @@ func TestBulkChange_serverErrorTexts(t *testing.T) {
 			}
 		}
 		assert.Equal(t, 1, errorLines, "one error line (Q3)")
+	}
+}
+
+// R1-4: a body over 1 MiB is 413 with its own code and text, not "request invalid".
+func TestBulkChange_bodyTooLarge(t *testing.T) {
+	bcSetup(t)
+	body := `{"rule": {"field": "DEBIT_TYPE", "value": "` + strings.Repeat("x", 1<<20) + `"}}`
+	for _, path := range []string{"/bulkchange/preview", "/bulkchange/apply"} {
+		w := bcServe(t, http.MethodPost, path, "superuser", bcTenant, body)
+		require.Equal(t, http.StatusRequestEntityTooLarge, w.Code, path)
+		assert.Equal(t, 6107, bcCode(t, w.Body))
 	}
 }
 

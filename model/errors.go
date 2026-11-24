@@ -140,6 +140,9 @@ var ErrBulkChange = PartialWrap(6105)
 // The token has no user name: apply would leave "last modified by" empty (403).
 var ErrBulkNoUser = PartialWrap(6106)
 
+// The request body is larger than the limit of the bulk change routes (413).
+var ErrBulkTooLarge = PartialWrap(6107)
+
 var ErrGetUser = PartialWrap(9000)
 
 type LogMessage struct {

@@ -16,7 +16,8 @@ import (
 // Bulk change of the support (konzept-massenaenderungen.md): superuser-only routes, called by eegfaktura-admin
 // from the browser. The community comes from the header tenant; the body holds the rule (and the hits for apply).
 
-// bulkBodyLimit bounds the request body (apply carries one entry per changed hit).
+// bulkBodyLimit bounds the request body (apply carries one entry per changed hit): 1 MiB holds about 6,500 hits
+// of a member rule with 35-character references and about 4,800 of the metering point tariff.
 const bulkBodyLimit = 1 << 20
 
 type BulkChangeHandler struct {
@@ -41,6 +42,8 @@ func bulkStatus(code int) int {
 		return http.StatusNotFound
 	case 6106:
 		return http.StatusForbidden
+	case 6107:
+		return http.StatusRequestEntityTooLarge
 	case 6104:
 		return http.StatusConflict
 	}
@@ -71,7 +74,13 @@ func respondBulkError(w http.ResponseWriter, r *http.Request, tenant string, err
 func decodeBulk(w http.ResponseWriter, r *http.Request, dst interface{}) error {
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, bulkBodyLimit))
 	dec.DisallowUnknownFields()
-	if err := dec.Decode(dst); err != nil || dec.More() {
+	err := dec.Decode(dst)
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		return model.ErrBulkTooLarge(errors.New("Die Anfrage ist zu groß (höchstens 1 MiB, etwa 5.000 Treffer). " +
+			"Bitte die Regel mit einer Bedingung enger fassen und in mehreren Läufen ändern."))
+	}
+	if err != nil || dec.More() {
 		return model.ErrBulkRule(errors.New("Anfrage ungültig"))
 	}
 	return nil
