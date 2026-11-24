@@ -21,6 +21,9 @@ const (
 	bulkLockCreditor = 0x42430002
 )
 
+// ErrBulkChangeRunning is the error text of ErrTariffLocked (4003); web's i18n key is "E_4003_Bulk change is running".
+var ErrBulkChangeRunning = errors.New("Bulk change is running")
+
 // archiveLockTimeout bounds the wait of archiveTariff for the tenant lock: just above bulkApplyDeadline, so it
 // only runs out when a bulk change hangs. A variable for the tests.
 var archiveLockTimeout = "130s"
@@ -35,7 +38,8 @@ func waitBulkTenantLock(ctx context.Context, tx *sqlx.Tx, tenant string) error {
 	_, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1, hashtext($2))`, bulkLockTenant, strings.ToUpper(tenant))
 	var pqErr *pq.Error
 	if errors.As(err, &pqErr) && pqErr.Code == "55P03" { // lock_not_available
-		return model.ErrTariffLocked(errors.New("Gerade läuft eine Massenänderung, bitte später erneut versuchen."))
+		// a stable English text like 4002 "Tariff is currently used": web maps "E_<code>_<error>" to its German text
+		return model.ErrTariffLocked(ErrBulkChangeRunning)
 	}
 	if err != nil {
 		return model.ErrUpdateTariff(err)

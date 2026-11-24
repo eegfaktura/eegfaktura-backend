@@ -28,7 +28,7 @@ func TestArchiveTariff_lockedIsConflict(t *testing.T) {
 		err  error
 		want int
 	}{
-		{model.ErrTariffLocked(errors.New("Gerade läuft eine Massenänderung, bitte später erneut versuchen.")), http.StatusConflict},
+		{model.ErrTariffLocked(database.ErrBulkChangeRunning), http.StatusConflict},
 		{model.ErrTariffUtilized(errors.New("in use")), http.StatusBadRequest},
 	} {
 		h := NewEegHandler(archiveResult{err: c.err})
@@ -36,6 +36,6 @@ func TestArchiveTariff_lockedIsConflict(t *testing.T) {
 		w := httptest.NewRecorder()
 		h.archiveTariff()(w, req, &middleware.PlatformClaims{Username: "admin"}, "TE000001")
 		require.Equal(t, c.want, w.Code)
-		assert.Contains(t, w.Body.String(), model.UserText(c.err))
+		assert.Contains(t, w.Body.String(), `"error":"`+model.UserText(c.err)+`"`)
 	}
 }

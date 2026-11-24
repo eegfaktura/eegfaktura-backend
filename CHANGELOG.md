@@ -31,9 +31,10 @@ this changelog highlights the changes relevant for overview and operations.
 - **Archiving a tariff (`DELETE /eeg/tariff/{id}`) waits for a running bulk change of the community**: it now runs in
   a transaction and first takes the tenant advisory lock of the bulk change (`pg_advisory_xact_lock`, two-key form);
   a bulk change started while a tariff is archived gets 409. The wait is bounded (`lock_timeout` 130 s, just above
-  the 120 s limit of a bulk change): if it runs out, the route answers **409** with code **4003** and the text
-  „Gerade läuft eine Massenänderung, bitte später erneut versuchen.“ (new for EEG admins in web; before, every error
-  of the route was 400). Otherwise the answers are unchanged.
+  the 120 s limit of a bulk change): if it runs out, the route answers **409** with code **4003** and the error text
+  `Bulk change is running` (like 4002 `Tariff is currently used`: web shows the German text of its key
+  `E_4003_Bulk change is running`; new for EEG admins, before every error of the route was 400). A client that goes
+  away while the archive waits does not abort it. Otherwise the answers are unchanged.
 
 ## [1.20.0] – 2026-11-16
 
