@@ -58,7 +58,7 @@ func (db *sqlDatabase) BulkPreview(ctx context.Context, eeg *model.BulkEeg, rule
 }
 
 // BulkApply (E2): READ COMMITTED; statement timeout and deadline → advisory locks (409) → requested ids of the
-// community (400) → rows FOR UPDATE in fixed order → plan on the locked state, only the requested hits whose
+// community (400) → the requested rows FOR UPDATE in fixed order → plan on the locked state, only the requested hits whose
 // expected values still match → one UPDATE … FROM unnest per table, the expected old value in the WHERE, the
 // count of rows compared. Any failure rolls everything back.
 func (db *sqlDatabase) BulkApply(ctx context.Context, eeg *model.BulkEeg, user string, req *model.BulkApplyRequest) (*model.BulkApplyResult, error) {
@@ -77,7 +77,7 @@ func (db *sqlDatabase) BulkApply(ctx context.Context, eeg *model.BulkEeg, user s
 		if err := assertBulkItems(ctx, tx, eeg.Tenant, req); err != nil {
 			return err
 		}
-		if err := lockBulkRows(ctx, tx, eeg.Tenant, rule.Field); err != nil {
+		if err := lockBulkRows(ctx, tx, eeg.Tenant, req); err != nil {
 			return err
 		}
 		s, err := loadBulkSnapshot(ctx, tx, eeg, rule)
@@ -123,20 +123,33 @@ func bulkResult(plan *model.BulkPlan, req *model.BulkApplyRequest) *model.BulkAp
 	return res
 }
 
-// lockBulkRows locks the target rows of the community in a fixed order: members by id, then their bank account
-// rows by id; for the metering point tariff the current metering points.
-func lockBulkRows(ctx context.Context, tx *sqlx.Tx, tenant string, field model.BulkField) error {
-	stmts := []string{`SELECT id FROM base.participant WHERE tenant = $1 ORDER BY id FOR UPDATE`}
-	switch field {
-	case model.BulkMeterTariff:
-		stmts = []string{`SELECT 1 FROM base.meteringpoint WHERE tenant = $1 AND flag = 1
-			ORDER BY participant_id, metering_point_id FOR UPDATE`}
-	case model.BulkDebitType, model.BulkMandateReference, model.BulkMandateDate:
-		stmts = append(stmts, `SELECT b.id FROM base.bankaccount b JOIN base.participant p ON p.id = b.participant_id
-			WHERE p.tenant = $1 ORDER BY b.id FOR UPDATE OF b`)
+// lockBulkRows locks only the requested hits, in a fixed order: the members by id, then their bank account rows by
+// id; for the metering point tariff the requested current metering points. Members outside the run stay editable
+// in web while apply runs. Other members of the community are read unlocked for the uniqueness check: a single
+// edit there at the same moment is not prevented (as for neighbouring communities, W-261123-mm1).
+func lockBulkRows(ctx context.Context, tx *sqlx.Tx, tenant string, req *model.BulkApplyRequest) error {
+	pids := make([]string, len(req.Items))
+	mids := make([]string, len(req.Items))
+	for i, it := range req.Items {
+		pids[i], mids[i] = it.ParticipantId, it.MeteringPointId
 	}
-	for _, q := range stmts {
-		if _, err := tx.ExecContext(ctx, q, tenant); err != nil {
+	type stmt struct {
+		q    string
+		args []interface{}
+	}
+	stmts := []stmt{{`SELECT id FROM base.participant WHERE tenant = $1 AND id = ANY($2::uuid[]) ORDER BY id FOR UPDATE`,
+		[]interface{}{tenant, pq.Array(pids)}}}
+	switch req.Rule.Field {
+	case model.BulkMeterTariff:
+		stmts = []stmt{{`SELECT 1 FROM base.meteringpoint WHERE tenant = $1 AND flag = 1
+			AND (participant_id, metering_point_id) IN (SELECT * FROM unnest($2::uuid[], $3::text[]))
+			ORDER BY participant_id, metering_point_id FOR UPDATE`, []interface{}{tenant, pq.Array(pids), pq.Array(mids)}}}
+	case model.BulkDebitType, model.BulkMandateReference, model.BulkMandateDate:
+		stmts = append(stmts, stmt{`SELECT b.id FROM base.bankaccount b JOIN base.participant p ON p.id = b.participant_id
+			WHERE p.tenant = $1 AND p.id = ANY($2::uuid[]) ORDER BY b.id FOR UPDATE OF b`, []interface{}{tenant, pq.Array(pids)}})
+	}
+	for _, st := range stmts {
+		if _, err := tx.ExecContext(ctx, st.q, st.args...); err != nil {
 			return model.ErrBulkChange(err)
 		}
 	}
