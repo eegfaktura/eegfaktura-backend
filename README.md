@@ -199,12 +199,19 @@ list) and, behind backend#145, the records of `base.settlement_interval_change`.
 ### Tables and views other services read
 
 The schema `base` belongs to this service, but three other services read from it directly, with SQL of their own.
-None of them writes. Before a migration renames, retypes or drops one of the columns below, check the reader and
-agree on the order of the rollouts (new column: backend first; removed column: reader first).
+None of them writes. Before a migration changes one of the columns below, check the reader and agree on the order
+of the rollouts:
+
+- a new column: backend first, then the reader;
+- a removed column: the reader first, then the backend;
+- a renamed or retyped column has no safe single step: add the new column, move the reader, then drop the old one;
+- the readers also depend on what a column holds: the registration maps the columns that are `NOT NULL` today as
+  required and fails on a `NULL`, and it knows `settlementInterval` only as `ANNUAL`, `BIANNUAL`, `QUARTER`,
+  `MONTHLY`. A relaxed `NOT NULL` or a new value needs the reader first.
 
 | Reader | Object | Columns | Where the reader maps it |
 |---|---|---|---|
-| eegfaktura-billing | view `base.billing_masterdata` | all (`select m.*`) | `domain/BillingMasterdata.java` |
+| eegfaktura-billing | view `base.billing_masterdata` | the columns its entity maps; further columns of the view are ignored | `domain/BillingMasterdata.java` |
 | eegfaktura-eda-xp | table `base.eeg` | `tenant`, `communityId` | `domain/dao/EegMasterTable.scala` |
 | eegfaktura-admin-backend (registration) | table `base.eeg` | `tenant`, `name`, `description`, `area`, `legal`, `gridoperator_code`, `gridoperator_name`, `contactPerson`, `allocationMode`, `online`, `settlementInterval` | `dao/EegTable.scala` |
 | eegfaktura-admin-backend (registration) | table `base.meteringpoint` | `tenant`, `metering_point_id`, `direction`, `status`, `consent_id`, `process_state`, `activesince`, `inactivesince`, `participant_id` | `dao/MetersTable.scala` |
@@ -216,6 +223,14 @@ a copy of this repository's migrations, which has to be updated there with every
 The two other readers map the tables themselves, and no test in this repository knows what they need. The list
 was read from the three repositories on 2026-11-25; whether the two table readers move to views of their own is
 open (vfeeg-development/eegfaktura-platform#271).
+
+Two more things read `base` without being a service of this system:
+
+- **eegfaktura v3**, where it runs beside this service, reads tables of `base` and replaces the view
+  `base.billing_masterdata` with one that adds its own communities. A migration here that recreates the view
+  removes that part; v3 raises an alarm, it does not repair it.
+- **The platform's script for moving a community** between production and pilot copies whole rows of the `base`
+  tables, so both databases have to be on the same migration when it runs.
 
 ## Docker
 
