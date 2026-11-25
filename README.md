@@ -196,6 +196,27 @@ failed one), then repeat `down`.
 The down migrations drop data: `ec_zone_level`, `tech_code`, `fuel_code` (after rolling forward again, with the next
 list) and, behind backend#145, the records of `base.settlement_interval_change`.
 
+### Tables and views other services read
+
+The schema `base` belongs to this service, but three other services read from it directly, with SQL of their own.
+None of them writes. Before a migration renames, retypes or drops one of the columns below, check the reader and
+agree on the order of the rollouts (new column: backend first; removed column: reader first).
+
+| Reader | Object | Columns | Where the reader maps it |
+|---|---|---|---|
+| eegfaktura-billing | view `base.billing_masterdata` | all (`select m.*`) | `domain/BillingMasterdata.java` |
+| eegfaktura-eda-xp | table `base.eeg` | `tenant`, `communityId` | `domain/dao/EegMasterTable.scala` |
+| eegfaktura-admin-backend (registration) | table `base.eeg` | `tenant`, `name`, `description`, `area`, `legal`, `gridoperator_code`, `gridoperator_name`, `contactPerson`, `allocationMode`, `online`, `settlementInterval` | `dao/EegTable.scala` |
+| eegfaktura-admin-backend (registration) | table `base.meteringpoint` | `tenant`, `metering_point_id`, `direction`, `status`, `consent_id`, `process_state`, `activesince`, `inactivesince`, `participant_id` | `dao/MetersTable.scala` |
+| eegfaktura-admin-backend (registration) | table `base.participant` | `id`, `tenant`, `firstname`, `lastname`, `businessRole`, `status` | `dao/ParticipantsTable.scala` |
+| eegfaktura-admin-backend (registration) | table `base.gridoperators` | `id`, `name` | `dao/OperatorTable.scala` |
+
+Only the view for billing is a deliberate interface: billing tests it (`LegacyMasterdataViewContractTests`) against
+a copy of this repository's migrations, which has to be updated there with every migration that touches the view.
+The two other readers map the tables themselves, and no test in this repository knows what they need. The list
+was read from the three repositories on 2026-11-25; whether the two table readers move to views of their own is
+open (vfeeg-development/eegfaktura-platform#271).
+
 ## Docker
 
 Build the Docker image:
