@@ -8,6 +8,11 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Documentation
+- **README: tables and views other services read.** New section under "Development": billing reads the view
+  `base.billing_masterdata`, eda-xp the table `base.eeg`, the registration (admin-backend) four tables of `base` —
+  with the columns each of them maps, so that a migration can check its readers first. No code change.
+
 ## [1.22.0] – 2026-11-24
 
 ### Added
