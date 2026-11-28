@@ -29,6 +29,7 @@ func InitMeteringRouter(r *mux.Router, db database.Database) *mux.Router {
 	h := NewMeteringHandler(db)
 	s := r.PathPrefix("/meteringpoint").Subrouter()
 
+	s.HandleFunc("/registration-window", middleware.Protect(h.registrationWindow())).Methods("GET")
 	s.HandleFunc("/{pid}/update/{mid}", middleware.Protect(h.updateMeteringPoint())).Methods("PUT")
 	s.HandleFunc("/v2/{pid}/update/{mid}", middleware.Protect(h.updateMeteringPointPartial())).Methods("PUT")
 	s.HandleFunc("/v2/{pid}/updateid/{mid}", middleware.Protect(h.updateMeteringPointId())).Methods("PUT")
@@ -65,30 +66,50 @@ func (h *MeteringHandler) createMeteringPoint() middleware.JWTHandlerFunc {
 			respondWith(r.Context(), w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
-		// The mode only matters where a registration is sent below: a NEW meter (empty becomes NEW on insert) of an
-		// active member of an online EEG. There it is rejected before the meter is saved; elsewhere it is ignored.
-		if modeErr := checkActivationMode(m.ActivationMode); modeErr != nil && (m.ProcessState == "" || m.ProcessState == model.NEW) {
-			eeg, err := h.db.GetEegById(r.Context(), tenant)
-			if err != nil {
-				respondWith(r.Context(), w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
+		eeg, err := h.db.GetEegById(r.Context(), tenant)
+		if err != nil {
+			respondWith(r.Context(), w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
+			return
+		}
+		day := today()
+		// Online EEG (platform#272): the requested date („Aktiv ab“) is kept, today without one as before. A date
+		// after the window is rejected before the meter is saved.
+		if m.Status != model.S_ACTIVE {
+			if !eeg.Online {
+				m.RegisteredSince = civil.Today()
+			} else if m.RegisteredSince.IsZero() {
+				m.RegisteredSince = day
+			} else if err = checkRequestedDate(m.MeteringPoint, m.RegisteredSince, day); err != nil {
+				respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
 				return
 			}
+		}
+
+		// A registration is sent below for a NEW meter (empty becomes NEW on insert) of an active member of an
+		// online EEG. Its mode and start date are checked before the meter is saved; elsewhere the mode is ignored.
+		var from int64
+		send := false
+		if eeg.Online && (m.ProcessState == "" || m.ProcessState == model.NEW) {
 			participant, err := h.db.QueryParticipant(r.Context(), tenant, participantId)
 			if err != nil {
 				log.WithContext(r.Context()).WithField("tenant", tenant).WithError(err).Error("failed to register metering point. Cannot find appropriate participant.")
 				respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
 				return
 			}
-			if eeg.Online && participant.Status == model.ACTIVE {
-				respondWith(r.Context(), w, http.StatusBadRequest, tenant, modeErr)
-				return
+			if participant.Status == model.ACTIVE {
+				if err = checkActivationMode(m.ActivationMode); err != nil {
+					respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
+					return
+				}
+				if from, err = registrationStart(&m, participant, day); err != nil {
+					respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
+					return
+				}
+				send = true
 			}
 		}
 
 		m.ModifiedAt = civil.Now()
-		if m.Status != model.S_ACTIVE {
-			m.RegisteredSince = civil.Today()
-		}
 		m.ModifiedBy = null.StringFrom(claims.Username)
 
 		err = h.db.RegisterMeteringPoint(r.Context(), tenant, claims.Username, participantId, &m)
@@ -109,33 +130,11 @@ func (h *MeteringHandler) createMeteringPoint() middleware.JWTHandlerFunc {
 			return
 		}
 
-		if m.ProcessState == model.NEW {
+		if send {
 			log.WithContext(r.Context()).WithField("tenant", tenant).Infof("register Meter:  %s ", m.MeteringPoint)
-			eeg, err := h.db.GetEegById(r.Context(), tenant)
-			if err != nil {
-				respondWith(r.Context(), w, http.StatusBadRequest, tenant, model.ErrGetEeg(err))
-				return
-			}
-
-			participant, err := h.db.QueryParticipant(r.Context(), tenant, participantId)
-			if err != nil {
-				log.WithContext(r.Context()).WithField("tenant", tenant).WithError(err).Error("failed to register metering point. Cannot find appropriate participant.")
+			if err = edaRegisterMeteringpoint(eeg, &m, &from); err != nil {
 				respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
 				return
-			}
-
-			if participant.Status == model.ACTIVE {
-				var from int64
-				if m.RegisteredSince.After(participant.ParticipantSince.Date) {
-					from = util.CalcProcessDate(m.RegisteredSince)
-				} else {
-					from = util.CalcProcessNullDate(participant.ParticipantSince)
-				}
-
-				if err = edaRegisterMeteringpoint(eeg, &m, &from); err != nil {
-					respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
-					return
-				}
 			}
 		}
 		respondWithJSON(w, http.StatusCreated, m)
@@ -155,6 +154,15 @@ func (h *MeteringHandler) updateMeteringPoint() middleware.JWTHandlerFunc {
 			respondWith(r.Context(), w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
+		var activeSince *civil.NullDate
+		if m.State != nil {
+			activeSince = &m.State.ActiveSince
+		}
+		stored, err := h.checkMeterSave(r.Context(), tenant, participantId, meterId, &m.RegisteredSince, activeSince)
+		if err != nil {
+			respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
+			return
+		}
 
 		m.ModifiedAt = civil.Now()
 		m.ModifiedBy = null.StringFrom(claims.Username)
@@ -163,6 +171,10 @@ func (h *MeteringHandler) updateMeteringPoint() middleware.JWTHandlerFunc {
 			log.WithContext(r.Context()).WithField("tenant", tenant).WithError(err).Error("failed to update metering point.")
 			respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
 			return
+		}
+		// a dropped activeSince was not written: answer the stored one (e.g. of an earlier participation)
+		if stored != nil && stored.Status != model.S_ACTIVE && m.State != nil && stored.State != nil {
+			m.State.ActiveSince = stored.State.ActiveSince
 		}
 		respondWithJSON(w, http.StatusAccepted, m)
 	}
@@ -199,6 +211,15 @@ func (h *MeteringHandler) updateMeteringPointPartial() middleware.JWTHandlerFunc
 			return
 		}
 		value := v["value"]
+		if column == "registeredSince" {
+			// no date (e.g. null) compares as the zero date, i.e. as a change; the database rejects what is no date
+			s, _ := value.(string)
+			registeredSince, _ := civil.ParseDate(s)
+			if _, err := h.checkMeterSave(r.Context(), tenant, pId, mId, &registeredSince, nil); err != nil {
+				respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
+				return
+			}
+		}
 
 		if err := h.db.UpdateMeteringPointPartial(r.Context(), tenant, claims.Username, pId, mId, map[string]interface{}{column: value}); err != nil {
 			log.WithContext(r.Context()).WithField("tenant", tenant).WithError(err).Error("failed to update metering point.")
@@ -372,24 +393,47 @@ func (h *MeteringHandler) registerMeteringPoint() middleware.JWTHandlerFunc {
 		}
 
 		// Check Meter available in Participant
-		var meter *model.MeteringPoint
-		for _, p := range participant.MeteringPoint {
-			if p.MeteringPoint == request.MeteringPoint {
-				meter = p
-				break
-			}
-		}
+		meter := meterOf(participant, request.MeteringPoint)
 		if meter == nil {
 			respondWith(r.Context(), w, http.StatusNotFound, tenant,
 				model.ErrFindMeter(fmt.Errorf("metering point %s not found at participant %s", request.MeteringPoint, participantId)))
 			return
 		}
 
+		// online EEG: `from` (ms, > 0) is the requested date („Aktiv ab“, platform#272); it is checked like a save
+		// (no other day while a registration runs) and stored in registeredSince before the registration is sent.
+		// Without it the stored date applies.
 		var from int64
-		if meter.RegisteredSince.After(participant.ParticipantSince.Date) {
-			from = util.CalcProcessDate(meter.RegisteredSince)
-		} else {
-			from = util.CalcProcessNullDate(participant.ParticipantSince)
+		if eeg.Online {
+			if _, err = mqttclient.ReceiverFor(eeg, meter); err != nil {
+				respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
+				return
+			}
+			day := today()
+			if request.From > 0 {
+				requested := util.DayInVienna(time.UnixMilli(request.From))
+				if err = meterSaveRules(eeg, meter, &requested, nil, day); err != nil {
+					respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
+					return
+				}
+				if err = checkRequestedDate(meter.MeteringPoint, requested, day); err != nil {
+					respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
+					return
+				}
+				meter.RegisteredSince = requested
+			}
+			if from, err = registrationStart(meter, participant, day); err != nil {
+				respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
+				return
+			}
+			if request.From > 0 {
+				if err = h.db.UpdateMeteringPointPartial(r.Context(), tenant, claims.Username, participantId, meter.MeteringPoint,
+					map[string]interface{}{"registeredSince": meter.RegisteredSince}); err != nil {
+					log.WithContext(r.Context()).WithField("tenant", tenant).WithError(err).Error("failed to register metering point.")
+					respondWith(r.Context(), w, http.StatusBadRequest, tenant, model.ErrUpdateMeter(err))
+					return
+				}
+			}
 		}
 
 		if err = edaRegisterMeteringpoint(eeg, meter, &from); err != nil {

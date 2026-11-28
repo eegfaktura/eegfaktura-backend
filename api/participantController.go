@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -9,7 +10,6 @@ import (
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
-	"at.ourproject/vfeeg-backend/util"
 	"github.com/gorilla/mux"
 	"github.com/pborman/uuid"
 	log "github.com/sirupsen/logrus"
@@ -169,6 +169,11 @@ func (h *ParticipantHandler) registerParticipant() middleware.JWTHandlerFunc {
 			respondWith(r.Context(), w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
+		// online EEG (platform#272): a requested date („Aktiv ab“) after the window is rejected before anything is saved
+		if err = h.checkRequestedDates(r.Context(), tenant, t.MeteringPoint); err != nil {
+			respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
+			return
+		}
 
 		err = h.db.RegisterParticipant(r.Context(), tenant, claims.Username, &t)
 		if err != nil {
@@ -227,11 +232,18 @@ func (h *ParticipantHandler) confirmParticipant() middleware.JWTHandlerFunc {
 		for _, meter := range participant.MeteringPoint {
 			participantMetersMap[meter.MeteringPoint] = meter
 		}
-		// every registration needs a grid operator: check all before anything is written or sent
+		// every registration needs a grid operator and a start date in the window (platform#272; the stored date,
+		// not the one of the body): check all before anything is written or sent
+		starts := make(map[string]int64)
 		if eeg.Online {
+			day := today()
 			for _, qm := range meters {
 				if m, ok := participantMetersMap[qm.MeteringPoint]; ok {
 					if _, err = mqttclient.ReceiverFor(eeg, m); err != nil {
+						respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
+						return
+					}
+					if starts[m.MeteringPoint], err = registrationStart(m, participant, day); err != nil {
 						respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
 						return
 					}
@@ -249,13 +261,7 @@ func (h *ParticipantHandler) confirmParticipant() middleware.JWTHandlerFunc {
 		if eeg.Online {
 			for _, qm := range meters {
 				if m, ok := participantMetersMap[qm.MeteringPoint]; ok {
-					var from int64
-					if qm.RegisteredSince.After(participant.ParticipantSince.Date) {
-						from = util.CalcProcessDate(qm.RegisteredSince)
-					} else {
-						from = util.CalcProcessNullDate(participant.ParticipantSince)
-					}
-
+					from := starts[m.MeteringPoint]
 					log.WithContext(r.Context()).WithField("tenant", tenant).Infof("Start Meteringpoint %s registration - Active at: %+v", m.MeteringPoint, from)
 					if err = mqttclient.RegistrationForParticipation(eeg, m, &from); err != nil {
 						log.WithContext(r.Context()).WithField("tenant", tenant).WithError(err).Error("failed to confirm participant.")
@@ -298,4 +304,28 @@ func (h *ParticipantHandler) deleteParticipant() middleware.JWTHandlerFunc {
 		}
 		respondWithJSON(w, http.StatusAccepted, map[string]interface{}{"id": idStr})
 	}
+}
+
+// checkRequestedDates checks the requested dates of the metering points of a new member of an online EEG.
+func (h *ParticipantHandler) checkRequestedDates(ctx context.Context, tenant string, meters []*model.MeteringPoint) error {
+	if len(meters) == 0 {
+		return nil
+	}
+	eeg, err := h.db.GetEegById(ctx, tenant)
+	if err != nil {
+		return model.ErrGetEeg(err)
+	}
+	if !eeg.Online {
+		return nil
+	}
+	day := today()
+	for _, m := range meters {
+		if m == nil || m.Status == model.S_ACTIVE {
+			continue
+		}
+		if err = checkRequestedDate(m.MeteringPoint, m.RegisteredSince, day); err != nil {
+			return err
+		}
+	}
+	return nil
 }

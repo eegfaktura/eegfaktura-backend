@@ -8,13 +8,64 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Added
+- **„Aktiv ab“ as the requested date of a registration** (platform#272, konzept-aktivierungsdatum.md). New
+  `GET /meteringpoint/registration-window` (bearer and tenant header like the other meteringpoint routes, no data of
+  the community) answers `{"from":"YYYY-MM-DD","to":"YYYY-MM-DD"}`: tomorrow to the 30th working day after today
+  (Monday to Friday without the Austrian public holidays, Easter after Gauss; 24.12. and 31.12. are working days;
+  Europe/Vienna). On 26.11.2026 the last day is 13.01.2027. web takes the limits of its date picker from it, so the
+  holidays are counted in one place. New error codes: **1208** (date or start date after the window; German text
+  with the last allowed day) and **1209** („Aktiv ab“ not changeable: registration running, or metering point active).
+
 ### Changed
+- **Start date of a registration: one rule, with an upper bound** (platform#272). The three places that send
+  ANFORDERUNG_ECON (`POST /participant/{id}/confirm`, `PUT /meteringpoint/{pid}/create`,
+  `POST /meteringpoint/{pid}/register`) use one function: the later of `registeredSince` and „Mitglied seit“ (tie:
+  „Mitglied seit“), at least tomorrow, as before. New: a start date after the window is not sent (400, code 1208).
+  - `confirm` takes the date of each metering point from the database, no longer from the body (the body still names
+    the metering points). All of them are checked before anything is written: one beyond the window, and the member
+    is not confirmed and nothing is sent.
+  - `create` (online EEG, metering point not active) keeps `registeredSince` of the request, `today` without one as
+    before; a date after the window is rejected before the metering point is saved. Offline EEGs unchanged (today).
+  - `POST /participant` (new member of an online EEG): a `registeredSince` of a metering point after the window is
+    rejected (1208) before the member is saved.
+  - `register` (online EEG) evaluates `from` (ms, the day in Europe/Vienna): the grid operator is checked first, then
+    the date like a save (another day while the registration runs: 1209; after the window: 1208), stored in
+    `registeredSince`, then sent. `from` 0 or missing, or the same day: the stored date, sent again as before.
+- **Saving a metering point of an online EEG** (`PUT /meteringpoint/{pid}/update/{mid}` and
+  `PUT /meteringpoint/v2/{pid}/update/{mid}`; compared with the stored metering point after the tenant check). A
+  changed `registeredSince` is rejected while the registration runs (process state INIT, PENDING, APPROVED; 1209) or
+  when it is after the window and the metering point is not active (1208). For a metering point that is not active,
+  `participantState.activeSince` of the request is not written (only the grid operator or the support sets it; the
+  answer carries the stored date); for an active one a changed `activeSince` is rejected (1209). The same day is accepted, so saving e.g. a tariff still
+  works. Offline EEGs and the admin path (gRPC `UpdateEegRequest`, „Aktiv seit ändern“) are unchanged.
+- **ABSCHLUSS: first activation takes the date of the grid operator** (platform#272). On the first activation of an
+  entry (status still INIT) the date replaces an `activesince` entered by hand before; a re-activation of the same
+  member (status INACTIVE) keeps the first date as before. After an owner change the new member's entry is a first
+  activation. This applies to the answers of the grid operator only (ABSCHLUSS, and ABLEHNUNG with code 156 „already
+  assigned“, which sets the day of the answer). The admin's PROCESSSTATUS update (gRPC) keeps an existing date as
+  before. No schema change, no migration.
 - **REST and GraphQL answers compressed** (gzip, or deflate when the client names that first) when the client
   sends `Accept-Encoding` (browsers always do; web and admin get it then). A client without the header gets plain
   JSON as before. `Vary: Accept-Encoding` on every route but the downloads. In production the ingress does not
   compress. Level `BestSpeed`. Not compressed: the file downloads `/eeg/export/masterdata` (xlsx is a zip already)
   and `GET /eeg/mailtemplates/{key}/files/{id}` (images, PDFs), and websocket upgrades. gorilla/handlers was a
   dependency already.
+
+### Contract
+- New `GET /meteringpoint/registration-window`; `POST /meteringpoint/{pid}/register` evaluates `from`;
+  `POST /participant/{id}/confirm` takes the dates from the database; new codes 1208/1209 on create, confirm,
+  register, update, v2/update and `POST /participant`. Caller: eegfaktura-web (needs this backend first for the window; an older backend
+  ignores `from` and answers 404 to the window).
+- Meaning of `registeredSince` for metering points of online EEGs that are not active: the requested date, no
+  longer the day of creation or „Mitglied seit“. Readers: master data API for API applications
+  (`meters[].registeredSince`), gRPC MasterData (metering point), master data export column „registriert“ (name
+  kept), energystore (gRPC MasterData and, for a member's own metering points, `GET /participant`: it starts the
+  window at `registeredSince` only for status ACTIVE or INACTIVE without an activation date; a metering point that is
+  not active yet (INIT, NEW) has no window, so a requested date opens none). billing and `base.billing_masterdata` do
+  not read it.
+- v3 reads `registeredSince` as a fallback for a missing `activeSince` without checking the state
+  (EnergyAttribution, EnergyReportDataService): a follow-up in the v3 repository, not part of this change.
 
 ### Fixed
 - **Process history: page size and end of the range** (tracking backend 261128-mm2, pre-existing). The page size

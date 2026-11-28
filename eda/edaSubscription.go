@@ -384,7 +384,13 @@ func protocolEcReqOnlHandler(ctx context.Context, msg model.SubscribeMessage) {
 			}
 			break
 		default:
-			if err = db.MeteringPointsSetStatus(ctx, eeg.Id, status, statusCode, meters, activeSince.Ptr(), getConsentId(consentId)); err != nil {
+			if status == model.ACTIVE {
+				// ABSCHLUSS or code 156: the date is the grid operator's (platform#272)
+				err = db.ActivateMeteringPointsByGridOperator(ctx, eeg.Id, statusCode, meters, activeSince.Ptr(), getConsentId(consentId))
+			} else {
+				err = db.MeteringPointsSetStatus(ctx, eeg.Id, status, statusCode, meters, activeSince.Ptr(), getConsentId(consentId))
+			}
+			if err != nil {
 				logrus.WithError(err).Errorf("can not change metering point status of meters: %+v", meters)
 			}
 			if err = db.SaveNotification(eeg.Id, msg.MessageCode, meters, convertCodes2Strings(codes), msg.Protocol); err != nil {
