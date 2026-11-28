@@ -68,8 +68,8 @@ func newAdFixture(t *testing.T, tenant string, online bool, status string, parti
 	t.Cleanup(cleanup)
 	f.exec(`INSERT INTO base.eeg (tenant, name, description, "rcNumber", area, gridoperator_code, gridoperator_name,
 		"communityId", street, "streetNumber", city, zip, email, online)
-		VALUES ($1, 'Aktiv ab', 'Aktiv ab', $1, 'LOCAL', 'AT003000', 'Netz OOE', 'AT00300000000TC000272000000000001',
-		'Weg', '1', 'Linz', '4020', 'office@example.org', $2)`, tenant, online)
+		VALUES ($1, 'Aktiv ab', 'Aktiv ab', $2, 'LOCAL', 'AT003000', 'Netz OOE', 'AT00300000000TC000272000000000001',
+		'Weg', '1', 'Linz', '4020', 'office@example.org', $3)`, tenant, tenant, online)
 	f.exec(`INSERT INTO base.participant (id, tenant, firstname, lastname, status, "participantSince", "createdBy", "lastModifiedBy")
 		VALUES ($1, $2, 'Aktiv', 'Ab', $3, $4, 'test', 'test')`, f.participant, tenant, status, participantSince)
 	for _, typ := range []string{"BILLING", "RESIDENCE"} {

@@ -98,6 +98,7 @@ func Test_registerParticipant(t *testing.T) {
 //}
 
 func Test_confirmParticipantOnline(t *testing.T) {
+	fixToday(t, civil.Today()) // the expectations below count from the local day
 	type args struct {
 		tenant      string
 		request     string
@@ -160,13 +161,15 @@ func Test_confirmParticipantOnline(t *testing.T) {
 		check func(t *testing.T, recorder *httptest.ResponseRecorder, pUnderTest *model.EegParticipant)
 	}{
 		{
-			name: "Confirming a participant in the future",
+			// platform#272: the start date comes from the stored metering point (2023-08-16, "member since"
+			// 2023-10-11, both past: tomorrow), not from the date in the body
+			name: "Confirming a participant: a future date in the body is not used",
 			args: args{
 				tenant:  "TE000002",
 				request: getRequest(civil.Today().AddDate(0, 0, 10)),
 				mqttReqFunc: func(eeg *model.Eeg, meter *model.MeteringPoint, from *int64) error {
-					fmt.Printf("Confirming participant %+v, %v (%v)\n", *meter, *from, civil.Today().AddDate(0, 0, 10).Unix()*1000)
-					assert.Equal(t, civil.Today().AddDate(0, 0, 10).Unix()*1000, *from)
+					fmt.Printf("Confirming participant %+v, %v (%v)\n", *meter, *from, civil.Today().AddDate(0, 0, 1).Unix()*1000)
+					assert.Equal(t, civil.Today().AddDate(0, 0, 1).Unix()*1000, *from)
 					return nil
 				},
 			},
