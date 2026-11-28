@@ -191,8 +191,8 @@ func Test_transformExcelData_skipReporting(t *testing.T) {
 	// nur der Name-Split-Fehler wird gemeldet, die leere Zeile nicht (sie zählt aber als Zeile)
 	require.Len(t, importLog.Messages, 1)
 	assert.Equal(t, "E_PARTICIPANT_1001", importLog.Messages[0].MessageCode)
-	assert.Equal(t, "Zeile 6, Spalte „Name 1“: Der Name fehlt, und „Name 2“ (Einwortname) lässt sich nicht in "+
-		"Nachname und Vorname teilen. Die Zeile wurde nicht importiert.", importLog.Messages[0].Message)
+	assert.Equal(t, "Zeile 6, Spalte „Name 1“: „Name 1“ fehlt oder ist zu kurz, und „Name 2“ (Einwortname) lässt "+
+		"sich nicht in Nachname und Vorname teilen. Die Zeile wurde nicht importiert.", importLog.Messages[0].Message)
 }
 
 // platform#107: the grid operator comes from the metering point number (plus
@@ -351,7 +351,7 @@ func TestImportMasterdataFromExcel_continueOnError(t *testing.T) {
 	assert.Equal(t, "W_PARTICIPANT_NR_DUP", msgs[0].MessageCode)
 	assert.Equal(t, "801", msgs[0].Identifier)
 	assert.Equal(t, "Spalte „MitgliedsNr“: Die Mitgliedsnummer 801 ist schon an das bestehende Mitglied Astrid Alba "+
-		"vergeben (in der Datei bei Berta Neu). Das Mitglied wird trotzdem importiert; bitte prüfe die Nummer.", msgs[0].Message)
+		"vergeben (in der Datei bei Berta Neu). Die Zeilen werden trotzdem übernommen; bitte prüfe die Nummer.", msgs[0].Message)
 
 	// eigene Nummer beim Re-Import -> keine Warnung
 	assert.Empty(t, check([]*model.EegParticipant{mk("Astrid", "Alba", "801")}))
@@ -361,7 +361,7 @@ func TestImportMasterdataFromExcel_continueOnError(t *testing.T) {
 	require.Len(t, msgs, 1)
 	assert.Equal(t, "900", msgs[0].Identifier)
 	assert.Equal(t, "Spalte „MitgliedsNr“: Die Mitgliedsnummer 900 steht in der Datei bei mehreren Mitgliedern "+
-		"(Xaver Xander, Yvonne Ypsilon). Die Mitglieder werden trotzdem importiert; bitte prüfe die Nummern.", msgs[0].Message)
+		"(Xaver Xander, Yvonne Ypsilon). Die Zeilen werden trotzdem übernommen; bitte prüfe die Nummern.", msgs[0].Message)
 }
 
 // Zählpunktstatus tolerates case and surrounding spaces; an unknown
@@ -408,6 +408,7 @@ func Test_transformExcelData_hintsNameRowAndColumn(t *testing.T) {
 		rowWith("Status", "AT0099990000000000000000000000743", "", ""),
 		rowWith("Falsch", "AT0099990000000000000000000000744", "INAKTIV", ""),
 		rowWith("Mail", "AT0099990000000000000000000000745", "ACTIVE", "kein-at"),
+		rowWith("Umlaut", "AT009999000000000000000000000Ö746", "ACTIVE", ""),
 	})
 
 	_, importLog := transformSheet(t, f, false)
@@ -419,8 +420,10 @@ func Test_transformExcelData_hintsNameRowAndColumn(t *testing.T) {
 			"ACTIVATED, REGISTERED, NEW). Die Zeile wurde nicht importiert."},
 		{"E_PARTICIPANT_1000", "Zeile 6, Spalte „Zählpunktstatus“: Der Zählpunktstatus „INAKTIV“ ist unbekannt " +
 			"(erlaubt: ACTIVE, ACTIVATED, REGISTERED, NEW). Die Zeile wurde nicht importiert."},
-		{"E_UNDEFINED_0", "Zeile 7, Spalte „email“: Die E-Mail-Adresse „kein-at“ ist ungültig. Das Mitglied wird ohne " +
-			"E-Mail-Adresse importiert."},
+		{"E_UNDEFINED_0", "Zeile 7, Spalte „Email“: Die E-Mail-Adresse „kein-at“ ist ungültig. Ein neues Mitglied wird " +
+			"ohne E-Mail-Adresse angelegt."},
+		{"E_COUNTERPOINT_1000", "Zeile 8, Spalte „Zählpunkt“: Die Zählpunktnummer enthält ungültige Zeichen (erlaubt " +
+			"sind Buchstaben ohne Umlaute und Ziffern). Der Zählpunkt wurde nicht importiert."},
 	}
 	require.Len(t, importLog.Messages, len(want))
 	for i, w := range want {

@@ -278,7 +278,7 @@ func edaHistorySelect(tenant string, protocols []string, startDate, endDate civi
 	return pgDialect.From("base.processhistory").Select(&[]model.EdaProcessHistory{}).
 		Order(goqu.I("date").Asc()).
 		Where(
-			goqu.C("tenant").Eq(tenant), /*goqu.C("protocol").IsNotNull(),*/
+			goqu.C("tenant").Eq(tenant),
 			goqu.C("protocol").Eq(protocols),
 			goqu.C("date").Between(goqu.Range(startDate, endDate)))
 }

@@ -14,22 +14,22 @@ import (
 // Migrations 20261128120000 and 20261128120100 (indexes, CONCURRENTLY): up, down and up again.
 func TestProcessHistoryIndexMigrationUpDown(t *testing.T) {
 	dbx, m := migrationDB(t, "processhistory_index_migration_test")
-	indexes := func() (dateIdx, conversationIdx bool) {
+	// the state of each index: "valid", "invalid" (a CONCURRENTLY build that failed leaves one behind) or "missing"
+	indexes := func() []string {
 		t.Helper()
-		require.NoError(t, dbx.Get(&dateIdx, `SELECT to_regclass('base.processhistory_tenant_protocol_date_idx') IS NOT NULL`))
-		require.NoError(t, dbx.Get(&conversationIdx, `SELECT to_regclass('base.processhistory_tenant_conversation_idx') IS NOT NULL`))
-		return dateIdx, conversationIdx
+		var states []string
+		require.NoError(t, dbx.Select(&states, `SELECT CASE WHEN i.indexrelid IS NULL THEN 'missing' WHEN i.indisvalid THEN 'valid' ELSE 'invalid' END
+			FROM unnest(ARRAY['base.processhistory_tenant_protocol_date_idx', 'base.processhistory_tenant_conversation_idx']) WITH ORDINALITY n(name, nr)
+			LEFT JOIN pg_index i ON i.indexrelid = to_regclass(n.name) ORDER BY n.nr`))
+		return states
 	}
 	const conversationMigration = 20261128120100
 	require.NoError(t, m.Migrate(conversationMigration))
-	date, conversation := indexes()
-	assert.True(t, date && conversation, "up")
+	assert.Equal(t, []string{"valid", "valid"}, indexes(), "up")
 	require.NoError(t, m.Steps(-2))
-	date, conversation = indexes()
-	assert.False(t, date || conversation, "down")
+	assert.Equal(t, []string{"missing", "missing"}, indexes(), "down")
 	require.NoError(t, m.Migrate(conversationMigration))
-	date, conversation = indexes()
-	assert.True(t, date && conversation, "up again")
+	assert.Equal(t, []string{"valid", "valid"}, indexes(), "up again")
 }
 
 // The queries of fetchEdaHistory and FindHistoryMessage use their index on a table with many rows of other

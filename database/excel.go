@@ -194,7 +194,7 @@ func (db *sqlDatabase) reportDuplicateParticipantNumbers(ctx context.Context, te
 				nr,
 				"W_PARTICIPANT_NR_DUP",
 				fmt.Sprintf("Spalte „MitgliedsNr“: Die Mitgliedsnummer %s steht in der Datei bei mehreren Mitgliedern "+
-					"(%s). Die Mitglieder werden trotzdem importiert; bitte prüfe die Nummern.", nr, strings.Join(names, ", ")),
+					"(%s). Die Zeilen werden trotzdem übernommen; bitte prüfe die Nummern.", nr, strings.Join(names, ", ")),
 			))
 		}
 	}
@@ -227,7 +227,7 @@ func (db *sqlDatabase) reportDuplicateParticipantNumbers(ctx context.Context, te
 					e.Number,
 					"W_PARTICIPANT_NR_DUP",
 					fmt.Sprintf("Spalte „MitgliedsNr“: Die Mitgliedsnummer %s ist schon an das bestehende Mitglied %s %s "+
-						"vergeben (in der Datei bei %s %s). Das Mitglied wird trotzdem importiert; bitte prüfe die Nummer.",
+						"vergeben (in der Datei bei %s %s). Die Zeilen werden trotzdem übernommen; bitte prüfe die Nummer.",
 						e.Number, e.FirstName, e.LastName, p.FirstName, p.LastName),
 				))
 			}
@@ -804,7 +804,7 @@ func importEmail(raw string, row int, firstname, lastname string, importLog *mod
 	normalized, err := model.ValidateEmailList(raw)
 	if err != nil {
 		m := model.NewLogMessageFromVfeegError(fmt.Sprintf("%s %s", firstname, lastname), err)
-		m.Message = fmt.Sprintf("%s: %s Das Mitglied wird ohne E-Mail-Adresse importiert.", importCell(row, "email"), m.Message)
+		m.Message = fmt.Sprintf("%s: %s Ein neues Mitglied wird ohne E-Mail-Adresse angelegt.", importCell(row, "Email"), m.Message)
 		importLog.Messages = append(importLog.Messages, m)
 		return null.String{}
 	}
@@ -967,8 +967,7 @@ func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorNa
 								"ERROR",
 								strings.Trim(getColumValue(cols, colMap, "Zählpunkt", "MeteringPoint Id", nil), " "),
 								"E_PARTICIPANT_1001",
-								fmt.Sprintf("%s: Der Name fehlt, und „Name 2“ (%s) lässt sich nicht in Nachname und Vorname "+
-									"teilen. Die Zeile wurde nicht importiert.", importCell(row, "Name 1"), excelName1),
+								nameText(row, excelName1),
 							))
 							log.WithContext(ctx).Warn("Import row skipped: cannot extract name")
 							continue
@@ -1182,14 +1181,31 @@ func importCell(row int, column string) string {
 	return fmt.Sprintf("Zeile %d, Spalte „%s“", row, column)
 }
 
-// meteringPointLengthText: the metering point number of the row is not 33 characters long; the member is imported
-// without it.
-func meteringPointLengthText(row int, meteringPointId string) string {
-	if meteringPointId == "" {
-		return importCell(row, "Zählpunkt") + ": Die Zählpunktnummer fehlt. Der Zählpunkt wurde nicht importiert."
+// nameText: "Name 1" is missing or shorter than 2 characters and "Name 2" cannot be split into last and first name;
+// the row is skipped.
+func nameText(row int, name2 string) string {
+	if strings.TrimSpace(name2) == "" {
+		return importCell(row, "Name 1") + ": „Name 1“ fehlt oder ist zu kurz, und „Name 2“ ist leer. Die Zeile wurde " +
+			"nicht importiert."
 	}
-	return fmt.Sprintf("%s: Die Zählpunktnummer muss 33 Zeichen lang sein (gefunden: %d). Der Zählpunkt wurde nicht "+
-		"importiert.", importCell(row, "Zählpunkt"), utf8.RuneCountInString(meteringPointId))
+	return fmt.Sprintf("%s: „Name 1“ fehlt oder ist zu kurz, und „Name 2“ (%s) lässt sich nicht in Nachname und "+
+		"Vorname teilen. Die Zeile wurde nicht importiert.", importCell(row, "Name 1"), name2)
+}
+
+// meteringPointLengthText: the metering point number of the row is not 33 bytes long (the import's check); the member
+// is imported without it. 33 characters with a byte count other than 33 means characters outside ASCII (e.g. „Ö“).
+func meteringPointLengthText(row int, meteringPointId string) string {
+	cell := importCell(row, "Zählpunkt")
+	switch n := utf8.RuneCountInString(meteringPointId); {
+	case n == 0:
+		return cell + ": Die Zählpunktnummer fehlt. Der Zählpunkt wurde nicht importiert."
+	case n == 33:
+		return cell + ": Die Zählpunktnummer enthält ungültige Zeichen (erlaubt sind Buchstaben ohne Umlaute und " +
+			"Ziffern). Der Zählpunkt wurde nicht importiert."
+	default:
+		return fmt.Sprintf("%s: Die Zählpunktnummer muss 33 Zeichen lang sein (gefunden: %d). Der Zählpunkt wurde "+
+			"nicht importiert.", cell, n)
+	}
 }
 
 // meteringPointStatusText: the row has no metering point status the import takes over; it is skipped.
