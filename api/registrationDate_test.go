@@ -56,7 +56,7 @@ func (f adFixture) exec(q string, args ...interface{}) {
 	require.NoError(f.t, err)
 }
 
-// newAdFixture creates a community (online or not) with one member; status and "member since" (nil = none) are
+// newAdFixture creates a community (online or not) with one member; status and "member since" are
 // those of the member. Everything is removed after the test.
 func newAdFixture(t *testing.T, tenant string, online bool, status string, participantSince interface{}) adFixture {
 	f := adFixture{t: t, tenant: tenant, participant: "c2720000-0000-4000-8000-00" + tenant[2:] + "0000"}
@@ -151,7 +151,7 @@ func TestConfirmParticipant_startDateFromStoredMeter(t *testing.T) {
 	})
 
 	t.Run("one meter beyond the window: nothing sent, member not confirmed", func(t *testing.T) {
-		f := newAdFixture(t, "TE002722", true, "NEW", nil)
+		f := newAdFixture(t, "TE002722", true, "NEW", "2026-01-01")
 		f.meter("AT0030000000000000000000000272103", "INIT", "NEW", "2027-01-13", nil)
 		f.meter("AT0030000000000000000000000272104", "INIT", "NEW", "2027-01-14", nil)
 		sent := captureRegistrations(t)
@@ -197,6 +197,7 @@ func TestCreateMeteringPoint_requestedDate(t *testing.T) {
 	})
 
 	t.Run("online: without a date today, sent for tomorrow", func(t *testing.T) {
+		fixToday(t, civil.Today()) // registeredSince defaults to the local day
 		f := newAdFixture(t, "TE002724", true, "ACTIVE", "2026-01-01")
 		sent := captureRegistrations(t)
 		w := create(f, "AT0030000000000000000000000272202", "")
@@ -204,7 +205,7 @@ func TestCreateMeteringPoint_requestedDate(t *testing.T) {
 		require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
 		registered, _ := f.dates("AT0030000000000000000000000272202")
 		assert.Equal(t, civil.Today().String(), registered)
-		assert.Equal(t, civil.DateFor(2026, 11, 27), sent["AT0030000000000000000000000272202"])
+		assert.Equal(t, civil.Today().AddDate(0, 0, 1), sent["AT0030000000000000000000000272202"])
 	})
 
 	t.Run("online: beyond the window rejected, nothing saved or sent", func(t *testing.T) {
