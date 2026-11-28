@@ -268,6 +268,9 @@ func (db *sqlDatabase) FetchEdaHistory(ctx context.Context, tenant, protocol str
 
 func saveEdaHistory(db *sqlx.DB, history *model.EdaProcessHistory) error {
 	sql, _, err := pgDialect.Insert("base.processhistory").Rows(history).ToSQL()
+	if err != nil {
+		return err
+	}
 	_, err = db.Exec(sql)
 	return err
 }
