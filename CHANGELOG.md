@@ -17,6 +17,16 @@ this changelog highlights the changes relevant for overview and operations.
   are unchanged; web shows the text as it is. Without a row: the summaries (members without direct debit type, with
   a joining fee) and the duplicate member number (`W_PARTICIPANT_NR_DUP`, it names the column). Not changed: the
   texts of errors when a member is saved (database layer) and the log lines.
+- **Process history without a scan of the whole table** (platform#282). `base.processhistory` had no index besides
+  the primary key, so the page „Prozess History“ (`fetchEdaHistory`) and the answer to a revoke
+  (`FindHistoryMessage`, every ANTWORT_CCMS/ABLEHNUNG_CCMS) read the whole table. Two migrations, one index each,
+  built `CONCURRENTLY` (writes go on while it is built): `20261128120000` `processhistory_tenant_protocol_date_idx`
+  on `(tenant, protocol, date)` and `20261128120100` `processhistory_tenant_conversation_idx` on
+  `(tenant, "conversationId")`. No data change. **Operations:** the backend builds them on start, before it serves;
+  the build time grows with the table. To keep the start short, build them beforehand with the same statements
+  (`CREATE INDEX CONCURRENTLY IF NOT EXISTS …` from the two files, outside a transaction): the migration then finds
+  them. A build that was cancelled leaves an invalid index, which `IF NOT EXISTS` would keep: README, „Failed
+  migration (dirty)“. Rollback: two down steps (README).
 
 ### Documentation
 - **README: tables and views other services read.** New section under "Development": billing reads the view

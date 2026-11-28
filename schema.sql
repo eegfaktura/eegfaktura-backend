@@ -234,6 +234,8 @@ CREATE TABLE IF NOT EXISTS base.processhistory
     direction        TEXT      NOT NULL             DEFAULT 'OUT', /* MESSAGE DIRECTION 'OUT' | 'IN' */
     protocol         VARCHAR
 );
+CREATE INDEX IF NOT EXISTS processhistory_tenant_protocol_date_idx ON base.processhistory (tenant, protocol, date);
+CREATE INDEX IF NOT EXISTS processhistory_tenant_conversation_idx ON base.processhistory (tenant, "conversationId");
 
 CREATE TABLE IF NOT EXISTS base.gridoperators
 (

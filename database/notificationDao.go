@@ -239,12 +239,16 @@ func (db *sqlDatabase) SaveHistory(tenant string, code model.EbMsMessageType, co
 	return nil
 }
 
+// findHistoryMessageQuery is the SELECT of FindHistoryMessage; the index processhistory_tenant_conversation_idx
+// serves it (platform#282).
+const findHistoryMessageQuery = `SELECT message FROM base.processhistory
+		WHERE tenant = $1 AND "conversationId" = $2 AND type = $3 ORDER BY date DESC LIMIT 1`
+
 // FindHistoryMessage returns the latest message of the given type in a conversation of the tenant, in either
 // direction, or nil when there is none.
 func (db *sqlDatabase) FindHistoryMessage(ctx context.Context, tenant, conversationId string, code model.EbMsMessageType) (*model.EbmsMessage, error) {
 	var raw []byte
-	err := db.db.GetContext(ctx, &raw, `SELECT message FROM base.processhistory
-		WHERE tenant = $1 AND "conversationId" = $2 AND type = $3 ORDER BY date DESC LIMIT 1`, tenant, conversationId, code)
+	err := db.db.GetContext(ctx, &raw, findHistoryMessageQuery, tenant, conversationId, code)
 	if errors.Is(err, dbsql.ErrNoRows) {
 		return nil, nil
 	}
@@ -268,18 +272,24 @@ func saveEdaHistory(db *sqlx.DB, history *model.EdaProcessHistory) error {
 	return err
 }
 
+// edaHistorySelect is the SELECT of fetchEdaHistory; the index processhistory_tenant_protocol_date_idx serves it
+// (platform#282).
+func edaHistorySelect(tenant string, protocols []string, startDate, endDate civil.Date) *goqu.SelectDataset {
+	return pgDialect.From("base.processhistory").Select(&[]model.EdaProcessHistory{}).
+		Order(goqu.I("date").Asc()).
+		Where(
+			goqu.C("tenant").Eq(tenant), /*goqu.C("protocol").IsNotNull(),*/
+			goqu.C("protocol").Eq(protocols),
+			goqu.C("date").Between(goqu.Range(startDate, endDate)))
+}
+
 func fetchEdaHistory(ctx context.Context, db *sqlx.DB, tenant, protocol string, start, end int64, pageSize uint) (interface{} /*map[string]map[string][]model.EdaProcessHistory*/, error) {
 	startDate := civil.DateOf(time.UnixMilli(start))
 	endDate := civil.DateOf(time.UnixMilli(end))
 
 	protocolArray := strings.Split(protocol, ";")
 	h := []model.EdaProcessHistory{}
-	block := pgDialect.From("base.processhistory").Select(&h).
-		Order(goqu.I("date").Asc()).
-		Where(
-			goqu.C("tenant").Eq(tenant), /*goqu.C("protocol").IsNotNull(),*/
-			goqu.C("protocol").Eq(protocolArray),
-			goqu.C("date").Between(goqu.Range(startDate, endDate)))
+	block := edaHistorySelect(tenant, protocolArray, startDate, endDate)
 
 	if pageSize > 0 {
 		block.Limit(pageSize + 1)

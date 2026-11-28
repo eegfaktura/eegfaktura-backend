@@ -159,6 +159,8 @@ follow the steps above):
 | `20261106090000` (view `billing_masterdata`, column `eeg_area`) | the statement either ran or not | `version = 20261105120000`: the file runs again (`CREATE OR REPLACE VIEW`) |
 | `20261106100000` (columns `eeg.ec_zone_level`, `meteringpoint.tech_code`, `fuel_code`) | the file runs as one transaction: either all three columns are there or none (`SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'base' AND column_name IN ('ec_zone_level', 'tech_code', 'fuel_code');`) | `version = 20261106090000`: the file runs again (`IF NOT EXISTS`; the `UPDATE` fills only an empty `ec_zone_level`) |
 | `20261116090000` (column `tariff."joiningFeeText"`, views `activeTariff` and `billing_masterdata`) | the file runs as one transaction: the column and both views are changed or nothing is (`SELECT table_name FROM information_schema.columns WHERE table_schema = 'base' AND column_name IN ('joiningFeeText', 'tariff_joining_fee_text');` lists `tariff`, `activetariff` and `billing_masterdata`, or none) | `version = 20261106100000`: the file runs again (`IF NOT EXISTS`, `CREATE OR REPLACE VIEW`) |
+| `20261128120000` (index `processhistory_tenant_protocol_date_idx`, `CONCURRENTLY`) | `SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass('base.processhistory_tenant_protocol_date_idx');` | no row or `false`: `DROP INDEX CONCURRENTLY IF EXISTS base.processhistory_tenant_protocol_date_idx;`, then `version = 20261116090000`. `true`: `version = 20261128120000` |
+| `20261128120100` (index `processhistory_tenant_conversation_idx`, `CONCURRENTLY`) | `SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass('base.processhistory_tenant_conversation_idx');` | no row or `false`: `DROP INDEX CONCURRENTLY IF EXISTS base.processhistory_tenant_conversation_idx;`, then `version = 20261128120000`. `true`: `version = 20261128120100` |
 
 ### Rollback to an older image
 
@@ -174,9 +176,10 @@ migrate -path ./migrations \
 
 | Back to | Newest version afterwards | `<n>` |
 |---|---|---|
-| before the joining fee text (platform#260: `20261116090000`) | `20261106100000` | `1` |
-| also before P2P/EVA (backend#147: `20261106090000`, `20261106100000`) | `20261105120000` | `3` |
-| also before backend#145/#146 (`20261105110000`, `20261105110100`, `20261105120000`) | `20261028130000` | `6` |
+| before the process history indexes (platform#282: `20261128120000`, `20261128120100`) | `20261116090000` | `2` |
+| also before the joining fee text (platform#260: `20261116090000`) | `20261106100000` | `3` |
+| also before P2P/EVA (backend#147: `20261106090000`, `20261106100000`) | `20261105120000` | `5` |
+| also before backend#145/#146 (`20261105110000`, `20261105110100`, `20261105120000`) | `20261028130000` | `8` |
 
 `migrate … version` shows the current version first; `goto <version>` with the version of the second column does the
 same as `down <n>`. Without the CLI, apply the `.down.sql` files newest first with `psql -f` (not in one transaction:
