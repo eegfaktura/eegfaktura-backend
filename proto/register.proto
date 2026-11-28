@@ -28,6 +28,7 @@ message RegisterEegRequest {
     verein = 0;
     genossenschaft = 1;
     gesellschaft = 2;
+    keine = 3; // no legal entity, e.g. GEA or P2P (platform#287)
   }
 
   enum EEG_SETTELMENT {

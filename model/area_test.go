@@ -39,6 +39,25 @@ func TestRegisterEegRequestArea(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// MQTT register-eeg: the legal forms of the gRPC enum, including "keine" (platform#287), and nothing else.
+func TestRegisterEegRequestLegal(t *testing.T) {
+	decode := func(legal string) (RegisterEegRequest, error) {
+		var r RegisterEegRequest
+		err := json.Unmarshal([]byte(`{"tenant":"TE000044","rcNumber":"TE000044","communityId":"AT1","name":"n",
+			"description":"d","iban":"","owner":"","sepa":false,"legal":"`+legal+`","settelmentInterval":"MONTHLY",
+			"gridId":"AT003000","gridName":"g","area":"P2P","allocation":"DYNAMIC","eegOwner":"o","street":"s",
+			"streetNumber":"1","city":"c","zip":"4020","email":"e@example.org","online":false}`), &r)
+		return r, err
+	}
+	for _, legal := range []string{"verein", "genossenschaft", "gesellschaft", "keine"} {
+		r, err := decode(legal)
+		require.NoError(t, err, legal)
+		assert.Equal(t, legal, string(r.Legal))
+	}
+	_, err := decode("club")
+	assert.Error(t, err)
+}
+
 // platform#229 (I): BEG, P2P and EVA may span several grid operators; the EDA ECType of each type; Nahebereich 1–7.
 func TestAreaRules(t *testing.T) {
 	multi := map[AreaType]bool{BEG: true, P2P: true, EVA: true}
