@@ -33,8 +33,7 @@ func TestLogLevelDefaultsToInfo(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// accessLines sends requests through the real router (InitRouters + InitGraphQL,
-// wrapped in AccessLog as in StartServer) and returns the access lines.
+// accessLines sends requests through the real router (served) and returns the access lines.
 func accessLines(t *testing.T, claims *middleware.PlatformClaims, reqs ...*http.Request) []map[string]any {
 	t.Helper()
 	var out []map[string]any
@@ -46,23 +45,30 @@ func accessLines(t *testing.T, claims *middleware.PlatformClaims, reqs ...*http.
 	return out
 }
 
-// logLines is accessLines without the filter: every line logged.
-func logLines(t *testing.T, claims *middleware.PlatformClaims, reqs ...*http.Request) []map[string]any {
+// served is the real router (InitRouters + InitGraphQL on a mock database) wrapped as in
+// StartServer (httpHandler, without CORS); every token verifies to claims.
+func served(t *testing.T, claims *middleware.PlatformClaims) http.Handler {
 	t.Helper()
 	orig := middleware.VerifyTokenClaims
 	t.Cleanup(func() { middleware.VerifyTokenClaims = orig })
 	middleware.VerifyTokenClaims = func(context.Context, string) (*middleware.PlatformClaims, error) {
 		return claims, nil
 	}
-	buf := logtest.Capture(t, func(w io.Writer) {
-		logging.Setup(w, logging.Config{Level: slog.LevelInfo, JSON: true, Version: "test"})
-	})
-
 	db, _, err := dbmock.New()
 	require.NoError(t, err)
 	r := InitRouters(db)
 	InitGraphQL(r)
-	h := logging.AccessLog(r)
+	return httpHandler(r)
+}
+
+// logLines is accessLines without the filter: every line logged.
+func logLines(t *testing.T, claims *middleware.PlatformClaims, reqs ...*http.Request) []map[string]any {
+	t.Helper()
+	buf := logtest.Capture(t, func(w io.Writer) {
+		logging.Setup(w, logging.Config{Level: slog.LevelInfo, JSON: true, Version: "test"})
+	})
+
+	h := served(t, claims)
 	for _, req := range reqs {
 		h.ServeHTTP(httptest.NewRecorder(), req)
 	}

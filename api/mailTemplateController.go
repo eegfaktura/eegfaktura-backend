@@ -43,6 +43,7 @@ func registerMailTemplateRoutes(s *mux.Router, h *MailTemplateHandler) {
 	s.HandleFunc("/mailtemplates/{key}", middleware.Protect(h.save())).Methods("PUT")
 	s.HandleFunc("/mailtemplates/{key}", middleware.Protect(h.reset())).Methods("DELETE")
 	s.HandleFunc("/mailtemplates/{key}/files", middleware.Protect(h.uploadFile())).Methods("POST")
+	// a file: not compressed (uncompressed in compress.go)
 	s.HandleFunc("/mailtemplates/{key}/files/{id}", middleware.Protect(h.getFile())).Methods("GET")
 	s.HandleFunc("/mailtemplates/{key}/files/{id}", middleware.Protect(h.deleteFile())).Methods("DELETE")
 	s.HandleFunc("/mailtemplates/{key}/preview", middleware.Protect(h.preview())).Methods("POST")
