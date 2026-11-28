@@ -152,6 +152,14 @@ func (h *MeteringHandler) updateMeteringPoint() middleware.JWTHandlerFunc {
 			respondWith(r.Context(), w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
+		var activeSince *civil.NullDate
+		if m.State != nil {
+			activeSince = &m.State.ActiveSince
+		}
+		if err = h.checkMeterSave(r.Context(), tenant, participantId, meterId, &m.RegisteredSince, activeSince); err != nil {
+			respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
+			return
+		}
 
 		m.ModifiedAt = civil.Now()
 		m.ModifiedBy = null.StringFrom(claims.Username)
@@ -196,6 +204,15 @@ func (h *MeteringHandler) updateMeteringPointPartial() middleware.JWTHandlerFunc
 			return
 		}
 		value := v["value"]
+		if column == "registeredSince" {
+			// no date (e.g. null) compares as the zero date, i.e. as a change; the database rejects what is no date
+			s, _ := value.(string)
+			registeredSince, _ := civil.ParseDate(s)
+			if err := h.checkMeterSave(r.Context(), tenant, pId, mId, &registeredSince, nil); err != nil {
+				respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
+				return
+			}
+		}
 
 		if err := h.db.UpdateMeteringPointPartial(r.Context(), tenant, claims.Username, pId, mId, map[string]interface{}{column: value}); err != nil {
 			log.WithContext(r.Context()).WithField("tenant", tenant).WithError(err).Error("failed to update metering point.")

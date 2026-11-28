@@ -87,6 +87,10 @@ const MeterActiveAtOtherParticipantText = "Der Zählpunkt %s ist schon einem and
 // day from today (platform#272): not saved, nothing sent. The text is German and names the last allowed day.
 var ErrRegistrationDateBeyondWindow = PartialWrap(1208)
 
+// „Aktiv ab“ of a metering point of an online EEG cannot be changed by this save: its registration is running
+// (registeredSince), or it is active (activeSince; only the support changes it). Same day is accepted (platform#272).
+var ErrMeterDateLocked = PartialWrap(1209)
+
 // An invalid e-mail address of a member (create or update); the text names the address (model.AddressError).
 var ErrInvalidParticipantEmail = PartialWrap(1110)
 
