@@ -8,6 +8,8 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+## [1.23.0] – 2026-11-28
+
 ### Added
 - **„Aktiv ab“ as the requested date of a registration** (platform#272, konzept-aktivierungsdatum.md). New
   `GET /meteringpoint/registration-window` (bearer and tenant header like the other meteringpoint routes, no data of
