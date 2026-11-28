@@ -8,6 +8,13 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Changed
+- **REST and GraphQL answers gzip-compressed** when the client sends `Accept-Encoding: gzip` (browsers always
+  do); `Vary: Accept-Encoding` is always set, a client without the header gets plain JSON as before. In production
+  the ingress does not compress. Not compressed: the file downloads `/eeg/export/masterdata` (xlsx is a zip
+  already) and `GET /eeg/mailtemplates/{key}/files/{id}` (images, PDFs), and websocket upgrades.
+  gorilla/handlers was a dependency already.
+
 ### Fixed
 - **Master data import: hints in German, with row and column** (platform#279). The hints of the Excel import
   (notification „Excel Stammdaten importiert“) were English and technical, e.g. „Does not fulfill requirements! Len
