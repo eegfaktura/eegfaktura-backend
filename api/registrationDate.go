@@ -42,7 +42,8 @@ func registrationStart(meter *model.MeteringPoint, participant *model.EegPartici
 	if _, to := util.RegistrationWindow(day); start.After(to) {
 		return 0, model.ErrRegistrationDateBeyondWindow(fmt.Errorf("Die Anmeldung des Zählpunkts %s würde am %s "+
 			"beginnen, nach dem letzten erlaubten Tag %s. Eine Anmeldung darf höchstens %d Arbeitstage im Voraus "+
-			"beginnen; es gilt der spätere Tag aus „Aktiv ab“ und „Mitglied seit“. Es wurde nichts gesendet.",
+			"beginnen; es gilt der spätere Tag aus „Aktiv ab“ und „Mitglied seit“. Es wurde nichts gesendet. Ändere „Aktiv "+
+			"ab“ am Zählpunkt oder „Mitglied seit“ am Mitglied.",
 			meter.MeteringPoint, start.Format(germanDate), to.Format(germanDate), util.RegistrationWorkingDays))
 	}
 	return start.Unix() * 1000, nil
@@ -66,7 +67,8 @@ func registrationRunning(p model.ProcessStatusType) bool {
 // meterSaveRules applies the save rules of platform#272 to the stored metering point of an online EEG; offline
 // EEGs and an unknown metering point are left as before. registeredSince and activeSince are what the save would
 // write, nil when it does not carry the field. An activeSince that must not be written (metering point not active)
-// is cleared, so the update leaves the column alone. Only the REST saves call it: the admin path (gRPC) stays open.
+// is cleared, so the update leaves the column alone. Only the REST saves and register call it: the admin path (gRPC)
+// stays open.
 func meterSaveRules(eeg *model.Eeg, stored *model.MeteringPoint, registeredSince *civil.Date, activeSince *civil.NullDate, day civil.Date) error {
 	if !eeg.Online || stored == nil {
 		return nil
@@ -74,7 +76,8 @@ func meterSaveRules(eeg *model.Eeg, stored *model.MeteringPoint, registeredSince
 	if registeredSince != nil && !registeredSince.Equal(stored.RegisteredSince) {
 		if registrationRunning(stored.ProcessState) {
 			return model.ErrMeterDateLocked(fmt.Errorf("„Aktiv ab“ des Zählpunkts %s lässt sich nicht ändern, "+
-				"solange die Anmeldung läuft.", stored.MeteringPoint))
+				"solange die Anmeldung läuft. Bitte die Antwort des Netzbetreibers abwarten; ändern lässt sich der "+
+				"Termin danach oder nach einer Ablehnung.", stored.MeteringPoint))
 		}
 		if stored.Status != model.S_ACTIVE {
 			if err := checkRequestedDate(stored.MeteringPoint, *registeredSince, day); err != nil {
@@ -95,27 +98,31 @@ func meterSaveRules(eeg *model.Eeg, stored *model.MeteringPoint, registeredSince
 		storedSince = stored.State.ActiveSince
 	}
 	if activeSince.Valid && (!storedSince.Valid || !activeSince.Date.Equal(storedSince.Date)) {
-		return model.ErrMeterDateLocked(fmt.Errorf("„Aktiv ab“ des aktiven Zählpunkts %s ändert nur der Support.",
-			stored.MeteringPoint))
+		return model.ErrMeterDateLocked(fmt.Errorf("„Aktiv ab“ des aktiven Zählpunkts %s lässt sich hier nicht "+
+			"ändern. Das Aktivierungsdatum ändert der Support im Admin-Tool.", stored.MeteringPoint))
 	}
 	return nil
 }
 
-// checkMeterSave loads the community and the stored metering point (QueryParticipant asserts the tenant) and applies
-// meterSaveRules.
-func (h *MeteringHandler) checkMeterSave(ctx context.Context, tenant, participantId, meterId string, registeredSince *civil.Date, activeSince *civil.NullDate) error {
+// checkMeterSave loads the community and the stored metering point of the member (the query is bound to the
+// tenant) and applies meterSaveRules. It returns the stored metering point when the rules applied (online EEG).
+func (h *MeteringHandler) checkMeterSave(ctx context.Context, tenant, participantId, meterId string, registeredSince *civil.Date, activeSince *civil.NullDate) (*model.MeteringPoint, error) {
 	eeg, err := h.db.GetEegById(ctx, tenant)
 	if err != nil {
-		return model.ErrGetEeg(err)
+		return nil, model.ErrGetEeg(err)
 	}
 	if !eeg.Online {
-		return nil
+		return nil, nil
 	}
-	participant, err := h.db.QueryParticipant(ctx, tenant, participantId)
+	ms, err := h.db.FindAllMeteringByTenant(ctx, tenant, participantId, []string{meterId})
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return meterSaveRules(eeg, meterOf(participant, meterId), registeredSince, activeSince, today())
+	// one entry per metering point and member (primary key); none: the update changes nothing, as before
+	if len(ms) != 1 {
+		return nil, nil
+	}
+	return ms[0], meterSaveRules(eeg, ms[0], registeredSince, activeSince, today())
 }
 
 // meterOf is the metering point meterId of the participant, nil when it has none.

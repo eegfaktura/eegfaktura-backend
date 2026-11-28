@@ -2,11 +2,13 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"at.ourproject/vfeeg-backend/database"
+	"at.ourproject/vfeeg-backend/model"
 	"github.com/jjeffery/civil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -29,7 +31,7 @@ func TestUpdateMeteringPoint_dateRules(t *testing.T) {
 			f.meter(meter, "INIT", state, "2027-01-05", nil)
 
 			w := update(f, meter, "INIT", state, "2027-01-06", "null")
-			assertErrorCode(t, w, 1209, "solange die Anmeldung läuft")
+			assertErrorCode(t, w, 1209, meter)
 			registered, _ := f.dates(meter)
 			assert.Equal(t, "2027-01-05", registered, state)
 
@@ -48,6 +50,11 @@ func TestUpdateMeteringPoint_dateRules(t *testing.T) {
 		registered, active := f.dates(meter)
 		assert.Equal(t, "2027-01-13", registered)
 		assert.Equal(t, "2026-11-01", active, "activesince left alone")
+		var body model.MeteringPoint
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+		require.NotNil(t, body.State)
+		assert.Equal(t, civil.NullDate{Date: civil.DateFor(2026, 11, 1), Valid: true}, body.State.ActiveSince,
+			"the answer carries the stored date")
 	})
 
 	t.Run("not active: requested date beyond the window rejected", func(t *testing.T) {
@@ -66,7 +73,7 @@ func TestUpdateMeteringPoint_dateRules(t *testing.T) {
 		f.meter(meter, "ACTIVE", "ACTIVE", "2026-01-01", "2026-02-01")
 
 		w := update(f, meter, "ACTIVE", "ACTIVE", "2026-01-01", `"2026-03-01"`)
-		assertErrorCode(t, w, 1209, "ändert nur der Support")
+		assertErrorCode(t, w, 1209, meter)
 		_, active := f.dates(meter)
 		assert.Equal(t, "2026-02-01", active)
 
@@ -109,7 +116,7 @@ func TestUpdateMeteringPointPartial_dateRules(t *testing.T) {
 		f := newAdFixture(t, "TE002733", true, "ACTIVE", "2026-01-01")
 		f.meter(meter, "INIT", "PENDING", "2027-01-05", nil)
 
-		assertErrorCode(t, update(f, "2027-01-06"), 1209, "solange die Anmeldung läuft")
+		assertErrorCode(t, update(f, "2027-01-06"), 1209, meter)
 		w := update(f, "2027-01-05")
 		require.Equal(t, http.StatusAccepted, w.Code, w.Body.String())
 	})

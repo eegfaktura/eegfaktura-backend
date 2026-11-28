@@ -170,7 +170,7 @@ func TestConfirmParticipant_startDateFromStoredMeter(t *testing.T) {
 
 		w := confirm(f, `[{"meteringPoint":"AT0030000000000000000000000272105"}]`)
 
-		assertErrorCode(t, w, 1208, "Mitglied seit")
+		assertErrorCode(t, w, 1208, "01.03.2027")
 		assert.Empty(t, sent)
 		assert.Equal(t, "NEW", participantStatus(f))
 	})
@@ -197,15 +197,14 @@ func TestCreateMeteringPoint_requestedDate(t *testing.T) {
 	})
 
 	t.Run("online: without a date today, sent for tomorrow", func(t *testing.T) {
-		fixToday(t, civil.Today()) // registeredSince defaults to the local day
 		f := newAdFixture(t, "TE002724", true, "ACTIVE", "2026-01-01")
 		sent := captureRegistrations(t)
 		w := create(f, "AT0030000000000000000000000272202", "")
 
 		require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
 		registered, _ := f.dates("AT0030000000000000000000000272202")
-		assert.Equal(t, civil.Today().String(), registered)
-		assert.Equal(t, civil.Today().AddDate(0, 0, 1), sent["AT0030000000000000000000000272202"])
+		assert.Equal(t, "2026-11-26", registered)
+		assert.Equal(t, civil.DateFor(2026, 11, 27), sent["AT0030000000000000000000000272202"])
 	})
 
 	t.Run("online: beyond the window rejected, nothing saved or sent", func(t *testing.T) {
@@ -290,7 +289,7 @@ func TestRegisterMeteringPoint_from(t *testing.T) {
 
 		w := register(f, viennaMidnight(2027, time.January, 8))
 
-		assertErrorCode(t, w, 1208, "Mitglied seit")
+		assertErrorCode(t, w, 1208, "01.03.2027")
 		registered, _ := f.dates(meter)
 		assert.Equal(t, "2026-12-01", registered)
 		assert.Empty(t, sent)

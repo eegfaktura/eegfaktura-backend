@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -168,6 +169,11 @@ func (h *ParticipantHandler) registerParticipant() middleware.JWTHandlerFunc {
 			respondWith(r.Context(), w, http.StatusBadRequest, tenant, model.ErrParseJson(err))
 			return
 		}
+		// online EEG (platform#272): a requested date („Aktiv ab“) after the window is rejected before anything is saved
+		if err = h.checkRequestedDates(r.Context(), tenant, t.MeteringPoint); err != nil {
+			respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
+			return
+		}
 
 		err = h.db.RegisterParticipant(r.Context(), tenant, claims.Username, &t)
 		if err != nil {
@@ -298,4 +304,28 @@ func (h *ParticipantHandler) deleteParticipant() middleware.JWTHandlerFunc {
 		}
 		respondWithJSON(w, http.StatusAccepted, map[string]interface{}{"id": idStr})
 	}
+}
+
+// checkRequestedDates checks the requested dates of the metering points of a new member of an online EEG.
+func (h *ParticipantHandler) checkRequestedDates(ctx context.Context, tenant string, meters []*model.MeteringPoint) error {
+	if len(meters) == 0 {
+		return nil
+	}
+	eeg, err := h.db.GetEegById(ctx, tenant)
+	if err != nil {
+		return model.ErrGetEeg(err)
+	}
+	if !eeg.Online {
+		return nil
+	}
+	day := today()
+	for _, m := range meters {
+		if m == nil || m.Status == model.S_ACTIVE {
+			continue
+		}
+		if err = checkRequestedDate(m.MeteringPoint, m.RegisteredSince, day); err != nil {
+			return err
+		}
+	}
+	return nil
 }
