@@ -9,7 +9,6 @@ import (
 	"at.ourproject/vfeeg-backend/database"
 	"at.ourproject/vfeeg-backend/model"
 	mqttclient "at.ourproject/vfeeg-backend/mqtt"
-	"at.ourproject/vfeeg-backend/util"
 	"github.com/gorilla/mux"
 	"github.com/pborman/uuid"
 	log "github.com/sirupsen/logrus"
@@ -227,11 +226,18 @@ func (h *ParticipantHandler) confirmParticipant() middleware.JWTHandlerFunc {
 		for _, meter := range participant.MeteringPoint {
 			participantMetersMap[meter.MeteringPoint] = meter
 		}
-		// every registration needs a grid operator: check all before anything is written or sent
+		// every registration needs a grid operator and a start date in the window (platform#272; the stored date,
+		// not the one of the body): check all before anything is written or sent
+		starts := make(map[string]int64)
 		if eeg.Online {
+			day := today()
 			for _, qm := range meters {
 				if m, ok := participantMetersMap[qm.MeteringPoint]; ok {
 					if _, err = mqttclient.ReceiverFor(eeg, m); err != nil {
+						respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
+						return
+					}
+					if starts[m.MeteringPoint], err = registrationStart(m, participant, day); err != nil {
 						respondWith(r.Context(), w, http.StatusBadRequest, tenant, err)
 						return
 					}
@@ -249,13 +255,7 @@ func (h *ParticipantHandler) confirmParticipant() middleware.JWTHandlerFunc {
 		if eeg.Online {
 			for _, qm := range meters {
 				if m, ok := participantMetersMap[qm.MeteringPoint]; ok {
-					var from int64
-					if qm.RegisteredSince.After(participant.ParticipantSince.Date) {
-						from = util.CalcProcessDate(qm.RegisteredSince)
-					} else {
-						from = util.CalcProcessNullDate(participant.ParticipantSince)
-					}
-
+					from := starts[m.MeteringPoint]
 					log.WithContext(r.Context()).WithField("tenant", tenant).Infof("Start Meteringpoint %s registration - Active at: %+v", m.MeteringPoint, from)
 					if err = mqttclient.RegistrationForParticipation(eeg, m, &from); err != nil {
 						log.WithContext(r.Context()).WithField("tenant", tenant).WithError(err).Error("failed to confirm participant.")

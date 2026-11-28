@@ -71,20 +71,3 @@ func StringToTime(date string) time.Time {
 	}
 	return time.Now()
 }
-
-func CalcProcessDate(date civil.Date) int64 {
-	diff := date.Sub(civil.Today())
-	days := int(diff.Hours() / 24)
-
-	if days < 1 {
-		return civil.Today().AddDate(0, 0, 1).Unix() * 1000
-	}
-	return date.Unix() * 1000
-}
-
-func CalcProcessNullDate(date civil.NullDate) int64 {
-	if date.Valid {
-		return CalcProcessDate(date.Date)
-	}
-	return civil.Today().AddDate(0, 0, 1).Unix() * 1000
-}
