@@ -17,7 +17,8 @@ func TestParseHistoryPageSize(t *testing.T) {
 		require.NoError(t, err, in)
 		require.Equal(t, want, got, in)
 	}
-	for _, in := range []string{"", "abc", "-1", "-9223372036854775808", "-99999999999999999999", "99999999999999999999", "1.5"} {
+	for _, in := range []string{"", "abc", "-1", "-9223372036854775808", "-99999999999999999999", "99999999999999999999", "1.5",
+		"100001", "9223372036854775807"} {
 		_, err := parseHistoryPageSize(in)
 		require.Error(t, err, in)
 	}
@@ -48,6 +49,25 @@ func TestFetchProcessHistory_pageSize(t *testing.T) {
 			NewProcessHandler(db).fetchProcessHistory()(w, r, nil, "TE000001")
 
 			require.Equal(t, tt.status, w.Code)
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+// backend 261128-mm2: the page size reaches the SQL (one row more than the page, for the next cursor); 0 = no limit.
+func TestFetchProcessHistory_limitInSQL(t *testing.T) {
+	for ps, limit := range map[string]string{"1": `LIMIT 2$`, "0": `"date" ASC$`} {
+		t.Run(ps, func(t *testing.T) {
+			db, mock, err := dbmock.New()
+			require.NoError(t, err)
+			mock.ExpectQuery(`SELECT (.+) FROM "base"."processhistory" (.+)` + limit).
+				WillReturnRows(sqlmock.NewRows([]string{"conversationId"}))
+
+			r := httptest.NewRequest(http.MethodGet, "/process/history?start=0&end=1000&protocol=CR_MSG&ps="+ps, nil)
+			w := httptest.NewRecorder()
+			NewProcessHandler(db).fetchProcessHistory()(w, r, nil, "TE000001")
+
+			require.Equal(t, http.StatusOK, w.Code)
 			require.NoError(t, mock.ExpectationsWereMet())
 		})
 	}

@@ -280,7 +280,9 @@ func edaHistorySelect(tenant string, protocols []string, startDate, endDate civi
 		Where(
 			goqu.C("tenant").Eq(tenant),
 			goqu.C("protocol").Eq(protocols),
-			goqu.C("date").Between(goqu.Range(startDate, endDate)))
+			// end exclusive: web asks [first day, end) with end = last day + 24 h, normally the next day's 00:00
+			// (backend 261128-mm2; on the autumn DST day web's +24 h falls short, tracked separately)
+			goqu.C("date").Gte(startDate), goqu.C("date").Lt(endDate))
 }
 
 func fetchEdaHistory(ctx context.Context, db *sqlx.DB, tenant, protocol string, start, end int64, pageSize uint) (interface{} /*map[string]map[string][]model.EdaProcessHistory*/, error) {
@@ -292,7 +294,7 @@ func fetchEdaHistory(ctx context.Context, db *sqlx.DB, tenant, protocol string, 
 	block := edaHistorySelect(tenant, protocolArray, startDate, endDate)
 
 	if pageSize > 0 {
-		block.Limit(pageSize + 1)
+		block = block.Limit(pageSize + 1) // goqu datasets are immutable: without the assignment the limit was lost
 	}
 
 	stmt, _, err := block.ToSQL()

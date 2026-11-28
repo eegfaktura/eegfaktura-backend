@@ -9,6 +9,13 @@ this changelog highlights the changes relevant for overview and operations.
 ## [Unreleased]
 
 ### Fixed
+- **Process history: page size and end of the range** (tracking backend 261128-mm2, pre-existing). The page size
+  (`ps`) never reached the SQL (goqu datasets are immutable, the `Limit` result was dropped): the query always read
+  the whole range and cut the page in Go. It is now a SQL `LIMIT`. The end of the range is now exclusive
+  (`date < end`) instead of `BETWEEN`: web already sends the day after the last day as end, so a message at exactly
+  00:00 of that day no longer shows in two adjacent ranges. Response for web (`ps=0`) otherwise unchanged.
+  **Contract** `GET /process/history`: `end` is now exclusive; `ps` above 100000 is rejected with 400 (it reaches the
+  SQL as `LIMIT ps+1`). Caller: eegfaktura-web (sends whole days and `ps=0`, not affected).
 - **Master data import: hints in German, with row and column** (platform#279). The hints of the Excel import
   (notification „Excel Stammdaten importiert“) were English and technical, e.g. „Does not fulfill requirements! Len
   not equal 33. -> Not Included“. They now say in German what is wrong and name the row and column of the file, e.g.
