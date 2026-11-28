@@ -280,8 +280,8 @@ func edaHistorySelect(tenant string, protocols []string, startDate, endDate civi
 		Where(
 			goqu.C("tenant").Eq(tenant),
 			goqu.C("protocol").Eq(protocols),
-			// end exclusive: web asks [first day, end) with end = last day + 24 h, normally the next day's 00:00
-			// (backend 261128-mm2; on the autumn DST day web's +24 h falls short, tracked separately)
+			// end exclusive: web asks [first day, end) with end = 00:00 of the day after the last day
+			// (backend 261128-mm2; before web 261128-mm1 web sent last day + 24 h, short on the autumn DST day)
 			goqu.C("date").Gte(startDate), goqu.C("date").Lt(endDate))
 }
 
@@ -298,6 +298,9 @@ func fetchEdaHistory(ctx context.Context, db *sqlx.DB, tenant, protocol string, 
 	}
 
 	stmt, _, err := block.ToSQL()
+	if err != nil {
+		return nil, err
+	}
 
 	//fmt.Printf("STMT: %v\n", stmt)
 	err = db.Select(&h, stmt)
@@ -313,7 +316,12 @@ func fetchEdaHistory(ctx context.Context, db *sqlx.DB, tenant, protocol string, 
 	out := map[string]map[string][]model.EdaProcessHistory{}
 	for i := 0; i < resultSize; i++ {
 		e := h[i]
-		err = json.Unmarshal(e.MessageByte, &e.MessageMap)
+		// a broken message skips its row, the rest of the history is still answered (backend 261128-mm4)
+		if err := json.Unmarshal(e.MessageByte, &e.MessageMap); err != nil {
+			logrus.WithContext(ctx).WithError(err).WithFields(logrus.Fields{"tenant": tenant,
+				"conversationId": e.ConversationId}).Warn("History message unreadable, entry skipped")
+			continue
+		}
 		if ci, ok := out[e.Protocol.String]; ok {
 			ci[e.ConversationId] = append(ci[e.ConversationId], e)
 		} else {
@@ -353,7 +361,7 @@ func fetchEdaHistory(ctx context.Context, db *sqlx.DB, tenant, protocol string, 
 		Data: out,
 	}
 
-	return result, err
+	return result, nil
 }
 
 func createNotification(db sqlx.Execer, tenant, notification string,
