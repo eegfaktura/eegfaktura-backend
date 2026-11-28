@@ -39,6 +39,7 @@ func InitEegRouter(r *mux.Router, db database.Database) *mux.Router {
 	s.HandleFunc("/sync/participants/{oid}", middleware.Protect(h.syncParticipantsEda())).Methods("POST")
 	s.HandleFunc("/import/masterdata", middleware.Protect(h.uploadMasterData())).Methods("POST")
 	// POST carries the optional joiningFeeState list from billing (konzept-beitrittsgebuehr.md); GET stays for older web
+	// a file: not compressed (uncompressed in compress.go)
 	s.HandleFunc("/export/masterdata", middleware.Protect(h.exportMasterData())).Methods("GET", "POST")
 	s.HandleFunc("/notifications/{id}", middleware.Protect(h.notifications())).Methods("GET")
 	s.HandleFunc("/gridoperators", middleware.Protect(h.gridOperators())).Methods("GET")

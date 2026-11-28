@@ -8,6 +8,14 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Changed
+- **REST and GraphQL answers compressed** (gzip, or deflate when the client names that first) when the client
+  sends `Accept-Encoding` (browsers always do; web and admin get it then). A client without the header gets plain
+  JSON as before. `Vary: Accept-Encoding` on every route but the downloads. In production the ingress does not
+  compress. Level `BestSpeed`. Not compressed: the file downloads `/eeg/export/masterdata` (xlsx is a zip already)
+  and `GET /eeg/mailtemplates/{key}/files/{id}` (images, PDFs), and websocket upgrades. gorilla/handlers was a
+  dependency already.
+
 ### Fixed
 - **Process history: page size and end of the range** (tracking backend 261128-mm2, pre-existing). The page size
   (`ps`) never reached the SQL (goqu datasets are immutable, the `Limit` result was dropped): the query always read

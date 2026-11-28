@@ -201,7 +201,7 @@ func StartServer(db database.Database) {
 	log.Infof("VFEEG BACKEND is going to listen on %s", fmt.Sprintf("127.0.0.1:%d", viper.GetInt("port")))
 
 	srv := &http.Server{
-		Handler: handlers.CORS(allowedOrigins, allowedHeaders, allowedMethods, allowedCredentials)(logging.AccessLog(r)),
+		Handler: handlers.CORS(allowedOrigins, allowedHeaders, allowedMethods, allowedCredentials)(api.HTTPHandler(r)),
 		Addr:    fmt.Sprintf("0.0.0.0:%d", viper.GetInt("port")),
 		// Good practice: enforce timeouts for servers you create!
 		WriteTimeout: 180 * time.Second,
