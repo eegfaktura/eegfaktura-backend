@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"at.ourproject/vfeeg-backend/api"
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
@@ -68,13 +69,13 @@ func TestCompressJSON_SkipsDownloads(t *testing.T) {
 }
 
 // A panicking handler still gets the access log's 500 when the client accepts gzip: the compression
-// sits outside logging.AccessLog in httpHandler.
+// sits outside logging.AccessLog in api.HTTPHandler.
 func TestCompressJSON_PanicIs500(t *testing.T) {
 	r := mux.NewRouter()
 	r.HandleFunc("/boom", func(http.ResponseWriter, *http.Request) { panic("boom") })
 	req := httptest.NewRequest("GET", "/boom", nil)
 	req.Header.Set("Accept-Encoding", "gzip")
 	rec := httptest.NewRecorder()
-	httpHandler(r).ServeHTTP(rec, req)
+	api.HTTPHandler(r).ServeHTTP(rec, req)
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 }

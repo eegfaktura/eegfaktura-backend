@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"at.ourproject/vfeeg-backend/api"
 	"at.ourproject/vfeeg-backend/api/middleware"
 	"at.ourproject/vfeeg-backend/database/dbmock"
 	"at.ourproject/vfeeg-backend/logging"
@@ -46,7 +47,7 @@ func accessLines(t *testing.T, claims *middleware.PlatformClaims, reqs ...*http.
 }
 
 // served is the real router (InitRouters + InitGraphQL on a mock database) wrapped as in
-// StartServer (httpHandler, without CORS); every token verifies to claims.
+// StartServer (api.HTTPHandler, without CORS); every token verifies to claims.
 func served(t *testing.T, claims *middleware.PlatformClaims) http.Handler {
 	t.Helper()
 	orig := middleware.VerifyTokenClaims
@@ -58,7 +59,7 @@ func served(t *testing.T, claims *middleware.PlatformClaims) http.Handler {
 	require.NoError(t, err)
 	r := InitRouters(db)
 	InitGraphQL(r)
-	return httpHandler(r)
+	return api.HTTPHandler(r)
 }
 
 // logLines is accessLines without the filter: every line logged.

@@ -1,4 +1,4 @@
-package main
+package api
 
 import (
 	"compress/gzip"
@@ -16,10 +16,11 @@ var uncompressed = map[string]bool{
 	"/eeg/mailtemplates/{key}/files/{id}": true,
 }
 
-// httpHandler is the HTTP surface of router as served (StartServer adds CORS around it): the access
-// log inside, the compression outside. Inside, the gzip writer would start a 200 response while a
+// HTTPHandler is the HTTP surface of router as served (StartServer adds CORS around it): the access
+// log inside, the compression outside. In this package, not next to StartServer: the image builds
+// server.go alone. Inside, the gzip writer would start a 200 response while a
 // panicking handler unwinds, and the access log could no longer answer 500.
-func httpHandler(router *mux.Router) http.Handler {
+func HTTPHandler(router *mux.Router) http.Handler {
 	return compressJSON(router, logging.AccessLog(router))
 }
 
