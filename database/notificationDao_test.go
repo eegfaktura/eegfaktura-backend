@@ -31,6 +31,14 @@ func TestFetchEdaHistory(t *testing.T) {
 	require.NotNil(t, res)
 }
 
+// backend 261128-mm5: a message json.Marshal cannot write was dropped without an error; nothing may be written.
+func TestSaveHistoryReturnsMarshalError(t *testing.T) {
+	mDB, mock := newMockDatabase(t)
+	err := mDB.SaveHistory("RC100298", model.EBMS_ONLINE_REG_APPROVAL, "conv-a", "ADMIN", "IN", "EC_REQ_ONL", make(chan int))
+	require.Error(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 // backend 261128-mm4: a message that is no JSON object (the column is json, so it is valid JSON) made fetchEdaHistory
 // return the history together with the error (handler 400) when it was the last row, and the row came with
 // "message": null otherwise, as did a stored JSON null. Now such a row is skipped and the rest is answered.

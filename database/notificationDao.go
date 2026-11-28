@@ -218,23 +218,26 @@ func (db *sqlDatabase) collapsedNotifications(ctx context.Context, tenant string
 
 func (db *sqlDatabase) SaveHistory(tenant string, code model.EbMsMessageType, conversationId, role, dir string, protocol model.EdaProtocol, msg interface{}) error {
 
-	var err error
-	var msgBytes []byte
-	if msgBytes, err = json.Marshal(msg); err == nil {
-		if err = saveEdaHistory(db.db, &model.EdaProcessHistory{
-			Tenant:         tenant,
-			ConversationId: conversationId,
-			ProcessType:    code,
-			Date:           civil.DateTime{},
-			Protocol:       null.StringFrom(string(protocol)),
-			Issuer:         role,
-			MessageByte:    msgBytes,
-			MessageMap:     nil,
-			Direction:      dir,
-		}); err != nil {
-			logrus.Error(err)
-			return err
-		}
+	msgBytes, err := json.Marshal(msg)
+	if err != nil {
+		// the callers ignore the result: without the log the entry was lost silently (backend 261128-mm5)
+		logrus.WithError(err).WithFields(logrus.Fields{"tenant": tenant, "conversationId": conversationId}).
+			Error("History message not serializable, entry not saved")
+		return err
+	}
+	if err = saveEdaHistory(db.db, &model.EdaProcessHistory{
+		Tenant:         tenant,
+		ConversationId: conversationId,
+		ProcessType:    code,
+		Date:           civil.DateTime{},
+		Protocol:       null.StringFrom(string(protocol)),
+		Issuer:         role,
+		MessageByte:    msgBytes,
+		MessageMap:     nil,
+		Direction:      dir,
+	}); err != nil {
+		logrus.Error(err)
+		return err
 	}
 	return nil
 }

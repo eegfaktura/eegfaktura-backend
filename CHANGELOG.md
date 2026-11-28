@@ -34,6 +34,10 @@ this changelog highlights the changes relevant for overview and operations.
   tracking backend 261128-mm4). `saveEdaHistory` overwrote the `ToSQL` error with the result of `Exec` on the empty
   statement, so the error could get lost. With the history entries the backend writes this does not happen; no
   test, goqu cannot be made to fail there with a valid entry.
+- **Process history: a message that cannot be written as JSON is logged and reported** (pre-existing, tracking
+  backend 261128-mm5, related to 261128-mm4). `SaveHistory` dropped the error of `json.Marshal` and returned
+  success, so the history entry went missing without a trace. It now logs the error with tenant and conversation id
+  and returns it; the EDA message handlers ignore the result as before.
 - **Master data import: hints in German, with row and column** (platform#279). The hints of the Excel import
   (notification „Excel Stammdaten importiert“) were English and technical, e.g. „Does not fulfill requirements! Len
   not equal 33. -> Not Included“. They now say in German what is wrong and name the row and column of the file, e.g.
