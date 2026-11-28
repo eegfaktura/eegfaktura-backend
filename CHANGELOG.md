@@ -9,8 +9,9 @@ this changelog highlights the changes relevant for overview and operations.
 ## [Unreleased]
 
 ### Added
-- **Legal form „keine“** (platform#287): gRPC `RegisterEegRequest.EEG_LEGAL` gets `keine = 3` for communities without
-  a legal entity (GEA, P2P); stored as `keine` in `base.eeg.legal` and shown as such in the master data export. No
+- **Legal form „keine“** (platform#287): gRPC `RegisterEegRequest.EEG_LEGAL` gets `keine = 3` and the MQTT
+  `register-eeg` schema (`model/registration.schema.json`) the value `keine`, for communities without a legal entity
+  (GEA, P2P); stored as `keine` in `base.eeg.legal` and shown as such in the master data export. No
   migration (the column is text). Contract change with eegfaktura-admin-backend: roll out the backend first, since it
   refuses a legal form it does not know.
 

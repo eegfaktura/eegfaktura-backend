@@ -39,7 +39,7 @@
 
         "legal": {
           "type": "string",
-          "enum": ["verein", "genossenschaft", "gesellschaft"]
+          "enum": ["verein", "genossenschaft", "gesellschaft", "keine"]
         },
 
         "settelmentInterval": {
