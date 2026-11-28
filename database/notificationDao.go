@@ -319,8 +319,12 @@ func fetchEdaHistory(ctx context.Context, db *sqlx.DB, tenant, protocol string, 
 	out := map[string]map[string][]model.EdaProcessHistory{}
 	for i := 0; i < resultSize; i++ {
 		e := h[i]
-		// a broken message skips its row, the rest of the history is still answered (backend 261128-mm4)
-		if err := json.Unmarshal(e.MessageByte, &e.MessageMap); err != nil {
+		// a broken message (no JSON object, or JSON null) skips its row, the rest of the history is still answered
+		// (backend 261128-mm4)
+		if err := json.Unmarshal(e.MessageByte, &e.MessageMap); err != nil || e.MessageMap == nil {
+			if err == nil {
+				err = errors.New("message is JSON null")
+			}
 			logrus.WithContext(ctx).WithError(err).WithFields(logrus.Fields{"tenant": tenant,
 				"conversationId": e.ConversationId}).Warn("History message unreadable, entry skipped")
 			continue

@@ -33,11 +33,11 @@ func TestFetchEdaHistory(t *testing.T) {
 
 // backend 261128-mm4: a message that is no JSON object (the column is json, so it is valid JSON) made fetchEdaHistory
 // return the history together with the error (handler 400) when it was the last row, and the row came with
-// "message": null otherwise. Now the broken row is skipped and the rest is answered.
+// "message": null otherwise, as did a stored JSON null. Now such a row is skipped and the rest is answered.
 func TestFetchEdaHistorySkipsBrokenMessage(t *testing.T) {
 	mDB, mock := newMockDatabase(t)
 	rows := sqlmock.NewRows([]string{"conversationId", "date", "direction", "issuer", "message", "protocol", "tenant", "type"})
-	for _, r := range [][2]string{{"conv-a", `{"meter": "AT001"}`}, {"conv-x", `"text"`}, {"conv-b", `{}`}, {"conv-z", `[1]`}} {
+	for _, r := range [][2]string{{"conv-a", `{"meter": "AT001"}`}, {"conv-x", `"text"`}, {"conv-b", `{}`}, {"conv-n", `null`}, {"conv-z", `[1]`}} {
 		rows.AddRow(r[0], time.Now(), "IN", "ADMIN", []byte(r[1]), "EC_REQ_ONL", "RC100298", model.EBMS_ONLINE_REG_APPROVAL)
 	}
 	mock.ExpectQuery("SELECT (.+) FROM \"base\".\"processhistory\" WHERE (.+)").WillReturnRows(rows)

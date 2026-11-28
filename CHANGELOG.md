@@ -26,9 +26,9 @@ this changelog highlights the changes relevant for overview and operations.
   SQL as `LIMIT ps+1`). Caller: eegfaktura-web (sends whole days and `ps=0`, not affected).
 - **Process history: an unreadable message no longer fails the answer** (tracking backend 261128-mm4, pre-existing,
   found in the review of #173). A history row whose `message` is no JSON object made `GET /process/history` answer
-  400 when it was the last row of the range; otherwise the row came with `"message": null`. Such a row is now left
-  out of the answer and logged as a warning with tenant and conversation id (not the message); the other rows are
-  answered with 200.
+  400 when it was the last row of the range; otherwise the row came with `"message": null`, as did a row with a
+  stored JSON `null`. Such rows are now left out of the answer and logged as a warning with tenant and conversation
+  id (not the message); the other rows are answered with 200. An empty object `{}` is answered as before.
   An error while building the SQL is now returned instead of being overwritten.
 - **Process history: an error while building the INSERT of a history entry is returned** (pre-existing, related to
   tracking backend 261128-mm4). `saveEdaHistory` overwrote the `ToSQL` error with the result of `Exec` on the empty
