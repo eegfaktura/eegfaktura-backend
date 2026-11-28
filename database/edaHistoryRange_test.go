@@ -5,14 +5,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jjeffery/civil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// backend 261128-mm2: fetchEdaHistory lost its page size (goqu datasets are immutable) and its end bound was
-// inclusive, so a message at 00:00 of the day after a range came in two adjacent ranges.
-func TestFetchEdaHistoryRangeAndPageSize(t *testing.T) {
+// backend 261128-mm2: the end bound of fetchEdaHistory was inclusive, so a message at 00:00 of the day after a range
+// came in two adjacent ranges. (The page size reaching the SQL is checked in api/processController_test.go.)
+func TestFetchEdaHistoryRange(t *testing.T) {
 	_, err := GetTestDB(t.Context(), testDB)
 	require.NoError(t, err)
 	db := testDB.DbInstance
@@ -50,10 +49,4 @@ func TestFetchEdaHistoryRangeAndPageSize(t *testing.T) {
 	assert.ElementsMatch(t, []string{"conv-a", "conv-b"}, conversations(ms(1), ms(3), 0), "end is exclusive")
 	assert.ElementsMatch(t, []string{"conv-c"}, conversations(ms(3), ms(4), 0), "00:00 belongs to the next range")
 
-	// page size 1: one message in the page (the SQL limit is checked in api/processController_test.go)
-	assert.Len(t, conversations(ms(1), ms(4), 1), 1)
-	stmt, _, err := edaHistorySelect(tenant, []string{"EC_REQ_ONL"}, civil.DateFor(2020, 3, 1),
-		civil.DateFor(2020, 3, 4)).ToSQL()
-	require.NoError(t, err)
-	assert.Contains(t, stmt, `("date" < '2020-03-04T00:00:00Z')`)
 }

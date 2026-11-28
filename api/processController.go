@@ -13,6 +13,8 @@ import (
 // parseHistoryPageSize parses the ps query parameter of /process/history: a non-negative
 // integer, 0 means "no paging" (used by eegfaktura-web). Negative and non-numeric values
 // are an error.
+const maxHistoryPageSize = 100000
+
 func parseHistoryPageSize(ps string) (uint, error) {
 	pageSize, err := strconv.ParseInt(ps, 10, 64)
 	if err != nil {
@@ -20,6 +22,10 @@ func parseHistoryPageSize(ps string) (uint, error) {
 	}
 	if pageSize < 0 {
 		return 0, fmt.Errorf("negative page size: %d", pageSize)
+	}
+	// the page size reaches the SQL as LIMIT ps+1 (backend 261128-mm2): bound it, a huge value overflowed bigint
+	if pageSize > maxHistoryPageSize {
+		return 0, fmt.Errorf("page size too large: %d (max %d)", pageSize, maxHistoryPageSize)
 	}
 	return uint(pageSize), nil
 }

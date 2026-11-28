@@ -17,7 +17,8 @@ func TestParseHistoryPageSize(t *testing.T) {
 		require.NoError(t, err, in)
 		require.Equal(t, want, got, in)
 	}
-	for _, in := range []string{"", "abc", "-1", "-9223372036854775808", "-99999999999999999999", "99999999999999999999", "1.5"} {
+	for _, in := range []string{"", "abc", "-1", "-9223372036854775808", "-99999999999999999999", "99999999999999999999", "1.5",
+		"100001", "9223372036854775807"} {
 		_, err := parseHistoryPageSize(in)
 		require.Error(t, err, in)
 	}

@@ -280,7 +280,8 @@ func edaHistorySelect(tenant string, protocols []string, startDate, endDate civi
 		Where(
 			goqu.C("tenant").Eq(tenant), /*goqu.C("protocol").IsNotNull(),*/
 			goqu.C("protocol").Eq(protocols),
-			// end exclusive: web asks [first day, day after the last day) (platform#282 follow-up, backend 261128-mm2)
+			// end exclusive: web asks [first day, end) with end = last day + 24 h, normally the next day's 00:00
+			// (backend 261128-mm2; on the autumn DST day web's +24 h falls short, tracked separately)
 			goqu.C("date").Gte(startDate), goqu.C("date").Lt(endDate))
 }
 
