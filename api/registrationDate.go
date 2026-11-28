@@ -76,8 +76,8 @@ func meterSaveRules(eeg *model.Eeg, stored *model.MeteringPoint, registeredSince
 	if registeredSince != nil && !registeredSince.Equal(stored.RegisteredSince) {
 		if registrationRunning(stored.ProcessState) {
 			return model.ErrMeterDateLocked(fmt.Errorf("„Aktiv ab“ des Zählpunkts %s lässt sich nicht ändern, "+
-				"solange die Anmeldung läuft. Bitte die Antwort des Netzbetreibers abwarten; ändern lässt sich der "+
-				"Termin danach oder nach einer Ablehnung.", stored.MeteringPoint))
+				"solange die Anmeldung läuft. Bitte den Abschluss oder die Ablehnung durch den Netzbetreiber abwarten; "+
+				"danach lässt sich der Termin wieder ändern.", stored.MeteringPoint))
 		}
 		if stored.Status != model.S_ACTIVE {
 			if err := checkRequestedDate(stored.MeteringPoint, *registeredSince, day); err != nil {
