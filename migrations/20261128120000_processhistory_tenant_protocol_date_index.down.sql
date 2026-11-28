@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS base.processhistory_tenant_protocol_date_idx;

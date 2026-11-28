@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"at.ourproject/vfeeg-backend/gridoperator"
 	"at.ourproject/vfeeg-backend/model"
@@ -192,7 +193,8 @@ func (db *sqlDatabase) reportDuplicateParticipantNumbers(ctx context.Context, te
 				"WARNING",
 				nr,
 				"W_PARTICIPANT_NR_DUP",
-				fmt.Sprintf("MitgliedsNr %s is used by several members in the file: %s", nr, strings.Join(names, ", ")),
+				fmt.Sprintf("Spalte „MitgliedsNr“: Die Mitgliedsnummer %s steht in der Datei bei mehreren Mitgliedern "+
+					"(%s). Die Zeilen werden trotzdem übernommen; bitte prüfe die Nummern.", nr, strings.Join(names, ", ")),
 			))
 		}
 	}
@@ -224,7 +226,9 @@ func (db *sqlDatabase) reportDuplicateParticipantNumbers(ctx context.Context, te
 					"WARNING",
 					e.Number,
 					"W_PARTICIPANT_NR_DUP",
-					fmt.Sprintf("MitgliedsNr %s is already assigned to existing member %s %s", e.Number, e.FirstName, e.LastName),
+					fmt.Sprintf("Spalte „MitgliedsNr“: Die Mitgliedsnummer %s ist schon an das bestehende Mitglied %s %s "+
+						"vergeben (in der Datei bei %s %s). Die Zeilen werden trotzdem übernommen; bitte prüfe die Nummer.",
+						e.Number, e.FirstName, e.LastName, p.FirstName, p.LastName),
 				))
 			}
 		}
@@ -744,11 +748,16 @@ func defaultDebitTypeMessage(n int) *model.LogMessage {
 	if n == 0 {
 		return nil
 	}
+	members := fmt.Sprintf("%d neue Mitglieder mit IBAN haben", n)
+	if n == 1 {
+		members = "1 neues Mitglied mit IBAN hat"
+	}
 	return model.NewLogMessage(
 		"WARNING",
 		"Einzugsart",
 		"W_DEBIT_TYPE_DEFAULT",
-		fmt.Sprintf("%d new member(s) with an IBAN have no direct debit type (column 'Einzugsart' missing, empty or unknown): they are not debited until CORE, B2B or 'Kein SEPA' is set for them.", n))
+		members+" keine Einzugsart (Spalte „Einzugsart“ fehlt, ist leer oder unbekannt). Bis dort CORE, B2B "+
+			"oder „Kein SEPA“ eingetragen ist, wird nichts per Lastschrift eingezogen.")
 }
 
 // importDebitType reads the optional column "Einzugsart" ("DebitType" works too): CORE, B2B, or
@@ -756,7 +765,7 @@ func defaultDebitTypeMessage(n int) *model.LogMessage {
 // empty stays empty: such a member is not debited (platform#143). Any other value is reported and left
 // empty. The value only applies to members the import creates; for an existing member the import
 // adds metering points and leaves the master data as it is.
-func importDebitType(raw, firstname, lastname string, importLog *model.Log) null.String {
+func importDebitType(raw string, row int, firstname, lastname string, importLog *model.Log) null.String {
 	v := strings.ToUpper(strings.ReplaceAll(strings.Join(strings.Fields(raw), ""), "-", ""))
 	switch v {
 	case "":
@@ -770,7 +779,8 @@ func importDebitType(raw, firstname, lastname string, importLog *model.Log) null
 		"WARNING",
 		fmt.Sprintf("%s %s", firstname, lastname),
 		"W_DEBIT_TYPE_UNKNOWN",
-		fmt.Sprintf("unknown direct debit type %q (allowed: CORE, B2B, NONE, Kein SEPA); a new member gets none and is not debited", raw)))
+		fmt.Sprintf("%s: Die Einzugsart „%s“ ist unbekannt (erlaubt: CORE, B2B, Kein SEPA oder NONE). Ein neues "+
+			"Mitglied wird ohne Einzugsart angelegt und nicht per Lastschrift eingezogen.", importCell(row, "Einzugsart"), raw)))
 	return null.String{}
 }
 
@@ -790,11 +800,12 @@ func importOptionalText(raw string) null.String {
 // not taken over silently: the member is imported without e-mail and
 // the row is reported in the import log (admin notification), so the
 // tenant admin can correct it.
-func importEmail(raw, firstname, lastname string, importLog *model.Log) null.String {
+func importEmail(raw string, row int, firstname, lastname string, importLog *model.Log) null.String {
 	normalized, err := model.ValidateEmailList(raw)
 	if err != nil {
-		importLog.Messages = append(importLog.Messages, model.NewLogMessageFromVfeegError(
-			fmt.Sprintf("%s %s", firstname, lastname), err))
+		m := model.NewLogMessageFromVfeegError(fmt.Sprintf("%s %s", firstname, lastname), err)
+		m.Message = fmt.Sprintf("%s: %s Ein neues Mitglied wird ohne E-Mail-Adresse angelegt.", importCell(row, "Email"), m.Message)
+		importLog.Messages = append(importLog.Messages, m)
 		return null.String{}
 	}
 	if normalized == "" {
@@ -899,7 +910,9 @@ func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorNa
 		return model.S_ACTIVE
 	}
 
+	row := 0 // the row number in Excel: Next also returns the empty rows
 	for rows.Next() {
+		row++
 		if cols, err := rows.Columns(excelize.Options{RawCellValue: true}); err == nil && len(cols) > 0 {
 			switch {
 			case cols[0] == "[### Leerzeile für Importer ###]":
@@ -923,9 +936,13 @@ func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorNa
 					if communityId != "" && !strings.EqualFold(rowCommunityId, communityId) {
 						if !rejectedCommunityIds[rowCommunityId] {
 							rejectedCommunityIds[rowCommunityId] = true
-							msg := fmt.Sprintf("Rows skipped: 'Gemeinschafts-ID' %s does not match this community (%s) — wrong file or wrong community selected?", rowCommunityId, communityId)
+							msg := fmt.Sprintf("%s: Die Gemeinschafts-ID %s passt nicht zu dieser Gemeinschaft (%s). Diese "+
+								"und alle weiteren Zeilen mit dieser ID wurden nicht importiert. Falsche Datei oder falsche "+
+								"Gemeinschaft ausgewählt?", importCell(row, "Gemeinschafts-ID"), rowCommunityId, communityId)
 							if rowCommunityId == "" {
-								msg = fmt.Sprintf("Rows skipped: 'Gemeinschafts-ID' is empty — the column is required and must match this community (%s)", communityId)
+								msg = fmt.Sprintf("%s: Die Gemeinschafts-ID fehlt. Sie muss in jeder Zeile stehen und zu dieser "+
+									"Gemeinschaft passen (%s). Diese und alle weiteren Zeilen ohne ID wurden nicht importiert.",
+									importCell(row, "Gemeinschafts-ID"), communityId)
 							}
 							importLog.Messages = append(importLog.Messages, model.NewLogMessage(
 								"ERROR",
@@ -950,7 +967,7 @@ func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorNa
 								"ERROR",
 								strings.Trim(getColumValue(cols, colMap, "Zählpunkt", "MeteringPoint Id", nil), " "),
 								"E_PARTICIPANT_1001",
-								fmt.Sprintf("Row skipped: 'Name 1' is missing and 'Name 2' (%s) cannot be split into last and first name", excelName1),
+								nameText(row, excelName1),
 							))
 							log.WithContext(ctx).Warn("Import row skipped: cannot extract name")
 							continue
@@ -975,7 +992,9 @@ func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorNa
 							"ERROR",
 							strings.Trim(getColumValue(cols, colMap, "Zählpunkt", "MeteringPoint Id", nil), " "),
 							"E_COUNTERPOINT_1001",
-							fmt.Sprintf("Row skipped: unknown 'Energierichtung' %q (expected CONSUMPTION or GENERATION)", directionVal),
+							fmt.Sprintf("%s: Der Wert „%s“ ist unbekannt (erlaubt: CONSUMPTION für Verbrauch, GENERATION "+
+								"für Erzeugung oder leer für Verbrauch). Die Zeile wurde nicht importiert.",
+								importCell(row, "Energierichtung"), directionVal),
 						))
 						log.WithContext(ctx).Warn("Import row skipped: unknown energy direction")
 						continue
@@ -1019,7 +1038,7 @@ func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorNa
 							participant = p
 							// member on several rows: the first non-empty direct debit type counts,
 							// a different one on a later row is reported
-							debit := importDebitType(getColumValue(cols, colMap, "Einzugsart", "DebitType", nil), firstname, lastname, importLog)
+							debit := importDebitType(getColumValue(cols, colMap, "Einzugsart", "DebitType", nil), row, firstname, lastname, importLog)
 							switch {
 							case !debit.Valid:
 							case !p.BankAccount.SepaDirectDebit.Valid:
@@ -1029,7 +1048,8 @@ func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorNa
 									"WARNING",
 									fmt.Sprintf("%s %s", firstname, lastname),
 									"W_DEBIT_TYPE_CONFLICT",
-									fmt.Sprintf("different direct debit types on several rows (%s, %s); a new member gets the first one",
+									fmt.Sprintf("%s: Das Mitglied hat in mehreren Zeilen verschiedene Einzugsarten (%s, %s). Ein "+
+										"neues Mitglied bekommt die erste.", importCell(row, "Einzugsart"),
 										p.BankAccount.SepaDirectDebit.String, debit.String)))
 							}
 						} else {
@@ -1067,10 +1087,10 @@ func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorNa
 									BankName:         null.StringFrom(getColumValue(cols, colMap, "Bankname", "Bankname", nil)),
 									MandateReference: importOptionalText(getColumValue(cols, colMap, "MandatRef", "MandateRef", nil)),
 									MandateDate:      getColumDate(cols, colMap, "MandatDat", "MandateDat", nil),
-									SepaDirectDebit:  importDebitType(getColumValue(cols, colMap, "Einzugsart", "DebitType", nil), firstname, lastname, importLog),
+									SepaDirectDebit:  importDebitType(getColumValue(cols, colMap, "Einzugsart", "DebitType", nil), row, firstname, lastname, importLog),
 								},
 								Contact: model.ContactInfo{
-									Email: importEmail(getColumValue(cols, colMap, "email", "email", nil), firstname, lastname, importLog),
+									Email: importEmail(getColumValue(cols, colMap, "email", "email", nil), row, firstname, lastname, importLog),
 									Phone: null.StringFrom(getColumValue(cols, colMap, "TelefonNr", "phonenr", nil)),
 								},
 							}
@@ -1078,10 +1098,10 @@ func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorNa
 						}
 						// the first non-empty member tariff of the member's rows, like the direct debit type
 						tariffs.noteMember(participant, getColumValue(cols, colMap, importMemberTariffColumn, importMemberTariffColumn, nil),
-							fmt.Sprintf("%s %s", firstname, lastname), importLog)
+							row, fmt.Sprintf("%s %s", firstname, lastname), importLog)
 						meteringPointId := strings.Trim(getColumValue(cols, colMap, "Zählpunkt", "MeteringPoint Id", nil), " ")
 						if len(meteringPointId) == 33 {
-							gridOperatorId, gridOperatorNameValue := importGridOperator(meteringPointId, givenGridOperator, gridOperatorName, importLog)
+							gridOperatorId, gridOperatorNameValue := importGridOperator(meteringPointId, row, givenGridOperator, gridOperatorName, importLog)
 							participant.MeteringPoint = append(participant.MeteringPoint, &model.MeteringPoint{
 								GridOperatorId:   gridOperatorId,
 								GridOperatorName: gridOperatorNameValue,
@@ -1090,7 +1110,7 @@ func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorNa
 								Direction:        role,
 								Status:           getMeteringPointStatus(cpStatus),
 								ProcessState:     getMeteringPointProcessState(cpStatus),
-								TariffId:         tariffs.meter(getColumValue(cols, colMap, importMeterTariffColumn, importMeterTariffColumn, nil), meteringPointId, role, importLog),
+								TariffId:         tariffs.meter(getColumValue(cols, colMap, importMeterTariffColumn, importMeterTariffColumn, nil), row, meteringPointId, role, importLog),
 								EquipmentNumber:  equipmentNumber(cols, colMap),
 								EquipmentName:    equipmentName(cols, colMap),
 								RegisteredSince:  registeredSince,
@@ -1112,7 +1132,7 @@ func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorNa
 								"ERROR",
 								meteringPointId,
 								"E_COUNTERPOINT_1000",
-								"Does not fulfill requirements! Len not equal 33. -> Not Included",
+								meteringPointLengthText(row, meteringPointId),
 							))
 							log.WithContext(ctx).Warnf("Metering Point -%s- does not fulfill requirements! Len not equal 33. -> Not Included", meteringPointId)
 						}
@@ -1122,7 +1142,7 @@ func transformExcelData(ctx context.Context, rows *excelize.Rows, gridOperatorNa
 								"ERROR",
 								fmt.Sprintf("%s %s", firstname, lastname),
 								"E_PARTICIPANT_1000",
-								fmt.Sprintf("Does not fulfill requirements! Participant has wrong status: %s", cpStatus)))
+								meteringPointStatusText(row, cpStatus)))
 						log.WithContext(ctx).Warn("Import row skipped: participant has wrong status")
 					}
 				}
@@ -1156,10 +1176,52 @@ func isImportDataRow(cols []string, colMap map[string]int) bool {
 		len(strings.TrimSpace(getColumValue(cols, colMap, "Name 2", "Name2", nil))) > 0
 }
 
+// importCell names a cell of the import file in a hint (platform#279): "Zeile 12, Spalte „Zählpunkt“".
+func importCell(row int, column string) string {
+	return fmt.Sprintf("Zeile %d, Spalte „%s“", row, column)
+}
+
+// nameText: "Name 1" is missing or shorter than 2 characters and "Name 2" cannot be split into last and first name;
+// the row is skipped.
+func nameText(row int, name2 string) string {
+	if strings.TrimSpace(name2) == "" {
+		return importCell(row, "Name 1") + ": „Name 1“ fehlt oder ist zu kurz, und „Name 2“ ist leer. Die Zeile wurde " +
+			"nicht importiert."
+	}
+	return fmt.Sprintf("%s: „Name 1“ fehlt oder ist zu kurz, und „Name 2“ (%s) lässt sich nicht in Nachname und "+
+		"Vorname teilen. Die Zeile wurde nicht importiert.", importCell(row, "Name 1"), name2)
+}
+
+// meteringPointLengthText: the metering point number of the row is not 33 bytes long (the import's check); the member
+// is imported without it. 33 characters with a byte count other than 33 means characters outside ASCII (e.g. „Ö“).
+func meteringPointLengthText(row int, meteringPointId string) string {
+	cell := importCell(row, "Zählpunkt")
+	switch n := utf8.RuneCountInString(meteringPointId); {
+	case n == 0:
+		return cell + ": Die Zählpunktnummer fehlt. Der Zählpunkt wurde nicht importiert."
+	case n == 33:
+		return cell + ": Die Zählpunktnummer enthält ungültige Zeichen (erlaubt sind Buchstaben ohne Umlaute und " +
+			"Ziffern). Der Zählpunkt wurde nicht importiert."
+	default:
+		return fmt.Sprintf("%s: Die Zählpunktnummer muss 33 Zeichen lang sein (gefunden: %d). Der Zählpunkt wurde "+
+			"nicht importiert.", cell, n)
+	}
+}
+
+// meteringPointStatusText: the row has no metering point status the import takes over; it is skipped.
+func meteringPointStatusText(row int, status string) string {
+	if status == "" {
+		return importCell(row, "Zählpunktstatus") + ": Der Zählpunktstatus fehlt (erlaubt: ACTIVE, ACTIVATED, " +
+			"REGISTERED, NEW). Die Zeile wurde nicht importiert."
+	}
+	return fmt.Sprintf("%s: Der Zählpunktstatus „%s“ ist unbekannt (erlaubt: ACTIVE, ACTIVATED, REGISTERED, NEW). "+
+		"Die Zeile wurde nicht importiert.", importCell(row, "Zählpunktstatus"), status)
+}
+
 // importGridOperator leitet den Netzbetreiber aus der Zählpunktnummer ab (platform#107). Der Wert
 // aus Spalte A wird nur verglichen; eine Abweichung oder Alias-Übersetzung landet als Hinweis im
 // Import-Protokoll. Verbindlich setzt ihn die Datenbankschicht (applyGridOperator).
-func importGridOperator(meteringPointId, given string, gridOperatorName func(id string) string, importLog *model.Log) (null.String, null.String) {
+func importGridOperator(meteringPointId string, row int, given string, gridOperatorName func(id string) string, importLog *model.Log) (null.String, null.String) {
 	r, ok := gridoperator.FromMeteringPoint(meteringPointId, gridOperatorAlias())
 	if !ok {
 		return null.String{}, null.String{}
@@ -1170,14 +1232,16 @@ func importGridOperator(meteringPointId, given string, gridOperatorName func(id 
 			"WARNING",
 			meteringPointId,
 			"W_GRID_OPERATOR_IGNORED",
-			fmt.Sprintf("'Netzbetreiber' %s in column A ignored, %s is used (derived from the metering point number)", given, r.Id),
+			fmt.Sprintf("%s: %s wird nicht verwendet. Der Netzbetreiber %s ergibt sich aus der Zählpunktnummer.",
+				importCell(row, "Netzbetreiber"), given, r.Id),
 		))
 	case r.Aliased && given != r.Id:
 		importLog.Messages = append(importLog.Messages, model.NewLogMessage(
 			"WARNING",
 			meteringPointId,
 			"W_GRID_OPERATOR_IGNORED",
-			fmt.Sprintf("Grid operator %s of the metering point number is replaced by %s", r.Prefix, r.Id),
+			fmt.Sprintf("%s: Der Netzbetreiber %s aus der Zählpunktnummer wird durch %s ersetzt.",
+				importCell(row, "Zählpunkt"), r.Prefix, r.Id),
 		))
 	}
 	name := gridOperatorName(r.Id)

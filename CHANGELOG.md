@@ -8,6 +8,34 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Fixed
+- **Master data import: hints in German, with row and column** (platform#279). The hints of the Excel import
+  (notification „Excel Stammdaten importiert“) were English and technical, e.g. „Does not fulfill requirements! Len
+  not equal 33. -> Not Included“. They now say in German what is wrong and name the row and column of the file, e.g.
+  „Zeile 12, Spalte „Zählpunkt“: Die Zählpunktnummer muss 33 Zeichen lang sein (gefunden: 31). Der Zählpunkt wurde
+  nicht importiert.“ The row is the row number in Excel (empty rows count). Kind, identifier and code of each hint
+  are unchanged; web shows the text as it is. Without a row: the summaries (members without direct debit type, with
+  a joining fee) and the duplicate member number (`W_PARTICIPANT_NR_DUP`, it names the column). Not changed: the
+  texts of errors when a member is saved (database layer) and the log lines. A metering point number of 33
+  characters that is not 33 bytes long (e.g. with „Ö“) gets its own hint about invalid characters; what the import
+  accepts is unchanged.
+- **Process history without a scan of the whole table** (platform#282). `base.processhistory` had no index besides
+  the primary key, so the page „Prozess History“ (`fetchEdaHistory`) and the answer to a revoke
+  (`FindHistoryMessage`, every ANTWORT_CCMS/ABLEHNUNG_CCMS) read the whole table. Two migrations, one index each,
+  built `CONCURRENTLY` (writes go on while it is built): `20261128120000` `processhistory_tenant_protocol_date_idx`
+  on `(tenant, protocol, date)` and `20261128120100` `processhistory_tenant_conversation_idx` on
+  `(tenant, "conversationId")`. No data change. **Operations (recommended: build them beforehand):** the
+  migration runs on start with `lock_timeout` 60 s, and `CREATE INDEX CONCURRENTLY` waits for every older snapshot
+  in the database (a running `pg_dump`, a long transaction on any table). After 60 s it aborts: an invalid index, a
+  dirty version, the pod restarts in a loop and the API is down (one replica, `Recreate`). So build both indexes
+  before the rollout per operator SQL, with the same statements as the two up files (outside a transaction; no
+  `lock_timeout` there), then check
+  `SELECT indexrelid::regclass, indisvalid FROM pg_index WHERE indexrelid IN (to_regclass('base.processhistory_tenant_protocol_date_idx'), to_regclass('base.processhistory_tenant_conversation_idx'));`
+  — two rows, both `true`. An invalid prebuilt index is kept silently by `IF NOT EXISTS`: drop it with
+  `DROP INDEX CONCURRENTLY IF EXISTS …` and build it again. The migration then finds both and does nothing. If they
+  are built on start instead: check `pg_stat_activity` first for no long transaction and no `pg_dump`. Dirty
+  recovery: README, „Failed migration (dirty)“. Rollback: two down steps (README).
+
 ### Documentation
 - **README: tables and views other services read.** New section under "Development": billing reads the view
   `base.billing_masterdata`, eda-xp the table `base.eeg`, the registration (admin-backend) four tables of `base` —
