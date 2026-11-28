@@ -24,6 +24,9 @@ import (
 type MeteringPointRepository interface {
 	RestoreMeteringPointProcessState(ctx context.Context, tenant, meterId string) error
 	MeteringPointsSetStatus(ctx context.Context, tenant string, processState model.ProcessStatusType, statusCode *int16, meterId []string, activeSince *civil.Date, consentId *string) error
+	// ActivateMeteringPointsByGridOperator is MeteringPointsSetStatus with ACTIVE for the answer of the grid operator
+	// (ABSCHLUSS, code 156): on the first activation of an entry its date replaces a provisional activesince.
+	ActivateMeteringPointsByGridOperator(ctx context.Context, tenant string, statusCode *int16, meterId []string, activeSince *civil.Date, consentId *string) error
 	FindActiveMeteringByIds(ctx context.Context, tenant string, meterIds []string) ([]*model.MeteringPoint, error)
 	FindMeteringPointsActivePeriod(ctx context.Context, tenant string, activeSince, inactiveSince int64) ([]*model.MeteringPoint, error)
 	FindMeteringByStatus(ctx context.Context, tenant, meterId string, status model.StatusType) (*model.MeteringPoint, error)
@@ -59,7 +62,11 @@ func (db *sqlDatabase) RestoreMeteringPointProcessState(ctx context.Context, ten
 }
 
 func (db *sqlDatabase) MeteringPointsSetStatus(ctx context.Context, tenant string, processState model.ProcessStatusType, statusCode *int16, meterId []string, activeSince *civil.Date, consentId *string) error {
-	return meteringPointsSetStatus(ctx, db.db, tenant, processState, statusCode, meterId, activeSince, consentId)
+	return meteringPointsSetStatus(ctx, db.db, tenant, processState, statusCode, meterId, activeSince, consentId, false)
+}
+
+func (db *sqlDatabase) ActivateMeteringPointsByGridOperator(ctx context.Context, tenant string, statusCode *int16, meterId []string, activeSince *civil.Date, consentId *string) error {
+	return meteringPointsSetStatus(ctx, db.db, tenant, model.ACTIVE, statusCode, meterId, activeSince, consentId, true)
 }
 
 func (db *sqlDatabase) FindActiveMeteringByIds(ctx context.Context, tenant string, meterIds []string) ([]*model.MeteringPoint, error) {
@@ -680,8 +687,9 @@ func activeParticipation() exp.Expression {
 }
 
 // MeteringPointsSetStatus The MeteringPointSetStatus method handles only ECON or ECOF messages.
-// It requires that only one metering point of a community is assigned (flag == 1).
-func meteringPointsSetStatus(ctx context.Context, db *sqlx.DB, tenant string, processState model.ProcessStatusType, statusCode *int16, meterId []string, activeSince *civil.Date, consentId *string) error {
+// It requires that only one metering point of a community is assigned (flag == 1). gridOperatorDate: the date is the
+// grid operator's (ActivateMeteringPointsByGridOperator).
+func meteringPointsSetStatus(ctx context.Context, db *sqlx.DB, tenant string, processState model.ProcessStatusType, statusCode *int16, meterId []string, activeSince *civil.Date, consentId *string, gridOperatorDate bool) error {
 
 	// setStatus In case of the ABSCHLUSS message is received before the APPROVED message the processtatus should remain in ACTIVE mode.
 	setStatus := func(status model.ProcessStatusType) goqu.Expression {
@@ -739,9 +747,10 @@ func meteringPointsSetStatus(ctx context.Context, db *sqlx.DB, tenant string, pr
 	if activeSince != nil {
 		keep := goqu.COALESCE(goqu.C("activesince"), *activeSince)
 		updateRecord["activesince"] = keep
-		if processState == model.ACTIVE {
+		if processState == model.ACTIVE && gridOperatorDate {
 			// first activation of the entry (it was never active, status INIT is never set again): the date of the
-			// grid operator replaces a provisional one (platform#272); a re-activation (INACTIVE) keeps the first
+			// grid operator replaces a provisional one (platform#272); a re-activation (INACTIVE) keeps the first.
+			// The admin's PROCESSSTATUS update keeps an existing date as before.
 			updateRecord["activesince"] = goqu.Case().When(goqu.C("status").Eq(string(model.S_INIT)), *activeSince).Else(keep)
 		}
 		updateRecord["inactivesince"] = civil.DateFor(2999, 12, 31)
@@ -750,7 +759,7 @@ func meteringPointsSetStatus(ctx context.Context, db *sqlx.DB, tenant string, pr
 	/**
 	Consider in case reactivating the metering point for the same participant, the inactivesince time must be adjusted to the very end time period.
 	The activesince time must be left alone as it controls the visibility of the time period in the user client.
-	Therefore, the activesince time is only set at creation time.
+	Therefore, an existing activesince is kept, except on the first activation by the grid operator (see above).
 
 	IMPROVE: Check the context of the meteringpoint while activating.
 	*/

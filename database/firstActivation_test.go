@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// platform#272: the ABSCHLUSS date of the grid operator replaces a provisional activesince on the first activation
+// platform#272: the date of the grid operator (ActivateMeteringPointsByGridOperator) replaces a provisional activesince on the first activation
 // of an entry (status INIT). A re-activation of the same member (INACTIVE) keeps the first date, so its older energy
 // data stay visible. After an owner change the new member has its own entry: a first activation.
 func TestMeteringPointsSetStatus_firstActivation(t *testing.T) {
@@ -24,11 +24,13 @@ func TestMeteringPointsSetStatus_firstActivation(t *testing.T) {
 		again    = "c2720000-0000-0000-0000-000000000002"
 		oldOwner = "c2720000-0000-0000-0000-000000000003"
 		newOwner = "c2720000-0000-0000-0000-000000000004"
+		admin    = "c2720000-0000-0000-0000-000000000005"
 	)
 	const (
 		meterFirst = "AT0030000000000000000000000272001"
 		meterAgain = "AT0030000000000000000000000272002"
 		meterOwner = "AT0030000000000000000000000272003"
+		meterAdmin = "AT0030000000000000000000000272004"
 	)
 	exec := func(q string, args ...interface{}) {
 		t.Helper()
@@ -37,11 +39,11 @@ func TestMeteringPointsSetStatus_firstActivation(t *testing.T) {
 	}
 	cleanup := func() {
 		// cascades to the metering point and partition factor rows
-		exec(`DELETE FROM base.participant WHERE id IN ($1, $2, $3, $4)`, first, again, oldOwner, newOwner)
+		exec(`DELETE FROM base.participant WHERE id IN ($1, $2, $3, $4, $5)`, first, again, oldOwner, newOwner, admin)
 	}
 	cleanup()
 	t.Cleanup(cleanup)
-	for _, p := range []string{first, again, oldOwner, newOwner} {
+	for _, p := range []string{first, again, oldOwner, newOwner, admin} {
 		exec(`INSERT INTO base.participant (id, tenant, firstname, lastname, status, "createdBy", "lastModifiedBy")
 			VALUES ($1, $2, 'First', 'Activation', 'ACTIVE', 'test', 'test')`, p, tenant)
 	}
@@ -58,11 +60,14 @@ func TestMeteringPointsSetStatus_firstActivation(t *testing.T) {
 	// (c) owner change: the old member's moved entry and the new member's entry
 	insert(meterOwner, oldOwner, "INACTIVE", "INACTIVE", "2025-01-01", "2026-11-30", model.F_MOVED)
 	insert(meterOwner, newOwner, "INIT", "APPROVED", nil, nil, model.F_ASSIGNED)
+	// (d) never active with a provisional date, set ACTIVE by the admin tool (gRPC PROCESSSTATUS)
+	insert(meterAdmin, admin, "INIT", "APPROVED", "2026-11-01", nil, model.F_ASSIGNED)
 
 	gridOperatorDate := civil.DateFor(2026, 12, 15)
 	var code int16 = 0
-	require.NoError(t, db.MeteringPointsSetStatus(ctx, tenant, model.ACTIVE, &code,
+	require.NoError(t, db.ActivateMeteringPointsByGridOperator(ctx, tenant, &code,
 		[]string{meterFirst, meterAgain, meterOwner}, &gridOperatorDate, nil))
+	require.NoError(t, db.UpdateProcessStatus(ctx, tenant, []string{meterAdmin}, model.ACTIVE, nil, &gridOperatorDate, nil, nil))
 
 	since := func(meter, participant string) (string, string) {
 		var activeSince, status string
@@ -88,5 +93,10 @@ func TestMeteringPointsSetStatus_firstActivation(t *testing.T) {
 		d, status = since(meterOwner, oldOwner)
 		assert.Equal(t, "2025-01-01", d)
 		assert.Equal(t, "INACTIVE", status)
+	})
+	t.Run("admin PROCESSSTATUS keeps an existing date as before", func(t *testing.T) {
+		d, status := since(meterAdmin, admin)
+		assert.Equal(t, "2026-11-01", d)
+		assert.Equal(t, "ACTIVE", status)
 	})
 }
