@@ -8,6 +8,16 @@ this changelog highlights the changes relevant for overview and operations.
 
 ## [Unreleased]
 
+### Fixed
+- **Master data import: hints in German, with row and column** (platform#279). The hints of the Excel import
+  (notification „Excel Stammdaten importiert“) were English and technical, e.g. „Does not fulfill requirements! Len
+  not equal 33. -> Not Included“. They now say in German what is wrong and name the row and column of the file, e.g.
+  „Zeile 12, Spalte „Zählpunkt“: Die Zählpunktnummer muss 33 Zeichen lang sein (gefunden: 31). Der Zählpunkt wurde
+  nicht importiert.“ The row is the row number in Excel (empty rows count). Kind, identifier and code of each hint
+  are unchanged; web shows the text as it is. Without a row: the summaries (members without direct debit type, with
+  a joining fee) and the duplicate member number (`W_PARTICIPANT_NR_DUP`, it names the column). Not changed: the
+  texts of errors when a member is saved (database layer) and the log lines.
+
 ### Documentation
 - **README: tables and views other services read.** New section under "Development": billing reads the view
   `base.billing_masterdata`, eda-xp the table `base.eeg`, the registration (admin-backend) four tables of `base` —

@@ -188,9 +188,11 @@ func Test_transformExcelData_skipReporting(t *testing.T) {
 		assert.Equal(t, "AT009999", p.MeteringPoint[0].GridOperatorId.String)
 	}
 
-	// nur der Name-Split-Fehler wird gemeldet, die leere Zeile nicht
+	// nur der Name-Split-Fehler wird gemeldet, die leere Zeile nicht (sie zählt aber als Zeile)
 	require.Len(t, importLog.Messages, 1)
 	assert.Equal(t, "E_PARTICIPANT_1001", importLog.Messages[0].MessageCode)
+	assert.Equal(t, "Zeile 6, Spalte „Name 1“: Der Name fehlt, und „Name 2“ (Einwortname) lässt sich nicht in "+
+		"Nachname und Vorname teilen. Die Zeile wurde nicht importiert.", importLog.Messages[0].Message)
 }
 
 // platform#107: the grid operator comes from the metering point number (plus
@@ -223,7 +225,11 @@ func Test_transformExcelData_gridOperatorFromMeteringPoint(t *testing.T) {
 		assert.Equal(t, "W_GRID_OPERATOR_IGNORED", m.MessageCode)
 	}
 	assert.Equal(t, "AT0030000000000000000000000000003", importLog.Messages[0].Identifier)
+	assert.Equal(t, "Zeile 5, Spalte „Netzbetreiber“: AT003100 wird nicht verwendet. Der Netzbetreiber AT003000 "+
+		"ergibt sich aus der Zählpunktnummer.", importLog.Messages[0].Message)
 	assert.Equal(t, "AT0082000816000000000000004269401", importLog.Messages[1].Identifier)
+	assert.Equal(t, "Zeile 6, Spalte „Zählpunkt“: Der Netzbetreiber AT008200 aus der Zählpunktnummer wird durch "+
+		"AT008000 ersetzt.", importLog.Messages[1].Message)
 }
 
 // Without the "Netzbetreiber" column the header is found via "Zählpunkt".
@@ -344,6 +350,8 @@ func TestImportMasterdataFromExcel_continueOnError(t *testing.T) {
 	require.Len(t, msgs, 1)
 	assert.Equal(t, "W_PARTICIPANT_NR_DUP", msgs[0].MessageCode)
 	assert.Equal(t, "801", msgs[0].Identifier)
+	assert.Equal(t, "Spalte „MitgliedsNr“: Die Mitgliedsnummer 801 ist schon an das bestehende Mitglied Astrid Alba "+
+		"vergeben (in der Datei bei Berta Neu). Das Mitglied wird trotzdem importiert; bitte prüfe die Nummer.", msgs[0].Message)
 
 	// eigene Nummer beim Re-Import -> keine Warnung
 	assert.Empty(t, check([]*model.EegParticipant{mk("Astrid", "Alba", "801")}))
@@ -352,6 +360,8 @@ func TestImportMasterdataFromExcel_continueOnError(t *testing.T) {
 	msgs = check([]*model.EegParticipant{mk("Xaver", "Xander", "900"), mk("Yvonne", "Ypsilon", "900")})
 	require.Len(t, msgs, 1)
 	assert.Equal(t, "900", msgs[0].Identifier)
+	assert.Equal(t, "Spalte „MitgliedsNr“: Die Mitgliedsnummer 900 steht in der Datei bei mehreren Mitgliedern "+
+		"(Xaver Xander, Yvonne Ypsilon). Die Mitglieder werden trotzdem importiert; bitte prüfe die Nummern.", msgs[0].Message)
 }
 
 // Zählpunktstatus tolerates case and surrounding spaces; an unknown
@@ -380,6 +390,43 @@ func Test_transformExcelData_statusAndDirection(t *testing.T) {
 	require.Len(t, importLog.Messages, 1)
 	assert.Equal(t, "E_COUNTERPOINT_1001", importLog.Messages[0].MessageCode)
 	assert.Equal(t, "AT0099990000000000000000000000723", importLog.Messages[0].Identifier)
+	assert.Equal(t, "Zeile 5, Spalte „Energierichtung“: Der Wert „GENERATON“ ist unbekannt (erlaubt: CONSUMPTION für "+
+		"Verbrauch, GENERATION für Erzeugung oder leer für Verbrauch). Die Zeile wurde nicht importiert.",
+		importLog.Messages[0].Message)
+}
+
+// platform#279: a metering point number of the wrong length or missing, a missing or unknown status and an invalid
+// e-mail address are reported with row and column.
+func Test_transformExcelData_hintsNameRowAndColumn(t *testing.T) {
+	rowWith := func(name, zp, status, email string) []interface{} {
+		return []interface{}{"AT009999", testCommunityId, "4020", "Linz", "Weg", "1",
+			zp, "CONSUMPTION", name, "Tester", "privat", "", email, "", status, "", ""}
+	}
+	f := buildImportSheet(t, [][]interface{}{
+		rowWith("Kurz", "AT00999900000000000000000000007", "ACTIVE", ""),
+		rowWith("Ohne", "", "ACTIVE", ""),
+		rowWith("Status", "AT0099990000000000000000000000743", "", ""),
+		rowWith("Falsch", "AT0099990000000000000000000000744", "INAKTIV", ""),
+		rowWith("Mail", "AT0099990000000000000000000000745", "ACTIVE", "kein-at"),
+	})
+
+	_, importLog := transformSheet(t, f, false)
+	want := []struct{ code, message string }{
+		{"E_COUNTERPOINT_1000", "Zeile 3, Spalte „Zählpunkt“: Die Zählpunktnummer muss 33 Zeichen lang sein (gefunden: " +
+			"31). Der Zählpunkt wurde nicht importiert."},
+		{"E_COUNTERPOINT_1000", "Zeile 4, Spalte „Zählpunkt“: Die Zählpunktnummer fehlt. Der Zählpunkt wurde nicht importiert."},
+		{"E_PARTICIPANT_1000", "Zeile 5, Spalte „Zählpunktstatus“: Der Zählpunktstatus fehlt (erlaubt: ACTIVE, " +
+			"ACTIVATED, REGISTERED, NEW). Die Zeile wurde nicht importiert."},
+		{"E_PARTICIPANT_1000", "Zeile 6, Spalte „Zählpunktstatus“: Der Zählpunktstatus „INAKTIV“ ist unbekannt " +
+			"(erlaubt: ACTIVE, ACTIVATED, REGISTERED, NEW). Die Zeile wurde nicht importiert."},
+		{"E_UNDEFINED_0", "Zeile 7, Spalte „email“: Die E-Mail-Adresse „kein-at“ ist ungültig. Das Mitglied wird ohne " +
+			"E-Mail-Adresse importiert."},
+	}
+	require.Len(t, importLog.Messages, len(want))
+	for i, w := range want {
+		assert.Equal(t, w.code, importLog.Messages[i].MessageCode)
+		assert.Equal(t, w.message, importLog.Messages[i].Message)
+	}
 }
 
 // The shipped import template (tests/261124-vorlage-import-stammdaten.xlsx: the
@@ -446,8 +493,14 @@ func Test_transformExcelData_communityId(t *testing.T) {
 	require.Len(t, importLog.Messages, 2)
 	assert.Equal(t, "E_COMMUNITY_1000", importLog.Messages[0].MessageCode)
 	assert.Equal(t, "AT00000000000TC999999000000000009", importLog.Messages[0].Identifier)
+	assert.Equal(t, "Zeile 5, Spalte „Gemeinschafts-ID“: Die Gemeinschafts-ID AT00000000000TC999999000000000009 passt "+
+		"nicht zu dieser Gemeinschaft ("+testCommunityId+"). Diese und alle weiteren Zeilen mit dieser ID wurden nicht "+
+		"importiert. Falsche Datei oder falsche Gemeinschaft ausgewählt?", importLog.Messages[0].Message)
 	assert.Equal(t, "E_COMMUNITY_1000", importLog.Messages[1].MessageCode)
 	assert.Equal(t, "", importLog.Messages[1].Identifier)
+	assert.Equal(t, "Zeile 7, Spalte „Gemeinschafts-ID“: Die Gemeinschafts-ID fehlt. Sie muss in jeder Zeile stehen "+
+		"und zu dieser Gemeinschaft passen ("+testCommunityId+"). Diese und alle weiteren Zeilen ohne ID wurden nicht "+
+		"importiert.", importLog.Messages[1].Message)
 }
 
 // Optional column "Einzugsart" (platform#143): CORE/B2B/NONE/"Kein SEPA", case, blanks and hyphens
@@ -480,7 +533,9 @@ func Test_transformExcelData_debitType(t *testing.T) {
 		null.StringFrom("NONE"), {}, {},
 	}, debitTypes(participants))
 	require.Len(t, importLog.Messages, 1)
-	assert.Contains(t, importLog.Messages[0].Message, "Lastschrift")
+	assert.Equal(t, "Zeile 9, Spalte „Einzugsart“: Die Einzugsart „Lastschrift“ ist unbekannt (erlaubt: CORE, B2B, "+
+		"Kein SEPA oder NONE). Ein neues Mitglied wird ohne Einzugsart angelegt und nicht per Lastschrift eingezogen.",
+		importLog.Messages[0].Message)
 	assert.Equal(t, "W_DEBIT_TYPE_UNKNOWN", importLog.Messages[0].MessageCode)
 }
 
@@ -505,7 +560,8 @@ func Test_transformExcelData_debitTypeSeveralRows(t *testing.T) {
 	require.Len(t, participants[0].MeteringPoint, 3)
 	assert.Equal(t, null.StringFrom("NONE"), participants[0].BankAccount.SepaDirectDebit)
 	require.Len(t, importLog.Messages, 1)
-	assert.Contains(t, importLog.Messages[0].Message, "different direct debit types")
+	assert.Equal(t, "Zeile 5, Spalte „Einzugsart“: Das Mitglied hat in mehreren Zeilen verschiedene Einzugsarten "+
+		"(NONE, CORE). Ein neues Mitglied bekommt die erste.", importLog.Messages[0].Message)
 }
 
 // Without the column the debit type stays empty, as before.
@@ -537,5 +593,7 @@ func Test_defaultDebitType(t *testing.T) {
 	m := defaultDebitTypeMessage(2)
 	require.NotNil(t, m)
 	assert.Equal(t, "W_DEBIT_TYPE_DEFAULT", m.MessageCode)
-	assert.Contains(t, m.Message, "2 new member(s)")
+	assert.Equal(t, "2 neue Mitglieder mit IBAN haben keine Einzugsart (Spalte „Einzugsart“ fehlt, ist leer oder "+
+		"unbekannt). Bis dort CORE, B2B oder „Kein SEPA“ eingetragen ist, wird nichts per Lastschrift eingezogen.", m.Message)
+	assert.Contains(t, defaultDebitTypeMessage(1).Message, "1 neues Mitglied mit IBAN hat keine Einzugsart")
 }

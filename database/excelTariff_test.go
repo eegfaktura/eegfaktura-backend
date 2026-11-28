@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"at.ourproject/vfeeg-backend/model"
@@ -103,12 +104,18 @@ func Test_transformExcelData_tariffs(t *testing.T) {
 		for _, p := range ps {
 			assert.False(t, p.MeteringPoint[0].TariffId.Valid)
 		}
-		want := []struct{ identifier, code, column string }{
-			{"AT0099990000000000000000000000201", "W_TARIFF_TYPE", importMeterTariffColumn},
-			{"AT0099990000000000000000000000202", "W_TARIFF_TYPE", importMeterTariffColumn},
-			{"AT0099990000000000000000000000203", "W_TARIFF_AMBIGUOUS", importMeterTariffColumn},
-			{"Anna Tarif", "W_TARIFF_UNKNOWN", importMemberTariffColumn},
-			{"Bert Tarif", "W_TARIFF_TYPE", importMemberTariffColumn},
+		// the data rows are rows 3 to 5 of the sheet
+		want := []struct{ identifier, code, message string }{
+			{"AT0099990000000000000000000000201", "W_TARIFF_TYPE",
+				"Zeile 3, Spalte „Zp. Tarifname“: Der Tarif „Einspeisung“ ist kein Verbrauchertarif. Der Tarif wird nicht zugeordnet."},
+			{"AT0099990000000000000000000000202", "W_TARIFF_TYPE",
+				"Zeile 4, Spalte „Zp. Tarifname“: Der Tarif „Standard“ ist kein Erzeugertarif. Der Tarif wird nicht zugeordnet."},
+			{"AT0099990000000000000000000000203", "W_TARIFF_AMBIGUOUS",
+				"Zeile 5, Spalte „Zp. Tarifname“: Es gibt mehrere aktive Verbrauchertarife mit dem Namen „Doppelt“. Der Tarif wird nicht zugeordnet."},
+			{"Anna Tarif", "W_TARIFF_UNKNOWN",
+				"Zeile 3, Spalte „Mitgliedstarif“: Einen aktiven Tarif „Gibt es nicht“ gibt es in dieser Gemeinschaft nicht. Der Tarif wird nicht zugeordnet."},
+			{"Bert Tarif", "W_TARIFF_TYPE",
+				"Zeile 4, Spalte „Mitgliedstarif“: Der Tarif „Einspeisung“ ist kein Mitgliedstarif. Der Tarif wird nicht zugeordnet."},
 		}
 		require.Len(t, importLog.Messages, len(want))
 		for i, w := range want {
@@ -116,7 +123,7 @@ func Test_transformExcelData_tariffs(t *testing.T) {
 			assert.Equal(t, "WARNING", m.Kind)
 			assert.Equal(t, w.identifier, m.Identifier)
 			assert.Equal(t, w.code, m.MessageCode)
-			assert.Contains(t, m.Message, w.column)
+			assert.Equal(t, w.message, m.Message)
 		}
 	})
 
@@ -149,8 +156,27 @@ func Test_transformExcelData_tariffs(t *testing.T) {
 		assert.Equal(t, "WARNING", m.Kind)
 		assert.Equal(t, "Same Tarif", m.Identifier)
 		assert.Equal(t, "W_TARIFF_CONFLICT", m.MessageCode)
-		assert.Contains(t, m.Message, importMemberTariffColumn)
+		assert.Equal(t, "Zeile 4, Spalte „Mitgliedstarif“: Das Mitglied hat in mehreren Zeilen verschiedene "+
+			"Mitgliedstarife („Standard“, „Premium“). Es gilt der erste.", m.Message)
 	})
+}
+
+// An existing member's member tariff cell is ignored: the hint names the row of the cell that was noted (the first
+// non-empty one), not the member's last row.
+func Test_existingMemberHint(t *testing.T) {
+	tariffs := testImportTariffs()
+	p := &model.EegParticipant{}
+	importLog := &model.Log{Messages: []*model.LogMessage{}}
+	assert.Nil(t, tariffs.existingMemberHint(p, "Same Tarif"), "no cell, no hint")
+	tariffs.noteMember(p, "", 3, "Same Tarif", importLog)
+	tariffs.noteMember(p, " Premium ", 4, "Same Tarif", importLog)
+	tariffs.noteMember(p, "premium", 5, "Same Tarif", importLog)
+	assert.Empty(t, importLog.Messages)
+	m := tariffs.existingMemberHint(p, "Same Tarif")
+	require.NotNil(t, m)
+	assert.Equal(t, "W_TARIFF_MEMBER_EXISTS", m.MessageCode)
+	assert.Equal(t, "Zeile 4, Spalte „Mitgliedstarif“: Das Mitglied gibt es schon, sein Mitgliedstarif wird nicht "+
+		"geändert („Premium“ nicht übernommen).", m.Message)
 }
 
 // One summary hint about new members with a joining fee in their member tariff.
@@ -160,8 +186,12 @@ func Test_joiningFeeMessage(t *testing.T) {
 	require.NotNil(t, m)
 	assert.Equal(t, "WARNING", m.Kind)
 	assert.Equal(t, "W_TARIFF_JOINING_FEE", m.MessageCode)
-	assert.Contains(t, m.Message, "3 new member(s)")
-	assert.Contains(t, m.Message, "(Familie, Mitglied)")
+	assert.Equal(t, "3 neue Mitglieder haben einen Mitgliedstarif mit Beitrittsgebühr (Familie, Mitglied). Sie wird "+
+		"mit der ersten Energieabrechnung verrechnet. Eine schon bezahlte Beitrittsgebühr erfasst du beim Mitglied mit "+
+		"„Außerhalb bezahlt erfassen“.", m.Message)
+	one := joiningFeeMessage(1, map[string]bool{"Mitglied": true})
+	require.NotNil(t, one)
+	assert.True(t, strings.HasPrefix(one.Message, "1 neues Mitglied hat einen Mitgliedstarif mit Beitrittsgebühr (Mitglied)."), one.Message)
 }
 
 // Round trip: the tariff columns of the master data export, header and cell as written, are read by the import.
