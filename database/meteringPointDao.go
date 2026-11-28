@@ -737,7 +737,13 @@ func meteringPointsSetStatus(ctx context.Context, db *sqlx.DB, tenant string, pr
 		updateRecord["status"] = model.S_ACTIVE
 	}
 	if activeSince != nil {
-		updateRecord["activesince"] = goqu.COALESCE(goqu.C("activesince"), *activeSince)
+		keep := goqu.COALESCE(goqu.C("activesince"), *activeSince)
+		updateRecord["activesince"] = keep
+		if processState == model.ACTIVE {
+			// first activation of the entry (it was never active, status INIT is never set again): the date of the
+			// grid operator replaces a provisional one (platform#272); a re-activation (INACTIVE) keeps the first
+			updateRecord["activesince"] = goqu.Case().When(goqu.C("status").Eq(string(model.S_INIT)), *activeSince).Else(keep)
+		}
 		updateRecord["inactivesince"] = civil.DateFor(2999, 12, 31)
 	}
 
