@@ -24,6 +24,20 @@ this changelog highlights the changes relevant for overview and operations.
   00:00 of that day no longer shows in two adjacent ranges. Response for web (`ps=0`) otherwise unchanged.
   **Contract** `GET /process/history`: `end` is now exclusive; `ps` above 100000 is rejected with 400 (it reaches the
   SQL as `LIMIT ps+1`). Caller: eegfaktura-web (sends whole days and `ps=0`, not affected).
+- **Process history: an unreadable message no longer fails the answer** (tracking backend 261128-mm4, pre-existing,
+  found in the review of #173). A history row whose `message` is no JSON object made `GET /process/history` answer
+  400 when it was the last row of the range; otherwise the row came with `"message": null`, as did a row with a
+  stored JSON `null`. Such rows are now left out of the answer and logged as a warning with tenant and conversation
+  id (not the message); the other rows are answered with 200. An empty object `{}` is answered as before.
+  An error while building the SQL is now returned instead of being overwritten.
+- **Process history: an error while building the INSERT of a history entry is returned** (pre-existing, related to
+  tracking backend 261128-mm4). `saveEdaHistory` overwrote the `ToSQL` error with the result of `Exec` on the empty
+  statement, so the error could get lost. With the history entries the backend writes this does not happen; no
+  test, goqu cannot be made to fail there with a valid entry.
+- **Process history: a message that cannot be written as JSON is logged and reported** (pre-existing, tracking
+  backend 261128-mm5, related to 261128-mm4). `SaveHistory` dropped the error of `json.Marshal` and returned
+  success, so the history entry went missing without a trace. It now logs the error with tenant and conversation id
+  and returns it; the EDA message handlers ignore the result as before.
 - **Master data import: hints in German, with row and column** (platform#279). The hints of the Excel import
   (notification „Excel Stammdaten importiert“) were English and technical, e.g. „Does not fulfill requirements! Len
   not equal 33. -> Not Included“. They now say in German what is wrong and name the row and column of the file, e.g.

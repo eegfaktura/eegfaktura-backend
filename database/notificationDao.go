@@ -218,23 +218,26 @@ func (db *sqlDatabase) collapsedNotifications(ctx context.Context, tenant string
 
 func (db *sqlDatabase) SaveHistory(tenant string, code model.EbMsMessageType, conversationId, role, dir string, protocol model.EdaProtocol, msg interface{}) error {
 
-	var err error
-	var msgBytes []byte
-	if msgBytes, err = json.Marshal(msg); err == nil {
-		if err = saveEdaHistory(db.db, &model.EdaProcessHistory{
-			Tenant:         tenant,
-			ConversationId: conversationId,
-			ProcessType:    code,
-			Date:           civil.DateTime{},
-			Protocol:       null.StringFrom(string(protocol)),
-			Issuer:         role,
-			MessageByte:    msgBytes,
-			MessageMap:     nil,
-			Direction:      dir,
-		}); err != nil {
-			logrus.Error(err)
-			return err
-		}
+	msgBytes, err := json.Marshal(msg)
+	if err != nil {
+		// the callers ignore the result: without the log the entry was lost silently (backend 261128-mm5)
+		logrus.WithError(err).WithFields(logrus.Fields{"tenant": tenant, "conversationId": conversationId}).
+			Error("History message not serializable, entry not saved")
+		return err
+	}
+	if err = saveEdaHistory(db.db, &model.EdaProcessHistory{
+		Tenant:         tenant,
+		ConversationId: conversationId,
+		ProcessType:    code,
+		Date:           civil.DateTime{},
+		Protocol:       null.StringFrom(string(protocol)),
+		Issuer:         role,
+		MessageByte:    msgBytes,
+		MessageMap:     nil,
+		Direction:      dir,
+	}); err != nil {
+		logrus.Error(err)
+		return err
 	}
 	return nil
 }
@@ -268,6 +271,9 @@ func (db *sqlDatabase) FetchEdaHistory(ctx context.Context, tenant, protocol str
 
 func saveEdaHistory(db *sqlx.DB, history *model.EdaProcessHistory) error {
 	sql, _, err := pgDialect.Insert("base.processhistory").Rows(history).ToSQL()
+	if err != nil {
+		return err
+	}
 	_, err = db.Exec(sql)
 	return err
 }
@@ -280,8 +286,8 @@ func edaHistorySelect(tenant string, protocols []string, startDate, endDate civi
 		Where(
 			goqu.C("tenant").Eq(tenant),
 			goqu.C("protocol").Eq(protocols),
-			// end exclusive: web asks [first day, end) with end = last day + 24 h, normally the next day's 00:00
-			// (backend 261128-mm2; on the autumn DST day web's +24 h falls short, tracked separately)
+			// end exclusive: web asks [first day, end) with end = 00:00 of the day after the last day
+			// (backend 261128-mm2; before web 261128-mm1 web sent last day + 24 h, short on the autumn DST day)
 			goqu.C("date").Gte(startDate), goqu.C("date").Lt(endDate))
 }
 
@@ -298,6 +304,9 @@ func fetchEdaHistory(ctx context.Context, db *sqlx.DB, tenant, protocol string, 
 	}
 
 	stmt, _, err := block.ToSQL()
+	if err != nil {
+		return nil, err
+	}
 
 	//fmt.Printf("STMT: %v\n", stmt)
 	err = db.Select(&h, stmt)
@@ -313,7 +322,16 @@ func fetchEdaHistory(ctx context.Context, db *sqlx.DB, tenant, protocol string, 
 	out := map[string]map[string][]model.EdaProcessHistory{}
 	for i := 0; i < resultSize; i++ {
 		e := h[i]
-		err = json.Unmarshal(e.MessageByte, &e.MessageMap)
+		// a broken message (no JSON object, or JSON null) skips its row, the rest of the history is still answered
+		// (backend 261128-mm4)
+		if err := json.Unmarshal(e.MessageByte, &e.MessageMap); err != nil || e.MessageMap == nil {
+			if err == nil {
+				err = errors.New("message is JSON null")
+			}
+			logrus.WithContext(ctx).WithError(err).WithFields(logrus.Fields{"tenant": tenant,
+				"conversationId": e.ConversationId}).Warn("History message unreadable, entry skipped")
+			continue
+		}
 		if ci, ok := out[e.Protocol.String]; ok {
 			ci[e.ConversationId] = append(ci[e.ConversationId], e)
 		} else {
@@ -353,7 +371,7 @@ func fetchEdaHistory(ctx context.Context, db *sqlx.DB, tenant, protocol string, 
 		Data: out,
 	}
 
-	return result, err
+	return result, nil
 }
 
 func createNotification(db sqlx.Execer, tenant, notification string,
